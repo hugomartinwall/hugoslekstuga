@@ -7,6 +7,12 @@ import { findTool } from "@/lib/tools";
 type Phase = "setup" | "running" | "paused" | "done";
 
 const PRESETS_MIN = [15, 25, 45];
+const STORAGE_KEY_INTENTION = "hugoslekstuga:focus:intention";
+const STORAGE_KEY_DURATION = "hugoslekstuga:focus:duration";
+
+// Minimal subset of the WakeLock API to avoid relying on lib.dom typings that
+// aren't always present in build environments.
+type WakeLockSentinelLike = { release: () => Promise<void> };
 
 export default function FocusPage() {
   const tool = findTool("focus")!;
@@ -14,8 +20,41 @@ export default function FocusPage() {
   const [durationSec, setDurationSec] = useState(25 * 60);
   const [remainingSec, setRemainingSec] = useState(25 * 60);
   const [phase, setPhase] = useState<Phase>("setup");
+  const [hydrated, setHydrated] = useState(false);
   const startedAtRef = useRef<number | null>(null);
   const baseRemainingRef = useRef<number>(25 * 60);
+  const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
+
+  // Hydrate from localStorage once on first client render.
+  useEffect(() => {
+    try {
+      const i = localStorage.getItem(STORAGE_KEY_INTENTION);
+      if (i) setIntention(i);
+      const d = localStorage.getItem(STORAGE_KEY_DURATION);
+      const num = d ? Number(d) : NaN;
+      if (Number.isFinite(num) && num >= 60) {
+        setDurationSec(num);
+        setRemainingSec(num);
+      }
+    } catch {}
+    setHydrated(true);
+  }, []);
+
+  // Persist intention and duration so they survive a refresh.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (intention) localStorage.setItem(STORAGE_KEY_INTENTION, intention);
+      else localStorage.removeItem(STORAGE_KEY_INTENTION);
+    } catch {}
+  }, [intention, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEY_DURATION, String(durationSec));
+    } catch {}
+  }, [durationSec, hydrated]);
 
   // Page title reflects countdown so it's visible in the tab.
   useEffect(() => {
@@ -40,9 +79,39 @@ export default function FocusPage() {
       if (next <= 0) {
         setPhase("done");
         playChime();
+        notifyDone(intention);
       }
     }, 200);
     return () => window.clearInterval(id);
+  }, [phase, intention]);
+
+  // Wake lock while running.
+  useEffect(() => {
+    if (phase !== "running") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const nav = navigator as unknown as {
+          wakeLock?: { request: (t: "screen") => Promise<WakeLockSentinelLike> };
+        };
+        if (nav.wakeLock?.request) {
+          const lock = await nav.wakeLock.request("screen");
+          if (cancelled) {
+            lock.release().catch(() => {});
+          } else {
+            wakeLockRef.current = lock;
+          }
+        }
+      } catch {
+        // ignore; not all browsers support this
+      }
+    })();
+    return () => {
+      cancelled = true;
+      const lock = wakeLockRef.current;
+      wakeLockRef.current = null;
+      lock?.release().catch(() => {});
+    };
   }, [phase]);
 
   const start = useCallback(() => {
@@ -50,6 +119,7 @@ export default function FocusPage() {
     setRemainingSec(durationSec);
     startedAtRef.current = Date.now();
     setPhase("running");
+    requestNotificationPermission();
   }, [durationSec]);
 
   const pause = useCallback(() => {
@@ -176,6 +246,11 @@ function Setup({
       >
         Start focus
       </button>
+
+      <p className="text-xs text-ink-muted">
+        While focusing, your screen stays awake and you&rsquo;ll get a chime
+        plus a browser notification when time&rsquo;s up.
+      </p>
     </div>
   );
 }
@@ -343,4 +418,25 @@ function playChime() {
   } catch {
     // ignore audio errors
   }
+}
+
+function requestNotificationPermission() {
+  try {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch {}
+}
+
+function notifyDone(intention: string) {
+  try {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    if (typeof document !== "undefined" && !document.hidden) return;
+    const body = intention.trim()
+      ? `Nice work on ${intention.trim()}.`
+      : "Your focus session is complete.";
+    new Notification("Time's up — Focus", { body });
+  } catch {}
 }

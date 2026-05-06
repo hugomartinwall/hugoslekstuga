@@ -11,7 +11,10 @@ export type ReadStats = {
   fleschKincaidGrade: number | null;
   averageWordsPerSentence: number | null;
   topWords: { word: string; count: number }[];
+  longSentences: { text: string; words: number }[];
 };
+
+export const LONG_SENTENCE_THRESHOLD = 25;
 
 const STOP_WORDS = new Set([
   "the","a","an","and","or","but","if","of","to","in","on","at","for","with",
@@ -35,8 +38,13 @@ export function computeReadStats(input: string): ReadStats {
   const words = extractWords(text);
   const wordCount = words.length;
 
-  const sentences = countSentences(text);
+  const sentenceList = listSentences(text);
+  const sentences = sentenceList.length;
   const paragraphs = countParagraphs(text);
+  const longSentences = sentenceList
+    .map((s) => ({ text: s, words: extractWords(s).length }))
+    .filter((s) => s.words >= LONG_SENTENCE_THRESHOLD)
+    .sort((a, b) => b.words - a.words);
   const syllables = words.reduce((acc, w) => acc + countSyllables(w), 0);
 
   const wpmRead = 240; // common adult reading speed
@@ -70,6 +78,7 @@ export function computeReadStats(input: string): ReadStats {
     fleschKincaidGrade,
     averageWordsPerSentence,
     topWords,
+    longSentences,
   };
 }
 
@@ -92,14 +101,12 @@ function extractWords(text: string): string[] {
   return out;
 }
 
-function countSentences(text: string): number {
+function listSentences(text: string): string[] {
   const trimmed = text.trim();
-  if (trimmed.length === 0) return 0;
-  // Split on sentence-ending punctuation followed by space or end.
+  if (trimmed.length === 0) return [];
   const matches = trimmed.match(/[^.!?\n]+[.!?]+(?=\s|$)/g);
-  if (matches && matches.length > 0) return matches.length;
-  // Fallback for text without terminal punctuation.
-  return 1;
+  if (matches && matches.length > 0) return matches.map((s) => s.trim());
+  return [trimmed];
 }
 
 function countParagraphs(text: string): number {

@@ -1,13 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { feelings, type Feeling } from "@/lib/feelings";
+import type { ToolColor } from "@/lib/tools";
+
+const softBg: Record<ToolColor, string> = {
+  tomato: "bg-tomato-soft hover:bg-tomato",
+  blue: "bg-blue-soft hover:bg-blue",
+  yellow: "bg-yellow-soft hover:bg-yellow",
+  pink: "bg-pink-soft hover:bg-pink",
+  green: "bg-green-soft hover:bg-green",
+  purple: "bg-purple-soft hover:bg-purple",
+};
+
+const accentBg: Record<ToolColor, string> = {
+  tomato: "bg-tomato",
+  blue: "bg-blue",
+  yellow: "bg-yellow",
+  pink: "bg-pink",
+  green: "bg-green",
+  purple: "bg-purple",
+};
+
+const numberBg: Record<ToolColor, string> = {
+  tomato: "bg-tomato text-cream",
+  blue: "bg-blue text-cream",
+  yellow: "bg-yellow text-ink",
+  pink: "bg-pink text-ink",
+  green: "bg-green text-cream",
+  purple: "bg-purple text-cream",
+};
 
 export default function FeelingPage() {
   const tool = findTool("feeling")!;
   const [active, setActive] = useState<Feeling | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && active !== null) setActive(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
 
   return (
     <ToolFrame tool={tool}>
@@ -32,7 +68,7 @@ function FeelingPicker({ onPick }: { onPick: (f: Feeling) => void }) {
             key={f.slug}
             type="button"
             onClick={() => onPick(f)}
-            className="btn-chunk flex flex-col items-start gap-2 rounded-[var(--radius-card)] bg-cream p-4 text-left transition-colors hover:bg-pink-soft"
+            className={`btn-chunk group flex flex-col items-start gap-2 rounded-[var(--radius-card)] p-4 text-left transition-colors ${softBg[f.color]}`}
           >
             <span className="text-2xl" aria-hidden>
               {f.emoji}
@@ -64,12 +100,20 @@ function FeelingTips({
       <button
         type="button"
         onClick={onBack}
-        className="self-start rounded-full border-2 border-ink bg-cream px-3 py-1 text-sm font-semibold transition-colors hover:bg-cream-deep"
+        className="inline-flex w-fit items-center gap-2 rounded-full border-2 border-ink bg-cream px-3 py-1 text-sm font-semibold transition-colors hover:bg-cream-deep"
       >
-        ← Pick another feeling
+        <span>← Pick another feeling</span>
+        <kbd className="hidden rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[10px] uppercase sm:inline">
+          Esc
+        </kbd>
       </button>
 
-      <div className="flex flex-col gap-2">
+      <div
+        className={`card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] p-5 sm:p-6 ${accentBg[feeling.color] + "/10"}`}
+        style={{
+          background: `var(--color-${feeling.color}-soft)`,
+        }}
+      >
         <span className="text-4xl" aria-hidden>
           {feeling.emoji}
         </span>
@@ -87,7 +131,7 @@ function FeelingTips({
           >
             <div className="flex items-center gap-3">
               <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-ink bg-pink font-display text-sm font-extrabold"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-ink font-display text-sm font-extrabold ${numberBg[feeling.color]}`}
                 aria-hidden
               >
                 {i + 1}

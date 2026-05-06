@@ -1,3 +1,5 @@
+import type { ToolColor } from "./tools";
+
 export type Tip = {
   title: string;
   body: string;
@@ -9,6 +11,7 @@ export type Feeling = {
   label: string;
   emoji: string;
   blurb: string;
+  color: ToolColor;
   tips: Tip[];
 };
 
@@ -22,6 +25,7 @@ export const feelings: Feeling[] = [
     slug: "anxious",
     label: "Anxious",
     emoji: "🌀",
+    color: "blue",
     blurb: "Your nervous system is bracing for a threat that may or may not be real.",
     tips: [
       {
@@ -50,6 +54,7 @@ export const feelings: Feeling[] = [
     slug: "sad",
     label: "Sad",
     emoji: "🌧",
+    color: "purple",
     blurb: "Sadness slows you down so you can process loss or change. It usually wants company more than fixing.",
     tips: [
       {
@@ -78,6 +83,7 @@ export const feelings: Feeling[] = [
     slug: "angry",
     label: "Angry",
     emoji: "🔥",
+    color: "tomato",
     blurb: "Anger is a signal that something matters — usually a boundary, a value, or an unmet need.",
     tips: [
       {
@@ -106,6 +112,7 @@ export const feelings: Feeling[] = [
     slug: "overwhelmed",
     label: "Overwhelmed",
     emoji: "🌊",
+    color: "pink",
     blurb: "Too many open loops at once. Working memory is full and your brain is throwing alarm bells.",
     tips: [
       {
@@ -134,6 +141,7 @@ export const feelings: Feeling[] = [
     slug: "lonely",
     label: "Lonely",
     emoji: "🌙",
+    color: "green",
     blurb: "Loneliness is a hunger signal for connection, not evidence that nobody cares about you.",
     tips: [
       {
@@ -162,6 +170,7 @@ export const feelings: Feeling[] = [
     slug: "stuck",
     label: "Stuck",
     emoji: "⚓",
+    color: "yellow",
     blurb: "Either the next step is unclear, or you've outgrown the current path. Both are addressable.",
     tips: [
       {
@@ -190,6 +199,7 @@ export const feelings: Feeling[] = [
     slug: "restless",
     label: "Restless",
     emoji: "⚡",
+    color: "tomato",
     blurb: "Energy looking for a target. Often a sign you've been sedentary, overstimulated, or undercommitted.",
     tips: [
       {
@@ -218,6 +228,7 @@ export const feelings: Feeling[] = [
     slug: "ashamed",
     label: "Ashamed",
     emoji: "🌫",
+    color: "blue",
     blurb: "Shame says \"I am bad,\" not \"I did a bad thing.\" It thrives in secrecy and shrinks in honesty.",
     tips: [
       {

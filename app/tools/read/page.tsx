@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import {
+  LONG_SENTENCE_THRESHOLD,
   computeReadStats,
   gradeForFleschEase,
   type ReadStats,
 } from "@/lib/read";
+
+const STORAGE_KEY = "hugoslekstuga:read:text";
 
 const SAMPLE = `Most things you're worried about will not happen. Plan for the ones that might.
 
@@ -16,6 +19,25 @@ Boring habits beat exciting plans. The smaller you make the next step, the more 
 export default function ReadPage() {
   const tool = findTool("read")!;
   const [text, setText] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+
+  // Load any previously-saved text on first render.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setText(saved);
+    } catch {}
+    setHydrated(true);
+  }, []);
+
+  // Persist text on every change once hydrated.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (text) localStorage.setItem(STORAGE_KEY, text);
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }, [text, hydrated]);
 
   const stats = useMemo(() => computeReadStats(text), [text]);
   const isEmpty = text.trim().length === 0;
@@ -31,13 +53,24 @@ export default function ReadPage() {
             >
               Paste your text
             </label>
-            <button
-              type="button"
-              onClick={() => setText(SAMPLE)}
-              className="text-xs font-semibold text-purple underline-offset-2 hover:underline"
-            >
-              try a sample
-            </button>
+            <div className="flex items-center gap-3 text-xs">
+              {!isEmpty && (
+                <button
+                  type="button"
+                  onClick={() => setText("")}
+                  className="font-semibold text-ink-muted hover:text-ink"
+                >
+                  clear
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setText(SAMPLE)}
+                className="font-semibold text-purple underline-offset-2 hover:underline"
+              >
+                try a sample
+              </button>
+            </div>
           </div>
           <textarea
             id="read-text"
@@ -47,13 +80,15 @@ export default function ReadPage() {
             rows={10}
             className="card-chunk min-h-[14rem] rounded-[var(--radius-card)] bg-cream px-4 py-3 text-base leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
           />
+          {!isEmpty && (
+            <p className="text-xs text-ink-muted">
+              Saved locally so it&rsquo;s still here next time you open this
+              tab.
+            </p>
+          )}
         </div>
 
-        {isEmpty ? (
-          <EmptyState />
-        ) : (
-          <Stats stats={stats} />
-        )}
+        {isEmpty ? <EmptyState /> : <Stats stats={stats} />}
       </div>
     </ToolFrame>
   );
@@ -137,6 +172,10 @@ function Stats({ stats }: { stats: ReadStats }) {
         </Card>
       </div>
 
+      {stats.longSentences.length > 0 && (
+        <LongSentencesCard sentences={stats.longSentences} />
+      )}
+
       {stats.topWords.length > 0 && (
         <Card title="Words you lean on">
           <ul className="flex flex-wrap gap-2 pt-1">
@@ -151,6 +190,53 @@ function Stats({ stats }: { stats: ReadStats }) {
             ))}
           </ul>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function LongSentencesCard({
+  sentences,
+}: {
+  sentences: ReadStats["longSentences"];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? sentences : sentences.slice(0, 2);
+
+  return (
+    <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-yellow-soft p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Long sentences
+        </p>
+        <p className="text-xs text-ink-soft">
+          {sentences.length} over {LONG_SENTENCE_THRESHOLD} words
+        </p>
+      </div>
+      <p className="text-sm text-ink-soft">
+        Long sentences hurt readability. Consider breaking these into two.
+      </p>
+      <ol className="flex flex-col gap-3">
+        {visible.map((s, i) => (
+          <li
+            key={i}
+            className="flex flex-col gap-1 rounded-[var(--radius-card)] border-2 border-ink bg-cream p-3"
+          >
+            <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">
+              {s.words} words
+            </span>
+            <p className="text-sm leading-relaxed text-ink">{s.text}</p>
+          </li>
+        ))}
+      </ol>
+      {sentences.length > 2 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="self-start rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold transition-colors hover:bg-cream-deep"
+        >
+          {expanded ? "Show fewer" : `Show all ${sentences.length}`}
+        </button>
       )}
     </div>
   );

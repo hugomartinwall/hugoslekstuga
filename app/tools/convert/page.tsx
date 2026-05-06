@@ -10,6 +10,8 @@ import {
 } from "@/lib/convert/types";
 import { runConversion, targetsFor } from "@/lib/convert/registry";
 
+const IMAGE_FORMATS: Format[] = ["png", "jpg", "webp", "gif"];
+
 type Stage =
   | { name: "idle" }
   | { name: "ready"; file: File; from: Format; to: Format }
@@ -210,19 +212,23 @@ function ReadyPanel({
   onChangeTarget: (t: Format) => void;
 }) {
   const targets = targetsFor(stage.from);
+  const isImage = IMAGE_FORMATS.includes(stage.from);
   return (
     <div className="card-chunk flex flex-col gap-5 rounded-[var(--radius-card)] bg-cream p-6 sm:p-7">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            File
-          </p>
-          <p className="font-display text-lg font-bold tracking-tight break-all">
-            {stage.file.name}
-          </p>
-          <p className="text-sm text-ink-soft">
-            {formatLabel(stage.from)} · {formatBytes(stage.file.size)}
-          </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-4">
+          {isImage && <ImageThumb file={stage.file} />}
+          <div className="flex flex-col">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              File
+            </p>
+            <p className="font-display text-lg font-bold tracking-tight break-all">
+              {stage.file.name}
+            </p>
+            <p className="text-sm text-ink-soft">
+              {formatLabel(stage.from)} · {formatBytes(stage.file.size)}
+            </p>
+          </div>
         </div>
         <button
           type="button"
@@ -265,6 +271,29 @@ function ReadyPanel({
       >
         Convert →
       </button>
+    </div>
+  );
+}
+
+function ImageThumb({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+
+  return (
+    <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border-2 border-ink bg-cream-deep">
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt="Preview"
+          className="h-full w-full object-cover"
+        />
+      ) : null}
     </div>
   );
 }
