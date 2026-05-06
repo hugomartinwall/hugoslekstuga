@@ -126,6 +126,78 @@ export const tools: Tool[] = [
     color: "purple",
     emoji: "◷",
   },
+  {
+    slug: "sleep",
+    title: "Sleep",
+    tagline: "When to go to bed.",
+    description:
+      "Tell it when you'd like to wake up (or when you're going to bed). It returns the times that fall on a 90-minute sleep cycle so you wake between cycles, not in the middle of one.",
+    color: "blue",
+    emoji: "☾",
+  },
+  {
+    slug: "idea",
+    title: "Idea",
+    tagline: "A spark for the blank page.",
+    description:
+      "A creative-writing prompt generator. Press the button and get an unlikely combination of character, twist, and setting. Use them, ignore them, mash them up.",
+    color: "pink",
+    emoji: "✦",
+  },
+  {
+    slug: "markdown",
+    title: "Markdown",
+    tagline: "Type Markdown, see it rendered.",
+    description:
+      "A two-pane Markdown editor with live preview. Headings, lists, code, links, tables. Copy the HTML when you're happy. Saves locally so a refresh doesn't lose your work.",
+    color: "tomato",
+    emoji: "⌘",
+  },
+  {
+    slug: "diff",
+    title: "Diff",
+    tagline: "What changed between two texts?",
+    description:
+      "Paste an old version and a new version, see what was added, removed, or kept. Toggle word- or line-level. Useful for tracking edits, contracts, code snippets.",
+    color: "orange",
+    emoji: "⇆",
+  },
+  {
+    slug: "stretch",
+    title: "Stretch",
+    tagline: "Three minutes away from your screen.",
+    description:
+      "A guided desk-stretch routine — neck rolls, shoulders, wrists, hips, eyes. Hit start, follow along, come back loose. Great in a long Focus session.",
+    color: "green",
+    emoji: "❄",
+  },
+  {
+    slug: "emoji",
+    title: "Emoji",
+    tagline: "Find the right emoji, fast.",
+    description:
+      "A searchable emoji picker. Type a feeling or thing, get matching emojis, click any to copy. No keyboard menus, no doom-scrolling.",
+    color: "yellow",
+    emoji: "☻",
+  },
+  {
+    slug: "memory",
+    title: "Memory",
+    tagline: "Match the pairs.",
+    description:
+      "The classic match-pairs card game, in our brand colors. A small break for the brain. Track your best time and fewest moves.",
+    color: "purple",
+    emoji: "◈",
+  },
+  {
+    slug: "sketch",
+    title: "Sketch",
+    tagline: "Draw something, download it.",
+    description:
+      "A quick drawing canvas with a pen, eraser, color picker, and undo. Sketch a wireframe, sign your name, doodle. Save as a PNG when you're done.",
+    color: "teal",
+    emoji: "✎",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

@@ -110,17 +110,25 @@ export default async function OGImage() {
             { c: "#4f66f2", t: "breathe" },
             { c: "#ffc233", t: "tip" },
             { c: "#9333ea", t: "until" },
+            { c: "#4f66f2", t: "sleep" },
+            { c: "#ff7ab2", t: "idea" },
+            { c: "#ff5a3c", t: "markdown" },
+            { c: "#f97316", t: "diff" },
+            { c: "#3fa66e", t: "stretch" },
+            { c: "#ffc233", t: "emoji" },
+            { c: "#9333ea", t: "memory" },
+            { c: "#0d9488", t: "sketch" },
           ].map((p) => (
             <div
               key={p.t}
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "12px 22px",
+                padding: "8px 18px",
                 background: p.c,
                 border: "3px solid #1a1812",
                 borderRadius: "9999px",
-                fontSize: "24px",
+                fontSize: "22px",
                 fontWeight: 800,
                 color: p.c === "#ffc233" || p.c === "#ff7ab2" ? "#1a1812" : "#fbf6ee",
               }}

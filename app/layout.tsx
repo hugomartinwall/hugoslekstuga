@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Bricolage_Grotesque } from "next/font/google";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
+import { SearchPalette, SearchProvider } from "@/components/Search";
 import "./globals.css";
 
 const sans = Geist({
@@ -50,9 +51,12 @@ export default function RootLayout({
       className={`${sans.variable} ${display.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-cream text-ink">
-        <Nav />
-        <div className="flex-1">{children}</div>
-        <Footer />
+        <SearchProvider>
+          <Nav />
+          <div className="flex-1">{children}</div>
+          <Footer />
+          <SearchPalette />
+        </SearchProvider>
       </body>
     </html>
   );
