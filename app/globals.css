@@ -1,26 +1,100 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ----------------------------------------------------------------------------
+   hugoslekstuga — design tokens
+   ---------------------------------------------------------------------------- */
+
+@theme {
+  --color-cream: #fbf6ee;
+  --color-cream-deep: #f5ecdb;
+  --color-ink: #1a1812;
+  --color-ink-soft: #4a463d;
+  --color-ink-muted: #8a857a;
+
+  --color-tomato: #ff5a3c;
+  --color-tomato-soft: #ffd5cc;
+  --color-blue: #4f66f2;
+  --color-blue-soft: #d6dcfc;
+  --color-yellow: #ffc233;
+  --color-yellow-soft: #ffeec2;
+  --color-pink: #ff7ab2;
+  --color-pink-soft: #ffd6e7;
+  --color-green: #3fa66e;
+  --color-green-soft: #cce8d8;
+
+  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 1.25rem;
+  --radius-button: 999px;
+
+  --shadow-chunk: 0 4px 0 0 var(--color-ink);
+  --shadow-chunk-sm: 0 2px 0 0 var(--color-ink);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ----------------------------------------------------------------------------
+   base styles
+   ---------------------------------------------------------------------------- */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  background: var(--color-cream);
+  color: var(--color-ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-yellow);
+  color: var(--color-ink);
+}
+
+/* Buttons get a chunky, "playhouse" shadow on hover */
+.btn-chunk {
+  border: 2px solid var(--color-ink);
+  box-shadow: var(--shadow-chunk);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.btn-chunk:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 0 5px 0 0 var(--color-ink);
+}
+
+.btn-chunk:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 0 var(--color-ink);
+}
+
+/* Card hover for tool tiles */
+.card-chunk {
+  border: 2px solid var(--color-ink);
+  box-shadow: var(--shadow-chunk);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.card-chunk:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 0 6px 0 0 var(--color-ink);
+}
+
+/* Subtle fade for advice swap, etc. */
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-rise {
+  animation: fade-rise 320ms ease both;
+}
+
+/* Visible focus that fits the playful palette */
+:where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--color-blue);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
