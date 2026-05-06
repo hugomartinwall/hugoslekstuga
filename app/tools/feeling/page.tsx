@@ -13,6 +13,8 @@ const softBg: Record<ToolColor, string> = {
   pink: "bg-pink-soft hover:bg-pink",
   green: "bg-green-soft hover:bg-green",
   purple: "bg-purple-soft hover:bg-purple",
+  orange: "bg-orange-soft hover:bg-orange",
+  teal: "bg-teal-soft hover:bg-teal",
 };
 
 const accentBg: Record<ToolColor, string> = {
@@ -22,6 +24,8 @@ const accentBg: Record<ToolColor, string> = {
   pink: "bg-pink",
   green: "bg-green",
   purple: "bg-purple",
+  orange: "bg-orange",
+  teal: "bg-teal",
 };
 
 const numberBg: Record<ToolColor, string> = {
@@ -31,6 +35,8 @@ const numberBg: Record<ToolColor, string> = {
   pink: "bg-pink text-ink",
   green: "bg-green text-cream",
   purple: "bg-purple text-cream",
+  orange: "bg-orange text-cream",
+  teal: "bg-teal text-cream",
 };
 
 export default function FeelingPage() {

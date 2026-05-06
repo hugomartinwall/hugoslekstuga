@@ -23,6 +23,10 @@
   --color-green-soft: #cce8d8;
   --color-purple: #9333ea;
   --color-purple-soft: #ead8fc;
+  --color-orange: #f97316;
+  --color-orange-soft: #fed7aa;
+  --color-teal: #0d9488;
+  --color-teal-soft: #b8f0e7;
 
   --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;

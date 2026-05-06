@@ -9,6 +9,8 @@ const colorBg: Record<Tool["color"], string> = {
   pink: "bg-pink-soft",
   green: "bg-green-soft",
   purple: "bg-purple-soft",
+  orange: "bg-orange-soft",
+  teal: "bg-teal-soft",
 };
 
 const colorAccent: Record<Tool["color"], string> = {
@@ -18,6 +20,8 @@ const colorAccent: Record<Tool["color"], string> = {
   pink: "bg-pink",
   green: "bg-green",
   purple: "bg-purple",
+  orange: "bg-orange",
+  teal: "bg-teal",
 };
 
 export default function ToolFrame({

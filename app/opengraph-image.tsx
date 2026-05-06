@@ -88,11 +88,12 @@ export default async function OGImage() {
           Small, useful browser tools.
         </div>
 
-        {/* Tool color row */}
+        {/* Tool color row — wraps to a second line as the toolset grows. */}
         <div
           style={{
             display: "flex",
-            gap: "16px",
+            flexWrap: "wrap",
+            gap: "12px",
             marginTop: "auto",
           }}
         >
@@ -103,17 +104,20 @@ export default async function OGImage() {
             { c: "#3fa66e", t: "focus" },
             { c: "#ff5a3c", t: "qr" },
             { c: "#9333ea", t: "read" },
+            { c: "#f97316", t: "roll" },
+            { c: "#0d9488", t: "palette" },
+            { c: "#3fa66e", t: "three" },
           ].map((p) => (
             <div
               key={p.t}
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "14px 26px",
+                padding: "12px 22px",
                 background: p.c,
                 border: "3px solid #1a1812",
                 borderRadius: "9999px",
-                fontSize: "26px",
+                fontSize: "24px",
                 fontWeight: 800,
                 color: p.c === "#ffc233" || p.c === "#ff7ab2" ? "#1a1812" : "#fbf6ee",
               }}

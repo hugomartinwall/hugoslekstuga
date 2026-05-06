@@ -4,7 +4,9 @@ export type ToolColor =
   | "yellow"
   | "pink"
   | "green"
-  | "purple";
+  | "purple"
+  | "orange"
+  | "teal";
 
 export type Tool = {
   slug: string;
@@ -70,6 +72,33 @@ export const tools: Tool[] = [
     color: "purple",
     emoji: "¶",
   },
+  {
+    slug: "roll",
+    title: "Roll",
+    tagline: "Can't decide? Let the wheel decide.",
+    description:
+      "Type a list of options, hit spin, and a colorful wheel picks one for you. For dinner choices, task order, friendly arguments — anything.",
+    color: "orange",
+    emoji: "◐",
+  },
+  {
+    slug: "palette",
+    title: "Palette",
+    tagline: "Find a palette that fits.",
+    description:
+      "Start from any color and get matching harmonies — complementary, analogous, triadic, split-complement — with contrast scores and one-click hex copy.",
+    color: "teal",
+    emoji: "◍",
+  },
+  {
+    slug: "three",
+    title: "Three Good Things",
+    tagline: "What went right today?",
+    description:
+      "End your day by jotting down three good things and (if you want) why each happened. A research-backed gratitude habit. Stays on your device, builds a streak.",
+    color: "green",
+    emoji: "✿",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {
@@ -115,5 +144,17 @@ export const colorClasses: Record<
     bgSoft: "bg-purple-soft",
     text: "text-purple",
     ring: "ring-purple",
+  },
+  orange: {
+    bg: "bg-orange",
+    bgSoft: "bg-orange-soft",
+    text: "text-orange",
+    ring: "ring-orange",
+  },
+  teal: {
+    bg: "bg-teal",
+    bgSoft: "bg-teal-soft",
+    text: "text-teal",
+    ring: "ring-teal",
   },
 };
