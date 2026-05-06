@@ -99,6 +99,33 @@ export const tools: Tool[] = [
     color: "green",
     emoji: "✿",
   },
+  {
+    slug: "breathe",
+    title: "Breathe",
+    tagline: "A guided breath, in your browser.",
+    description:
+      "Pick a pattern — box, 4-7-8, calm — and let a slow, full-screen circle pace your breath. A minute or two is often enough.",
+    color: "blue",
+    emoji: "⊚",
+  },
+  {
+    slug: "tip",
+    title: "Tip",
+    tagline: "Sort the bill, fast.",
+    description:
+      "Type the total, pick a tip, and split it among however many of you. Round up if you feel generous. No accounts, no math in your head.",
+    color: "yellow",
+    emoji: "⊕",
+  },
+  {
+    slug: "until",
+    title: "Time Until",
+    tagline: "Count down to the things you're waiting for.",
+    description:
+      "Add the dates that matter — birthdays, deadlines, trips, the long weekend. Watch them tick down. Stays on your device.",
+    color: "purple",
+    emoji: "◷",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

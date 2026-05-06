@@ -107,6 +107,9 @@ export default async function OGImage() {
             { c: "#f97316", t: "roll" },
             { c: "#0d9488", t: "palette" },
             { c: "#3fa66e", t: "three" },
+            { c: "#4f66f2", t: "breathe" },
+            { c: "#ffc233", t: "tip" },
+            { c: "#9333ea", t: "until" },
           ].map((p) => (
             <div
               key={p.t}
