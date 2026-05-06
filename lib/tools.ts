@@ -1,4 +1,10 @@
-export type ToolColor = "tomato" | "blue" | "yellow" | "pink" | "green";
+export type ToolColor =
+  | "tomato"
+  | "blue"
+  | "yellow"
+  | "pink"
+  | "green"
+  | "purple";
 
 export type Tool = {
   slug: string;
@@ -36,6 +42,33 @@ export const tools: Tool[] = [
       "Drop in a file, pick a target format, get the converted file back. Everything happens in your browser — your files never leave your device.",
     color: "blue",
     emoji: "⇄",
+  },
+  {
+    slug: "focus",
+    title: "Focus",
+    tagline: "Set an intention. Start the timer.",
+    description:
+      "Name what you're working on, pick a length, and let the page hold space for it. A small, calm timer with a soft chime when time's up.",
+    color: "green",
+    emoji: "◴",
+  },
+  {
+    slug: "qr",
+    title: "QR Code",
+    tagline: "Make a QR for anything.",
+    description:
+      "Type a URL or a few lines of text and a QR code appears. Download as PNG or SVG. No tracking pixels, no sign-up.",
+    color: "tomato",
+    emoji: "▦",
+  },
+  {
+    slug: "read",
+    title: "Read",
+    tagline: "What's in your text?",
+    description:
+      "Paste anything you've written and see word count, reading time, readability, and the words you lean on most. Useful for writers and editors.",
+    color: "purple",
+    emoji: "¶",
   },
 ];
 
@@ -76,5 +109,11 @@ export const colorClasses: Record<
     bgSoft: "bg-green-soft",
     text: "text-green",
     ring: "ring-green",
+  },
+  purple: {
+    bg: "bg-purple",
+    bgSoft: "bg-purple-soft",
+    text: "text-purple",
+    ring: "ring-purple",
   },
 };

@@ -7,6 +7,7 @@ const colorBg: Record<Tool["color"], string> = {
   yellow: "bg-yellow-soft",
   pink: "bg-pink-soft",
   green: "bg-green-soft",
+  purple: "bg-purple-soft",
 };
 
 const colorAccent: Record<Tool["color"], string> = {
@@ -15,6 +16,7 @@ const colorAccent: Record<Tool["color"], string> = {
   yellow: "bg-yellow",
   pink: "bg-pink",
   green: "bg-green",
+  purple: "bg-purple",
 };
 
 export default function ToolCard({ tool }: { tool: Tool }) {

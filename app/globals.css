@@ -21,6 +21,8 @@
   --color-pink-soft: #ffd6e7;
   --color-green: #3fa66e;
   --color-green-soft: #cce8d8;
+  --color-purple: #9333ea;
+  --color-purple-soft: #ead8fc;
 
   --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
