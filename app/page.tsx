@@ -6,9 +6,6 @@ export default function Home() {
       {/* Hero — quietly sets the stage so the Map below can take over. */}
       <section className="py-14 sm:py-20 lg:py-20">
         <div className="flex max-w-3xl flex-col gap-5">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border-2 border-ink bg-yellow px-3 py-1 text-xs font-bold uppercase tracking-wide">
-            <span className="pulse-dot h-2 w-2 rounded-full bg-ink" aria-hidden /> a small playhouse
-          </span>
           <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-ink sm:text-6xl lg:text-7xl">
             Small,
             <br />
