@@ -1,0 +1,97 @@
+// Theme assignment for the Map view. Each tool gets exactly one cluster — the
+// best single description of what it is for. Cross-cluster edges in lib/links.ts
+// are intentional bridges, not theme membership.
+
+export type ClusterId = "files" | "writing" | "time" | "wellness" | "creative";
+
+export type Cluster = {
+  id: ClusterId;
+  label: string;
+  /** Hex used to tint intra-cluster edges and the legend pill. */
+  color: string;
+  description: string;
+};
+
+export const CLUSTERS: Record<ClusterId, Cluster> = {
+  files: {
+    id: "files",
+    label: "Files",
+    color: "#f97316",
+    description: "Sharing & shaping documents",
+  },
+  writing: {
+    id: "writing",
+    label: "Writing",
+    color: "#4f66f2",
+    description: "Text in, text out",
+  },
+  time: {
+    id: "time",
+    label: "Time",
+    color: "#ffc233",
+    description: "Pacing & coordination",
+  },
+  wellness: {
+    id: "wellness",
+    label: "Wellness",
+    color: "#3fa66e",
+    description: "Body & mind",
+  },
+  creative: {
+    id: "creative",
+    label: "Creative",
+    color: "#ff7ab2",
+    description: "Visual & generative",
+  },
+};
+
+export const CLUSTER_ORDER: ClusterId[] = [
+  "files",
+  "writing",
+  "time",
+  "wellness",
+  "creative",
+];
+
+export const TOOL_CLUSTER: Record<string, ClusterId> = {
+  // Files
+  convert: "files",
+  pdf: "files",
+  squeeze: "files",
+  qr: "files",
+  // Writing
+  read: "writing",
+  markdown: "writing",
+  diff: "writing",
+  slug: "writing",
+  emoji: "writing",
+  // Time
+  focus: "time",
+  talk: "time",
+  until: "time",
+  zones: "time",
+  // Wellness
+  feeling: "wellness",
+  three: "wellness",
+  breathe: "wellness",
+  sleep: "wellness",
+  stretch: "wellness",
+  advice: "wellness",
+  // Creative
+  palette: "creative",
+  sketch: "creative",
+  idea: "creative",
+  roll: "creative",
+  memory: "creative",
+  tip: "creative",
+};
+
+export function clusterFor(slug: string): ClusterId | undefined {
+  return TOOL_CLUSTER[slug];
+}
+
+export function sameCluster(a: string, b: string): boolean {
+  const ca = TOOL_CLUSTER[a];
+  const cb = TOOL_CLUSTER[b];
+  return ca !== undefined && ca === cb;
+}

@@ -11,6 +11,12 @@ import {
 import { useRouter } from "next/navigation";
 import { tools, type Tool, type ToolColor } from "@/lib/tools";
 import { LINKS, neighboursOf } from "@/lib/links";
+import {
+  CLUSTERS,
+  CLUSTER_ORDER,
+  TOOL_CLUSTER,
+  type ClusterId,
+} from "@/lib/clusters";
 
 const COLOR_HEX: Record<ToolColor, string> = {
   tomato: "#ff5a3c",
@@ -41,9 +47,8 @@ type Node = {
   vx: number;
   vy: number;
   pinned: boolean;
-  phase: number; // wobble phase offset
-  entranceStart: number; // when this node should start its entrance
-  // Drag velocity tracking
+  phase: number;
+  entranceStart: number;
   dragVx: number;
   dragVy: number;
   dragLastT: number;
@@ -61,16 +66,38 @@ type Drag = {
   moved: boolean;
 };
 
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number; // 0..1, decays
+  color: string;
+  size: number;
+};
+
+type Ripple = {
+  x: number;
+  y: number;
+  start: number; // ms
+  color: string;
+};
+
 const NODE_R = 26;
+const SHADOW_DY = 4;
 const TARGET_DIST = 110;
 const SPRING_K = 0.05;
 const REPEL = 2800;
 const CENTER_PULL = 0.0035;
 const DAMPING = 0.85;
 const WOBBLE_FORCE = 0.05;
-const ENTRANCE_DURATION = 420; // ms per node
+const ENTRANCE_DURATION = 420;
 const ENTRANCE_STAGGER = 30;
-const CLICK_BOUNCE_MS = 180;
+const CLICK_BOUNCE_MS = 240;
+const RIPPLE_DURATION = 600;
+const PARTICLE_LIFE_DECAY = 0.022;
+const PARTICLE_GRAVITY = 0.06;
+const PARTICLE_FRICTION = 0.93;
 const MIN_W = 320;
 const MIN_H = 480;
 
@@ -80,12 +107,14 @@ export default function ToolMap() {
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
   const [, tick] = useState(0);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [activeCluster, setActiveCluster] = useState<ClusterId | null>(null);
   const [bouncingSlug, setBouncingSlug] = useState<string | null>(null);
   const nodesRef = useRef<Node[]>([]);
+  const particlesRef = useRef<Particle[]>([]);
+  const ripplesRef = useRef<Ripple[]>([]);
   const dragRef = useRef<Drag | null>(null);
   const initializedRef = useRef(false);
   const reduceMotionRef = useRef(false);
-  const startTimeRef = useRef<number>(0);
 
   const nodeBySlug = useRef<Map<string, Node>>(new Map());
 
@@ -95,7 +124,6 @@ export default function ToolMap() {
     return m;
   }, []);
 
-  // Initial measure + resize observer.
   useLayoutEffect(() => {
     if (!containerRef.current) return;
     const measure = () => {
@@ -110,14 +138,12 @@ export default function ToolMap() {
     return () => ro.disconnect();
   }, []);
 
-  // Initialize nodes once.
   useEffect(() => {
     if (initializedRef.current) return;
     if (size.w <= MIN_W && size.h <= MIN_H) return;
     initNodes(size.w, size.h);
   }, [size]);
 
-  // Detect reduced motion preference.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -136,8 +162,6 @@ export default function ToolMap() {
     const now = performance.now();
     nodesRef.current = tools.map((t, i) => {
       const angle = (i / tools.length) * Math.PI * 2;
-      // Start near center with small jitter — the entrance scale-in plus
-      // simulation forces will push them out.
       return {
         tool: t,
         x: cx + Math.cos(angle) * (r * 0.2) + (Math.random() - 0.5) * 20,
@@ -155,20 +179,19 @@ export default function ToolMap() {
       };
     });
     nodeBySlug.current = new Map(nodesRef.current.map((n) => [n.tool.slug, n]));
+    particlesRef.current = [];
+    ripplesRef.current = [];
     initializedRef.current = true;
-    startTimeRef.current = now;
     tick((c) => c + 1);
   }
 
-  // Simulation loop.
+  // Simulation loop: physics + particles + ripples.
   useEffect(() => {
     if (!initializedRef.current) return;
     let raf = 0;
-    let settledFrames = 0;
-
     const loop = () => {
       const wobbleAmplitude = reduceMotionRef.current ? 0 : WOBBLE_FORCE;
-      const moved = step(
+      step(
         nodesRef.current,
         nodeBySlug.current,
         LINKS,
@@ -177,18 +200,24 @@ export default function ToolMap() {
         wobbleAmplitude,
         dragRef.current === null,
       );
-      if (moved < 0.5 && dragRef.current === null) {
-        settledFrames++;
-      } else {
-        settledFrames = 0;
+      // Tick particles.
+      const ps = particlesRef.current;
+      for (let i = ps.length - 1; i >= 0; i--) {
+        const p = ps[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= PARTICLE_FRICTION;
+        p.vy *= PARTICLE_FRICTION;
+        p.vy += PARTICLE_GRAVITY;
+        p.life -= PARTICLE_LIFE_DECAY;
+        if (p.life <= 0) ps.splice(i, 1);
       }
-      // Always re-render — wobble keeps things subtly alive. But if the user
-      // really wants it still (reduce-motion), pause after settling.
-      if (reduceMotionRef.current && settledFrames > 200) {
-        // skip re-render
-      } else {
-        tick((c) => c + 1);
-      }
+      // Cull old ripples.
+      const now = performance.now();
+      ripplesRef.current = ripplesRef.current.filter(
+        (r) => now - r.start < RIPPLE_DURATION,
+      );
+      tick((c) => c + 1);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -245,10 +274,9 @@ export default function ToolMap() {
       const newX = clamp(localX - drag.offsetX, NODE_R, size.w - NODE_R);
       const newY = clamp(localY - drag.offsetY, NODE_R, size.h - NODE_R);
 
-      // Track velocity for momentum on release.
       const now = performance.now();
       const dt = Math.max(8, now - node.dragLastT);
-      node.dragVx = ((newX - node.dragLastX) / dt) * 16; // px/frame approx
+      node.dragVx = ((newX - node.dragLastX) / dt) * 16;
       node.dragVy = ((newY - node.dragLastY) / dt) * 16;
       node.dragLastT = now;
       node.dragLastX = newX;
@@ -259,6 +287,34 @@ export default function ToolMap() {
     },
     [size.w, size.h],
   );
+
+  const triggerClickFx = useCallback((slug: string) => {
+    const node = nodeBySlug.current.get(slug);
+    if (!node) return;
+    const color = COLOR_HEX[node.tool.color];
+    // Ripple
+    ripplesRef.current.push({
+      x: node.x,
+      y: node.y,
+      start: performance.now(),
+      color,
+    });
+    // Particles
+    const count = 10;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const speed = 2.5 + Math.random() * 3;
+      particlesRef.current.push({
+        x: node.x,
+        y: node.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 1, // slight upward bias
+        life: 1,
+        color,
+        size: 3 + Math.random() * 3,
+      });
+    }
+  }, []);
 
   const onSvgPointerUp = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
@@ -271,21 +327,20 @@ export default function ToolMap() {
       const node = nodeBySlug.current.get(drag.slug);
       if (node) {
         node.pinned = false;
-        // Carry the drag's velocity into the simulation.
         node.vx = clamp(node.dragVx, -25, 25);
         node.vy = clamp(node.dragVy, -25, 25);
       }
       const wasClick = !drag.moved;
       dragRef.current = null;
       if (wasClick) {
-        // Click bounce, then navigate.
         setBouncingSlug(drag.slug);
+        triggerClickFx(drag.slug);
         window.setTimeout(() => {
           router.push(`/tools/${drag.slug}`);
         }, CLICK_BOUNCE_MS);
       }
     },
-    [router],
+    [router, triggerClickFx],
   );
 
   const reset = useCallback(() => {
@@ -325,16 +380,42 @@ export default function ToolMap() {
             const d = Math.sqrt(dx * dx + dy * dy);
             const stretch = Math.max(0, (d - TARGET_DIST) / TARGET_DIST);
             const tension = Math.min(1, stretch * 1.6);
-            // Combine hover + tension styling.
+            const cFrom = TOOL_CLUSTER[from];
+            const cTo = TOOL_CLUSTER[to];
+            const sameTheme = cFrom !== undefined && cFrom === cTo;
+            const tintHex = sameTheme && cFrom ? CLUSTERS[cFrom].color : null;
+
+            // Cluster filter dimming
+            const clusterMatchA = activeCluster === null || cFrom === activeCluster;
+            const clusterMatchB = activeCluster === null || cTo === activeCluster;
+            const clusterMatchBoth = clusterMatchA && clusterMatchB;
+            const clusterMatchEither = clusterMatchA || clusterMatchB;
+            const clusterDim =
+              activeCluster !== null
+                ? clusterMatchBoth
+                  ? 1
+                  : clusterMatchEither
+                    ? 0.18
+                    : 0.05
+                : 1;
+
             let stroke: string;
             let width: number;
+            let baseOpacity: number;
             if (isHi) {
               stroke = "#1a1812";
               width = 2;
+              baseOpacity = 1;
+            } else if (tintHex) {
+              const op = 0.32 + tension * 0.45;
+              stroke = tintHex;
+              width = 1.6 + tension * 2.2;
+              baseOpacity = op;
             } else {
-              const baseOpacity = 0.16 + tension * 0.55;
-              stroke = `rgba(26, 24, 18, ${baseOpacity.toFixed(3)})`;
-              width = 1.3 + tension * 2.5;
+              const op = 0.14 + tension * 0.55;
+              stroke = `rgba(26, 24, 18, 1)`;
+              width = 1.2 + tension * 2.2;
+              baseOpacity = op;
             }
             return (
               <line
@@ -347,7 +428,30 @@ export default function ToolMap() {
                 strokeWidth={width}
                 strokeLinecap="round"
                 pointerEvents="none"
-                opacity={ent}
+                opacity={ent * baseOpacity * clusterDim}
+              />
+            );
+          })}
+        </g>
+
+        {/* Click ripples (under nodes) */}
+        <g pointerEvents="none">
+          {ripplesRef.current.map((r, i) => {
+            const t = (now - r.start) / RIPPLE_DURATION;
+            if (t >= 1) return null;
+            const eased = 1 - Math.pow(1 - t, 2);
+            const radius = NODE_R + eased * NODE_R * 2.5;
+            const opacity = (1 - t) * 0.6;
+            return (
+              <circle
+                key={`ripple-${i}-${r.start}`}
+                cx={r.x}
+                cy={r.y}
+                r={radius}
+                fill="none"
+                stroke={r.color}
+                strokeWidth={3 * (1 - t * 0.6)}
+                opacity={opacity}
               />
             );
           })}
@@ -358,12 +462,16 @@ export default function ToolMap() {
           {nodesRef.current.map((n) => {
             const isHovered = hovered === n.tool.slug;
             const isNeighbour = hoveredNeighbours?.has(n.tool.slug);
-            const dim = hovered !== null && !isHovered && !isNeighbour;
+            const cluster = TOOL_CLUSTER[n.tool.slug];
+            const dimByHover = hovered !== null && !isHovered && !isNeighbour;
+            const dimByCluster =
+              activeCluster !== null && cluster !== activeCluster;
+            const opacity = dimByCluster ? 0.28 : dimByHover ? 0.45 : 1;
             const entrance = getEntrance(n, now);
             const isBouncing = bouncingSlug === n.tool.slug;
             const baseScale = entrance;
             const hoverScale = isHovered ? 1.12 : 1;
-            const bounceScale = isBouncing ? 1.28 : 1;
+            const bounceScale = isBouncing ? 1.3 : 1;
             const scale = baseScale * hoverScale * bounceScale;
             return (
               <g
@@ -374,10 +482,8 @@ export default function ToolMap() {
                 onPointerLeave={() => setHovered((h) => (h === n.tool.slug ? null : h))}
                 style={{
                   cursor: dragRef.current ? "grabbing" : "pointer",
-                  opacity: dim ? 0.4 : 1,
-                  transition: "opacity 180ms ease",
-                  transformOrigin: "center",
-                  transformBox: "fill-box",
+                  opacity,
+                  transition: "opacity 220ms ease",
                 }}
                 tabIndex={0}
                 role="button"
@@ -386,12 +492,21 @@ export default function ToolMap() {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     setBouncingSlug(n.tool.slug);
+                    triggerClickFx(n.tool.slug);
                     window.setTimeout(() => {
                       router.push(`/tools/${n.tool.slug}`);
                     }, CLICK_BOUNCE_MS);
                   }
                 }}
               >
+                {/* Solid drop shadow — chunky brand style. */}
+                <circle
+                  cx={0}
+                  cy={SHADOW_DY}
+                  r={NODE_R}
+                  fill="#1a1812"
+                  opacity={0.85}
+                />
                 <circle
                   r={NODE_R}
                   fill={COLOR_HEX[n.tool.color]}
@@ -412,7 +527,7 @@ export default function ToolMap() {
                   <g pointerEvents="none">
                     <rect
                       x={-90}
-                      y={NODE_R + 12}
+                      y={NODE_R + 14}
                       width={180}
                       height={48}
                       rx={10}
@@ -420,7 +535,7 @@ export default function ToolMap() {
                     />
                     <text
                       x={0}
-                      y={NODE_R + 30}
+                      y={NODE_R + 32}
                       textAnchor="middle"
                       fill="#fbf6ee"
                       fontSize={13}
@@ -431,7 +546,7 @@ export default function ToolMap() {
                     </text>
                     <text
                       x={0}
-                      y={NODE_R + 48}
+                      y={NODE_R + 50}
                       textAnchor="middle"
                       fill="rgba(251, 246, 238, 0.75)"
                       fontSize={11}
@@ -444,8 +559,25 @@ export default function ToolMap() {
             );
           })}
         </g>
+
+        {/* Particles (over nodes) */}
+        <g pointerEvents="none">
+          {particlesRef.current.map((p, i) => (
+            <circle
+              key={i}
+              cx={p.x}
+              cy={p.y}
+              r={p.size * Math.max(0, p.life)}
+              fill={p.color}
+              stroke="#1a1812"
+              strokeWidth={1}
+              opacity={Math.max(0, p.life)}
+            />
+          ))}
+        </g>
       </svg>
 
+      {/* Top-right control */}
       <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-between gap-3 px-3 sm:px-5">
         <p className="pointer-events-none rounded-full border-2 border-ink bg-cream/90 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
           Drag a tool · click to open
@@ -458,6 +590,40 @@ export default function ToolMap() {
           ↻ Re-cluster
         </button>
       </div>
+
+      {/* Cluster legend */}
+      <div className="absolute inset-x-0 bottom-3 flex flex-wrap justify-center gap-1.5 px-3">
+        {CLUSTER_ORDER.map((id) => {
+          const c = CLUSTERS[id];
+          const active = activeCluster === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() =>
+                setActiveCluster((cur) => (cur === id ? null : id))
+              }
+              className="rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-all"
+              style={{
+                background: active ? c.color : "rgba(251,246,238,0.92)",
+                color: active
+                  ? id === "time" || id === "creative"
+                    ? "#1a1812"
+                    : "#fbf6ee"
+                  : "#1a1812",
+                boxShadow: active ? "0 3px 0 0 #1a1812" : "none",
+                transform: active ? "translateY(-1px)" : "none",
+              }}
+            >
+              <span
+                className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
+                style={{ background: c.color, border: "1px solid #1a1812" }}
+              />
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -466,7 +632,6 @@ function getEntrance(n: Node, now: number): number {
   const t = (now - n.entranceStart) / ENTRANCE_DURATION;
   if (t <= 0) return 0;
   if (t >= 1) return 1;
-  // ease-out cubic
   return 1 - Math.pow(1 - t, 3);
 }
 
@@ -482,7 +647,6 @@ function step(
   if (nodes.length === 0) return 0;
   const now = performance.now();
 
-  // Repulsion (O(n²)).
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
       const a = nodes[i];
@@ -505,7 +669,6 @@ function step(
     }
   }
 
-  // Springs along edges.
   for (const [from, to] of links) {
     const a = byId.get(from);
     const b = byId.get(to);
@@ -526,7 +689,6 @@ function step(
     }
   }
 
-  // Centring + wobble + damping + integration.
   const cx = width / 2;
   const cy = height / 2;
   const wobbleT = now * 0.0008;
