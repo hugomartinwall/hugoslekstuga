@@ -49,6 +49,9 @@ type Node = {
   pinned: boolean;
   phase: number;
   entranceStart: number;
+  hasSparkled: boolean;
+  /** Smoothed display lean angle, in degrees. */
+  lean: number;
   dragVx: number;
   dragVy: number;
   dragLastT: number;
@@ -71,15 +74,20 @@ type Particle = {
   y: number;
   vx: number;
   vy: number;
-  life: number; // 0..1, decays
+  life: number;
   color: string;
   size: number;
+  /** click confetti uses gravity; entrance sparkles don't. */
+  kind: "click" | "sparkle";
 };
 
 type Ripple = {
   x: number;
   y: number;
-  start: number; // ms
+  /** ms (performance.now) */
+  start: number;
+  /** Stagger relative to start. */
+  delay: number;
   color: string;
 };
 
@@ -94,10 +102,20 @@ const WOBBLE_FORCE = 0.05;
 const ENTRANCE_DURATION = 420;
 const ENTRANCE_STAGGER = 30;
 const CLICK_BOUNCE_MS = 240;
-const RIPPLE_DURATION = 600;
+const RIPPLE_DURATION = 700;
+const RIPPLE_COUNT = 3;
+const RIPPLE_STAGGER_MS = 110;
 const PARTICLE_LIFE_DECAY = 0.022;
 const PARTICLE_GRAVITY = 0.06;
 const PARTICLE_FRICTION = 0.93;
+const SPARKLE_LIFE_DECAY = 0.045;
+const SPARKLE_FRICTION = 0.9;
+const CURSOR_MAGNET_RADIUS = 150;
+const CURSOR_MAGNET_FORCE = 0.18;
+const RECLUSTER_BURST_SPEED = 9;
+const TILT_VELOCITY_GAIN = 1.4;
+const TILT_MAX_DEG = 16;
+const TILT_LERP = 0.22;
 const MIN_W = 320;
 const MIN_H = 480;
 
@@ -113,6 +131,8 @@ export default function ToolMap() {
   const particlesRef = useRef<Particle[]>([]);
   const ripplesRef = useRef<Ripple[]>([]);
   const dragRef = useRef<Drag | null>(null);
+  /** Cursor position over the SVG (null when outside or while dragging). */
+  const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const initializedRef = useRef(false);
   const reduceMotionRef = useRef(false);
 
@@ -141,7 +161,7 @@ export default function ToolMap() {
   useEffect(() => {
     if (initializedRef.current) return;
     if (size.w <= MIN_W && size.h <= MIN_H) return;
-    initNodes(size.w, size.h);
+    initNodes(size.w, size.h, false);
   }, [size]);
 
   useEffect(() => {
@@ -155,22 +175,25 @@ export default function ToolMap() {
     return () => mq.removeEventListener("change", listener);
   }, []);
 
-  function initNodes(w: number, h: number) {
+  function initNodes(w: number, h: number, burst: boolean) {
     const cx = w / 2;
     const cy = h / 2;
-    const r = Math.min(w, h) * 0.28;
+    const burstSpeed = burst ? RECLUSTER_BURST_SPEED : 1.5;
+    const innerJitter = burst ? 8 : 20;
     const now = performance.now();
     nodesRef.current = tools.map((t, i) => {
       const angle = (i / tools.length) * Math.PI * 2;
       return {
         tool: t,
-        x: cx + Math.cos(angle) * (r * 0.2) + (Math.random() - 0.5) * 20,
-        y: cy + Math.sin(angle) * (r * 0.2) + (Math.random() - 0.5) * 20,
-        vx: Math.cos(angle) * 1.5,
-        vy: Math.sin(angle) * 1.5,
+        x: cx + (Math.random() - 0.5) * innerJitter,
+        y: cy + (Math.random() - 0.5) * innerJitter,
+        vx: Math.cos(angle) * burstSpeed,
+        vy: Math.sin(angle) * burstSpeed,
         pinned: false,
         phase: Math.random() * Math.PI * 2,
         entranceStart: now + i * ENTRANCE_STAGGER,
+        hasSparkled: false,
+        lean: 0,
         dragVx: 0,
         dragVy: 0,
         dragLastT: 0,
@@ -185,7 +208,7 @@ export default function ToolMap() {
     tick((c) => c + 1);
   }
 
-  // Simulation loop: physics + particles + ripples.
+  // Simulation loop.
   useEffect(() => {
     if (!initializedRef.current) return;
     let raf = 0;
@@ -199,30 +222,96 @@ export default function ToolMap() {
         size.h,
         wobbleAmplitude,
         dragRef.current === null,
+        cursorRef.current,
+        dragRef.current?.slug,
       );
-      // Tick particles.
+
+      // Particles.
       const ps = particlesRef.current;
       for (let i = ps.length - 1; i >= 0; i--) {
         const p = ps[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.vx *= PARTICLE_FRICTION;
-        p.vy *= PARTICLE_FRICTION;
-        p.vy += PARTICLE_GRAVITY;
-        p.life -= PARTICLE_LIFE_DECAY;
+        if (p.kind === "click") {
+          p.vx *= PARTICLE_FRICTION;
+          p.vy *= PARTICLE_FRICTION;
+          p.vy += PARTICLE_GRAVITY;
+          p.life -= PARTICLE_LIFE_DECAY;
+        } else {
+          p.vx *= SPARKLE_FRICTION;
+          p.vy *= SPARKLE_FRICTION;
+          p.life -= SPARKLE_LIFE_DECAY;
+        }
         if (p.life <= 0) ps.splice(i, 1);
       }
+
       // Cull old ripples.
       const now = performance.now();
       ripplesRef.current = ripplesRef.current.filter(
-        (r) => now - r.start < RIPPLE_DURATION,
+        (r) => now - r.start - r.delay < RIPPLE_DURATION,
       );
+
+      // Sparkle on entrance landing — once per node, when entrance crosses 1.
+      for (const n of nodesRef.current) {
+        if (n.hasSparkled) continue;
+        const e = getEntrance(n, now);
+        if (e >= 1) {
+          n.hasSparkled = true;
+          emitSparkle(particlesRef.current, n.x, n.y);
+        }
+      }
+
       tick((c) => c + 1);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   }, [size]);
+
+  const onCanvasPointerMove = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        cursorRef.current = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        };
+      }
+
+      // Continue handling drag move if a drag is active.
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (e.pointerId !== drag.pointerId) return;
+      const node = nodeBySlug.current.get(drag.slug);
+      if (!node || !rect) return;
+      const localX = e.clientX - rect.left;
+      const localY = e.clientY - rect.top;
+      if (
+        Math.abs(localX - drag.startX) > 8 ||
+        Math.abs(localY - drag.startY) > 8
+      ) {
+        drag.moved = true;
+      }
+      const newX = clamp(localX - drag.offsetX, NODE_R, size.w - NODE_R);
+      const newY = clamp(localY - drag.offsetY, NODE_R, size.h - NODE_R);
+
+      const now = performance.now();
+      const dt = Math.max(8, now - node.dragLastT);
+      node.dragVx = ((newX - node.dragLastX) / dt) * 16;
+      node.dragVy = ((newY - node.dragLastY) / dt) * 16;
+      node.dragLastT = now;
+      node.dragLastX = newX;
+      node.dragLastY = newY;
+
+      node.x = newX;
+      node.y = newY;
+    },
+    [size.w, size.h],
+  );
+
+  const onCanvasPointerLeave = useCallback(() => {
+    cursorRef.current = null;
+  }, []);
 
   const onSvgPointerDown = useCallback(
     (e: React.PointerEvent<SVGGElement>, slug: string) => {
@@ -255,63 +344,37 @@ export default function ToolMap() {
     [],
   );
 
-  const onSvgPointerMove = useCallback(
-    (e: React.PointerEvent<SVGSVGElement>) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      if (e.pointerId !== drag.pointerId) return;
-      const node = nodeBySlug.current.get(drag.slug);
-      if (!node) return;
-      const rect = containerRef.current!.getBoundingClientRect();
-      const localX = e.clientX - rect.left;
-      const localY = e.clientY - rect.top;
-      if (
-        Math.abs(localX - drag.startX) > 8 ||
-        Math.abs(localY - drag.startY) > 8
-      ) {
-        drag.moved = true;
-      }
-      const newX = clamp(localX - drag.offsetX, NODE_R, size.w - NODE_R);
-      const newY = clamp(localY - drag.offsetY, NODE_R, size.h - NODE_R);
-
-      const now = performance.now();
-      const dt = Math.max(8, now - node.dragLastT);
-      node.dragVx = ((newX - node.dragLastX) / dt) * 16;
-      node.dragVy = ((newY - node.dragLastY) / dt) * 16;
-      node.dragLastT = now;
-      node.dragLastX = newX;
-      node.dragLastY = newY;
-
-      node.x = newX;
-      node.y = newY;
-    },
-    [size.w, size.h],
-  );
-
   const triggerClickFx = useCallback((slug: string) => {
     const node = nodeBySlug.current.get(slug);
     if (!node) return;
     const color = COLOR_HEX[node.tool.color];
-    // Ripple
-    ripplesRef.current.push({
-      x: node.x,
-      y: node.y,
-      start: performance.now(),
-      color,
-    });
-    // Particles
-    const count = 10;
+    const now = performance.now();
+
+    // Multi-ring ripple.
+    for (let i = 0; i < RIPPLE_COUNT; i++) {
+      ripplesRef.current.push({
+        x: node.x,
+        y: node.y,
+        start: now,
+        delay: i * RIPPLE_STAGGER_MS,
+        color,
+      });
+    }
+
+    // Confetti.
+    const count = 12;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-      const speed = 2.5 + Math.random() * 3;
+      const speed = 2.5 + Math.random() * 3.5;
       particlesRef.current.push({
         x: node.x,
         y: node.y,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 1, // slight upward bias
+        vy: Math.sin(angle) * speed - 1.2,
         life: 1,
         color,
         size: 3 + Math.random() * 3,
+        kind: "click",
       });
     }
   }, []);
@@ -345,7 +408,7 @@ export default function ToolMap() {
 
   const reset = useCallback(() => {
     initializedRef.current = false;
-    initNodes(size.w, size.h);
+    initNodes(size.w, size.h, true);
   }, [size.w, size.h]);
 
   const hoveredNeighbours = hovered ? (neighbourMap.get(hovered) ?? new Set()) : null;
@@ -360,7 +423,8 @@ export default function ToolMap() {
       <svg
         width={size.w}
         height={size.h}
-        onPointerMove={onSvgPointerMove}
+        onPointerMove={onCanvasPointerMove}
+        onPointerLeave={onCanvasPointerLeave}
         onPointerUp={onSvgPointerUp}
         onPointerCancel={onSvgPointerUp}
         style={{ touchAction: "none", userSelect: "none" }}
@@ -385,7 +449,6 @@ export default function ToolMap() {
             const sameTheme = cFrom !== undefined && cFrom === cTo;
             const tintHex = sameTheme && cFrom ? CLUSTERS[cFrom].color : null;
 
-            // Cluster filter dimming
             const clusterMatchA = activeCluster === null || cFrom === activeCluster;
             const clusterMatchB = activeCluster === null || cTo === activeCluster;
             const clusterMatchBoth = clusterMatchA && clusterMatchB;
@@ -434,17 +497,17 @@ export default function ToolMap() {
           })}
         </g>
 
-        {/* Click ripples (under nodes) */}
+        {/* Click ripples */}
         <g pointerEvents="none">
           {ripplesRef.current.map((r, i) => {
-            const t = (now - r.start) / RIPPLE_DURATION;
-            if (t >= 1) return null;
+            const t = (now - r.start - r.delay) / RIPPLE_DURATION;
+            if (t < 0 || t >= 1) return null;
             const eased = 1 - Math.pow(1 - t, 2);
-            const radius = NODE_R + eased * NODE_R * 2.5;
-            const opacity = (1 - t) * 0.6;
+            const radius = NODE_R + eased * NODE_R * 2.8;
+            const opacity = (1 - t) * 0.55;
             return (
               <circle
-                key={`ripple-${i}-${r.start}`}
+                key={`ripple-${i}-${r.start}-${r.delay}`}
                 cx={r.x}
                 cy={r.y}
                 r={radius}
@@ -469,14 +532,25 @@ export default function ToolMap() {
             const opacity = dimByCluster ? 0.28 : dimByHover ? 0.45 : 1;
             const entrance = getEntrance(n, now);
             const isBouncing = bouncingSlug === n.tool.slug;
+            const isDragging = dragRef.current?.slug === n.tool.slug;
             const baseScale = entrance;
             const hoverScale = isHovered ? 1.12 : 1;
             const bounceScale = isBouncing ? 1.3 : 1;
             const scale = baseScale * hoverScale * bounceScale;
+
+            // Velocity-driven lean: smoothly approach the target tilt.
+            const sourceVx = isDragging ? n.dragVx : n.vx;
+            const targetLean = clamp(
+              sourceVx * TILT_VELOCITY_GAIN,
+              -TILT_MAX_DEG,
+              TILT_MAX_DEG,
+            );
+            n.lean = n.lean + (targetLean - n.lean) * TILT_LERP;
+
             return (
               <g
                 key={n.tool.slug}
-                transform={`translate(${n.x}, ${n.y}) scale(${scale})`}
+                transform={`translate(${n.x}, ${n.y}) rotate(${n.lean.toFixed(2)}) scale(${scale})`}
                 onPointerDown={(e) => onSvgPointerDown(e, n.tool.slug)}
                 onPointerEnter={() => setHovered(n.tool.slug)}
                 onPointerLeave={() => setHovered((h) => (h === n.tool.slug ? null : h))}
@@ -499,14 +573,8 @@ export default function ToolMap() {
                   }
                 }}
               >
-                {/* Solid drop shadow — chunky brand style. */}
-                <circle
-                  cx={0}
-                  cy={SHADOW_DY}
-                  r={NODE_R}
-                  fill="#1a1812"
-                  opacity={0.85}
-                />
+                {/* Solid drop shadow */}
+                <circle cx={0} cy={SHADOW_DY} r={NODE_R} fill="#1a1812" opacity={0.85} />
                 <circle
                   r={NODE_R}
                   fill={COLOR_HEX[n.tool.color]}
@@ -525,34 +593,37 @@ export default function ToolMap() {
                 </text>
                 {isHovered && entrance >= 1 && (
                   <g pointerEvents="none">
-                    <rect
-                      x={-90}
-                      y={NODE_R + 14}
-                      width={180}
-                      height={48}
-                      rx={10}
-                      fill="#1a1812"
-                    />
-                    <text
-                      x={0}
-                      y={NODE_R + 32}
-                      textAnchor="middle"
-                      fill="#fbf6ee"
-                      fontSize={13}
-                      fontWeight={800}
-                      style={{ fontFamily: "var(--font-display)" }}
-                    >
-                      {n.tool.title}
-                    </text>
-                    <text
-                      x={0}
-                      y={NODE_R + 50}
-                      textAnchor="middle"
-                      fill="rgba(251, 246, 238, 0.75)"
-                      fontSize={11}
-                    >
-                      {truncate(n.tool.tagline, 30)}
-                    </text>
+                    {/* Counter-rotate so the tooltip stays upright. */}
+                    <g transform={`rotate(${(-n.lean).toFixed(2)})`}>
+                      <rect
+                        x={-90}
+                        y={NODE_R + 14}
+                        width={180}
+                        height={48}
+                        rx={10}
+                        fill="#1a1812"
+                      />
+                      <text
+                        x={0}
+                        y={NODE_R + 32}
+                        textAnchor="middle"
+                        fill="#fbf6ee"
+                        fontSize={13}
+                        fontWeight={800}
+                        style={{ fontFamily: "var(--font-display)" }}
+                      >
+                        {n.tool.title}
+                      </text>
+                      <text
+                        x={0}
+                        y={NODE_R + 50}
+                        textAnchor="middle"
+                        fill="rgba(251, 246, 238, 0.75)"
+                        fontSize={11}
+                      >
+                        {truncate(n.tool.tagline, 30)}
+                      </text>
+                    </g>
                   </g>
                 )}
               </g>
@@ -569,15 +640,15 @@ export default function ToolMap() {
               cy={p.y}
               r={p.size * Math.max(0, p.life)}
               fill={p.color}
-              stroke="#1a1812"
-              strokeWidth={1}
+              stroke={p.kind === "click" ? "#1a1812" : "none"}
+              strokeWidth={p.kind === "click" ? 1 : 0}
               opacity={Math.max(0, p.life)}
             />
           ))}
         </g>
       </svg>
 
-      {/* Top-right control */}
+      {/* Top controls */}
       <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-between gap-3 px-3 sm:px-5">
         <p className="pointer-events-none rounded-full border-2 border-ink bg-cream/90 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
           Drag a tool · click to open
@@ -635,6 +706,24 @@ function getEntrance(n: Node, now: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
 
+function emitSparkle(particles: Particle[], x: number, y: number) {
+  const spokes = 6;
+  for (let i = 0; i < spokes; i++) {
+    const angle = (i / spokes) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+    const speed = 1.2 + Math.random() * 1.0;
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.85,
+      color: "#fbf6ee",
+      size: 2.5 + Math.random() * 1.5,
+      kind: "sparkle",
+    });
+  }
+}
+
 function step(
   nodes: Node[],
   byId: Map<string, Node>,
@@ -643,10 +732,13 @@ function step(
   height: number,
   wobbleAmp: number,
   applyWobble: boolean,
+  cursor: { x: number; y: number } | null,
+  draggedSlug: string | undefined,
 ): number {
   if (nodes.length === 0) return 0;
   const now = performance.now();
 
+  // Repulsion (O(n²)).
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
       const a = nodes[i];
@@ -669,6 +761,7 @@ function step(
     }
   }
 
+  // Springs.
   for (const [from, to] of links) {
     const a = byId.get(from);
     const b = byId.get(to);
@@ -686,6 +779,23 @@ function step(
     if (!b.pinned) {
       b.vx -= fx;
       b.vy -= fy;
+    }
+  }
+
+  // Cursor magnet — gentle attraction toward cursor for nearby unpinned nodes.
+  // Only when no drag is active (avoids fighting the user).
+  if (cursor !== null && draggedSlug === undefined) {
+    for (const n of nodes) {
+      if (n.pinned) continue;
+      const dx = cursor.x - n.x;
+      const dy = cursor.y - n.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > 8 && d < CURSOR_MAGNET_RADIUS) {
+        const t = 1 - d / CURSOR_MAGNET_RADIUS;
+        const f = CURSOR_MAGNET_FORCE * t * t;
+        n.vx += (dx / d) * f;
+        n.vy += (dy / d) * f;
+      }
     }
   }
 
