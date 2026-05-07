@@ -71,10 +71,15 @@ export default function SqueezePage() {
     }
   }, [file, naturalSize, maxLong, quality, format, resultUrl]);
 
-  // Auto-compress when settings change (after a file is selected).
+  // Auto-compress when settings change (after a file is selected). Debounced
+  // by 220 ms so dragging the size or quality slider doesn't recompress the
+  // image on every tick — for 4000-px screenshots that was visibly laggy.
   useEffect(() => {
     if (!file) return;
-    compress();
+    const id = window.setTimeout(() => {
+      compress();
+    }, 220);
+    return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, maxLong, quality, format]);
 

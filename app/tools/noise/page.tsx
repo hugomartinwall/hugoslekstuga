@@ -75,14 +75,25 @@ const LABELS: Record<NoiseId, { name: string; hint: string }> = {
   drone: { name: "Drone", hint: "A long, low note underneath." },
 };
 
+// Auto-stop options. The "off" option means "play forever".
+const AUTO_STOP_MIN_OPTIONS = [0, 15, 30, 45, 60, 90] as const;
+type AutoStopMin = (typeof AUTO_STOP_MIN_OPTIONS)[number];
+
+const FADE_SECONDS = 0.25;
+const MASTER_VOL = 0.7;
+
 export default function NoisePage() {
   const tool = findTool("noise")!;
   const [state, setState] = useState<State>(DEFAULT);
   const [playing, setPlaying] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [autoStopMin, setAutoStopMin] = useState<AutoStopMin>(0);
+  const [stopAt, setStopAt] = useState<number | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
   const ctxRef = useRef<AudioContext | null>(null);
   const channelsRef = useRef<Partial<Record<NoiseId, Channel>>>({});
   const masterRef = useRef<GainNode | null>(null);
+  const autoStopTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     try {
@@ -118,7 +129,9 @@ export default function NoisePage() {
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     ctxRef.current = ctx;
     const master = ctx.createGain();
-    master.gain.value = 0.7;
+    // Fade in from silence over FADE_SECONDS so users don't hear a click.
+    master.gain.value = 0.0001;
+    master.gain.exponentialRampToValueAtTime(MASTER_VOL, ctx.currentTime + FADE_SECONDS);
     master.connect(ctx.destination);
     masterRef.current = master;
 
@@ -158,23 +171,54 @@ export default function NoisePage() {
     channelsRef.current.drone = { source: droneOsc, gain: droneGain };
 
     setPlaying(true);
-  }, [playing, state]);
+    if (autoStopMin > 0) {
+      setStopAt(Date.now() + autoStopMin * 60_000);
+    } else {
+      setStopAt(null);
+    }
+  }, [playing, state, autoStopMin]);
 
   const stop = useCallback(() => {
+    const ctx = ctxRef.current;
+    const master = masterRef.current;
     const channels = channelsRef.current;
-    Object.values(channels).forEach((c) => {
+    if (autoStopTimerRef.current !== null) {
+      window.clearTimeout(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
+    if (ctx && master) {
+      // Fade master to silence over FADE_SECONDS, then close the context
+      // so the user doesn't hear a hard click on stop. Source nodes get
+      // stopped after the fade so the buffers don't get truncated mid-fade.
       try {
-        c?.source.stop();
+        master.gain.cancelScheduledValues(ctx.currentTime);
+        master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
+        master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + FADE_SECONDS);
       } catch {}
-    });
-    channelsRef.current = {};
-    if (ctxRef.current) {
-      try {
-        ctxRef.current.close();
-      } catch {}
-      ctxRef.current = null;
+      window.setTimeout(() => {
+        Object.values(channels).forEach((c) => {
+          try {
+            c?.source.stop();
+          } catch {}
+        });
+        channelsRef.current = {};
+        if (ctxRef.current) {
+          try {
+            ctxRef.current.close();
+          } catch {}
+          ctxRef.current = null;
+        }
+      }, FADE_SECONDS * 1000 + 30);
+    } else {
+      Object.values(channels).forEach((c) => {
+        try {
+          c?.source.stop();
+        } catch {}
+      });
+      channelsRef.current = {};
     }
     setPlaying(false);
+    setStopAt(null);
   }, []);
 
   useEffect(() => {
@@ -183,21 +227,52 @@ export default function NoisePage() {
     };
   }, [stop]);
 
+  // Auto-stop ticker — checks every second once a stopAt is set.
+  useEffect(() => {
+    if (stopAt === null) return;
+    const id = window.setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= stopAt) {
+        stop();
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [stopAt, stop]);
+
+  const remainingMs = stopAt !== null ? Math.max(0, stopAt - now) : null;
+  const remainingLabel =
+    remainingMs === null
+      ? null
+      : (() => {
+          const total = Math.ceil(remainingMs / 1000);
+          const m = Math.floor(total / 60);
+          const s = total % 60;
+          return `${m}:${String(s).padStart(2, "0")}`;
+        })();
+
   const ids: NoiseId[] = ["white", "pink", "brown", "drone"];
 
   return (
     <ToolFrame tool={tool}>
       <div className="flex flex-col gap-5">
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={playing ? stop : start}
-            className={`btn-chunk rounded-[var(--radius-button)] px-7 py-3 font-display text-base font-extrabold ${
-              playing ? "bg-tomato text-cream" : "bg-blue text-cream"
-            }`}
-          >
-            {playing ? "Stop" : "Play"}
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={playing ? stop : start}
+              className={`btn-chunk rounded-[var(--radius-button)] px-7 py-3 font-display text-base font-extrabold ${
+                playing ? "bg-tomato text-cream" : "bg-blue text-cream"
+              }`}
+            >
+              {playing ? "Stop" : "Play"}
+            </button>
+            {remainingLabel && (
+              <span className="rounded-full border-2 border-ink bg-blue-soft px-3 py-1 font-mono text-sm font-bold tabular-nums">
+                {remainingLabel} left
+              </span>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setState(DEFAULT)}
@@ -205,6 +280,26 @@ export default function NoisePage() {
           >
             reset mix
           </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Auto-stop
+          </span>
+          {AUTO_STOP_MIN_OPTIONS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setAutoStopMin(m)}
+              className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
+                autoStopMin === m
+                  ? "bg-blue text-cream"
+                  : "bg-cream hover:bg-blue-soft"
+              }`}
+            >
+              {m === 0 ? "off" : `${m} min`}
+            </button>
+          ))}
         </div>
 
         <div className="flex flex-col gap-3">

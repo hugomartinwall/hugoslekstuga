@@ -53,24 +53,37 @@ export default function BionicPage() {
   const rendered = useMemo(() => {
     if (!input) return null;
     const pct = STRENGTHS[strength].pct;
-    // Split preserving whitespace + newlines
-    const tokens = input.split(/(\s+)/);
-    return tokens.map((tok, i) => {
-      if (/^\s+$/.test(tok)) {
-        return tok.includes("\n") ? <br key={i} /> : <span key={i}>{tok}</span>;
-      }
-      // Word with potential leading/trailing punctuation
-      const m = tok.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}'-]+)([^\p{L}\p{N}]*)$/u);
-      if (!m) return <span key={i}>{tok}</span>;
-      const [, pre, word, post] = m;
-      const { bold, rest } = bionicWord(word, pct);
+    // Preserve paragraph structure: split on blank lines first, then tokenise
+    // each paragraph. Single newlines within a paragraph become <br>;
+    // double newlines (or more) start a new <p>. Without this the bionic
+    // version of a multi-paragraph article reads as one wall of text.
+    const paragraphs = input.split(/\n\s*\n/).filter((p) => p.length > 0);
+    return paragraphs.map((paragraph, pi) => {
+      const tokens = paragraph.split(/(\s+)/);
       return (
-        <span key={i}>
-          {pre}
-          <strong className="text-ink">{bold}</strong>
-          <span className="text-ink-soft">{rest}</span>
-          {post}
-        </span>
+        <p key={pi} className={pi > 0 ? "mt-4" : undefined}>
+          {tokens.map((tok, i) => {
+            if (/^\s+$/.test(tok)) {
+              return tok.includes("\n") ? (
+                <br key={i} />
+              ) : (
+                <span key={i}>{tok}</span>
+              );
+            }
+            const m = tok.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}'-]+)([^\p{L}\p{N}]*)$/u);
+            if (!m) return <span key={i}>{tok}</span>;
+            const [, pre, word, post] = m;
+            const { bold, rest } = bionicWord(word, pct);
+            return (
+              <span key={i}>
+                {pre}
+                <strong className="text-ink">{bold}</strong>
+                <span className="text-ink-soft">{rest}</span>
+                {post}
+              </span>
+            );
+          })}
+        </p>
       );
     });
   }, [input, strength]);
@@ -142,7 +155,7 @@ export default function BionicPage() {
               The bionic version of your text appears here.
             </p>
           ) : (
-            <p>{rendered}</p>
+            <>{rendered}</>
           )}
         </article>
 

@@ -17,6 +17,7 @@ export type ReadStats = {
 export const LONG_SENTENCE_THRESHOLD = 25;
 
 const STOP_WORDS = new Set([
+  // English
   "the","a","an","and","or","but","if","of","to","in","on","at","for","with",
   "is","are","was","were","be","been","being","have","has","had","do","does",
   "did","will","would","can","could","should","may","might","must","shall",
@@ -27,7 +28,17 @@ const STOP_WORDS = new Set([
   "how","all","any","both","each","few","more","most","other","some","such",
   "only","own","same","s","t","don","now","into","about","because","while",
   "off","through","between","after","before","above","below","what","which",
-  "who","whom","whose"
+  "who","whom","whose",
+  // Swedish — included so a Swedish text doesn't show "och", "att", "är"
+  // dominating the top-words list. Filter is permissive: stop-words from
+  // either language are filtered out, harmless on the other.
+  "och","att","det","som","i","på","är","av","med","för","till","den","har",
+  "inte","men","så","de","ett","var","jag","du","han","hon","vi","ni","kan",
+  "om","ska","skulle","kunde","blir","blev","mig","dig","oss","sig","sina",
+  "sitt","dess","detta","dessa","där","när","vad","vem","vilka","alla","någon",
+  "några","andra","samma","bara","också","mycket","nu","då","ut","upp","ner",
+  "över","under","genom","mellan","efter","före","sedan","fast","eller","men",
+  "ja","nej","kanske","ibland","aldrig","alltid",
 ]);
 
 export function computeReadStats(input: string): ReadStats {

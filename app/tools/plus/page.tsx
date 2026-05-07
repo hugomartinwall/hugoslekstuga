@@ -48,7 +48,7 @@ function dayLabel(deltaMin: number, startMin: number): string {
   if (dayShift === 1) return "tomorrow";
   if (dayShift === -1) return "yesterday";
   if (dayShift > 1) return `+${dayShift} days`;
-  return `${dayShift} days`;
+  return `${Math.abs(dayShift)} days ago`;
 }
 
 function ClockFace({
@@ -202,8 +202,8 @@ export default function PlusPage() {
           </div>
           <input
             type="range"
-            min={-12 * 60}
-            max={12 * 60}
+            min={-24 * 60}
+            max={24 * 60}
             step={5}
             value={state.deltaMin}
             onChange={(e) =>
@@ -212,7 +212,7 @@ export default function PlusPage() {
             className="w-full accent-yellow"
           />
           <div className="flex flex-wrap gap-2">
-            {[15, 30, 60, 90, 120, 240].map((m) => (
+            {[15, 30, 60, 90, 120, 240, 480, 720].map((m) => (
               <button
                 key={m}
                 type="button"
@@ -263,9 +263,8 @@ export default function PlusPage() {
         </div>
 
         <p className="text-xs text-ink-muted">
-          Drag the slider, watch the second clock swing. Slider goes 12 hours
-          either direction; for bigger jumps, drag past the edge or set a new
-          start time.
+          Drag the slider, watch the second clock swing. Range is ±24 hours;
+          for further jumps just change the start time and slide again.
         </p>
       </div>
     </ToolFrame>

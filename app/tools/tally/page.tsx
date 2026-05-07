@@ -117,10 +117,6 @@ export default function TallyPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [tap, undo]);
 
-  // Bump animation
-  const bump = bumpId % 2 === 0 ? "scale-[0.97]" : "scale-[1.02]";
-  void bump;
-
   return (
     <ToolFrame tool={tool}>
       <div className="flex flex-col gap-5">

@@ -151,7 +151,7 @@ export default function AgoPage() {
 
         <div className="card-chunk flex flex-col gap-4 rounded-[var(--radius-card)] bg-purple-soft p-5 sm:p-6">
           <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            That was
+            {past ? "That was" : "That'll be"}
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {spans.slice(0, 4).map((s) => (
