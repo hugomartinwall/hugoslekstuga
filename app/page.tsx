@@ -1,5 +1,4 @@
-import ToolCard from "@/components/ToolCard";
-import { tools } from "@/lib/tools";
+import ToolsSection from "@/components/ToolsSection";
 
 export default function Home() {
   return (
@@ -40,22 +39,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Tool grid */}
-      <section id="tools" className="scroll-mt-24 pb-20">
-        <div className="mb-8 flex items-end justify-between">
-          <h2 className="font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
-            The tools
-          </h2>
-          <span className="text-sm font-medium text-ink-muted">
-            {tools.length} so far
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {tools.map((tool) => (
-            <ToolCard key={tool.slug} tool={tool} />
-          ))}
-        </div>
-      </section>
+      <ToolsSection />
     </div>
   );
 }
