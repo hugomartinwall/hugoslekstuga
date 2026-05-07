@@ -2,7 +2,13 @@
 // best single description of what it is for. Cross-cluster edges in lib/links.ts
 // are intentional bridges, not theme membership.
 
-export type ClusterId = "files" | "writing" | "time" | "wellness" | "creative";
+export type ClusterId =
+  | "files"
+  | "writing"
+  | "time"
+  | "wellness"
+  | "creative"
+  | "code";
 
 export type Cluster = {
   id: ClusterId;
@@ -43,6 +49,12 @@ export const CLUSTERS: Record<ClusterId, Cluster> = {
     color: "#ff7ab2",
     description: "Visual & generative",
   },
+  code: {
+    id: "code",
+    label: "Code",
+    color: "#0d9488",
+    description: "Pixels, CSS, patterns",
+  },
 };
 
 export const CLUSTER_ORDER: ClusterId[] = [
@@ -51,6 +63,7 @@ export const CLUSTER_ORDER: ClusterId[] = [
   "time",
   "wellness",
   "creative",
+  "code",
 ];
 
 export const TOOL_CLUSTER: Record<string, ClusterId> = {
@@ -59,17 +72,29 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   pdf: "files",
   squeeze: "files",
   qr: "files",
+  strip: "files",
+  trace: "files",
+  ascii: "files",
+  base64: "files",
+  favicon: "files",
   // Writing
   read: "writing",
   markdown: "writing",
   diff: "writing",
   slug: "writing",
   emoji: "writing",
+  case: "writing",
+  cleantext: "writing",
+  count: "writing",
+  lorem: "writing",
+  bionic: "writing",
   // Time
   focus: "time",
   talk: "time",
   until: "time",
   zones: "time",
+  ago: "time",
+  plus: "time",
   // Wellness
   feeling: "wellness",
   three: "wellness",
@@ -77,6 +102,9 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   sleep: "wellness",
   stretch: "wellness",
   advice: "wellness",
+  tally: "wellness",
+  noise: "wellness",
+  typing: "wellness",
   // Creative
   palette: "creative",
   sketch: "creative",
@@ -84,6 +112,17 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   roll: "creative",
   memory: "creative",
   tip: "creative",
+  coin: "creative",
+  eight: "creative",
+  picker: "creative",
+  scale: "creative",
+  mash: "creative",
+  // Code (new)
+  gradient: "code",
+  contrast: "code",
+  shadow: "code",
+  easing: "code",
+  regex: "code",
 };
 
 export function clusterFor(slug: string): ClusterId | undefined {

@@ -7,26 +7,47 @@
 //   time      — pacing & coordination
 //   wellness  — body & mind
 //   creative  — visual & generative
+//   code      — pixels, CSS, patterns
 
 export type Link = [from: string, to: string];
 
 export const LINKS: Link[] = [
-  // Files
+  // ---------- Files ----------
   ["convert", "pdf"],
   ["convert", "squeeze"],
   ["pdf", "squeeze"],
   ["convert", "qr"],
   ["pdf", "qr"],
+  ["strip", "squeeze"],
+  ["strip", "pdf"],
+  ["trace", "ascii"],
+  ["trace", "favicon"],
+  ["ascii", "favicon"],
+  ["base64", "qr"],
+  ["base64", "favicon"],
+  ["base64", "convert"],
+  ["favicon", "squeeze"],
 
-  // Writing
+  // ---------- Writing ----------
   ["read", "markdown"],
   ["markdown", "diff"],
   ["read", "diff"],
   ["markdown", "slug"],
   ["read", "slug"],
   ["markdown", "emoji"],
+  ["case", "slug"],
+  ["case", "markdown"],
+  ["cleantext", "slug"],
+  ["cleantext", "markdown"],
+  ["cleantext", "diff"],
+  ["count", "read"],
+  ["count", "markdown"],
+  ["lorem", "markdown"],
+  ["lorem", "idea"],
+  ["bionic", "read"],
+  ["bionic", "markdown"],
 
-  // Time / productivity
+  // ---------- Time ----------
   ["focus", "talk"],
   ["focus", "stretch"],
   ["focus", "breathe"],
@@ -36,8 +57,14 @@ export const LINKS: Link[] = [
   ["until", "zones"],
   ["until", "sleep"],
   ["zones", "talk"],
+  ["ago", "until"],
+  ["ago", "zones"],
+  ["plus", "until"],
+  ["plus", "zones"],
+  ["plus", "talk"],
+  ["plus", "focus"],
 
-  // Wellness
+  // ---------- Wellness ----------
   ["feeling", "breathe"],
   ["feeling", "three"],
   ["feeling", "advice"],
@@ -46,8 +73,16 @@ export const LINKS: Link[] = [
   ["breathe", "sleep"],
   ["three", "sleep"],
   ["sleep", "stretch"],
+  ["tally", "focus"],
+  ["tally", "tip"],
+  ["noise", "focus"],
+  ["noise", "breathe"],
+  ["noise", "sleep"],
+  ["typing", "read"],
+  ["typing", "focus"],
+  ["typing", "stretch"],
 
-  // Creative
+  // ---------- Creative ----------
   ["palette", "sketch"],
   ["palette", "memory"],
   ["sketch", "memory"],
@@ -55,14 +90,38 @@ export const LINKS: Link[] = [
   ["idea", "roll"],
   ["idea", "advice"],
   ["roll", "advice"],
+  ["coin", "roll"],
+  ["coin", "eight"],
+  ["eight", "roll"],
+  ["eight", "advice"],
+  ["picker", "roll"],
+  ["picker", "tip"],
+  ["picker", "mash"],
+  ["scale", "idea"],
+  ["scale", "tip"],
+  ["mash", "idea"],
+  ["mash", "slug"],
 
-  // Numbers / decisions
+  // ---------- Code ----------
+  ["gradient", "shadow"],
+  ["gradient", "contrast"],
+  ["gradient", "palette"],
+  ["shadow", "easing"],
+  ["contrast", "palette"],
+  ["easing", "shadow"],
+  ["regex", "slug"],
+  ["regex", "diff"],
+  ["regex", "cleantext"],
+
+  // ---------- Cross-cluster bridges ----------
   ["tip", "roll"],
-
-  // A few cross-cluster bridges so the graph isn't disconnected
   ["palette", "qr"],
   ["sketch", "markdown"],
   ["emoji", "feeling"],
+  ["ascii", "sketch"],
+  ["trace", "palette"],
+  ["count", "tally"],
+  ["typing", "talk"],
 ];
 
 // Quick lookup: how many neighbours does each tool have?

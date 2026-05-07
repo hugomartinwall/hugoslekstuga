@@ -243,6 +243,245 @@ export const tools: Tool[] = [
     color: "tomato",
     emoji: "—",
   },
+
+  // ---------- Round 2: 25 more tools to reach 50 ----------
+
+  // Files
+  {
+    slug: "strip",
+    title: "Strip",
+    tagline: "Drop a photo, lose the metadata.",
+    description:
+      "Drag in any image and watch the GPS, camera, and timestamp data fly off and disappear. Download a clean copy. Nothing is uploaded — privacy by way of physics.",
+    color: "tomato",
+    emoji: "⊘",
+  },
+  {
+    slug: "trace",
+    title: "Trace",
+    tagline: "Bitmap in, vector out.",
+    description:
+      "Drop a PNG or JPG and get back crisp SVG paths you can scale forever. Tweak the threshold, copy the markup, save the file.",
+    color: "orange",
+    emoji: "◇",
+  },
+  {
+    slug: "ascii",
+    title: "ASCII",
+    tagline: "Turn any image into text.",
+    description:
+      "Drop a photo, drag the density slider, watch it become characters. Copy the result as text or save it as an image.",
+    color: "green",
+    emoji: "▥",
+  },
+  {
+    slug: "base64",
+    title: "Base64",
+    tagline: "Encode an image, decode a data URL.",
+    description:
+      "Two-way base64 for images. Drop a file and copy the data URL, or paste a data URL and see the picture. Useful for embedding in CSS or JSON.",
+    color: "blue",
+    emoji: "◰",
+  },
+  {
+    slug: "favicon",
+    title: "Favicon",
+    tagline: "One PNG, every favicon size.",
+    description:
+      "Drop in a square image and get all the favicon sizes a modern browser asks for, plus a manifest snippet. Built for new project setup.",
+    color: "yellow",
+    emoji: "◧",
+  },
+
+  // Writing
+  {
+    slug: "case",
+    title: "Case",
+    tagline: "Type once, every case at once.",
+    description:
+      "camelCase, snake_case, kebab-case, PascalCase, CONSTANT, Title, lower, UPPER — plus a few playful ones. Click any to copy.",
+    color: "purple",
+    emoji: "⌷",
+  },
+  {
+    slug: "cleantext",
+    title: "Cleantext",
+    tagline: "Strip invisible junk from your text.",
+    description:
+      "Smart quotes, em-dashes, BOM markers, zero-width characters, weird whitespace — paste in messy text and watch them peel away. The clean version is yours to copy.",
+    color: "tomato",
+    emoji: "⌫",
+  },
+  {
+    slug: "count",
+    title: "Count",
+    tagline: "Live word, character, sentence count.",
+    description:
+      "Type or paste, see the numbers update as you go. Tracks reading time and celebrates when you cross 100, 280, and 1000 words.",
+    color: "green",
+    emoji: "№",
+  },
+  {
+    slug: "lorem",
+    title: "Lorem",
+    tagline: "Placeholder text, with personality.",
+    description:
+      "Pick a flavour — pirate, recipe, fairytale, cyberpunk, corporate-speak — and generate the paragraphs you need. Beats Latin every time.",
+    color: "yellow",
+    emoji: "§",
+  },
+  {
+    slug: "bionic",
+    title: "Bionic",
+    tagline: "Read faster, with a little help.",
+    description:
+      "Paste an article and get a version with the first letters of each word bolded. Your eyes anchor, your brain skims. It really works.",
+    color: "pink",
+    emoji: "⊵",
+  },
+
+  // Time
+  {
+    slug: "ago",
+    title: "Ago",
+    tagline: "How long ago was that?",
+    description:
+      "Pick a date and watch the seconds tick. Years, months, weeks, days, hours, minutes, seconds — all at once, all live.",
+    color: "purple",
+    emoji: "⊝",
+  },
+  {
+    slug: "plus",
+    title: "Plus",
+    tagline: "Add hours and minutes, no math.",
+    description:
+      "Set a starting time, drag a slider for the duration, and the clock face swings to the answer. Useful for cooking, meetings, ETAs.",
+    color: "yellow",
+    emoji: "⊞",
+  },
+
+  // Wellness
+  {
+    slug: "tally",
+    title: "Tally",
+    tagline: "A clicker for counting things.",
+    description:
+      "Tap to add. Long-press to reset. Soft sound, satisfying click. For birds, reps, the people coming through the door — anything you'd otherwise count on paper.",
+    color: "orange",
+    emoji: "⫶",
+  },
+  {
+    slug: "noise",
+    title: "Noise",
+    tagline: "Build a soundscape for focus.",
+    description:
+      "Mix white, pink, and brown noise with a slow drone using chunky sliders. Generated live in your browser — no audio files, no internet needed.",
+    color: "blue",
+    emoji: "≋",
+  },
+  {
+    slug: "typing",
+    title: "Typing",
+    tagline: "How fast do you really type?",
+    description:
+      "A one-minute typing test on real prose, with live accuracy and a streak. Stays out of your way, then shows you a result you can keep.",
+    color: "green",
+    emoji: "⌑",
+  },
+
+  // Creative
+  {
+    slug: "coin",
+    title: "Coin",
+    tagline: "Heads or tails.",
+    description:
+      "A coin that actually feels flipped — weight, spin, sound, settle. For every small decision that doesn't deserve a meeting.",
+    color: "yellow",
+    emoji: "⊜",
+  },
+  {
+    slug: "eight",
+    title: "Eight Ball",
+    tagline: "Ask the magic 8 ball.",
+    description:
+      "Type your question, give it a shake, and watch the answer rise through the liquid. Twenty classic responses. Take it as seriously as you like.",
+    color: "purple",
+    emoji: "⊛",
+  },
+  {
+    slug: "picker",
+    title: "Picker",
+    tagline: "Pull a name from the hat.",
+    description:
+      "Paste a list, hit go, and watch the names shuffle until one drops out. For raffles, pair-ups, who-pays, who-goes-first.",
+    color: "tomato",
+    emoji: "⌖",
+  },
+  {
+    slug: "scale",
+    title: "Scale",
+    tagline: "Type a length, see what fits.",
+    description:
+      "Type any number of metres and we show it next to things you know — a coffee cup, a bus, a stadium, a small country. Helps numbers feel real.",
+    color: "blue",
+    emoji: "⌬",
+  },
+  {
+    slug: "mash",
+    title: "Mash",
+    tagline: "Smash two word lists together.",
+    description:
+      "Two pools of words bounce until one combination wins. Brainstorm names, projects, bands, pets — useful when nothing in your head fits.",
+    color: "pink",
+    emoji: "⋈",
+  },
+
+  // Code (new cluster)
+  {
+    slug: "gradient",
+    title: "Gradient",
+    tagline: "Build a CSS gradient, copy the snippet.",
+    description:
+      "Drag stops on a chunky bar, pick colours, switch between linear, radial, and conic. The CSS updates live and is yours to copy.",
+    color: "pink",
+    emoji: "◓",
+  },
+  {
+    slug: "contrast",
+    title: "Contrast",
+    tagline: "Will anyone be able to read this?",
+    description:
+      "Type two hex codes and we tell you the WCAG contrast ratio — plus the words actually fighting to be read.",
+    color: "orange",
+    emoji: "◑",
+  },
+  {
+    slug: "shadow",
+    title: "Shadow",
+    tagline: "Stack box-shadows like a pro.",
+    description:
+      "Layer multiple shadows for depth, neumorphism, or paper-cutout effects. Drag offset, blur, and spread, then copy the CSS.",
+    color: "teal",
+    emoji: "◖",
+  },
+  {
+    slug: "easing",
+    title: "Easing",
+    tagline: "Design a cubic-bezier curve by feel.",
+    description:
+      "Drag the handles, watch the easing on a real moving element. When it feels right, copy the values.",
+    color: "teal",
+    emoji: "⌇",
+  },
+  {
+    slug: "regex",
+    title: "Regex",
+    tagline: "Test a pattern, see what matches.",
+    description:
+      "A live regex tester with highlighted matches and a small cheatsheet on the side. Paste your regex, paste your text, fix until it sticks.",
+    color: "teal",
+    emoji: "⫽",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {
