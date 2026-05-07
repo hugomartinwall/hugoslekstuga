@@ -198,6 +198,51 @@ export const tools: Tool[] = [
     color: "teal",
     emoji: "✎",
   },
+  {
+    slug: "zones",
+    title: "Zones",
+    tagline: "What time is it for them, right now?",
+    description:
+      "Pick the cities your collaborators are in and see them all at a glance. Drag a slider to find a meeting time that doesn't ruin anyone's evening.",
+    color: "blue",
+    emoji: "⊙",
+  },
+  {
+    slug: "squeeze",
+    title: "Squeeze",
+    tagline: "Make any image lighter.",
+    description:
+      "Drop a photo, choose a target size or quality, get a smaller version. Perfect for emails, slide decks, and Slack uploads. The file never leaves your browser.",
+    color: "orange",
+    emoji: "◌",
+  },
+  {
+    slug: "pdf",
+    title: "PDF",
+    tagline: "Merge, split, and extract — without uploading.",
+    description:
+      "Combine multiple PDFs into one, split one into pages, or pull out just the pages you need. Everything happens locally — no third-party server sees your file.",
+    color: "teal",
+    emoji: "▤",
+  },
+  {
+    slug: "talk",
+    title: "Talk",
+    tagline: "Pace your presentation.",
+    description:
+      "A timer for talks, demos, and standups. Set the length, get visual milestones at 25 / 50 / 75 / 90% and a gentle chime when time's up. Stays out of your way.",
+    color: "pink",
+    emoji: "▷",
+  },
+  {
+    slug: "slug",
+    title: "Slug",
+    tagline: "Clean text for URLs, filenames, identifiers.",
+    description:
+      "Type anything and get a URL-safe slug, plus kebab-case, snake_case, camelCase, PascalCase, CONSTANT_CASE, and Title Case. Click any to copy.",
+    color: "tomato",
+    emoji: "—",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

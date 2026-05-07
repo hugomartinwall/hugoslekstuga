@@ -118,6 +118,11 @@ export default async function OGImage() {
             { c: "#ffc233", t: "emoji" },
             { c: "#9333ea", t: "memory" },
             { c: "#0d9488", t: "sketch" },
+            { c: "#4f66f2", t: "zones" },
+            { c: "#f97316", t: "squeeze" },
+            { c: "#0d9488", t: "pdf" },
+            { c: "#ff7ab2", t: "talk" },
+            { c: "#ff5a3c", t: "slug" },
           ].map((p) => (
             <div
               key={p.t}
