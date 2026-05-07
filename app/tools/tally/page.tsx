@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:tally:state";
 const RESET_HOLD_MS = 700;
@@ -25,33 +26,16 @@ function softClick(ctx: AudioContext, freq: number) {
   osc.stop(ctx.currentTime + 0.07);
 }
 
+const TALLY_DEFAULT: State = { label: "Tally", count: 0 };
+
 export default function TallyPage() {
   const tool = findTool("tally")!;
-  const [state, setState] = useState<State>({ label: "Tally", count: 0 });
-  const [hydrated, setHydrated] = useState(false);
+  const [state, setState] = useLocalStorageState<State>(STORAGE_KEY, TALLY_DEFAULT);
   const [holding, setHolding] = useState(0);
   const [bumpId, setBumpId] = useState(0);
   const audioRef = useRef<AudioContext | null>(null);
   const holdStartRef = useRef<number | null>(null);
   const holdRafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as State;
-        if (typeof parsed.count === "number") setState(parsed);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
 
   const ensureAudio = () => {
     if (!audioRef.current) {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:mash:state";
 
@@ -42,6 +43,8 @@ function listOf(s: string): string[] {
     .filter(Boolean);
 }
 
+const DEFAULT_STATE: State = { left: "", right: "" };
+
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -58,29 +61,10 @@ function combine(a: string, b: string, joiner: string): string {
 
 export default function MashPage() {
   const tool = findTool("mash")!;
-  const [state, setState] = useState<State>({ left: "", right: "" });
+  const [state, setState] = useLocalStorageState<State>(STORAGE_KEY, DEFAULT_STATE);
   const [styleId, setStyleId] = useState<StyleId>("space");
   const [results, setResults] = useState<string[]>([]);
-  const [hydrated, setHydrated] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as State;
-        if (typeof parsed.left === "string") setState(parsed);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
 
   const left = useMemo(() => listOf(state.left), [state.left]);
   const right = useMemo(() => listOf(state.right), [state.right]);

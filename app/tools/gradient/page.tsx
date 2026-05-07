@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:gradient:state";
 
@@ -25,7 +26,6 @@ const DEFAULT: State = {
   ],
 };
 
-let nextId = 3;
 
 function buildCss(state: State): string {
   const sorted = [...state.stops].sort((a, b) => a.pos - b.pos);
@@ -41,30 +41,8 @@ function buildCss(state: State): string {
 
 export default function GradientPage() {
   const tool = findTool("gradient")!;
-  const [state, setState] = useState<State>(DEFAULT);
-  const [hydrated, setHydrated] = useState(false);
+  const [state, setState] = useLocalStorageState<State>(STORAGE_KEY, DEFAULT);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as State;
-        if (parsed.stops && parsed.stops.length >= 2) {
-          setState(parsed);
-          nextId = Math.max(...parsed.stops.map((s) => s.id)) + 1;
-        }
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
 
   const css = useMemo(() => buildCss(state), [state]);
 
@@ -79,14 +57,17 @@ export default function GradientPage() {
   );
 
   const addStop = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      stops: [
-        ...s.stops,
-        { id: nextId++, color: "#ffc233", pos: 50 },
-      ],
-    }));
-  }, []);
+    setState((s) => {
+      // Derive a fresh id from the current stops rather than a module-level
+      // counter — nextId would get out of sync with localStorage state
+      // across tabs / page reloads.
+      const id = s.stops.reduce((m, st) => Math.max(m, st.id), 0) + 1;
+      return {
+        ...s,
+        stops: [...s.stops, { id, color: "#ffc233", pos: 50 }],
+      };
+    });
+  }, [setState]);
 
   const removeStop = useCallback((id: number) => {
     setState((s) =>

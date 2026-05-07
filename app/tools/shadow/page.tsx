@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:shadow:layers";
 
@@ -16,10 +17,8 @@ type Layer = {
   inset: boolean;
 };
 
-let nextId = 1;
-
 const DEFAULT: Layer[] = [
-  { id: nextId++, x: 0, y: 6, blur: 14, spread: 0, color: "#1a181230", inset: false },
+  { id: 1, x: 0, y: 6, blur: 14, spread: 0, color: "#1a181230", inset: false },
 ];
 
 const PRESETS: { name: string; layers: Omit<Layer, "id">[] }[] = [
@@ -69,44 +68,27 @@ function buildCss(layers: Layer[]): string {
 
 export default function ShadowPage() {
   const tool = findTool("shadow")!;
-  const [layers, setLayers] = useState<Layer[]>(DEFAULT);
-  const [hydrated, setHydrated] = useState(false);
+  const [layers, setLayers] = useLocalStorageState<Layer[]>(STORAGE_KEY, DEFAULT);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Layer[];
-        if (parsed.length > 0) {
-          setLayers(parsed);
-          nextId = Math.max(...parsed.map((l) => l.id)) + 1;
-        }
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(layers));
-    } catch {}
-  }, [layers, hydrated]);
-
   const css = useMemo(() => buildCss(layers), [layers]);
+
+  // Derive a fresh id from existing layers each time we add — keeps the
+  // counter in sync with localStorage state across reloads / tabs.
+  const nextLayerId = (ls: Layer[]) =>
+    ls.reduce((m, l) => Math.max(m, l.id), 0) + 1;
 
   const update = useCallback(
     (id: number, patch: Partial<Omit<Layer, "id">>) => {
       setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
     },
-    [],
+    [setLayers],
   );
 
   const add = () => {
     setLayers((ls) => [
       ...ls,
-      { id: nextId++, x: 0, y: 4, blur: 12, spread: 0, color: "#1a181222", inset: false },
+      { id: nextLayerId(ls), x: 0, y: 4, blur: 12, spread: 0, color: "#1a181222", inset: false },
     ]);
   };
 
@@ -115,7 +97,10 @@ export default function ShadowPage() {
   };
 
   const applyPreset = (preset: typeof PRESETS[number]) => {
-    setLayers(preset.layers.map((l) => ({ ...l, id: nextId++ })));
+    setLayers(() => {
+      let counter = 1;
+      return preset.layers.map((l) => ({ ...l, id: counter++ }));
+    });
   };
 
   const copy = async () => {

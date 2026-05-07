@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MobileSearchButton, SearchButton } from "@/components/Search";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const DOT_COLORS = [
   "var(--color-tomato)",
@@ -18,27 +19,13 @@ const DOT_COLORS = [
 const DOT_KEY = "hugoslekstuga:dot-color";
 
 export default function Nav() {
-  const [dotIdx, setDotIdx] = useState(0);
+  const [dotIdx, setDotIdx] = useLocalStorageState<number>(DOT_KEY, 0);
+  // Defensive clamp in case the stored value is out of range or stale.
+  const safeDotIdx =
+    Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
+      ? dotIdx
+      : 0;
   const [bouncing, setBouncing] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(DOT_KEY);
-      const n = saved ? Number(saved) : NaN;
-      if (Number.isFinite(n) && n >= 0 && n < DOT_COLORS.length) {
-        setDotIdx(n);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(DOT_KEY, String(dotIdx));
-    } catch {}
-  }, [dotIdx, hydrated]);
 
   const cycleDot = () => {
     setDotIdx((i) => (i + 1) % DOT_COLORS.length);
@@ -62,7 +49,7 @@ export default function Nav() {
             aria-label="Change accent colour"
             className="cursor-pointer rounded transition-transform hover:scale-110"
             style={{
-              color: DOT_COLORS[dotIdx],
+              color: DOT_COLORS[safeDotIdx],
               transform: bouncing ? "scale(1.4)" : undefined,
               transition: bouncing
                 ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), color 220ms ease"

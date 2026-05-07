@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
   contrast,
   harmonies,
@@ -19,27 +20,9 @@ const FALLBACK = "#0d9488"; // teal — same as tool color
 
 export default function PalettePage() {
   const tool = findTool("palette")!;
-  const [base, setBase] = useState<string>(FALLBACK);
-  const [hexInput, setHexInput] = useState<string>(FALLBACK);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && normalizeHex(saved)) {
-        setBase(saved);
-        setHexInput(saved);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, base);
-    } catch {}
-  }, [base, hydrated]);
+  const [base, setBase] = useLocalStorageState<string>(STORAGE_KEY, FALLBACK);
+  // Keep the controlled hex input in sync with the saved base on mount.
+  const [hexInput, setHexInput] = useState<string>(base);
 
   const setBoth = useCallback((next: string) => {
     setBase(next);

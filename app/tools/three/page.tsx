@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:three:entries";
 
@@ -20,23 +21,13 @@ function emptyEntry(): Entry {
   };
 }
 
+const THREE_DEFAULT: Entries = {};
+
 export default function ThreePage() {
   const tool = findTool("three")!;
-  const [entries, setEntries] = useState<Entries>({});
-  const [hydrated, setHydrated] = useState(false);
+  const [entries, setEntries] = useLocalStorageState<Entries>(STORAGE_KEY, THREE_DEFAULT);
   const [draft, setDraft] = useState<Entry>(emptyEntry());
   const [editing, setEditing] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Entries;
-        if (parsed && typeof parsed === "object") setEntries(parsed);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
 
   const today = useMemo(() => localISODate(new Date()), []);
   const todayEntry = entries[today];
@@ -56,14 +47,13 @@ export default function ThreePage() {
     }
   }, [editing, todayEntry]);
 
+  // The hook handles persistence — keeping the helper for the rest of the
+  // file so we don't have to touch every call site.
   const persist = useCallback(
     (next: Entries) => {
       setEntries(next);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {}
     },
-    [],
+    [setEntries],
   );
 
   const save = useCallback(() => {
@@ -130,7 +120,6 @@ export default function ThreePage() {
             entries={entries}
             keys={history}
             onDelete={removeEntry}
-            hydrated={hydrated}
           />
         )}
 
@@ -296,14 +285,12 @@ function History({
   entries,
   keys,
   onDelete,
-  hydrated,
 }: {
   entries: Entries;
   keys: string[];
   onDelete: (date: string) => void;
-  hydrated: boolean;
 }) {
-  if (!hydrated) return null;
+  if (keys.length === 0) return null;
   return (
     <details className="rounded-[var(--radius-card)] border-2 border-ink bg-cream p-4">
       <summary className="cursor-pointer font-display text-base font-bold">

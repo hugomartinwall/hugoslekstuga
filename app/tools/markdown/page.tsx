@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:markdown:text";
 
@@ -26,26 +27,9 @@ const greet = (name) => \`Hello, \${name}\`;
 
 export default function MarkdownPage() {
   const tool = findTool("markdown")!;
-  const [text, setText] = useState("");
+  const [text, setText] = useLocalStorageState<string>(STORAGE_KEY, "");
   const [html, setHtml] = useState("");
-  const [hydrated, setHydrated] = useState(false);
   const [copied, setCopied] = useState<"html" | "md" | null>(null);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved !== null) setText(saved);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (text) localStorage.setItem(STORAGE_KEY, text);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-  }, [text, hydrated]);
 
   // Render markdown when text changes. The output goes through DOMPurify
   // before reaching dangerouslySetInnerHTML — marked stopped sanitizing in

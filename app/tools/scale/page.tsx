@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:scale:value";
 
@@ -51,26 +52,7 @@ const PRESETS = [0.1, 1, 10, 100, 1000, 10000];
 
 export default function ScalePage() {
   const tool = findTool("scale")!;
-  const [value, setValue] = useState<number>(1.7);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const parsed = saved ? Number(saved) : NaN;
-      if (Number.isFinite(parsed) && parsed > 0) setValue(parsed);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (Number.isFinite(value) && value > 0) {
-        localStorage.setItem(STORAGE_KEY, String(value));
-      }
-    } catch {}
-  }, [value, hydrated]);
+  const [value, setValue] = useLocalStorageState<number>(STORAGE_KEY, 1.7);
 
   const closest = useMemo(() => {
     let best = THINGS[0];

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:tip:state";
 
@@ -25,40 +26,33 @@ type Stored = {
 
 const TIP_PRESETS = [0, 10, 12, 15, 18, 20];
 
+const TIP_DEFAULT: Stored = {
+  bill: "",
+  tip: 15,
+  people: 2,
+  round: 0,
+  currency: "SEK",
+};
+
 export default function TipPage() {
   const tool = findTool("tip")!;
-  const [bill, setBill] = useState<string>("");
-  const [tip, setTip] = useState<number>(15);
-  const [people, setPeople] = useState<number>(2);
-  const [round, setRound] = useState<0 | 1 | 5 | 10>(0);
-  const [currency, setCurrency] = useState<Currency>("SEK");
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw) as Partial<Stored>;
-        if (typeof s.bill === "string") setBill(s.bill);
-        if (typeof s.tip === "number") setTip(s.tip);
-        if (typeof s.people === "number" && s.people >= 1)
-          setPeople(s.people);
-        if (s.round === 0 || s.round === 1 || s.round === 5 || s.round === 10)
-          setRound(s.round);
-        if (s.currency && CURRENCIES.some((c) => c.id === s.currency))
-          setCurrency(s.currency);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      const next: Stored = { bill, tip, people, round, currency };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {}
-  }, [bill, tip, people, round, currency, hydrated]);
+  const [stored, setStored] = useLocalStorageState<Stored>(STORAGE_KEY, TIP_DEFAULT);
+  const { bill, tip, people, round, currency } = stored;
+  // Tiny setters that delegate to the stored object. Each accepts either
+  // a fresh value or an updater function (matching React's useState API)
+  // so existing call sites like `setPeople(n => n + 1)` keep working.
+  const setBill = (b: string | ((prev: string) => string)) =>
+    setStored((s) => ({ ...s, bill: typeof b === "function" ? b(s.bill) : b }));
+  const setTip = (t: number | ((prev: number) => number)) =>
+    setStored((s) => ({ ...s, tip: typeof t === "function" ? t(s.tip) : t }));
+  const setPeople = (p: number | ((prev: number) => number)) =>
+    setStored((s) => ({ ...s, people: typeof p === "function" ? p(s.people) : p }));
+  const setRound = (r: 0 | 1 | 5 | 10) =>
+    setStored((s) => ({ ...s, round: r }));
+  const setCurrency = (c: Currency) => {
+    if (CURRENCIES.some((x) => x.id === c))
+      setStored((s) => ({ ...s, currency: c }));
+  };
 
   const billNum = useMemo(() => {
     const n = Number(bill.replace(",", "."));

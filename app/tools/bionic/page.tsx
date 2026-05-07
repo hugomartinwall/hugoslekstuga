@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:bionic:input";
 const STRENGTH_KEY = "hugoslekstuga:bionic:strength";
@@ -25,30 +26,8 @@ function bionicWord(word: string, pct: number): { bold: string; rest: string } {
 
 export default function BionicPage() {
   const tool = findTool("bionic")!;
-  const [input, setInput] = useState<string>("");
-  const [strength, setStrength] = useState<Strength>("medium");
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved !== null) setInput(saved);
-      const s = localStorage.getItem(STRENGTH_KEY) as Strength | null;
-      if (s && (s === "light" || s === "medium" || s === "strong")) {
-        setStrength(s);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (input) localStorage.setItem(STORAGE_KEY, input);
-      else localStorage.removeItem(STORAGE_KEY);
-      localStorage.setItem(STRENGTH_KEY, strength);
-    } catch {}
-  }, [input, strength, hydrated]);
+  const [input, setInput] = useLocalStorageState<string>(STORAGE_KEY, "");
+  const [strength, setStrength] = useLocalStorageState<Strength>(STRENGTH_KEY, "medium");
 
   const rendered = useMemo(() => {
     if (!input) return null;

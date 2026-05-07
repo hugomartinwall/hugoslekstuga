@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 type Granularity = "line" | "word" | "char";
 
@@ -19,42 +20,27 @@ Each tool tries to do one small thing well.
 No accounts. No uploads. No trackers.
 Open a tab, use the thing, close the tab.`;
 
+type DiffStored = { left: string; right: string; granularity: Granularity };
+const DIFF_DEFAULT: DiffStored = { left: "", right: "", granularity: "word" };
+
 export default function DiffPage() {
   const tool = findTool("diff")!;
-  const [left, setLeft] = useState("");
-  const [right, setRight] = useState("");
-  const [granularity, setGranularity] = useState<Granularity>("word");
+  const [stored, setStored] = useLocalStorageState<DiffStored>(STORAGE_KEY, DIFF_DEFAULT);
+  const left = typeof stored.left === "string" ? stored.left : "";
+  const right = typeof stored.right === "string" ? stored.right : "";
+  const granularity: Granularity =
+    stored.granularity === "line" ||
+    stored.granularity === "word" ||
+    stored.granularity === "char"
+      ? stored.granularity
+      : "word";
+  const setLeft = (v: string | ((prev: string) => string)) =>
+    setStored((s) => ({ ...s, left: typeof v === "function" ? v(s.left) : v }));
+  const setRight = (v: string | ((prev: string) => string)) =>
+    setStored((s) => ({ ...s, right: typeof v === "function" ? v(s.right) : v }));
+  const setGranularity = (g: Granularity) =>
+    setStored((s) => ({ ...s, granularity: g }));
   const [parts, setParts] = useState<DiffPart[]>([]);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw) as {
-          left?: string;
-          right?: string;
-          granularity?: Granularity;
-        };
-        if (typeof s.left === "string") setLeft(s.left);
-        if (typeof s.right === "string") setRight(s.right);
-        if (s.granularity === "line" || s.granularity === "word" || s.granularity === "char") {
-          setGranularity(s.granularity);
-        }
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ left, right, granularity }),
-      );
-    } catch {}
-  }, [left, right, granularity, hydrated]);
 
   // Compute diff lazily as inputs change.
   useEffect(() => {

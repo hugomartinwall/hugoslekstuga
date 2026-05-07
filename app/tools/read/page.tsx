@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
   LONG_SENTENCE_THRESHOLD,
   computeReadStats,
@@ -18,26 +19,7 @@ Boring habits beat exciting plans. The smaller you make the next step, the more 
 
 export default function ReadPage() {
   const tool = findTool("read")!;
-  const [text, setText] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-
-  // Load any previously-saved text on first render.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setText(saved);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  // Persist text on every change once hydrated.
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (text) localStorage.setItem(STORAGE_KEY, text);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-  }, [text, hydrated]);
+  const [text, setText] = useLocalStorageState<string>(STORAGE_KEY, "");
 
   const stats = useMemo(() => computeReadStats(text), [text]);
   const isEmpty = text.trim().length === 0;

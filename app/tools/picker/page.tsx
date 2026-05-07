@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:picker:names";
 
@@ -17,29 +18,12 @@ const SAMPLES = [
 
 export default function PickerPage() {
   const tool = findTool("picker")!;
-  const [text, setText] = useState<string>("");
-  const [hydrated, setHydrated] = useState(false);
+  const [text, setText] = useLocalStorageState<string>(STORAGE_KEY, "");
   const [face, setFace] = useState<string | null>(null);
   const [winner, setWinner] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const lastTickRef = useRef(0);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved !== null) setText(saved);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (text) localStorage.setItem(STORAGE_KEY, text);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-  }, [text, hydrated]);
 
   const names = useMemo(() => {
     return text

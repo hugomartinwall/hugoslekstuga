@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:zones:state";
 
@@ -54,32 +55,9 @@ const DEFAULT_ZONES: ZoneEntry[] = [
 
 export default function ZonesPage() {
   const tool = findTool("zones")!;
-  const [zones, setZones] = useState<ZoneEntry[]>(DEFAULT_ZONES);
-  const [hydrated, setHydrated] = useState(false);
+  const [zones, setZones] = useLocalStorageState<ZoneEntry[]>(STORAGE_KEY, DEFAULT_ZONES);
   const [now, setNow] = useState<number>(() => Date.now());
   const [pickerSlider, setPickerSlider] = useState<number>(0); // minutes offset from now
-
-  // Hydrate
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as ZoneEntry[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setZones(parsed);
-        }
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  // Persist
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(zones));
-    } catch {}
-  }, [zones, hydrated]);
 
   // Tick clock every 30s — minute precision is enough.
   useEffect(() => {

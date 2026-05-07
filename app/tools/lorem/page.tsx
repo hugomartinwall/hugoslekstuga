@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:lorem:flavour";
 
@@ -190,45 +191,31 @@ function generateParagraph(f: Flavour): string {
 
 export default function LoremPage() {
   const tool = findTool("lorem")!;
-  const [flavourId, setFlavourId] = useState<FlavourId>("pirate");
+  const [flavourId, setFlavourId] = useLocalStorageState<FlavourId>(STORAGE_KEY, "pirate");
+  // Validate the saved flavour — if a flavour was renamed/removed in code
+  // since the user's last visit, fall back to the first available one.
+  const safeFlavourId: FlavourId =
+    FLAVOURS.some((f) => f.id === flavourId) ? flavourId : FLAVOURS[0].id;
   const [count, setCount] = useState(3);
   const [output, setOutput] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && FLAVOURS.some((f) => f.id === saved)) {
-        setFlavourId(saved as FlavourId);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, flavourId);
-    } catch {}
-  }, [flavourId, hydrated]);
-
-  const flavour = FLAVOURS.find((f) => f.id === flavourId)!;
+  const flavour = FLAVOURS.find((f) => f.id === safeFlavourId)!;
 
   const generate = useCallback(() => {
     const paragraphs = Array.from({ length: count }, () => generateParagraph(flavour));
     setOutput(paragraphs);
   }, [count, flavour]);
 
-  // Generate once on first mount so the page isn't empty
+  // Generate once on first mount so the page isn't empty.
   useEffect(() => {
-    if (hydrated && output.length === 0) {
+    if (output.length === 0) {
       setOutput(
         Array.from({ length: count }, () => generateParagraph(flavour)),
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated]);
+  }, []);
 
   const copy = useCallback(async () => {
     if (!output.length) return;

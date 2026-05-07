@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:until:events";
 
@@ -12,33 +13,15 @@ type Event = {
   iso: string; // YYYY-MM-DD
 };
 
+const UNTIL_DEFAULT: Event[] = [];
+
 export default function UntilPage() {
   const tool = findTool("until")!;
-  const [events, setEvents] = useState<Event[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+  const [events, setEvents] = useLocalStorageState<Event[]>(STORAGE_KEY, UNTIL_DEFAULT);
+  const safeEvents = Array.isArray(events) ? events : UNTIL_DEFAULT;
   const [now, setNow] = useState<number>(() => Date.now());
   const [title, setTitle] = useState("");
   const [iso, setIso] = useState("");
-
-  // Hydrate from localStorage
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Event[];
-        if (Array.isArray(parsed)) setEvents(parsed);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  // Persist
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-    } catch {}
-  }, [events, hydrated]);
 
   // Tick the clock once a second so countdowns update.
   useEffect(() => {
@@ -47,7 +30,7 @@ export default function UntilPage() {
   }, []);
 
   const sorted = useMemo(() => {
-    return [...events].sort((a, b) => {
+    return [...safeEvents].sort((a, b) => {
       const ta = parseTarget(a.iso).getTime();
       const tb = parseTarget(b.iso).getTime();
       const fa = ta - now;
@@ -58,7 +41,7 @@ export default function UntilPage() {
       if (fa >= 0 && fb >= 0) return fa - fb;
       return tb - ta;
     });
-  }, [events, now]);
+  }, [safeEvents, now]);
 
   const addEvent = useCallback(() => {
     if (!title.trim() || !iso) return;
@@ -92,7 +75,7 @@ export default function UntilPage() {
           onAdd={addEvent}
         />
 
-        {hydrated && events.length === 0 && (
+        {safeEvents.length === 0 && (
           <div className="rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-6 text-center">
             <p className="font-display text-lg font-bold">Nothing on the horizon yet.</p>
             <p className="mt-2 text-sm text-ink-soft">

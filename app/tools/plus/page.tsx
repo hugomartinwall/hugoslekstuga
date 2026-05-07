@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:plus:state";
 
@@ -124,36 +125,15 @@ function ClockFace({
   );
 }
 
+const PLUS_DEFAULT: State = { start: "12:00", deltaMin: 60 };
+
 export default function PlusPage() {
   const tool = findTool("plus")!;
-  const [state, setState] = useState<State>({ start: "12:00", deltaMin: 60 });
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as State;
-        if (parseHHmm(parsed.start)) {
-          setState(parsed);
-        } else {
-          setState({ start: nowHHmm(), deltaMin: 60 });
-        }
-      } else {
-        setState({ start: nowHHmm(), deltaMin: 60 });
-      }
-    } catch {
-      setState({ start: nowHHmm(), deltaMin: 60 });
-    }
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
+  const [stored, setState] = useLocalStorageState<State>(STORAGE_KEY, PLUS_DEFAULT);
+  // Coerce a malformed stored value back to a valid one without writing.
+  const state: State = parseHHmm(stored.start)
+    ? stored
+    : { start: nowHHmm(), deltaMin: stored.deltaMin ?? 60 };
 
   const parsed = useMemo(() => parseHHmm(state.start), [state.start]);
   const startMin = parsed ? parsed.h * 60 + parsed.m : 0;

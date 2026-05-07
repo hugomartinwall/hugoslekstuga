@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:easing:state";
 
@@ -93,32 +94,13 @@ function easeY(x: number, x1: number, y1: number, x2: number, y2: number): numbe
 
 export default function EasingPage() {
   const tool = findTool("easing")!;
-  const [state, setState] = useState<State>(DEFAULT);
-  const [hydrated, setHydrated] = useState(false);
+  const [state, setState] = useLocalStorageState<State>(STORAGE_KEY, DEFAULT);
   const [copied, setCopied] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const draggingRef = useRef<"p1" | "p2" | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as State;
-        if (typeof parsed.x1 === "number") setState(parsed);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
 
   const css = useMemo(
     () =>

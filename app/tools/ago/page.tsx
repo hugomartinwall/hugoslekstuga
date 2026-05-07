@@ -3,14 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:ago:date";
-
-function isoForLocalInput(d: Date): string {
-  // datetime-local format: YYYY-MM-DDTHH:mm
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 type Span = {
   label: string;
@@ -67,26 +62,9 @@ const SAMPLES: { label: string; iso: string }[] = [
 
 export default function AgoPage() {
   const tool = findTool("ago")!;
-  const [input, setInput] = useState<string>("");
+  const [input, setInput] = useLocalStorageState<string>(STORAGE_KEY, "");
   const [now, setNow] = useState<number>(() => Date.now());
-  const [hydrated, setHydrated] = useState(false);
   const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setInput(saved);
-      else setInput(isoForLocalInput(new Date(Date.now() - 24 * 60 * 60 * 1000)));
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (input) localStorage.setItem(STORAGE_KEY, input);
-    } catch {}
-  }, [input, hydrated]);
 
   // Tick once per second
   useEffect(() => {

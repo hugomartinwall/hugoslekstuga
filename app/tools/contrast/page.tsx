@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:contrast:state";
 
@@ -58,26 +59,7 @@ function commentary(r: number): { headline: string; mood: "good" | "ok" | "bad" 
 
 export default function ContrastPage() {
   const tool = findTool("contrast")!;
-  const [state, setState] = useState<State>(DEFAULT);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as State;
-        if (parsed.fg && parsed.bg) setState(parsed);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
+  const [state, setState] = useLocalStorageState<State>(STORAGE_KEY, DEFAULT);
 
   const r = useMemo(() => ratio(state.fg, state.bg), [state]);
   const t = r ? tier(r) : null;

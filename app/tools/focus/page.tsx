@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 type Phase = "setup" | "running" | "paused" | "done";
 
@@ -16,45 +17,13 @@ type WakeLockSentinelLike = { release: () => Promise<void> };
 
 export default function FocusPage() {
   const tool = findTool("focus")!;
-  const [intention, setIntention] = useState("");
-  const [durationSec, setDurationSec] = useState(25 * 60);
-  const [remainingSec, setRemainingSec] = useState(25 * 60);
+  const [intention, setIntention] = useLocalStorageState<string>(STORAGE_KEY_INTENTION, "");
+  const [durationSec, setDurationSec] = useLocalStorageState<number>(STORAGE_KEY_DURATION, 25 * 60);
+  const [remainingSec, setRemainingSec] = useState(durationSec);
   const [phase, setPhase] = useState<Phase>("setup");
-  const [hydrated, setHydrated] = useState(false);
   const startedAtRef = useRef<number | null>(null);
-  const baseRemainingRef = useRef<number>(25 * 60);
+  const baseRemainingRef = useRef<number>(durationSec);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
-
-  // Hydrate from localStorage once on first client render.
-  useEffect(() => {
-    try {
-      const i = localStorage.getItem(STORAGE_KEY_INTENTION);
-      if (i) setIntention(i);
-      const d = localStorage.getItem(STORAGE_KEY_DURATION);
-      const num = d ? Number(d) : NaN;
-      if (Number.isFinite(num) && num >= 60) {
-        setDurationSec(num);
-        setRemainingSec(num);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  // Persist intention and duration so they survive a refresh.
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (intention) localStorage.setItem(STORAGE_KEY_INTENTION, intention);
-      else localStorage.removeItem(STORAGE_KEY_INTENTION);
-    } catch {}
-  }, [intention, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY_DURATION, String(durationSec));
-    } catch {}
-  }, [durationSec, hydrated]);
 
   // Page title reflects countdown so it's visible in the tab.
   useEffect(() => {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 type Mode = "wake" | "sleep";
 
@@ -19,31 +20,18 @@ type Result = {
   totalSleepMin: number;
 };
 
+type SleepStored = { mode: Mode; time: string };
+const SLEEP_DEFAULT: SleepStored = { mode: "wake", time: "07:00" };
+
 export default function SleepPage() {
   const tool = findTool("sleep")!;
-  const [mode, setMode] = useState<Mode>("wake");
-  const [time, setTime] = useState<string>("07:00");
-  const [hydrated, setHydrated] = useState(false);
+  const [stored, setStored] = useLocalStorageState<SleepStored>(STORAGE_KEY, SLEEP_DEFAULT);
+  const mode: Mode =
+    stored.mode === "wake" || stored.mode === "sleep" ? stored.mode : "wake";
+  const time = /^\d{2}:\d{2}$/.test(stored.time) ? stored.time : "07:00";
+  const setMode = (m: Mode) => setStored((s) => ({ ...s, mode: m }));
+  const setTime = (t: string) => setStored((s) => ({ ...s, time: t }));
   const [selected, setSelected] = useState<number>(0);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw) as { mode?: Mode; time?: string };
-        if (s.mode === "wake" || s.mode === "sleep") setMode(s.mode);
-        if (s.time && /^\d{2}:\d{2}$/.test(s.time)) setTime(s.time);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, time }));
-    } catch {}
-  }, [mode, time, hydrated]);
 
   // Reset selected when mode/time changes.
   useEffect(() => {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:trace:options";
 
@@ -29,31 +30,12 @@ type ImageTracer = {
 export default function TracePage() {
   const tool = findTool("trace")!;
   const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
-  const [options, setOptions] = useState<Options>(DEFAULTS);
-  const [hydrated, setHydrated] = useState(false);
+  const [options, setOptions] = useLocalStorageState<Options>(STORAGE_KEY, DEFAULTS);
   const [svg, setSvg] = useState<string>("");
   const [tracing, setTracing] = useState(false);
   const [error, setError] = useState<string>("");
   const [tracerRef, setTracerRef] = useState<ImageTracer | null>(null);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Options;
-        if (typeof parsed.numberofcolors === "number") setOptions(parsed);
-      }
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(options));
-    } catch {}
-  }, [options, hydrated]);
 
   const handleFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file);

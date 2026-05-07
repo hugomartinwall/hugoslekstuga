@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const BEST_KEY = "hugoslekstuga:typing:best";
 
@@ -34,26 +35,16 @@ function pickPassage(): string {
 export default function TypingPage() {
   const tool = findTool("typing")!;
   const [seconds, setSeconds] = useState(60);
-  const [passage, setPassage] = useState<string>("");
+  // Pick the initial passage in the lazy initialiser so it's stable across
+  // renders without needing an effect.
+  const [passage, setPassage] = useState<string>(() => pickPassage());
   const [typed, setTyped] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [remaining, setRemaining] = useState(60);
-  const [best, setBest] = useState<Stats | null>(null);
+  const [best, setBest] = useLocalStorageState<Stats | null>(BEST_KEY, null);
   const startedRef = useRef<number | null>(null);
   const tickRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Mount: pick passage and load best
-  useEffect(() => {
-    setPassage(pickPassage());
-    try {
-      const raw = localStorage.getItem(BEST_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Stats;
-        if (typeof parsed.wpm === "number") setBest(parsed);
-      }
-    } catch {}
-  }, []);
 
   useEffect(() => {
     setRemaining(seconds);
@@ -80,11 +71,8 @@ export default function TypingPage() {
     setStatus("done");
     if (!best || wpm > best.wpm) {
       setBest(stats);
-      try {
-        localStorage.setItem(BEST_KEY, JSON.stringify(stats));
-      } catch {}
     }
-  }, [typed, passage, best, seconds]);
+  }, [typed, passage, best, seconds, setBest]);
 
   // Timer tick — uses a ref to call the latest `finish` without retriggering the effect.
   const finishRef = useRef(finish);

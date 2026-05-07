@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:talk:duration";
 
@@ -12,31 +13,13 @@ const MILESTONES = [0.25, 0.5, 0.75, 0.9, 1] as const;
 
 export default function TalkPage() {
   const tool = findTool("talk")!;
-  const [durationSec, setDurationSec] = useState<number>(10 * 60);
+  const [durationSec, setDurationSec] = useLocalStorageState<number>(STORAGE_KEY, 10 * 60);
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
   const [now, setNow] = useState<number>(0);
   const [hitMilestones, setHitMilestones] = useState<Set<number>>(() => new Set());
   const startedAtRef = useRef<number | null>(null);
   const baseRemainingRef = useRef<number>(0);
-
-  // Hydrate
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const num = raw ? Number(raw) : NaN;
-      if (Number.isFinite(num) && num >= 60) setDurationSec(num);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, String(durationSec));
-    } catch {}
-  }, [durationSec, hydrated]);
 
   // Tick
   useEffect(() => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 type PhaseName = "in" | "hold-in" | "out" | "hold-out";
 
@@ -66,7 +67,8 @@ const STORAGE_KEY = "hugoslekstuga:breathe:pattern";
 
 export default function BreathePage() {
   const tool = findTool("breathe")!;
-  const [patternId, setPatternId] = useState<Pattern["id"]>("box");
+  const [patternId, setPatternId] = useLocalStorageState<Pattern["id"]>(STORAGE_KEY, "box");
+  const safePatternId = PATTERNS.some((p) => p.id === patternId) ? patternId : "box";
   const [running, setRunning] = useState(false);
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -74,23 +76,7 @@ export default function BreathePage() {
   const phaseStartRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Hydrate saved pattern.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && PATTERNS.some((p) => p.id === saved)) {
-        setPatternId(saved as Pattern["id"]);
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, patternId);
-    } catch {}
-  }, [patternId]);
-
-  const pattern = PATTERNS.find((p) => p.id === patternId)!;
+  const pattern = PATTERNS.find((p) => p.id === safePatternId)!;
   const phase = pattern.phases[phaseIndex] ?? pattern.phases[0];
   const phaseProgress = Math.min(1, elapsed / phase.seconds);
 
@@ -163,7 +149,7 @@ export default function BreathePage() {
                   type="button"
                   onClick={() => setPatternId(p.id)}
                   className={`card-chunk flex flex-col items-start gap-1 rounded-[var(--radius-card)] p-4 text-left transition-colors ${
-                    patternId === p.id ? "bg-blue-soft" : "bg-cream hover:bg-blue-soft"
+                    safePatternId === p.id ? "bg-blue-soft" : "bg-cream hover:bg-blue-soft"
                   }`}
                 >
                   <span className="font-display text-lg font-extrabold tracking-tight">

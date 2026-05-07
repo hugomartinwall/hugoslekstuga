@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:roll:options";
 
@@ -25,29 +26,11 @@ Cook at home`;
 
 export default function RollPage() {
   const tool = findTool("roll")!;
-  const [raw, setRaw] = useState("");
-  const [hydrated, setHydrated] = useState(false);
+  const [raw, setRaw] = useLocalStorageState<string>(STORAGE_KEY, "");
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
   const wheelRef = useRef<SVGGElement>(null);
-
-  // Hydrate from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved !== null) setRaw(saved);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (raw) localStorage.setItem(STORAGE_KEY, raw);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-  }, [raw, hydrated]);
 
   const options = useMemo(
     () =>

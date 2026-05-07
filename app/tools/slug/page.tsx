@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
   toCamel,
   toConstant,
@@ -45,25 +46,8 @@ const ROWS: Row[] = [
 
 export default function SlugPage() {
   const tool = findTool("slug")!;
-  const [input, setInput] = useState<string>("");
+  const [input, setInput] = useLocalStorageState<string>(STORAGE_KEY, "");
   const [copied, setCopied] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved !== null) setInput(saved);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (input) localStorage.setItem(STORAGE_KEY, input);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-  }, [input, hydrated]);
 
   const copy = useCallback(async (text: string, label: string) => {
     if (!text) return;

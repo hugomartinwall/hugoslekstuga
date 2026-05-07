@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:cleantext:input";
 
@@ -98,25 +99,8 @@ function detect(input: string): Record<string, number> {
 
 export default function CleantextPage() {
   const tool = findTool("cleantext")!;
-  const [input, setInput] = useState<string>("");
-  const [hydrated, setHydrated] = useState(false);
+  const [input, setInput] = useLocalStorageState<string>(STORAGE_KEY, "");
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved !== null) setInput(saved);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (input) localStorage.setItem(STORAGE_KEY, input);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-  }, [input, hydrated]);
 
   const counts = useMemo(() => detect(input), [input]);
   const cleaned = useMemo(() => clean(input), [input]);

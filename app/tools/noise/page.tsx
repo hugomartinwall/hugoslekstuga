@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:noise:state";
 
@@ -84,9 +85,8 @@ const MASTER_VOL = 0.7;
 
 export default function NoisePage() {
   const tool = findTool("noise")!;
-  const [state, setState] = useState<State>(DEFAULT);
+  const [state, setState] = useLocalStorageState<State>(STORAGE_KEY, DEFAULT);
   const [playing, setPlaying] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
   const [autoStopMin, setAutoStopMin] = useState<AutoStopMin>(0);
   const [stopAt, setStopAt] = useState<number | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
@@ -94,21 +94,6 @@ export default function NoisePage() {
   const channelsRef = useRef<Partial<Record<NoiseId, Channel>>>({});
   const masterRef = useRef<GainNode | null>(null);
   const autoStopTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setState({ ...DEFAULT, ...JSON.parse(raw) });
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
 
   // Sync gains while playing
   useEffect(() => {

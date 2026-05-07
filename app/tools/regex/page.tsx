@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const PATTERN_KEY = "hugoslekstuga:regex:pattern";
 const FLAGS_KEY = "hugoslekstuga:regex:flags";
@@ -98,31 +99,9 @@ function runRegex(pattern: string, flags: string, text: string): {
 
 export default function RegexPage() {
   const tool = findTool("regex")!;
-  const [pattern, setPattern] = useState("");
-  const [flags, setFlags] = useState("g");
-  const [text, setText] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const p = localStorage.getItem(PATTERN_KEY);
-      const f = localStorage.getItem(FLAGS_KEY);
-      const t = localStorage.getItem(TEXT_KEY);
-      if (p !== null) setPattern(p);
-      if (f !== null) setFlags(f);
-      if (t !== null) setText(t);
-    } catch {}
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(PATTERN_KEY, pattern);
-      localStorage.setItem(FLAGS_KEY, flags);
-      localStorage.setItem(TEXT_KEY, text);
-    } catch {}
-  }, [pattern, flags, text, hydrated]);
+  const [pattern, setPattern] = useLocalStorageState<string>(PATTERN_KEY, "");
+  const [flags, setFlags] = useLocalStorageState<string>(FLAGS_KEY, "g");
+  const [text, setText] = useLocalStorageState<string>(TEXT_KEY, "");
 
   const result = useMemo(() => runRegex(pattern, flags, text), [pattern, flags, text]);
 
