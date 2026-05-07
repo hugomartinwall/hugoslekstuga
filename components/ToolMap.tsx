@@ -67,6 +67,9 @@ type Drag = {
   offsetX: number;
   offsetY: number;
   moved: boolean;
+  /** Where the node should be — set by pointermove, chased by the raf loop. */
+  targetX: number;
+  targetY: number;
 };
 
 type Particle = {
@@ -119,6 +122,14 @@ const RECLUSTER_BURST_SPEED = 9;
 const TILT_VELOCITY_GAIN = 1.4;
 const TILT_MAX_DEG = 16;
 const TILT_LERP = 0.22;
+/** How aggressively the dragged node chases the cursor each frame. Higher
+ * = snappier; lower = smoother. 0.55 is the sweet spot for steady motion
+ * without feeling laggy. */
+const DRAG_LERP = 0.55;
+/** Hard cap on per-frame velocity, applied after force accumulation.
+ * Prevents surrounding nodes from teleporting when the dragged node
+ * suddenly arrives next to them. */
+const MAX_V = 14;
 const MIN_W = 320;
 const MIN_H = 480;
 
@@ -129,9 +140,18 @@ type ToolMapProps = {
    * homepage where the map IS the page.
    */
   fullBleed?: boolean;
+  /**
+   * Increment to trigger a re-cluster from the parent. The page renders
+   * its own re-cluster button positioned alongside the Surprise ball;
+   * it pokes this counter to ask the map to scatter and re-form.
+   */
+  resetTrigger?: number;
 };
 
-export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
+export default function ToolMap({
+  fullBleed = false,
+  resetTrigger = 0,
+}: ToolMapProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
@@ -225,6 +245,18 @@ export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
     if (!initializedRef.current) return;
     let raf = 0;
     const loop = () => {
+      // Smooth-drag: chase the pointer target at a fixed cadence so the
+      // node moves at one pixel-rate regardless of how often pointermove
+      // fires. This is what eliminates the jittery teleport-feel.
+      const drag = dragRef.current;
+      if (drag) {
+        const dragNode = nodeBySlug.current.get(drag.slug);
+        if (dragNode) {
+          dragNode.x += (drag.targetX - dragNode.x) * DRAG_LERP;
+          dragNode.y += (drag.targetY - dragNode.y) * DRAG_LERP;
+        }
+      }
+
       const wobbleAmplitude = reduceMotionRef.current ? 0 : WOBBLE_FORCE;
       step(
         nodesRef.current,
@@ -307,6 +339,7 @@ export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
       const newX = clamp(localX - drag.offsetX, NODE_R, size.w - NODE_R);
       const newY = clamp(localY - drag.offsetY, NODE_R, size.h - NODE_R);
 
+      // Track velocity in cursor-space (used for momentum on release).
       const now = performance.now();
       const dt = Math.max(8, now - node.dragLastT);
       node.dragVx = ((newX - node.dragLastX) / dt) * 16;
@@ -315,8 +348,12 @@ export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
       node.dragLastX = newX;
       node.dragLastY = newY;
 
-      node.x = newX;
-      node.y = newY;
+      // Don't snap the node's position here — that produces jitter when
+      // pointer events fire irregularly between animation frames. Just
+      // store the target; the raf loop will lerp the node toward it at
+      // a fixed cadence.
+      drag.targetX = newX;
+      drag.targetY = newY;
     },
     [size.w, size.h],
   );
@@ -343,6 +380,8 @@ export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
         offsetX: localX - node.x,
         offsetY: localY - node.y,
         moved: false,
+        targetX: node.x,
+        targetY: node.y,
       };
       node.pinned = true;
       node.vx = 0;
@@ -422,6 +461,17 @@ export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
     initializedRef.current = false;
     initNodes(size.w, size.h, true);
   }, [size.w, size.h]);
+
+  // External re-cluster trigger — page increments resetTrigger and the map
+  // shakes itself out. Skip the very first run (resetTrigger starts at 0
+  // and we don't want to re-cluster on mount).
+  const lastResetRef = useRef(resetTrigger);
+  useEffect(() => {
+    if (resetTrigger !== lastResetRef.current && initializedRef.current) {
+      lastResetRef.current = resetTrigger;
+      reset();
+    }
+  }, [resetTrigger, reset]);
 
   const hoveredNeighbours = hovered ? (neighbourMap.get(hovered) ?? new Set()) : null;
   const now = performance.now();
@@ -683,17 +733,8 @@ export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
         </div>
       )}
 
-      {/* In fullBleed mode, expose just a small re-cluster pill at bottom-left
-          so power users can shake the layout without crowding the top. */}
-      {fullBleed && (
-        <button
-          type="button"
-          onClick={reset}
-          className="pointer-events-auto absolute bottom-3 left-3 rounded-full border-2 border-ink bg-cream/95 px-3 py-1 text-xs font-bold backdrop-blur transition-colors hover:bg-cream-deep sm:bottom-6 sm:left-6"
-        >
-          ↻ Re-cluster
-        </button>
-      )}
+      {/* In fullBleed mode the page renders its own re-cluster button next
+          to the Surprise ball, so we don't need an in-map control. */}
 
       {/* Cluster legend */}
       <div className="absolute inset-x-0 bottom-3 flex flex-wrap justify-center gap-1.5 px-3">
@@ -846,6 +887,13 @@ function step(
     }
     n.vx *= DAMPING;
     n.vy *= DAMPING;
+    // Clamp velocity so a sudden force spike (e.g. a dragged node landing
+    // right next to a stationary one) can't fling neighbours across the
+    // canvas in a single frame.
+    if (n.vx > MAX_V) n.vx = MAX_V;
+    else if (n.vx < -MAX_V) n.vx = -MAX_V;
+    if (n.vy > MAX_V) n.vy = MAX_V;
+    else if (n.vy < -MAX_V) n.vy = -MAX_V;
     n.x += n.vx;
     n.y += n.vy;
     n.x = clamp(n.x, NODE_R + 4, width - NODE_R - 4);
