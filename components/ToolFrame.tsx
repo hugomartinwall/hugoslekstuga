@@ -35,9 +35,15 @@ export default function ToolFrame({
     <div className="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
       <Link
         href="/"
-        className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
+        className="group mb-8 inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
       >
-        ← Back to all tools
+        <span
+          aria-hidden
+          className="inline-block transition-transform duration-200 group-hover:-translate-x-1"
+        >
+          ←
+        </span>
+        Back to all tools
       </Link>
 
       <header
