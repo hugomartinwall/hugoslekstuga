@@ -86,14 +86,6 @@ export default function Nav() {
             </li>
             <li>
               <Link
-                href="/#tools"
-                className="rounded-full px-2 py-1.5 transition-colors hover:bg-cream-deep sm:px-3 sm:py-2"
-              >
-                Tools
-              </Link>
-            </li>
-            <li>
-              <Link
                 href="/about"
                 className="rounded-full px-2 py-1.5 transition-colors hover:bg-cream-deep sm:px-3 sm:py-2"
               >

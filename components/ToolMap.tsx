@@ -119,7 +119,16 @@ const TILT_LERP = 0.22;
 const MIN_W = 320;
 const MIN_H = 480;
 
-export default function ToolMap() {
+type ToolMapProps = {
+  /**
+   * When true: drop the card styling (border, shadow, rounded corners,
+   * background). Map fills its parent's box completely. Used by the
+   * homepage where the map IS the page.
+   */
+  fullBleed?: boolean;
+};
+
+export default function ToolMap({ fullBleed = false }: ToolMapProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
@@ -417,8 +426,14 @@ export default function ToolMap() {
   return (
     <div
       ref={containerRef}
-      className="card-chunk relative w-full overflow-hidden rounded-[var(--radius-card)] bg-cream"
-      style={{ height: "min(80vh, 720px)", minHeight: "480px" }}
+      className={
+        fullBleed
+          ? "relative h-full w-full overflow-hidden"
+          : "card-chunk relative w-full overflow-hidden rounded-[var(--radius-card)] bg-cream"
+      }
+      style={
+        fullBleed ? undefined : { height: "min(80vh, 720px)", minHeight: "480px" }
+      }
     >
       <svg
         width={size.w}
@@ -648,19 +663,34 @@ export default function ToolMap() {
         </g>
       </svg>
 
-      {/* Top controls */}
-      <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-between gap-3 px-3 sm:px-5">
-        <p className="pointer-events-none rounded-full border-2 border-ink bg-cream/90 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
-          Drag a tool · click to open
-        </p>
+      {/* Top controls — only when card-styled. In fullBleed mode the page
+          owns the top zone and provides its own hero / controls. */}
+      {!fullBleed && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-between gap-3 px-3 sm:px-5">
+          <p className="pointer-events-none rounded-full border-2 border-ink bg-cream/90 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
+            Drag a tool · click to open
+          </p>
+          <button
+            type="button"
+            onClick={reset}
+            className="pointer-events-auto rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold transition-colors hover:bg-cream-deep"
+          >
+            ↻ Re-cluster
+          </button>
+        </div>
+      )}
+
+      {/* In fullBleed mode, expose just a small re-cluster pill at bottom-left
+          so power users can shake the layout without crowding the top. */}
+      {fullBleed && (
         <button
           type="button"
           onClick={reset}
-          className="pointer-events-auto rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold transition-colors hover:bg-cream-deep"
+          className="pointer-events-auto absolute bottom-3 left-3 rounded-full border-2 border-ink bg-cream/95 px-3 py-1 text-xs font-bold backdrop-blur transition-colors hover:bg-cream-deep sm:bottom-6 sm:left-6"
         >
           ↻ Re-cluster
         </button>
-      </div>
+      )}
 
       {/* Cluster legend */}
       <div className="absolute inset-x-0 bottom-3 flex flex-wrap justify-center gap-1.5 px-3">

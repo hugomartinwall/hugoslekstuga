@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Bricolage_Grotesque } from "next/font/google";
 import Nav from "@/components/Nav";
-import Footer from "@/components/Footer";
+import ConditionalFooter from "@/components/ConditionalFooter";
 import { SearchPalette, SearchProvider } from "@/components/Search";
 import "./globals.css";
 
@@ -54,7 +54,7 @@ export default function RootLayout({
         <SearchProvider>
           <Nav />
           <div className="flex-1">{children}</div>
-          <Footer />
+          <ConditionalFooter />
           <SearchPalette />
         </SearchProvider>
       </body>
