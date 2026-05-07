@@ -112,13 +112,10 @@ export default function EightPage() {
           />
           {/* Inner triangle window */}
           <div
-            className="relative flex h-2/5 w-2/5 items-center justify-center rounded-full border-2 border-ink"
+            className={`relative flex h-2/5 w-2/5 items-center justify-center rounded-full border-2 border-ink ${shaking ? "animate-[wobble_180ms_linear_infinite]" : ""}`}
             style={{
               background: answer ? TONE_BG[tone] : "#1a1812",
               transition: "background 600ms ease",
-              transform: shaking
-                ? `translate(${Math.sin(Date.now() / 30) * 4}px, ${Math.cos(Date.now() / 25) * 4}px)`
-                : "none",
             }}
           >
             {!answer && !shaking && (

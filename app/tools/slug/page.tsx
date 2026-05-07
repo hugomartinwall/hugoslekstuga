@@ -74,7 +74,11 @@ export default function SlugPage() {
     } catch {}
   }, []);
 
-  const sample = useMemo(() => SAMPLES[Math.floor(Math.random() * SAMPLES.length)], []);
+  // Picked at click time so server-rendered HTML matches client (no hydration drift).
+  const pickSample = useCallback(
+    () => SAMPLES[Math.floor(Math.random() * SAMPLES.length)],
+    [],
+  );
 
   const isEmpty = input.trim().length === 0;
 
@@ -92,7 +96,7 @@ export default function SlugPage() {
             {isEmpty ? (
               <button
                 type="button"
-                onClick={() => setInput(sample)}
+                onClick={() => setInput(pickSample())}
                 className="text-xs font-semibold text-tomato underline-offset-2 hover:underline"
               >
                 try a sample

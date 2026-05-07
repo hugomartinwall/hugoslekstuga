@@ -253,7 +253,7 @@ export const EMOJIS: EmojiEntry[] = [
 
 export function searchEmojis(query: string, category: Category | "all"): EmojiEntry[] {
   const q = query.trim().toLowerCase();
-  let pool = category === "all" ? EMOJIS : EMOJIS.filter((e) => e.category === category);
+  const pool = category === "all" ? EMOJIS : EMOJIS.filter((e) => e.category === category);
   if (!q) return pool;
   return pool.filter((e) => {
     if (e.name.includes(q)) return true;

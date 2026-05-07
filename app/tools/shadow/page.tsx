@@ -114,7 +114,7 @@ export default function ShadowPage() {
     setLayers((ls) => (ls.length <= 1 ? ls : ls.filter((l) => l.id !== id)));
   };
 
-  const usePreset = (preset: typeof PRESETS[number]) => {
+  const applyPreset = (preset: typeof PRESETS[number]) => {
     setLayers(preset.layers.map((l) => ({ ...l, id: nextId++ })));
   };
 
@@ -149,7 +149,7 @@ export default function ShadowPage() {
             <button
               key={p.name}
               type="button"
-              onClick={() => usePreset(p)}
+              onClick={() => applyPreset(p)}
               className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold transition-colors hover:bg-teal-soft"
             >
               {p.name}

@@ -198,7 +198,7 @@ export default function MemoryPage() {
       ? 0
       : matched.size === cards.length && cards.length > 0
         ? Math.floor((now - startedAt) / 1000)
-        : Math.floor((Date.now() - startedAt) / 1000);
+        : Math.floor((now - startedAt) / 1000);
 
   const totalCards = DIFFICULTY_PAIRS[difficulty] * 2;
   const won = matched.size === totalCards && cards.length > 0;

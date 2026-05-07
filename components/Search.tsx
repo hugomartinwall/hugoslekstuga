@@ -275,7 +275,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   if (!q) return <>{text}</>;
   // Highlight the first matching token.
   const tokens = q.split(/\s+/).filter(Boolean);
-  let lower = text.toLowerCase();
+  const lower = text.toLowerCase();
   for (const tok of tokens) {
     const idx = lower.indexOf(tok.toLowerCase());
     if (idx >= 0) {

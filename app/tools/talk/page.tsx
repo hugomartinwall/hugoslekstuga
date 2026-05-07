@@ -111,7 +111,8 @@ export default function TalkPage() {
   }, []);
 
   const ended = running && remainingSec <= 0;
-  const overByMs = ended ? Date.now() - (startedAtRef.current ?? Date.now()) - durationSec * 1000 : 0;
+  // Uses the ticking `now` state — pure during render, still updates each frame.
+  const overByMs = ended ? now - (startedAtRef.current ?? now) - durationSec * 1000 : 0;
 
   return (
     <ToolFrame tool={tool}>

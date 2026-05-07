@@ -60,40 +60,6 @@ export default function TypingPage() {
     setRemaining(seconds);
   }, [seconds]);
 
-  // Timer tick
-  useEffect(() => {
-    if (status !== "running") {
-      if (tickRef.current !== null) cancelAnimationFrame(tickRef.current);
-      tickRef.current = null;
-      return;
-    }
-    const tick = () => {
-      if (startedRef.current === null) return;
-      const elapsed = (performance.now() - startedRef.current) / 1000;
-      const r = Math.max(0, seconds - elapsed);
-      setRemaining(r);
-      if (r <= 0) {
-        finish();
-        return;
-      }
-      tickRef.current = requestAnimationFrame(tick);
-    };
-    tickRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (tickRef.current !== null) cancelAnimationFrame(tickRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, seconds]);
-
-  const start = useCallback(() => {
-    setTyped("");
-    setErrors(0);
-    setStatus("running");
-    startedRef.current = performance.now();
-    setRemaining(seconds);
-    inputRef.current?.focus();
-  }, [seconds]);
-
   const finish = useCallback(() => {
     const elapsed = startedRef.current
       ? Math.min(seconds, (performance.now() - startedRef.current) / 1000)
@@ -119,6 +85,44 @@ export default function TypingPage() {
       } catch {}
     }
   }, [typed, passage, errors, best, seconds]);
+
+  // Timer tick — uses a ref to call the latest `finish` without retriggering the effect.
+  const finishRef = useRef(finish);
+  useEffect(() => {
+    finishRef.current = finish;
+  }, [finish]);
+
+  useEffect(() => {
+    if (status !== "running") {
+      if (tickRef.current !== null) cancelAnimationFrame(tickRef.current);
+      tickRef.current = null;
+      return;
+    }
+    const tick = () => {
+      if (startedRef.current === null) return;
+      const elapsed = (performance.now() - startedRef.current) / 1000;
+      const r = Math.max(0, seconds - elapsed);
+      setRemaining(r);
+      if (r <= 0) {
+        finishRef.current();
+        return;
+      }
+      tickRef.current = requestAnimationFrame(tick);
+    };
+    tickRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (tickRef.current !== null) cancelAnimationFrame(tickRef.current);
+    };
+  }, [status, seconds]);
+
+  const start = useCallback(() => {
+    setTyped("");
+    setErrors(0);
+    setStatus("running");
+    startedRef.current = performance.now();
+    setRemaining(seconds);
+    inputRef.current?.focus();
+  }, [seconds]);
 
   const restart = useCallback(() => {
     setPassage(pickPassage());
@@ -157,11 +161,12 @@ export default function TypingPage() {
     [typed, passage],
   );
   const liveWpm = useMemo(() => {
-    if (status === "idle" || !startedRef.current) return 0;
-    const elapsed = (performance.now() - startedRef.current) / 1000;
+    if (status === "idle") return 0;
+    // Derive elapsed from existing ticking state — keeps the memo pure.
+    const elapsed = Math.max(0, seconds - remaining);
     if (elapsed < 1) return 0;
     return Math.round((correctSoFar / 5) / (elapsed / 60));
-  }, [correctSoFar, status, remaining]);
+  }, [correctSoFar, status, remaining, seconds]);
   const liveAcc =
     typed.length > 0
       ? Math.round((correctSoFar / typed.length) * 100)

@@ -68,7 +68,7 @@ const SAMPLES: { label: string; iso: string }[] = [
 export default function AgoPage() {
   const tool = findTool("ago")!;
   const [input, setInput] = useState<string>("");
-  const [now, setNow] = useState<number>(Date.now());
+  const [now, setNow] = useState<number>(() => Date.now());
   const [hydrated, setHydrated] = useState(false);
   const rafRef = useRef<number | null>(null);
 
@@ -105,9 +105,13 @@ export default function AgoPage() {
   }, []);
 
   const thenMs = useMemo(() => {
-    if (!input) return Date.now();
+    if (!input) return now;
     const t = new Date(input).getTime();
-    return Number.isFinite(t) ? t : Date.now();
+    return Number.isFinite(t) ? t : now;
+    // We intentionally ignore `now` here: the fallback value still ticks because
+    // the `now` state itself updates the surrounding render. Listing `now` would
+    // make the memo recompute every tick for valid inputs, which is wasteful.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input]);
 
   const past = now >= thenMs;
