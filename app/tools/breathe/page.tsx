@@ -80,7 +80,10 @@ export default function BreathePage() {
   const phase = pattern.phases[phaseIndex] ?? pattern.phases[0];
   const phaseProgress = Math.min(1, elapsed / phase.seconds);
 
-  // Animation loop: drive elapsed, advance phase, count cycles.
+  // Animation loop: drive elapsed, advance phase, count cycles. The setState
+  // calls here drive a timer-based animation — the standard pattern for
+  // wiring requestAnimationFrame into React state.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!running) {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -112,6 +115,7 @@ export default function BreathePage() {
     };
     // We depend on phase.seconds and pattern length so phase changes trigger correct timing.
   }, [running, phase.seconds, pattern.phases.length]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const start = useCallback(() => {
     setPhaseIndex(0);

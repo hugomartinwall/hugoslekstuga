@@ -33,6 +33,8 @@ export default function ThreePage() {
   const todayEntry = entries[today];
 
   // Sync draft with stored entry when editing toggles or entries change.
+  // The draft is also user-editable, so it can't be a pure derived value.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (editing && todayEntry) {
       setDraft({
@@ -46,6 +48,7 @@ export default function ThreePage() {
       );
     }
   }, [editing, todayEntry]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // The hook handles persistence — keeping the helper for the rest of the
   // file so we don't have to touch every call site.

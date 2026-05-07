@@ -278,11 +278,15 @@ function ReadyPanel({
 function ImageThumb({ file }: { file: File }) {
   const [url, setUrl] = useState<string | null>(null);
 
+  // Wraps an external resource (object URL) into React state with proper
+  // lifecycle — has to be in an effect so the cleanup runs on unmount.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const u = URL.createObjectURL(file);
     setUrl(u);
     return () => URL.revokeObjectURL(u);
   }, [file]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border-2 border-ink bg-cream-deep">

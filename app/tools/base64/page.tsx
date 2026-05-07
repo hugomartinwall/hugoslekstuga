@@ -52,7 +52,11 @@ export default function Base64Page() {
     a.click();
   }, [pasted]);
 
-  // Validate pasted data URL
+  // Validate pasted data URL. setPreviewError is also called from the
+  // <img onError> handler below, so this can't be a pure useMemo —
+  // we need a mutable state that BOTH the prop validation here and the
+  // load-failure handler can update.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!pasted) {
       setPreviewError("");
@@ -64,6 +68,7 @@ export default function Base64Page() {
       setPreviewError("");
     }
   }, [pasted]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <ToolFrame tool={tool}>

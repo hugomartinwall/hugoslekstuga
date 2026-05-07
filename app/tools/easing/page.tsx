@@ -108,9 +108,17 @@ export default function EasingPage() {
     [state],
   );
 
-  const onPointerDown = (handle: "p1" | "p2") => (e: React.PointerEvent) => {
+  // Two explicit pointer-down handlers rather than a curried factory —
+  // the static analyser can't tell that the curried factory's inner
+  // closure runs only on the event, not at render time.
+  const onPointerDownP1 = (e: React.PointerEvent) => {
     e.preventDefault();
-    draggingRef.current = handle;
+    draggingRef.current = "p1";
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerDownP2 = (e: React.PointerEvent) => {
+    e.preventDefault();
+    draggingRef.current = "p2";
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -246,7 +254,7 @@ export default function EasingPage() {
               fill="#0d9488"
               stroke="#1a1812"
               strokeWidth={2}
-              onPointerDown={onPointerDown("p1")}
+              onPointerDown={onPointerDownP1}
               className="cursor-grab"
             />
             <circle
@@ -256,7 +264,7 @@ export default function EasingPage() {
               fill="#ff7ab2"
               stroke="#1a1812"
               strokeWidth={2}
-              onPointerDown={onPointerDown("p2")}
+              onPointerDown={onPointerDownP2}
               className="cursor-grab"
             />
           </svg>

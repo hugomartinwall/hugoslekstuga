@@ -69,14 +69,14 @@ export default function ZonesPage() {
 
   const removeZone = useCallback((id: string) => {
     setZones((prev) => prev.filter((z) => z.id !== id));
-  }, []);
+  }, [setZones]);
 
   const addZone = useCallback((label: string, tz: string) => {
     setZones((prev) => [
       ...prev,
       { id: `${tz}-${Date.now()}`, label, tz },
     ]);
-  }, []);
+  }, [setZones]);
 
   const moveZone = useCallback((id: string, dir: -1 | 1) => {
     setZones((prev) => {
@@ -88,7 +88,7 @@ export default function ZonesPage() {
       [next[idx], next[ni]] = [next[ni], next[idx]];
       return next;
     });
-  }, []);
+  }, [setZones]);
 
   const presetSorted = useMemo(() => {
     const used = new Set(zones.map((z) => z.tz));

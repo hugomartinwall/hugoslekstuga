@@ -27,7 +27,7 @@ export default function PalettePage() {
   const setBoth = useCallback((next: string) => {
     setBase(next);
     setHexInput(next);
-  }, []);
+  }, [setBase]);
 
   const onHexChange = (raw: string) => {
     setHexInput(raw);

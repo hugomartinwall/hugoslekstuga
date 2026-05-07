@@ -207,15 +207,19 @@ export default function LoremPage() {
     setOutput(paragraphs);
   }, [count, flavour]);
 
-  // Generate once on first mount so the page isn't empty.
+  // Generate once on first mount so the page isn't empty. Math.random in a
+  // lazy useState initialiser would cause an SSR/client hydration mismatch
+  // (server picks one paragraph, client picks a different one); the effect
+  // runs only after hydration where Math.random is safe.
+  /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
   useEffect(() => {
     if (output.length === 0) {
       setOutput(
         Array.from({ length: count }, () => generateParagraph(flavour)),
       );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 
   const copy = useCallback(async () => {
     if (!output.length) return;

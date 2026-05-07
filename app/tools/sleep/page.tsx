@@ -33,10 +33,13 @@ export default function SleepPage() {
   const setTime = (t: string) => setStored((s) => ({ ...s, time: t }));
   const [selected, setSelected] = useState<number>(0);
 
-  // Reset selected when mode/time changes.
+  // Reset selected when mode/time changes. Selected is updated by user
+  // clicks too, so it can't be a pure derived value.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setSelected(0);
   }, [mode, time]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const targetMinutes = useMemo(() => parseTime(time), [time]);
 

@@ -71,9 +71,15 @@ export default function AsciiPage() {
     [width, contrast, ramp],
   );
 
+  // Legitimate setState-in-effect: regenerating ASCII output is a heavy
+  // canvas/image operation. Doing it in render would re-encode on every
+  // re-render; doing it in the file-drop handler would miss prop changes
+  // (width/contrast/ramp). The effect is the right place.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (imageEl) generate(imageEl);
   }, [imageEl, generate]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleFile = (file: File) => {
     const url = URL.createObjectURL(file);

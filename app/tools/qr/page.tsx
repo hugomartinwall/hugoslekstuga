@@ -46,6 +46,10 @@ export default function QrPage() {
 
   const encoded = useMemo(() => encode(data), [data]);
 
+  // Render the QR via the qrcode library — async, dynamic import, draws
+  // to a ref'd canvas. Multiple cleanly-related setStates fall out of one
+  // async operation; useMemo can't replace this.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!encoded) {
       setPngUrl(null);
@@ -93,6 +97,7 @@ export default function QrPage() {
       cancelled = true;
     };
   }, [encoded, level, size]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const downloadPng = () => {
     if (!pngUrl) return;

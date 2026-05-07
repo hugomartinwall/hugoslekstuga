@@ -59,7 +59,9 @@ export default function StretchPage() {
 
   const totalSec = ROUTINE.reduce((a, s) => a + s.seconds, 0);
 
-  // Animation loop drives remaining + step advancement.
+  // Animation loop drives remaining + step advancement. setState-in-effect
+  // is the standard pattern for wiring rAF into React state.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!running) {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -94,6 +96,7 @@ export default function StretchPage() {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, [running, stepIdx]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const start = useCallback(() => {
     setStepIdx(0);

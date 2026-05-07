@@ -53,7 +53,7 @@ export default function GradientPage() {
         stops: s.stops.map((st) => (st.id === id ? { ...st, ...patch } : st)),
       }));
     },
-    [],
+    [setState],
   );
 
   const addStop = useCallback(() => {
@@ -75,7 +75,7 @@ export default function GradientPage() {
         ? s
         : { ...s, stops: s.stops.filter((st) => st.id !== id) },
     );
-  }, []);
+  }, [setState]);
 
   const copy = async () => {
     try {

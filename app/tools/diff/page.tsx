@@ -42,7 +42,9 @@ export default function DiffPage() {
     setStored((s) => ({ ...s, granularity: g }));
   const [parts, setParts] = useState<DiffPart[]>([]);
 
-  // Compute diff lazily as inputs change.
+  // Compute diff lazily as inputs change. Async + dynamic import means
+  // useMemo can't replace this effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let cancelled = false;
     if (!left.trim() && !right.trim()) {
@@ -65,6 +67,7 @@ export default function DiffPage() {
       cancelled = true;
     };
   }, [left, right, granularity]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const summary = useMemo(() => {
     let added = 0;

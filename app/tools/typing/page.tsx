@@ -46,9 +46,14 @@ export default function TypingPage() {
   const tickRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Reset the remaining-time display when the user picks 30 vs 60. It's
+  // the standard "external prop change resets state" case — not a pure
+  // derived value because remaining ticks down independently while running.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setRemaining(seconds);
   }, [seconds]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const finish = useCallback(() => {
     const elapsed = startedRef.current

@@ -117,7 +117,10 @@ export function SearchPalette() {
 
   const results = useMemo(() => filterTools(query), [query]);
 
-  // Reset state when opening.
+  // Reset state when opening — `open` is driven by an external context
+  // (button click or keyboard shortcut from anywhere on the site), so the
+  // imperative DOM focus has to happen here in an effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (open) {
       setQuery("");
@@ -126,7 +129,8 @@ export function SearchPalette() {
     }
   }, [open]);
 
-  // Keep activeIdx in bounds.
+  // Keep activeIdx in bounds. activeIdx changes from arrow-key handlers
+  // too, so derived-state via useMemo would lose user navigation.
   useEffect(() => {
     if (results.length === 0) {
       setActiveIdx(0);
@@ -134,6 +138,7 @@ export function SearchPalette() {
     }
     if (activeIdx >= results.length) setActiveIdx(results.length - 1);
   }, [results.length, activeIdx]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const select = useCallback(
     (idx: number) => {

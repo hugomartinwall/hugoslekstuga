@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
@@ -18,8 +18,10 @@ export default function TalkPage() {
   const [paused, setPaused] = useState(false);
   const [now, setNow] = useState<number>(0);
   const [hitMilestones, setHitMilestones] = useState<Set<number>>(() => new Set());
-  const startedAtRef = useRef<number | null>(null);
-  const baseRemainingRef = useRef<number>(0);
+  // These were refs; lifting to state lets `remainingSec` and `overByMs`
+  // be derived purely (no ref reads during render).
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [baseRemaining, setBaseRemaining] = useState<number>(0);
 
   // Tick
   useEffect(() => {
@@ -30,16 +32,19 @@ export default function TalkPage() {
 
   const remainingSec = useMemo(() => {
     if (!running) return durationSec;
-    if (paused) return baseRemainingRef.current;
-    const startedAt = startedAtRef.current;
-    if (startedAt === null) return baseRemainingRef.current;
+    if (paused) return baseRemaining;
+    if (startedAt === null) return baseRemaining;
     const elapsed = (now - startedAt) / 1000;
-    return Math.max(0, baseRemainingRef.current - elapsed);
-  }, [running, paused, now, durationSec]);
+    return Math.max(0, baseRemaining - elapsed);
+  }, [running, paused, now, durationSec, baseRemaining, startedAt]);
 
   const progress = 1 - remainingSec / durationSec;
 
-  // Watch for crossed milestones to chime + flash.
+  // Watch for crossed milestones to chime + flash. The chime is an
+  // imperative side effect that needs to happen exactly once per crossing,
+  // and the new milestone must persist as state — useMemo can't replace
+  // this effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!running || paused) return;
     for (const m of MILESTONES) {
@@ -49,6 +54,7 @@ export default function TalkPage() {
       }
     }
   }, [progress, hitMilestones, running, paused]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Title reflects countdown
   useEffect(() => {
@@ -60,8 +66,8 @@ export default function TalkPage() {
   }, [running, remainingSec]);
 
   const start = useCallback(() => {
-    baseRemainingRef.current = durationSec;
-    startedAtRef.current = Date.now();
+    setBaseRemaining(durationSec);
+    setStartedAt(Date.now());
     setNow(Date.now());
     setRunning(true);
     setPaused(false);
@@ -69,24 +75,23 @@ export default function TalkPage() {
   }, [durationSec]);
 
   const pause = useCallback(() => {
-    const startedAt = startedAtRef.current;
     if (startedAt !== null) {
       const elapsed = (Date.now() - startedAt) / 1000;
-      baseRemainingRef.current = Math.max(0, baseRemainingRef.current - elapsed);
+      setBaseRemaining((prev) => Math.max(0, prev - elapsed));
     }
-    startedAtRef.current = null;
+    setStartedAt(null);
     setPaused(true);
-  }, []);
+  }, [startedAt]);
 
   const resume = useCallback(() => {
-    startedAtRef.current = Date.now();
+    setStartedAt(Date.now());
     setNow(Date.now());
     setPaused(false);
   }, []);
 
   const reset = useCallback(() => {
-    startedAtRef.current = null;
-    baseRemainingRef.current = 0;
+    setStartedAt(null);
+    setBaseRemaining(0);
     setRunning(false);
     setPaused(false);
     setHitMilestones(new Set());
@@ -94,8 +99,8 @@ export default function TalkPage() {
   }, []);
 
   const ended = running && remainingSec <= 0;
-  // Uses the ticking `now` state — pure during render, still updates each frame.
-  const overByMs = ended ? now - (startedAtRef.current ?? now) - durationSec * 1000 : 0;
+  // Pure derivation — startedAt is now state, no ref reads at render time.
+  const overByMs = ended ? now - (startedAt ?? now) - durationSec * 1000 : 0;
 
   return (
     <ToolFrame tool={tool}>

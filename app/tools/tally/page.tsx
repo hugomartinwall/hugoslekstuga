@@ -55,11 +55,11 @@ export default function TallyPage() {
       const jitter = 540 + Math.random() * 240;
       softClick(ctx, jitter);
     }
-  }, []);
+  }, [setState]);
 
   const undo = useCallback(() => {
     setState((s) => ({ ...s, count: Math.max(0, s.count - 1) }));
-  }, []);
+  }, [setState]);
 
   // Long-press to reset
   const startHold = useCallback(() => {
@@ -78,7 +78,7 @@ export default function TallyPage() {
       holdRafRef.current = requestAnimationFrame(tick);
     };
     holdRafRef.current = requestAnimationFrame(tick);
-  }, []);
+  }, [setState]);
 
   const endHold = useCallback(() => {
     holdStartRef.current = null;

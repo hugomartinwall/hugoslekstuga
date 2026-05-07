@@ -55,11 +55,11 @@ export default function UntilPage() {
     ]);
     setTitle("");
     setIso("");
-  }, [title, iso]);
+  }, [title, iso, setEvents]);
 
   const removeEvent = useCallback((id: string) => {
     setEvents((prev) => prev.filter((e) => e.id !== id));
-  }, []);
+  }, [setEvents]);
 
   const todayISO = useMemo(() => localISODate(new Date()), []);
 
