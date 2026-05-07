@@ -1,6 +1,6 @@
 import HeroFeatured from "@/components/HeroFeatured";
+import HeroPlay from "@/components/HeroPlay";
 import ToolsSection from "@/components/ToolsSection";
-import { tools } from "@/lib/tools";
 
 export default function Home() {
   return (
@@ -23,25 +23,9 @@ export default function Home() {
             tracking. Just open a tab and use them.
           </p>
 
-          <dl className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-ink-muted">
-            <div className="flex items-baseline gap-1.5">
-              <dt className="sr-only">Tools</dt>
-              <dd className="font-display text-2xl font-extrabold text-ink">
-                {tools.length}
-              </dd>
-              <span>tools</span>
-            </div>
-            <div className="flex items-baseline gap-1.5">
-              <dt className="sr-only">Themes</dt>
-              <dd className="font-display text-2xl font-extrabold text-ink">5</dd>
-              <span>themes</span>
-            </div>
-            <div className="flex items-baseline gap-1.5">
-              <dt className="sr-only">Servers used</dt>
-              <dd className="font-display text-2xl font-extrabold text-ink">0</dd>
-              <span>servers</span>
-            </div>
-          </dl>
+          <div className="mt-2">
+            <HeroPlay />
+          </div>
         </div>
 
         <HeroFeatured />
