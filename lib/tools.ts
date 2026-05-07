@@ -172,24 +172,6 @@ export const tools: Tool[] = [
     emoji: "❄",
   },
   {
-    slug: "emoji",
-    title: "Emoji",
-    tagline: "Find the right emoji, fast.",
-    description:
-      "A searchable emoji picker. Type a feeling or thing, get matching emojis, click any to copy. No keyboard menus, no doom-scrolling.",
-    color: "yellow",
-    emoji: "☻",
-  },
-  {
-    slug: "memory",
-    title: "Memory",
-    tagline: "Match the pairs.",
-    description:
-      "The classic match-pairs card game, in our brand colors. A small break for the brain. Track your best time and fewest moves.",
-    color: "purple",
-    emoji: "◈",
-  },
-  {
     slug: "sketch",
     title: "Sketch",
     tagline: "Draw something, download it.",
@@ -313,15 +295,6 @@ export const tools: Tool[] = [
     emoji: "⌫",
   },
   {
-    slug: "count",
-    title: "Count",
-    tagline: "Live word, character, sentence count.",
-    description:
-      "Type or paste, see the numbers update as you go. Tracks reading time and celebrates when you cross 100, 280, and 1000 words.",
-    color: "green",
-    emoji: "№",
-  },
-  {
     slug: "lorem",
     title: "Lorem",
     tagline: "Placeholder text, with personality.",
@@ -390,24 +363,6 @@ export const tools: Tool[] = [
   },
 
   // Creative
-  {
-    slug: "coin",
-    title: "Coin",
-    tagline: "Heads or tails.",
-    description:
-      "A coin that actually feels flipped — weight, spin, sound, settle. For every small decision that doesn't deserve a meeting.",
-    color: "yellow",
-    emoji: "⊜",
-  },
-  {
-    slug: "eight",
-    title: "Eight Ball",
-    tagline: "Ask the magic 8 ball.",
-    description:
-      "Type your question, give it a shake, and watch the answer rise through the liquid. Twenty classic responses. Take it as seriously as you like.",
-    color: "purple",
-    emoji: "⊛",
-  },
   {
     slug: "picker",
     title: "Picker",
