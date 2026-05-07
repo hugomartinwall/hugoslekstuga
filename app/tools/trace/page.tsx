@@ -7,16 +7,30 @@ import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:trace:options";
 
+type Detail = "fast" | "standard" | "high" | "max";
+
 type Options = {
   numberofcolors: number;
   pathomit: number;
   scale: number;
+  detail: Detail;
 };
 
 const DEFAULTS: Options = {
   numberofcolors: 8,
   pathomit: 8,
   scale: 1,
+  detail: "standard",
+};
+
+// Per-detail clamps. "fast" matches the previous hard 384px cap; "max"
+// disables clamping (useful for clean logos and icons that should keep
+// every pixel) but produces much larger SVGs and slower trace times.
+const DETAIL_MAX_SIDE: Record<Detail, number | null> = {
+  fast: 256,
+  standard: 384,
+  high: 768,
+  max: null,
 };
 
 // Loaded lazily because the lib is ~30 KB and not needed until trace.
@@ -64,8 +78,12 @@ export default function TracePage() {
       if (!tracerRef) setTracerRef(tracer);
 
       // Resize the image down for tracing to keep things fast and small.
-      const maxSide = 384;
-      const scale = Math.min(1, maxSide / Math.max(imageEl.width, imageEl.height));
+      const detail = options.detail ?? "standard";
+      const maxSide = DETAIL_MAX_SIDE[detail];
+      const scale =
+        maxSide === null
+          ? 1
+          : Math.min(1, maxSide / Math.max(imageEl.width, imageEl.height));
       const w = Math.max(1, Math.round(imageEl.width * scale));
       const h = Math.max(1, Math.round(imageEl.height * scale));
       const canvas = document.createElement("canvas");
@@ -140,6 +158,42 @@ export default function TracePage() {
 
         {imageEl && (
           <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                Detail
+              </span>
+              {(
+                [
+                  { id: "fast", label: "Fast" },
+                  { id: "standard", label: "Standard" },
+                  { id: "high", label: "High" },
+                  { id: "max", label: "Max" },
+                ] as { id: Detail; label: string }[]
+              ).map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setOptions((o) => ({ ...o, detail: d.id }))}
+                  className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
+                    (options.detail ?? "standard") === d.id
+                      ? "bg-orange text-cream"
+                      : "bg-cream hover:bg-orange-soft"
+                  }`}
+                  title={
+                    d.id === "fast"
+                      ? "256px max — quickest"
+                      : d.id === "standard"
+                      ? "384px max — balanced"
+                      : d.id === "high"
+                      ? "768px max — keeps logo edges sharp"
+                      : "no clamp — biggest output, slowest"
+                  }
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Slider
                 label="Colours"

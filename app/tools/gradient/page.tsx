@@ -8,24 +8,50 @@ import { useLocalStorageState } from "@/lib/use-local-storage-state";
 const STORAGE_KEY = "hugoslekstuga:gradient:state";
 
 type GradientType = "linear" | "radial" | "conic";
+type RadialShape = "circle" | "ellipse";
+type RadialPosition =
+  | "center"
+  | "top"
+  | "top-right"
+  | "right"
+  | "bottom-right"
+  | "bottom"
+  | "bottom-left"
+  | "left"
+  | "top-left";
 
 type Stop = { id: number; color: string; pos: number };
 
 type State = {
   type: GradientType;
   angle: number;
+  shape: RadialShape;
+  position: RadialPosition;
   stops: Stop[];
 };
 
 const DEFAULT: State = {
   type: "linear",
   angle: 135,
+  shape: "circle",
+  position: "center",
   stops: [
     { id: 1, color: "#ff7ab2", pos: 0 },
     { id: 2, color: "#4f66f2", pos: 100 },
   ],
 };
 
+const POSITION_CSS: Record<RadialPosition, string> = {
+  center: "center",
+  top: "top",
+  "top-right": "top right",
+  right: "right",
+  "bottom-right": "bottom right",
+  bottom: "bottom",
+  "bottom-left": "bottom left",
+  left: "left",
+  "top-left": "top left",
+};
 
 function buildCss(state: State): string {
   const sorted = [...state.stops].sort((a, b) => a.pos - b.pos);
@@ -34,7 +60,9 @@ function buildCss(state: State): string {
     return `linear-gradient(${state.angle}deg, ${stopList})`;
   }
   if (state.type === "radial") {
-    return `radial-gradient(circle at center, ${stopList})`;
+    const shape = state.shape ?? "circle";
+    const pos = POSITION_CSS[state.position ?? "center"];
+    return `radial-gradient(${shape} at ${pos}, ${stopList})`;
   }
   return `conic-gradient(from ${state.angle}deg at 50% 50%, ${stopList})`;
 }
@@ -126,6 +154,67 @@ export default function GradientPage() {
             </label>
           )}
         </div>
+
+        {state.type === "radial" && (
+          <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-cream p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                Shape
+              </span>
+              {(["circle", "ellipse"] as RadialShape[]).map((sh) => (
+                <button
+                  key={sh}
+                  type="button"
+                  onClick={() => setState((s) => ({ ...s, shape: sh }))}
+                  className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
+                    (state.shape ?? "circle") === sh
+                      ? "bg-pink text-cream"
+                      : "bg-cream hover:bg-pink-soft"
+                  }`}
+                >
+                  {sh}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                Centre at
+              </span>
+              <div className="grid grid-cols-3 gap-1.5 self-start">
+                {(
+                  [
+                    "top-left",
+                    "top",
+                    "top-right",
+                    "left",
+                    "center",
+                    "right",
+                    "bottom-left",
+                    "bottom",
+                    "bottom-right",
+                  ] as RadialPosition[]
+                ).map((p) => {
+                  const active = (state.position ?? "center") === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setState((s) => ({ ...s, position: p }))}
+                      aria-label={p}
+                      className={`flex h-9 w-9 items-center justify-center rounded-md border-2 border-ink transition-colors ${
+                        active ? "bg-pink" : "bg-cream-deep hover:bg-pink-soft"
+                      }`}
+                    >
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${active ? "bg-cream" : "bg-ink"}`}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-cream p-4">
           <div className="flex items-center justify-between">
