@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import ToolCard from "@/components/ToolCard";
+import SurpriseButton from "@/components/SurpriseButton";
 import { tools } from "@/lib/tools";
 
 const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
@@ -12,7 +13,9 @@ const STORAGE_KEY = "hugoslekstuga:home:view";
 type View = "grid" | "map";
 
 export default function ToolsSection() {
-  const [view, setView] = useState<View>("grid");
+  // Map is the default — the playhouse opens onto the graph. Returning
+  // visitors who chose Grid keep their preference via localStorage.
+  const [view, setView] = useState<View>("map");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -53,6 +56,13 @@ export default function ToolsSection() {
       ) : (
         <ToolMap />
       )}
+
+      <div className="mt-10 flex flex-col items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Or just dive in
+        </span>
+        <SurpriseButton />
+      </div>
     </section>
   );
 }
