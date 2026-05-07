@@ -12,44 +12,15 @@ const SAMPLES = [
   "A wild idea on a rainy Tuesday",
 ];
 
-// --- transformations ---
-function words(input: string): string[] {
-  return input
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_\-./\\]+/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
+// `case` is the *playful* sibling of the `slug` tool. slug covers the
+// serious cases (lower/upper/title/camel/snake/kebab/etc.); this one is
+// for the wonky transformations — mocking, alternating, reverse, invert,
+// leet, clap, redacted. Keeping them split avoids the two tools
+// disagreeing about what camelCase means and lets `case` lean into fun.
 
-const toLower = (s: string) => s.toLowerCase();
-const toUpper = (s: string) => s.toUpperCase();
-const toTitle = (s: string) =>
-  words(s)
-    .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-const toSentence = (s: string) => {
-  const lower = s.toLowerCase();
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-};
-const toCamel = (s: string) =>
-  words(s)
-    .map((w, i) =>
-      i === 0
-        ? w.toLowerCase()
-        : w[0].toUpperCase() + w.slice(1).toLowerCase(),
-    )
-    .join("");
-const toSnake = (s: string) =>
-  words(s)
-    .map((w) => w.toLowerCase())
-    .join("_");
-
-const toMocking = (s: string) =>
-  s
-    .split("")
-    .map((c, i) => (i % 2 === 0 ? c.toLowerCase() : c.toUpperCase()))
-    .join("");
-const toAlt = (s: string) => {
+const toMocking = (s: string) => {
+  // Toggle case on letters only — non-letters don't move the alternation
+  // pointer, so spaces and punctuation no longer flip the rhythm.
   let upper = false;
   return s
     .split("")
@@ -92,21 +63,68 @@ const toLeet = (s: string) => {
     .map((c) => map[c] ?? c)
     .join("");
 };
+const toClap = (s: string) =>
+  s
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" 👏 ");
+const toRedacted = (s: string) =>
+  s
+    .split("")
+    .map((c) => (/[a-zA-Z0-9]/.test(c) ? "█" : c))
+    .join("");
+const toSpaced = (s: string) =>
+  s.split("").join(" ").toUpperCase();
+const toRot13 = (s: string) =>
+  s.replace(/[a-zA-Z]/g, (c) => {
+    const base = c <= "Z" ? 65 : 97;
+    return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
+  });
 
 type Row = { label: string; description: string; fn: (s: string) => string };
 
 const ROWS: Row[] = [
-  { label: "lowercase", description: "All small letters.", fn: toLower },
-  { label: "UPPERCASE", description: "All caps.", fn: toUpper },
-  { label: "Title Case", description: "Each word capitalised.", fn: toTitle },
-  { label: "Sentence case", description: "Capital first letter only.", fn: toSentence },
-  { label: "camelCase", description: "First word lower, rest capitalised.", fn: toCamel },
-  { label: "snake_case", description: "Lowercase with underscores.", fn: toSnake },
-  { label: "sNaRkY (mocking)", description: "Alternating per character.", fn: toMocking },
-  { label: "AbCdEf (alternating)", description: "Alternating per letter only.", fn: toAlt },
-  { label: "esreveR", description: "Read it backwards.", fn: toReverse },
-  { label: "iNVERTED", description: "Swap upper and lower.", fn: toInvert },
-  { label: "l33t 5p34k", description: "Numbers stand in for letters.", fn: toLeet },
+  {
+    label: "sNaRkY",
+    description: "Mocking case — letters alternate, punctuation is left alone.",
+    fn: toMocking,
+  },
+  {
+    label: "esreveR",
+    description: "Read it backwards.",
+    fn: toReverse,
+  },
+  {
+    label: "iNVERTED",
+    description: "Swap upper and lower for every letter.",
+    fn: toInvert,
+  },
+  {
+    label: "l33t 5p34k",
+    description: "Numbers stand in for letters.",
+    fn: toLeet,
+  },
+  {
+    label: "clap👏case",
+    description: "A clap between every word.",
+    fn: toClap,
+  },
+  {
+    label: "S P A C E D",
+    description: "Each character separated by a space, all caps.",
+    fn: toSpaced,
+  },
+  {
+    label: "redacted",
+    description: "Letters and digits replaced with a black bar.",
+    fn: toRedacted,
+  },
+  {
+    label: "rot13",
+    description: "Each letter rotated 13 places — apply twice to undo.",
+    fn: toRot13,
+  },
 ];
 
 export default function CasePage() {

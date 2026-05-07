@@ -11,10 +11,11 @@ export async function convertPdf(
 
   // Lazy-load pdfjs only when called — its internals touch DOM/worker APIs.
   const pdfjs = await import("pdfjs-dist");
-  // Worker is loaded from unpkg pinned to the installed version. This avoids
-  // bundler-specific asset import syntax and matches the pdfjs-dist docs.
-  const ver = (pdfjs as unknown as { version?: string }).version ?? "";
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${ver}/build/pdf.worker.min.mjs`;
+  // Worker is vendored at /public/vendor/pdf.worker.min.mjs (copied from
+  // node_modules/pdfjs-dist/build at build time). The site's promise is
+  // "stays in your browser" — pulling the worker from unpkg.com would
+  // make a runtime CDN call, breaking that promise and offline use.
+  pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.mjs";
 
   const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: buf }).promise;

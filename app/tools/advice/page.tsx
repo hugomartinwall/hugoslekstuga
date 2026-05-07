@@ -1,30 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { advice } from "@/lib/advice";
+
+// Avoid drawing any of the last N items so the user doesn't see "send the
+// message you're avoiding" three times in a row even with a list of 80.
+const RECENT_WINDOW = 12;
 
 export default function AdvicePage() {
   const tool = findTool("advice")!;
   const [current, setCurrent] = useState<string | null>(null);
   const [animKey, setAnimKey] = useState(0);
   const [copied, setCopied] = useState(false);
+  const recentRef = useRef<string[]>([]);
 
   const draw = useCallback(() => {
     if (advice.length === 0) return;
     setCopied(false);
+    const cap = Math.min(RECENT_WINDOW, Math.max(0, advice.length - 1));
     let next = advice[Math.floor(Math.random() * advice.length)];
-    if (advice.length > 1) {
-      let attempts = 0;
-      while (next === current && attempts < 8) {
-        next = advice[Math.floor(Math.random() * advice.length)];
-        attempts++;
-      }
+    let attempts = 0;
+    while (recentRef.current.includes(next) && attempts < 24) {
+      next = advice[Math.floor(Math.random() * advice.length)];
+      attempts++;
     }
+    recentRef.current = [next, ...recentRef.current].slice(0, cap);
     setCurrent(next);
     setAnimKey((k) => k + 1);
-  }, [current]);
+  }, []);
 
   const copy = useCallback(async () => {
     if (!current) return;

@@ -297,9 +297,9 @@ export const tools: Tool[] = [
   {
     slug: "case",
     title: "Case",
-    tagline: "Type once, every case at once.",
+    tagline: "The wonky case-converter.",
     description:
-      "camelCase, snake_case, kebab-case, PascalCase, CONSTANT, Title, lower, UPPER — plus a few playful ones. Click any to copy.",
+      "Mocking, reverse, inverted, l33t, clap-case, spaced, redacted, ROT13. For when you've got something to say and want it to look weird. The serious cases live in Slug.",
     color: "purple",
     emoji: "⌷",
   },

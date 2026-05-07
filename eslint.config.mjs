@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored third-party scripts shipped under /public — these aren't
+    // our source. Specifically: the pdfjs worker (~1.2 MB of minified JS).
+    "public/vendor/**",
   ]),
   {
     // The newer eslint-plugin-react-hooks ships strict rules that flag
