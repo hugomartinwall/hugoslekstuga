@@ -43,6 +43,8 @@ const FLAGS: { letter: string; label: string }[] = [
   { letter: "m", label: "multiline" },
   { letter: "s", label: "dotall" },
   { letter: "u", label: "unicode" },
+  { letter: "y", label: "sticky" },
+  { letter: "d", label: "hasIndices" },
 ];
 
 type Match = {
@@ -59,19 +61,34 @@ function runRegex(pattern: string, flags: string, text: string): {
 } {
   if (!pattern) return { ok: true, matches: [] };
   try {
-    const re = new RegExp(pattern, flags.includes("g") ? flags : flags + "g");
+    // Honour the user's flags exactly. If they leave `g` off, return only
+    // the first match — that's what their pattern means in JS, and a
+    // regex tester that secretly behaves like `g` lies to its user.
+    const re = new RegExp(pattern, flags);
     const out: Match[] = [];
-    let m: RegExpExecArray | null;
-    let safety = 0;
-    while ((m = re.exec(text)) !== null) {
-      if (safety++ > 1000) break;
-      out.push({
-        index: m.index,
-        end: m.index + m[0].length,
-        match: m[0],
-        groups: m.slice(1),
-      });
-      if (m[0].length === 0) re.lastIndex++;
+    if (flags.includes("g")) {
+      let m: RegExpExecArray | null;
+      let safety = 0;
+      while ((m = re.exec(text)) !== null) {
+        if (safety++ > 1000) break;
+        out.push({
+          index: m.index,
+          end: m.index + m[0].length,
+          match: m[0],
+          groups: m.slice(1),
+        });
+        if (m[0].length === 0) re.lastIndex++;
+      }
+    } else {
+      const m = re.exec(text);
+      if (m) {
+        out.push({
+          index: m.index,
+          end: m.index + m[0].length,
+          match: m[0],
+          groups: m.slice(1),
+        });
+      }
     }
     return { ok: true, matches: out };
   } catch (e) {
@@ -182,7 +199,7 @@ export default function RegexPage() {
             <input
               type="text"
               value={flags}
-              onChange={(e) => setFlags(e.target.value.replace(/[^gimsu]/g, ""))}
+              onChange={(e) => setFlags(e.target.value.replace(/[^gimsuyd]/g, ""))}
               spellCheck={false}
               placeholder="gimsu"
               className="w-16 bg-transparent font-mono text-base focus:outline-none"

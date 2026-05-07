@@ -38,7 +38,6 @@ export default function TypingPage() {
   const [typed, setTyped] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [remaining, setRemaining] = useState(60);
-  const [errors, setErrors] = useState(0);
   const [best, setBest] = useState<Stats | null>(null);
   const startedRef = useRef<number | null>(null);
   const tickRef = useRef<number | null>(null);
@@ -67,6 +66,7 @@ export default function TypingPage() {
     const correct = Array.from(typed).filter(
       (c, i) => c === passage[i],
     ).length;
+    const errorsAtFinish = typed.length - correct;
     const wpm = elapsed > 0 ? Math.round((correct / 5) / (elapsed / 60)) : 0;
     const acc =
       typed.length > 0 ? Math.round((correct / typed.length) * 100) : 100;
@@ -74,7 +74,7 @@ export default function TypingPage() {
       wpm,
       acc,
       correct,
-      errors,
+      errors: errorsAtFinish,
       seconds: Math.round(elapsed),
     };
     setStatus("done");
@@ -84,7 +84,7 @@ export default function TypingPage() {
         localStorage.setItem(BEST_KEY, JSON.stringify(stats));
       } catch {}
     }
-  }, [typed, passage, errors, best, seconds]);
+  }, [typed, passage, best, seconds]);
 
   // Timer tick — uses a ref to call the latest `finish` without retriggering the effect.
   const finishRef = useRef(finish);
@@ -117,7 +117,6 @@ export default function TypingPage() {
 
   const start = useCallback(() => {
     setTyped("");
-    setErrors(0);
     setStatus("running");
     startedRef.current = performance.now();
     setRemaining(seconds);
@@ -127,7 +126,6 @@ export default function TypingPage() {
   const restart = useCallback(() => {
     setPassage(pickPassage());
     setTyped("");
-    setErrors(0);
     setRemaining(seconds);
     setStatus("idle");
     startedRef.current = null;
@@ -142,14 +140,6 @@ export default function TypingPage() {
     }
     // Cap typed length at passage length
     const sliced = next.slice(0, passage.length);
-    // Count new errors
-    const prevLen = typed.length;
-    if (sliced.length > prevLen) {
-      const ch = sliced[sliced.length - 1];
-      if (ch !== passage[sliced.length - 1]) {
-        setErrors((e) => e + 1);
-      }
-    }
     setTyped(sliced);
     if (sliced.length === passage.length) {
       finish();
@@ -243,7 +233,7 @@ export default function TypingPage() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Stat label="WPM" value={String(liveWpm)} big />
               <Stat label="Accuracy" value={`${liveAcc}%`} />
-              <Stat label="Errors" value={String(errors)} />
+              <Stat label="Errors" value={String(typed.length - correctSoFar)} />
               <Stat label="Seconds" value={String(seconds - Math.round(remaining))} />
             </div>
             <div className="flex gap-3">

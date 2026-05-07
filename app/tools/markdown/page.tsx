@@ -47,7 +47,10 @@ export default function MarkdownPage() {
     } catch {}
   }, [text, hydrated]);
 
-  // Render markdown when text changes.
+  // Render markdown when text changes. The output goes through DOMPurify
+  // before reaching dangerouslySetInnerHTML — marked stopped sanitizing in
+  // v5, so without this a user pasting `<img onerror=...>` would execute
+  // JS in their own session.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -56,9 +59,16 @@ export default function MarkdownPage() {
         return;
       }
       try {
-        const { marked } = await import("marked");
-        const out = await marked.parse(text, { gfm: true, breaks: false });
-        if (!cancelled) setHtml(typeof out === "string" ? out : "");
+        const [{ marked }, DOMPurifyModule] = await Promise.all([
+          import("marked"),
+          import("dompurify"),
+        ]);
+        const raw = await marked.parse(text, { gfm: true, breaks: false });
+        const DOMPurify = DOMPurifyModule.default;
+        const safe = DOMPurify.sanitize(typeof raw === "string" ? raw : "", {
+          USE_PROFILES: { html: true },
+        });
+        if (!cancelled) setHtml(safe);
       } catch {
         if (!cancelled) setHtml("");
       }

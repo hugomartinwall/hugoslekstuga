@@ -97,20 +97,30 @@ export default function StripPage() {
   const [filename, setFilename] = useState<string>("");
   const [imageUrl, setImageUrl] = useState<string>("");
   const [findings, setFindings] = useState<Finding[]>([]);
-  const [stripped, setStripped] = useState<{ url: string; size: number } | null>(null);
+  const [stripped, setStripped] = useState<{ url: string; size: number; type: string } | null>(null);
   const [stripping, setStripping] = useState(false);
   const [originalSize, setOriginalSize] = useState(0);
+  const [originalType, setOriginalType] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [hasParsed, setHasParsed] = useState(false);
 
   const handleFile = useCallback(async (file: File) => {
     setError("");
-    setStripped(null);
+    // Free the previous stripped result before we forget about it.
+    setStripped((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
     setHasParsed(false);
     setFilename(file.name);
     setOriginalSize(file.size);
-    const url = URL.createObjectURL(file);
-    setImageUrl(url);
+    setOriginalType(file.type);
+    // Free the previous source preview too.
+    setImageUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      const next = URL.createObjectURL(file);
+      return next;
+    });
 
     try {
       // Dynamically import exifr — only loaded when needed
@@ -137,40 +147,54 @@ export default function StripPage() {
     if (!imageUrl || stripping) return;
     setStripping(true);
     try {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      await new Promise<void>((res, rej) => {
-        img.onload = () => res();
-        img.onerror = () => rej(new Error("could not load image"));
-        img.src = imageUrl;
+      // Use createImageBitmap with imageOrientation: "from-image" so EXIF
+      // orientation flags are baked into the pixel data and the canvas
+      // dimensions reflect the *visual* width/height (rather than the
+      // raw bitmap orientation, which can be transposed for portraits).
+      const fileForBitmap = await fetch(imageUrl).then((r) => r.blob());
+      const bitmap = await createImageBitmap(fileForBitmap, {
+        imageOrientation: "from-image",
       });
+
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("no canvas");
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+
+      // Preserve PNG when input is PNG — re-encoding a screenshot as JPEG
+      // throws away accuracy and fonts get blurry.
+      const isPng = originalType === "image/png";
+      const outType = isPng ? "image/png" : "image/jpeg";
+      const outQuality = isPng ? undefined : 0.92;
+
       const blob: Blob = await new Promise((res, rej) => {
         canvas.toBlob(
           (b) => (b ? res(b) : rej(new Error("encode failed"))),
-          "image/jpeg",
-          0.92,
+          outType,
+          outQuality,
         );
       });
-      const url = URL.createObjectURL(blob);
-      setStripped({ url, size: blob.size });
+      // Revoke the previous stripped URL before we replace it.
+      setStripped((prev) => {
+        if (prev) URL.revokeObjectURL(prev.url);
+        return { url: URL.createObjectURL(blob), size: blob.size, type: outType };
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "could not strip");
     } finally {
       setStripping(false);
     }
-  }, [imageUrl, stripping]);
+  }, [imageUrl, stripping, originalType]);
 
   const downloadStripped = () => {
     if (!stripped) return;
     const a = document.createElement("a");
     a.href = stripped.url;
-    a.download = filename.replace(/\.[^.]+$/, "") + "-clean.jpg";
+    const ext = stripped.type === "image/png" ? "png" : "jpg";
+    a.download = filename.replace(/\.[^.]+$/, "") + `-clean.${ext}`;
     a.click();
   };
 

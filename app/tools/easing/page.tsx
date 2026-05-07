@@ -48,11 +48,47 @@ function fromScreen(sx: number, sy: number): { x: number; y: number } {
   };
 }
 
-function bezierY(t: number, p1y: number, p2y: number): number {
-  const c = 3 * p1y;
-  const b = 3 * (p2y - p1y) - c;
+// Cubic bezier with start point (0,0) and end point (1,1). The control
+// points (x1,y1) and (x2,y2) define the curve. Both axes use the same
+// shape; pass either pair of x-values (or y-values) to evaluate that axis.
+function bezierAt(t: number, c1: number, c2: number): number {
+  const c = 3 * c1;
+  const b = 3 * (c2 - c1) - c;
   const a = 1 - c - b;
-  return a * t * t * t + b * t * t + c * t;
+  return ((a * t + b) * t + c) * t;
+}
+
+function bezierDerivAt(t: number, c1: number, c2: number): number {
+  const c = 3 * c1;
+  const b = 3 * (c2 - c1) - c;
+  const a = 1 - c - b;
+  return (3 * a * t + 2 * b) * t + c;
+}
+
+/**
+ * CSS easing curves are parameterised by *time on the x-axis*, but the
+ * underlying bezier is parameterised by t. To get the real visual y
+ * value at time x, we have to first solve x(t) = x for t — Newton-Raphson
+ * converges in 3-5 iterations on these tame curves. Without this, the
+ * in-page preview disagrees with how a browser actually animates the
+ * easing for asymmetric curves.
+ */
+function easeY(x: number, x1: number, y1: number, x2: number, y2: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  let t = x;
+  for (let i = 0; i < 8; i++) {
+    const xt = bezierAt(t, x1, x2);
+    const dx = bezierDerivAt(t, x1, x2);
+    if (Math.abs(dx) < 1e-6) break;
+    const next = t - (xt - x) / dx;
+    if (Math.abs(next - t) < 1e-5) {
+      t = next;
+      break;
+    }
+    t = next;
+  }
+  return bezierAt(Math.max(0, Math.min(1, t)), y1, y2);
 }
 
 export default function EasingPage() {
@@ -151,7 +187,7 @@ export default function EasingPage() {
   const path = `M ${start.sx} ${start.sy} C ${c1.sx} ${c1.sy}, ${c2.sx} ${c2.sy}, ${end.sx} ${end.sy}`;
 
   // Animated dot — use the easing
-  const eased = bezierY(progress, state.y1, state.y2);
+  const eased = easeY(progress, state.x1, state.y1, state.x2, state.y2);
 
   return (
     <ToolFrame tool={tool}>
