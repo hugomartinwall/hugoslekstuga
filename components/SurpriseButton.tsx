@@ -4,12 +4,18 @@ import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
 
-const ROLL_FRAMES = 5;
-const ROLL_FRAME_MS = 85;
-const LAND_HOLD_MS = 220;
+const ROLL_FRAMES = 8;
+const ROLL_FRAME_MS = 60;
+const LAND_HOLD_MS = 140;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * A small circular icon ball. On click it rapidly cycles tool emojis
+ * inside the ball, then navigates to a random tool. The label is just
+ * "?" — saying "Surprise me" out loud would give it away. The surprise
+ * is the page that loads.
+ */
 export default function SurpriseButton() {
   const router = useRouter();
   const [face, setFace] = useState<Tool | null>(null);
@@ -46,19 +52,22 @@ export default function SurpriseButton() {
       type="button"
       onClick={surprise}
       disabled={rolling}
-      aria-live="polite"
-      className="btn-chunk relative rounded-[var(--radius-button)] bg-yellow px-6 py-3 font-display text-lg font-extrabold disabled:cursor-progress"
+      aria-label="Open a random tool"
+      title="Open a random tool"
+      className="btn-chunk relative flex h-14 w-14 items-center justify-center rounded-full bg-yellow font-display text-2xl font-extrabold text-ink transition-transform hover:rotate-[8deg] disabled:cursor-progress sm:h-16 sm:w-16 sm:text-3xl"
     >
-      <span className="relative inline-block min-w-[210px] text-center">
-        {face ? (
-          <span key={face.slug} className="featured-in inline-flex items-center gap-1.5">
-            <span aria-hidden>{face.emoji}</span>
-            <span>{face.title}</span>
-          </span>
-        ) : (
-          <>Surprise me →</>
-        )}
-      </span>
+      {rolling && face ? (
+        <span
+          key={face.slug}
+          aria-hidden
+          className="featured-in"
+          style={{ display: "inline-block" }}
+        >
+          {face.emoji}
+        </span>
+      ) : (
+        <span aria-hidden>?</span>
+      )}
     </button>
   );
 }

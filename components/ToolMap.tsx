@@ -93,11 +93,14 @@ type Ripple = {
 
 const NODE_R = 26;
 const SHADOW_DY = 4;
-const TARGET_DIST = 110;
-const SPRING_K = 0.05;
-const REPEL = 2800;
-const CENTER_PULL = 0.0035;
-const DAMPING = 0.85;
+// Edges are tuned for "loose & elastic". Increase TARGET_DIST for breathing
+// room between linked nodes; decrease SPRING_K so the springs feel softer
+// and the graph wobbles a little longer when you nudge it.
+const TARGET_DIST = 150;
+const SPRING_K = 0.032;
+const REPEL = 3200;
+const CENTER_PULL = 0.0032;
+const DAMPING = 0.88;
 const WOBBLE_FORCE = 0.05;
 const ENTRANCE_DURATION = 420;
 const ENTRANCE_STAGGER = 30;
