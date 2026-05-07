@@ -80,31 +80,58 @@ export const tones = [
   "in the second person, present tense",
 ];
 
-export type Prompt = {
-  character: string;
-  setting: string;
-  twist: string;
-  tone: string;
+export type PromptKey = "character" | "setting" | "twist" | "tone";
+
+export type Prompt = Record<PromptKey, string>;
+
+export type Locks = Record<PromptKey, boolean>;
+
+export const EMPTY_LOCKS: Locks = {
+  character: false,
+  setting: false,
+  twist: false,
+  tone: false,
 };
 
-export function generatePrompt(prev?: Prompt): Prompt {
-  const pick = <T,>(arr: T[], avoid?: T): T => {
-    if (arr.length === 0) throw new Error("empty list");
-    if (arr.length === 1 || avoid === undefined) {
-      return arr[Math.floor(Math.random() * arr.length)];
+const POOLS: Record<PromptKey, string[]> = {
+  character: characters,
+  setting: settings,
+  twist: twists,
+  tone: tones,
+};
+
+function pick<T>(arr: T[], avoid?: T): T {
+  if (arr.length === 0) throw new Error("empty list");
+  if (arr.length === 1 || avoid === undefined) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+  let v = arr[Math.floor(Math.random() * arr.length)];
+  let attempts = 0;
+  while (v === avoid && attempts < 8) {
+    v = arr[Math.floor(Math.random() * arr.length)];
+    attempts++;
+  }
+  return v;
+}
+
+/**
+ * Generate a new prompt. For any locked key, keep the previous value.
+ */
+export function generatePrompt(prev?: Prompt, locks: Locks = EMPTY_LOCKS): Prompt {
+  const out: Prompt = { character: "", setting: "", twist: "", tone: "" };
+  (Object.keys(POOLS) as PromptKey[]).forEach((k) => {
+    if (locks[k] && prev) {
+      out[k] = prev[k];
+    } else {
+      out[k] = pick(POOLS[k], prev?.[k]);
     }
-    let v = arr[Math.floor(Math.random() * arr.length)];
-    let attempts = 0;
-    while (v === avoid && attempts < 8) {
-      v = arr[Math.floor(Math.random() * arr.length)];
-      attempts++;
-    }
-    return v;
-  };
-  return {
-    character: pick(characters, prev?.character),
-    setting: pick(settings, prev?.setting),
-    twist: pick(twists, prev?.twist),
-    tone: pick(tones, prev?.tone),
-  };
+  });
+  return out;
+}
+
+/**
+ * Re-roll a single key only.
+ */
+export function rerollPart(prev: Prompt, key: PromptKey): Prompt {
+  return { ...prev, [key]: pick(POOLS[key], prev[key]) };
 }

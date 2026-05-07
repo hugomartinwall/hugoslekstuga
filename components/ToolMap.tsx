@@ -41,6 +41,14 @@ type Node = {
   vx: number;
   vy: number;
   pinned: boolean;
+  phase: number; // wobble phase offset
+  entranceStart: number; // when this node should start its entrance
+  // Drag velocity tracking
+  dragVx: number;
+  dragVy: number;
+  dragLastT: number;
+  dragLastX: number;
+  dragLastY: number;
 };
 
 type Drag = {
@@ -59,6 +67,10 @@ const SPRING_K = 0.05;
 const REPEL = 2800;
 const CENTER_PULL = 0.0035;
 const DAMPING = 0.85;
+const WOBBLE_FORCE = 0.05;
+const ENTRANCE_DURATION = 420; // ms per node
+const ENTRANCE_STAGGER = 30;
+const CLICK_BOUNCE_MS = 180;
 const MIN_W = 320;
 const MIN_H = 480;
 
@@ -68,12 +80,13 @@ export default function ToolMap() {
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
   const [, tick] = useState(0);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [bouncingSlug, setBouncingSlug] = useState<string | null>(null);
   const nodesRef = useRef<Node[]>([]);
   const dragRef = useRef<Drag | null>(null);
   const initializedRef = useRef(false);
   const reduceMotionRef = useRef(false);
+  const startTimeRef = useRef<number>(0);
 
-  // Map slugs to node refs for fast lookup during sim.
   const nodeBySlug = useRef<Map<string, Node>>(new Map());
 
   const neighbourMap = useMemo(() => {
@@ -97,27 +110,11 @@ export default function ToolMap() {
     return () => ro.disconnect();
   }, []);
 
-  // Initialize nodes once we have a real size.
+  // Initialize nodes once.
   useEffect(() => {
     if (initializedRef.current) return;
     if (size.w <= MIN_W && size.h <= MIN_H) return;
-    const cx = size.w / 2;
-    const cy = size.h / 2;
-    const r = Math.min(size.w, size.h) * 0.32;
-    nodesRef.current = tools.map((t, i) => {
-      const angle = (i / tools.length) * Math.PI * 2;
-      return {
-        tool: t,
-        x: cx + Math.cos(angle) * r + (Math.random() - 0.5) * 30,
-        y: cy + Math.sin(angle) * r + (Math.random() - 0.5) * 30,
-        vx: 0,
-        vy: 0,
-        pinned: false,
-      };
-    });
-    nodeBySlug.current = new Map(nodesRef.current.map((n) => [n.tool.slug, n]));
-    initializedRef.current = true;
-    tick((c) => c + 1);
+    initNodes(size.w, size.h);
   }, [size]);
 
   // Detect reduced motion preference.
@@ -132,21 +129,64 @@ export default function ToolMap() {
     return () => mq.removeEventListener("change", listener);
   }, []);
 
+  function initNodes(w: number, h: number) {
+    const cx = w / 2;
+    const cy = h / 2;
+    const r = Math.min(w, h) * 0.28;
+    const now = performance.now();
+    nodesRef.current = tools.map((t, i) => {
+      const angle = (i / tools.length) * Math.PI * 2;
+      // Start near center with small jitter — the entrance scale-in plus
+      // simulation forces will push them out.
+      return {
+        tool: t,
+        x: cx + Math.cos(angle) * (r * 0.2) + (Math.random() - 0.5) * 20,
+        y: cy + Math.sin(angle) * (r * 0.2) + (Math.random() - 0.5) * 20,
+        vx: Math.cos(angle) * 1.5,
+        vy: Math.sin(angle) * 1.5,
+        pinned: false,
+        phase: Math.random() * Math.PI * 2,
+        entranceStart: now + i * ENTRANCE_STAGGER,
+        dragVx: 0,
+        dragVy: 0,
+        dragLastT: 0,
+        dragLastX: 0,
+        dragLastY: 0,
+      };
+    });
+    nodeBySlug.current = new Map(nodesRef.current.map((n) => [n.tool.slug, n]));
+    initializedRef.current = true;
+    startTimeRef.current = now;
+    tick((c) => c + 1);
+  }
+
   // Simulation loop.
   useEffect(() => {
     if (!initializedRef.current) return;
     let raf = 0;
     let settledFrames = 0;
+
     const loop = () => {
-      const moved = step(nodesRef.current, nodeBySlug.current, LINKS, size.w, size.h);
-      // If the cumulative motion is small for many frames, slow down updates.
+      const wobbleAmplitude = reduceMotionRef.current ? 0 : WOBBLE_FORCE;
+      const moved = step(
+        nodesRef.current,
+        nodeBySlug.current,
+        LINKS,
+        size.w,
+        size.h,
+        wobbleAmplitude,
+        dragRef.current === null,
+      );
       if (moved < 0.5 && dragRef.current === null) {
         settledFrames++;
       } else {
         settledFrames = 0;
       }
-      // After ~200 settled frames (~3.3s), pause re-renders until something changes.
-      if (settledFrames < 200 || reduceMotionRef.current === false) {
+      // Always re-render — wobble keeps things subtly alive. But if the user
+      // really wants it still (reduce-motion), pause after settling.
+      if (reduceMotionRef.current && settledFrames > 200) {
+        // skip re-render
+      } else {
         tick((c) => c + 1);
       }
       raf = requestAnimationFrame(loop);
@@ -155,15 +195,16 @@ export default function ToolMap() {
     return () => cancelAnimationFrame(raf);
   }, [size]);
 
-  // Pointer handling on the SVG.
   const onSvgPointerDown = useCallback(
-    (e: React.PointerEvent<SVGSVGElement>, slug: string) => {
+    (e: React.PointerEvent<SVGGElement>, slug: string) => {
       const node = nodeBySlug.current.get(slug);
       if (!node) return;
       const rect = containerRef.current!.getBoundingClientRect();
       const localX = e.clientX - rect.left;
       const localY = e.clientY - rect.top;
-      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      } catch {}
       dragRef.current = {
         slug,
         pointerId: e.pointerId,
@@ -176,6 +217,11 @@ export default function ToolMap() {
       node.pinned = true;
       node.vx = 0;
       node.vy = 0;
+      node.dragVx = 0;
+      node.dragVy = 0;
+      node.dragLastT = performance.now();
+      node.dragLastX = node.x;
+      node.dragLastY = node.y;
     },
     [],
   );
@@ -196,8 +242,20 @@ export default function ToolMap() {
       ) {
         drag.moved = true;
       }
-      node.x = clamp(localX - drag.offsetX, NODE_R, size.w - NODE_R);
-      node.y = clamp(localY - drag.offsetY, NODE_R, size.h - NODE_R);
+      const newX = clamp(localX - drag.offsetX, NODE_R, size.w - NODE_R);
+      const newY = clamp(localY - drag.offsetY, NODE_R, size.h - NODE_R);
+
+      // Track velocity for momentum on release.
+      const now = performance.now();
+      const dt = Math.max(8, now - node.dragLastT);
+      node.dragVx = ((newX - node.dragLastX) / dt) * 16; // px/frame approx
+      node.dragVy = ((newY - node.dragLastY) / dt) * 16;
+      node.dragLastT = now;
+      node.dragLastX = newX;
+      node.dragLastY = newY;
+
+      node.x = newX;
+      node.y = newY;
     },
     [size.w, size.h],
   );
@@ -209,47 +267,34 @@ export default function ToolMap() {
       if (e.pointerId !== drag.pointerId) return;
       try {
         (e.currentTarget as Element).releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore — already released
-      }
+      } catch {}
       const node = nodeBySlug.current.get(drag.slug);
-      if (node) node.pinned = false;
+      if (node) {
+        node.pinned = false;
+        // Carry the drag's velocity into the simulation.
+        node.vx = clamp(node.dragVx, -25, 25);
+        node.vy = clamp(node.dragVy, -25, 25);
+      }
       const wasClick = !drag.moved;
       dragRef.current = null;
       if (wasClick) {
-        router.push(`/tools/${drag.slug}`);
+        // Click bounce, then navigate.
+        setBouncingSlug(drag.slug);
+        window.setTimeout(() => {
+          router.push(`/tools/${drag.slug}`);
+        }, CLICK_BOUNCE_MS);
       }
     },
     [router],
   );
 
   const reset = useCallback(() => {
-    if (!initializedRef.current) return;
     initializedRef.current = false;
-    setSize((s) => ({ ...s }));
-    // Trigger re-init via the size effect by toggling a state.
-    setTimeout(() => {
-      const cx = size.w / 2;
-      const cy = size.h / 2;
-      const r = Math.min(size.w, size.h) * 0.32;
-      nodesRef.current = tools.map((t, i) => {
-        const angle = (i / tools.length) * Math.PI * 2;
-        return {
-          tool: t,
-          x: cx + Math.cos(angle) * r + (Math.random() - 0.5) * 30,
-          y: cy + Math.sin(angle) * r + (Math.random() - 0.5) * 30,
-          vx: 0,
-          vy: 0,
-          pinned: false,
-        };
-      });
-      nodeBySlug.current = new Map(nodesRef.current.map((n) => [n.tool.slug, n]));
-      initializedRef.current = true;
-      tick((c) => c + 1);
-    }, 0);
+    initNodes(size.w, size.h);
   }, [size.w, size.h]);
 
   const hoveredNeighbours = hovered ? (neighbourMap.get(hovered) ?? new Set()) : null;
+  const now = performance.now();
 
   return (
     <div
@@ -271,10 +316,26 @@ export default function ToolMap() {
             const a = nodeBySlug.current.get(from);
             const b = nodeBySlug.current.get(to);
             if (!a || !b) return null;
+            const ent = Math.min(getEntrance(a, now), getEntrance(b, now));
+            if (ent <= 0) return null;
             const isHi =
-              hovered !== null &&
-              (hovered === from ||
-                hovered === to);
+              hovered !== null && (hovered === from || hovered === to);
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            const stretch = Math.max(0, (d - TARGET_DIST) / TARGET_DIST);
+            const tension = Math.min(1, stretch * 1.6);
+            // Combine hover + tension styling.
+            let stroke: string;
+            let width: number;
+            if (isHi) {
+              stroke = "#1a1812";
+              width = 2;
+            } else {
+              const baseOpacity = 0.16 + tension * 0.55;
+              stroke = `rgba(26, 24, 18, ${baseOpacity.toFixed(3)})`;
+              width = 1.3 + tension * 2.5;
+            }
             return (
               <line
                 key={`${from}-${to}`}
@@ -282,10 +343,11 @@ export default function ToolMap() {
                 y1={a.y}
                 x2={b.x}
                 y2={b.y}
-                stroke={isHi ? "#1a1812" : "rgba(26, 24, 18, 0.18)"}
-                strokeWidth={isHi ? 2 : 1.4}
+                stroke={stroke}
+                strokeWidth={width}
                 strokeLinecap="round"
                 pointerEvents="none"
+                opacity={ent}
               />
             );
           })}
@@ -297,44 +359,56 @@ export default function ToolMap() {
             const isHovered = hovered === n.tool.slug;
             const isNeighbour = hoveredNeighbours?.has(n.tool.slug);
             const dim = hovered !== null && !isHovered && !isNeighbour;
-            const r = isHovered ? NODE_R + 4 : NODE_R;
+            const entrance = getEntrance(n, now);
+            const isBouncing = bouncingSlug === n.tool.slug;
+            const baseScale = entrance;
+            const hoverScale = isHovered ? 1.12 : 1;
+            const bounceScale = isBouncing ? 1.28 : 1;
+            const scale = baseScale * hoverScale * bounceScale;
             return (
               <g
                 key={n.tool.slug}
-                transform={`translate(${n.x}, ${n.y})`}
-                onPointerDown={(e) => onSvgPointerDown(e as unknown as React.PointerEvent<SVGSVGElement>, n.tool.slug)}
+                transform={`translate(${n.x}, ${n.y}) scale(${scale})`}
+                onPointerDown={(e) => onSvgPointerDown(e, n.tool.slug)}
                 onPointerEnter={() => setHovered(n.tool.slug)}
                 onPointerLeave={() => setHovered((h) => (h === n.tool.slug ? null : h))}
-                style={{ cursor: dragRef.current ? "grabbing" : "pointer", opacity: dim ? 0.4 : 1, transition: "opacity 180ms ease" }}
+                style={{
+                  cursor: dragRef.current ? "grabbing" : "pointer",
+                  opacity: dim ? 0.4 : 1,
+                  transition: "opacity 180ms ease",
+                  transformOrigin: "center",
+                  transformBox: "fill-box",
+                }}
                 tabIndex={0}
                 role="button"
                 aria-label={`Open ${n.tool.title}`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    router.push(`/tools/${n.tool.slug}`);
+                    setBouncingSlug(n.tool.slug);
+                    window.setTimeout(() => {
+                      router.push(`/tools/${n.tool.slug}`);
+                    }, CLICK_BOUNCE_MS);
                   }
                 }}
               >
                 <circle
-                  r={r}
+                  r={NODE_R}
                   fill={COLOR_HEX[n.tool.color]}
                   stroke="#1a1812"
                   strokeWidth={isHovered ? 3 : 2}
-                  style={{ transition: "r 200ms ease" }}
                 />
                 <text
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fontSize={isHovered ? 22 : 18}
+                  fontSize={20}
                   fill={COLOR_TEXT[n.tool.color]}
                   pointerEvents="none"
                   style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}
                 >
                   {n.tool.emoji}
                 </text>
-                {/* Tooltip on hover */}
-                {isHovered && (
+                {isHovered && entrance >= 1 && (
                   <g pointerEvents="none">
                     <rect
                       x={-90}
@@ -372,7 +446,6 @@ export default function ToolMap() {
         </g>
       </svg>
 
-      {/* Floating controls */}
       <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-between gap-3 px-3 sm:px-5">
         <p className="pointer-events-none rounded-full border-2 border-ink bg-cream/90 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
           Drag a tool · click to open
@@ -389,14 +462,25 @@ export default function ToolMap() {
   );
 }
 
+function getEntrance(n: Node, now: number): number {
+  const t = (now - n.entranceStart) / ENTRANCE_DURATION;
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  // ease-out cubic
+  return 1 - Math.pow(1 - t, 3);
+}
+
 function step(
   nodes: Node[],
   byId: Map<string, Node>,
   links: typeof LINKS,
   width: number,
   height: number,
+  wobbleAmp: number,
+  applyWobble: boolean,
 ): number {
   if (nodes.length === 0) return 0;
+  const now = performance.now();
 
   // Repulsion (O(n²)).
   for (let i = 0; i < nodes.length; i++) {
@@ -442,14 +526,19 @@ function step(
     }
   }
 
-  // Centring + damping + integration.
+  // Centring + wobble + damping + integration.
   const cx = width / 2;
   const cy = height / 2;
+  const wobbleT = now * 0.0008;
   let totalMotion = 0;
   for (const n of nodes) {
     if (n.pinned) continue;
     n.vx += (cx - n.x) * CENTER_PULL;
     n.vy += (cy - n.y) * CENTER_PULL;
+    if (applyWobble && wobbleAmp > 0) {
+      n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
+      n.vy += Math.cos(wobbleT * 1.3 + n.phase * 1.7) * wobbleAmp;
+    }
     n.vx *= DAMPING;
     n.vy *= DAMPING;
     n.x += n.vx;
