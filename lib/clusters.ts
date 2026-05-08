@@ -120,6 +120,7 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   shadow: "code",
   easing: "code",
   regex: "code",
+  shot: "code",
 };
 
 export function clusterFor(slug: string): ClusterId | undefined {

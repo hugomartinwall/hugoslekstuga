@@ -458,6 +458,15 @@ export const tools: Tool[] = [
     color: "purple",
     emoji: "⌗",
   },
+  {
+    slug: "shot",
+    title: "Shot",
+    tagline: "Make a screenshot worth posting.",
+    description:
+      "Drop a screenshot or paste some code, then dress it up — gradient backgrounds, window chrome, padding, shadow, syntax highlighting in any of a dozen themes. Export at 1×, 2×, or 3× as PNG, or copy straight to your clipboard.",
+    color: "tomato",
+    emoji: "▣",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

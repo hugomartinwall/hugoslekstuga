@@ -127,6 +127,15 @@ export const LINKS: Link[] = [
   ["sift", "read"],
   ["sift", "sum"],
   ["sift", "diff"],
+
+  // shot (code) — a screenshot/code beautifier; sits next to the visual
+  // styling tools and bridges over to the image cluster.
+  ["shot", "gradient"],
+  ["shot", "shadow"],
+  ["shot", "palette"],
+  ["shot", "favicon"],
+  ["shot", "squeeze"],
+  ["shot", "markdown"],
 ];
 
 // Quick lookup: how many neighbours does each tool have?
