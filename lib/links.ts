@@ -111,6 +111,14 @@ export const LINKS: Link[] = [
   ["ascii", "sketch"],
   ["trace", "palette"],
   ["typing", "talk"],
+
+  // sum (writing) bridges out — it's a math notepad, so it sits next to
+  // its cluster neighbours and the other calc-shaped tools across the map.
+  ["sum", "read"],
+  ["sum", "markdown"],
+  ["sum", "tip"],
+  ["sum", "plus"],
+  ["sum", "scale"],
 ];
 
 // Quick lookup: how many neighbours does each tool have?

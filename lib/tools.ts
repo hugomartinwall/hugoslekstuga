@@ -437,6 +437,18 @@ export const tools: Tool[] = [
     color: "teal",
     emoji: "⫽",
   },
+
+  // ---------- Round 3: complex tools ----------
+
+  {
+    slug: "sum",
+    title: "Sum",
+    tagline: "Math you can read.",
+    description:
+      "A notepad calculator. Type one line at a time and see each answer pinned to the right — variables, line references, percentages, units, currency. Multiple sessions, all stored on your device.",
+    color: "yellow",
+    emoji: "∑",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

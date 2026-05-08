@@ -86,6 +86,7 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   cleantext: "writing",
   lorem: "writing",
   bionic: "writing",
+  sum: "writing",
   // Time
   focus: "time",
   talk: "time",
