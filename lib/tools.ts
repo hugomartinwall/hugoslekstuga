@@ -74,8 +74,8 @@ export const tools: Tool[] = [
   },
   {
     slug: "roll",
-    title: "Roll",
-    tagline: "Can't decide? Let the wheel decide.",
+    title: "Spin the Wheel",
+    tagline: "Can't decide? Let it decide.",
     description:
       "Type a list of options, hit spin, and a colorful wheel picks one for you. For dinner choices, task order, friendly arguments — anything.",
     color: "orange",
@@ -303,27 +303,6 @@ export const tools: Tool[] = [
     color: "yellow",
     emoji: "§",
   },
-  {
-    slug: "bionic",
-    title: "Bionic",
-    tagline: "Read faster, with a little help.",
-    description:
-      "Paste an article and get a version with the first letters of each word bolded. Your eyes anchor, your brain skims. It really works.",
-    color: "pink",
-    emoji: "⊵",
-  },
-
-  // Time
-  {
-    slug: "ago",
-    title: "Ago",
-    tagline: "How long ago was that?",
-    description:
-      "Pick a date and watch the seconds tick. Years, months, weeks, days, hours, minutes, seconds — all at once, all live.",
-    color: "purple",
-    emoji: "⊝",
-  },
-
   // Wellness
   {
     slug: "tally",
@@ -362,15 +341,6 @@ export const tools: Tool[] = [
       "Paste a list, hit go, and watch the names shuffle until one drops out. For raffles, pair-ups, who-pays, who-goes-first.",
     color: "tomato",
     emoji: "⌖",
-  },
-  {
-    slug: "scale",
-    title: "Scale",
-    tagline: "Type a length, see what fits.",
-    description:
-      "Type any number of metres and we show it next to things you know — a coffee cup, a bus, a stadium, a small country. Helps numbers feel real.",
-    color: "blue",
-    emoji: "⌬",
   },
   {
     slug: "mash",

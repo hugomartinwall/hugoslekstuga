@@ -94,14 +94,12 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   case: "writing",
   cleantext: "writing",
   lorem: "writing",
-  bionic: "writing",
   sum: "writing",
   // Time
   focus: "time",
   talk: "time",
   until: "time",
   zones: "time",
-  ago: "time",
   // Wellness
   feeling: "wellness",
   three: "wellness",
@@ -119,7 +117,6 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   roll: "creative",
   tip: "creative",
   picker: "creative",
-  scale: "creative",
   mash: "creative",
   // Code (new)
   gradient: "code",

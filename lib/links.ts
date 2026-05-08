@@ -41,8 +41,6 @@ export const LINKS: Link[] = [
   ["cleantext", "diff"],
   ["lorem", "markdown"],
   ["lorem", "idea"],
-  ["bionic", "read"],
-  ["bionic", "markdown"],
 
   // ---------- Time ----------
   ["focus", "talk"],
@@ -54,8 +52,6 @@ export const LINKS: Link[] = [
   ["until", "zones"],
   ["until", "sleep"],
   ["zones", "talk"],
-  ["ago", "until"],
-  ["ago", "zones"],
 
   // ---------- Wellness ----------
   ["feeling", "breathe"],
@@ -84,8 +80,6 @@ export const LINKS: Link[] = [
   ["picker", "roll"],
   ["picker", "tip"],
   ["picker", "mash"],
-  ["scale", "idea"],
-  ["scale", "tip"],
   ["mash", "idea"],
   ["mash", "slug"],
 
@@ -113,7 +107,6 @@ export const LINKS: Link[] = [
   ["sum", "read"],
   ["sum", "markdown"],
   ["sum", "tip"],
-  ["sum", "scale"],
 
   // sift (files) — a data explorer, neighbouring the converter and the
   // other "look inside a file" tools, plus a math/data bridge to sum.
