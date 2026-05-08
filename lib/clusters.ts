@@ -77,6 +77,7 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   ascii: "files",
   base64: "files",
   favicon: "files",
+  sift: "files",
   // Writing
   read: "writing",
   markdown: "writing",

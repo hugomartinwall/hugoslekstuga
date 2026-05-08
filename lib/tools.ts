@@ -449,6 +449,15 @@ export const tools: Tool[] = [
     color: "yellow",
     emoji: "∑",
   },
+  {
+    slug: "sift",
+    title: "Sift",
+    tagline: "Drop a CSV. See what's in it.",
+    description:
+      "An explorer for tabular data. Drop a CSV, TSV, or JSON array and you get a sortable, filterable table with auto-detected column types and a per-column summary — count, range, top values, sparkline. Files never leave your browser.",
+    color: "purple",
+    emoji: "⌗",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

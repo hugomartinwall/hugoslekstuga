@@ -119,6 +119,14 @@ export const LINKS: Link[] = [
   ["sum", "tip"],
   ["sum", "plus"],
   ["sum", "scale"],
+
+  // sift (files) — a data explorer, neighbouring the converter and the
+  // other "look inside a file" tools, plus a math/data bridge to sum.
+  ["sift", "convert"],
+  ["sift", "base64"],
+  ["sift", "read"],
+  ["sift", "sum"],
+  ["sift", "diff"],
 ];
 
 // Quick lookup: how many neighbours does each tool have?
