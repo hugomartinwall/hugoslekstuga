@@ -389,7 +389,7 @@ function Lobby({
       onSubmit={onSubmit}
       className="card-chunk flex flex-col gap-4 rounded-[var(--radius-card)] bg-cream p-6"
     >
-      <p className="font-display text-2xl font-extrabold">A small map. Smaller blobs.</p>
+      <p className="font-display text-2xl font-extrabold">The bigger the better.</p>
       <p className="text-sm text-ink-soft">
         Eat the dots. Eat the smaller players. Avoid the bigger ones.
         Press <Kbd>Space</Kbd> to split into two — they&apos;ll drift back

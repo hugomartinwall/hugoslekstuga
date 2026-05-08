@@ -473,7 +473,7 @@ export const tools: Tool[] = [
   {
     slug: "munch",
     title: "Munch",
-    tagline: "A small map. Smaller blobs.",
+    tagline: "The bigger the better.",
     description:
       "Real-time multiplayer on a single shared map. Eat the dots, eat the smaller players, dodge the bigger ones. Press space to fire half of yourself forward as a weapon. No accounts, no chat, just one shared room.",
     color: "purple",
