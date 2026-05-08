@@ -56,10 +56,6 @@ export const LINKS: Link[] = [
   ["zones", "talk"],
   ["ago", "until"],
   ["ago", "zones"],
-  ["plus", "until"],
-  ["plus", "zones"],
-  ["plus", "talk"],
-  ["plus", "focus"],
 
   // ---------- Wellness ----------
   ["feeling", "breathe"],
@@ -117,7 +113,6 @@ export const LINKS: Link[] = [
   ["sum", "read"],
   ["sum", "markdown"],
   ["sum", "tip"],
-  ["sum", "plus"],
   ["sum", "scale"],
 
   // sift (files) — a data explorer, neighbouring the converter and the

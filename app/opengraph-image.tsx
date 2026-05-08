@@ -132,7 +132,6 @@ export default async function OGImage() {
             { c: "#ffc233", t: "lorem" },
             { c: "#ff7ab2", t: "bionic" },
             { c: "#9333ea", t: "ago" },
-            { c: "#ffc233", t: "plus" },
             { c: "#f97316", t: "tally" },
             { c: "#4f66f2", t: "noise" },
             { c: "#3fa66e", t: "typing" },

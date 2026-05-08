@@ -323,15 +323,6 @@ export const tools: Tool[] = [
     color: "purple",
     emoji: "⊝",
   },
-  {
-    slug: "plus",
-    title: "Plus",
-    tagline: "Add hours and minutes, no math.",
-    description:
-      "Set a starting time, drag a slider for the duration, and the clock face swings to the answer. Useful for cooking, meetings, ETAs.",
-    color: "yellow",
-    emoji: "⊞",
-  },
 
   // Wellness
   {

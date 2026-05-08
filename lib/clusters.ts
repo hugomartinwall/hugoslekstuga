@@ -102,7 +102,6 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   until: "time",
   zones: "time",
   ago: "time",
-  plus: "time",
   // Wellness
   feeling: "wellness",
   three: "wellness",
