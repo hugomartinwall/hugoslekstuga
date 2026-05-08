@@ -492,6 +492,14 @@ export class Game {
     leaderboard: LeaderboardEntry[];
   } {
     const me = this.players.get(playerId);
+    const now = Date.now();
+    const cooldownFor = (cell: Cell): number => {
+      if (cell.splitAt <= 0) return 0;
+      const since = now - cell.splitAt;
+      if (since >= SPLIT_REJOIN_MS) return 0;
+      return Math.max(0, 1 - since / SPLIT_REJOIN_MS);
+    };
+
     if (!me) {
       return {
         you: { cells: [], alive: false },
@@ -520,12 +528,17 @@ export class Game {
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       if (p.id === playerId) continue;
-      // Include any of their cells that intersect our viewport.
       const visible: CellView[] = [];
       for (const cell of p.cells) {
         if (Math.abs(cell.x - cx) > viewHx + 80) continue;
         if (Math.abs(cell.y - cy) > viewHy + 80) continue;
-        visible.push({ id: cell.id, x: cell.x, y: cell.y, mass: cell.mass });
+        visible.push({
+          id: cell.id,
+          x: cell.x,
+          y: cell.y,
+          mass: cell.mass,
+          cd: cooldownFor(cell),
+        });
       }
       if (visible.length === 0) continue;
       players.push({
@@ -550,6 +563,7 @@ export class Game {
           x: c.x,
           y: c.y,
           mass: c.mass,
+          cd: cooldownFor(c),
         })),
         alive: me.alive,
       },

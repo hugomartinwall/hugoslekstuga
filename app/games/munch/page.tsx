@@ -153,9 +153,15 @@ export default function MunchPage() {
   // Track held keys (for movement) and edge-trigger split.
   // preventDefault on EVERY relevant keydown (including auto-repeat) so
   // the page itself never scrolls while playing.
+  // Esc returns to the lobby — same as clicking Leave.
   useEffect(() => {
     if (phase !== "playing" && phase !== "dead") return;
     const onDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        disconnect();
+        return;
+      }
       const key = normaliseKey(e.key);
       if (key === null) return;
       e.preventDefault();
@@ -175,7 +181,7 @@ export default function MunchPage() {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
-  }, [phase]);
+  }, [phase, disconnect]);
 
   // Lock body scroll while in-game so even non-arrow accidents (mouse
   // wheel, trackpad) don't shift the page out from under the canvas.
@@ -663,7 +669,7 @@ function drawScene(
       const cy = prevCell ? lerp(prevCell.y, cell.y) : cell.y;
       const { sx, sy } = toScreen(cx, cy);
       const r = radiusForMass(cell.mass) * scale;
-      drawCell(ctx, sx, sy, r, p.color, p.name);
+      drawCell(ctx, sx, sy, r, p.color, p.name, false, cell.cd);
     }
   }
 
@@ -682,7 +688,7 @@ function drawScene(
     const cy = prevCell ? lerp(prevCell.y, cell.y) : cell.y;
     const { sx, sy } = toScreen(cx, cy);
     const r = radiusForMass(cell.mass) * scale;
-    drawCell(ctx, sx, sy, r, myColor, myName, true);
+    drawCell(ctx, sx, sy, r, myColor, myName, true, cell.cd);
   }
 }
 
@@ -694,6 +700,7 @@ function drawCell(
   color: string,
   label: string,
   isSelf = false,
+  cooldown = 0,
 ): void {
   if (r < 1) r = 1;
   ctx.beginPath();
@@ -703,6 +710,19 @@ function drawCell(
   ctx.lineWidth = isSelf ? 3 : 2;
   ctx.strokeStyle = "#1a1812";
   ctx.stroke();
+
+  // Cooldown arc — drawn just outside the cell border, depleting from
+  // a full ring at split-time to nothing when the cell can re-merge.
+  if (cooldown > 0 && r > 6) {
+    const ringR = r + Math.max(2, Math.min(5, r * 0.12));
+    ctx.beginPath();
+    // Start at top (-pi/2) and sweep clockwise through `cooldown × 2π`.
+    ctx.arc(x, y, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * cooldown);
+    ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.strokeStyle = "rgba(26, 24, 18, 0.55)";
+    ctx.stroke();
+  }
+
   if (label && r >= 10) {
     // Font size grows with the cell radius so the name visibly scales
     // as you grow. The shrink-to-fit pass below also tightens it down

@@ -65,6 +65,11 @@ export type CellView = {
   x: number;
   y: number;
   mass: number;
+  /** 0..1 fraction of merge cooldown remaining. 0 means this cell is
+   * ready to re-merge with its siblings on contact; >0 means it's
+   * still in the post-split window. Clients render this as an arc so
+   * the player can see when they'll be whole again. */
+  cd: number;
 };
 
 export type PlayerView = {
