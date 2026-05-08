@@ -10,37 +10,42 @@
  *   - Life hacks ("label the cables", "back up the photos")
  *   - Productivity clichés ("eat the frog", "just start")
  *   - Pat platitudes ("boring habits beat exciting plans")
+ *   - Wellness-blog flavours ("eat the pastry", "light the candle")
  *   - Anything that could appear on a laminated office poster
- *   - Generic body-care tips ("drink water", "take the stairs")
+ *   - Two-sentence constructions where the second sentence is a
+ *     flourish instead of a turn. If the second sentence doesn't
+ *     reverse, sharpen, or compress the first, cut it.
+ *   - Anything that could be 30% shorter without losing the insight
  *
  * KEEP:
- *   - Insights with a turn, a reversal, or a compressed truth
+ *   - Compressed truths with a clean turn or reversal
  *   - Lines you'd screenshot and send to a friend
  *   - Honest observations most people pretend not to see
  *   - Funny when funny is sharper than serious
  *
- * The voice: a smart friend who has lived a bit. Specific over abstract,
- * action over inspiration. Quietly confident, occasionally funny, never
- * saccharine. The reference line for tone:
+ * The reference line for tone is the one that landed:
  *
- *   "Recommend things to people specifically. 'You'd like this' beats
- *    'this is good.'"
+ *   "Recommend things to people specifically. 'You'd like this'
+ *    beats 'this is good.'"
+ *
+ * Tight, contrastive, the second sentence makes the first sing.
+ * Every entry should pass that test.
  */
 export const advice: string[] = [
   // ---------- self-knowledge ----------
   "You don't know yourself by thinking. You know yourself by what you keep doing when no one's watching.",
-  "What you call laziness is usually grief, fear, or boredom in disguise. Naming it is half the work.",
-  "Most personality is the role someone gave you in the family you grew up in. Decide which parts you want to keep.",
-  "The voice in your head with the strongest opinions about you is usually a parent. Check whether you still agree.",
+  "What you call laziness is usually grief, fear, or boredom in disguise.",
+  "Most personality is the role someone gave you in the family you grew up in.",
+  "The voice in your head with the strongest opinions about you is usually a parent's.",
   "If you've been planning it for more than a month, you're not planning — you're avoiding.",
-  "The thing you keep almost-doing is the thing you're most afraid of. The fear is the map.",
-  "Fear shows up dressed as boredom, irritability, or 'I just need to research a bit more.' Learn its costumes.",
+  "What you keep almost-doing is what you're most afraid of.",
+  "Fear shows up dressed as boredom, irritability, or \"I just need to research a bit more.\"",
   "The reason you can't start is rarely the reason you say you can't start.",
   "Most procrastination is fear in a costume.",
   "Self-criticism above a certain volume is just procrastination with vocabulary.",
   "If you can only be confident when things are going well, that's not confidence.",
   "Watch the version of yourself that shows up around different people. The most likeable one is closest to who you actually are.",
-  "Notice what you defend most fiercely. That's where your identity sits — for better or worse.",
+  "Notice what you defend most fiercely. That's where your identity is — for better or worse.",
   "If you find yourself rehearsing a conversation, have it.",
   "If you keep ending up in the same situation with different people, you are the variable.",
   "If you can't sit alone for an hour without input, you're not lonely. You're addicted.",
@@ -51,8 +56,12 @@ export const advice: string[] = [
   "Self-esteem isn't built by thinking nice things about yourself. It's built by keeping promises to yourself.",
   "If you can't tell a story about your week without making yourself the hero, you don't know the story yet.",
   "If you have to call yourself an honest person, you're warning them.",
-  "Most lies are told to ourselves first. Catch those and the rest are easier.",
+  "Most lies are told to ourselves first.",
   "The moment you stop pretending to be smarter than you are, you start actually getting smarter.",
+  "If you have to convince yourself of something every morning, it isn't true.",
+  "Loneliness is mostly the gap between who you are and who you're pretending to be.",
+  "Most people can't tell the difference between thinking and worrying.",
+  "Your appetite for risk is smaller than your appetite for regret.",
 
   // ---------- love & friendship ----------
   "Love is what you do on the days the feeling isn't there.",
@@ -61,10 +70,11 @@ export const advice: string[] = [
   "If a relationship requires you to be a smaller version of yourself, you're not in a relationship — you're auditioning.",
   "Anyone can be patient on a good day. Watch how people behave when they're tired and hungry.",
   "When in doubt about a person, watch how they treat the waiter.",
-  "Trust people whose stories include their own mistakes. Distrust the ones whose stories only have villains.",
+  "Trust people whose stories include their own mistakes.",
+  "Distrust people whose stories only have villains.",
   "If you're easily flattered, you're easily managed.",
   "Most fights are about being seen. Once each person feels seen, the topic dissolves.",
-  "The argument is rarely about what the argument is about. Listen for the older sentence underneath.",
+  "The argument is rarely about what the argument is about.",
   "Hard conversations get harder with delay. The cost compounds.",
   "If two friends fight and you have to pick a side, you didn't have two friends.",
   "If you're irritable around someone every time, the pattern is the data.",
@@ -81,32 +91,35 @@ export const advice: string[] = [
   "Visit your grandparents while you can still get a straight answer.",
   "Visit your parents now, while they're still annoyed by it.",
   "Apologize cleanly. Don't add a defence.",
-  "Apologize without 'but.'",
+  "Apologize without \"but.\"",
+  "Your friends are the version of you that you keep choosing.",
+  "The person who says \"I'm being honest\" is usually being unkind.",
 
-  // ---------- work, ambition, what to do ----------
-  "Most ambition is unprocessed comparison. Sit with it before you act on it.",
+  // ---------- work & ambition ----------
+  "Most ambition is unprocessed comparison.",
   "If you keep getting hired for what you're good at, you'll never find out what you'd be great at.",
   "The career you'd be proud of in twenty years is rarely the one optimised for the next two.",
-  "The job that matches your CV is below your ceiling. Apply for the one above it.",
+  "The job that matches your CV is already below your ceiling.",
   "Take the job that teaches you something. The pay catches up.",
   "Leave a job before you start resenting it. Six months of resentment costs a year of your life.",
   "The boss who says \"we're a family\" is preparing to underpay you.",
   "If you've been promoted three times for being good at the previous job, you might be in the wrong job.",
   "Be careful which problems you solve well. You'll be given more of them.",
-  "If you can do the thing nobody asks you to do, you'll outpace the people doing only what's asked.",
+  "Do the work nobody asked for. That's how you outgrow the work they did.",
   "Take credit out loud. Quiet isn't modest — it's invisible.",
   "Don't volunteer for the notes if you want to be heard in the meeting.",
   "When you're new, ask the dumb questions. When you're senior, ask them louder.",
   "Take the day off after the launch. Momentum will not save you.",
   "If your work doesn't change you a little, you're not paying attention.",
-  "Curiosity ages better than ambition. Practice curiosity now.",
-  "Side projects pay off in the next career, not this one. Plant accordingly.",
+  "Curiosity ages better than ambition.",
+  "Side projects pay off in the next career, not this one.",
   "If you're young, don't optimise. Explore. The optimisation phase has its own decade.",
+  "If you keep getting praised for being patient, watch what's being asked of you.",
 
   // ---------- making things & taste ----------
   "Make a worse version. The good version is built on top of it.",
   "Finish ugly. You can polish what exists. You can't polish what's still in your head.",
-  "Copy something you love. You'll learn what makes it good. Originality grows from there.",
+  "Copy what you love. Originality is what's left over.",
   "Steal structure, never voice.",
   "Originality is mostly the courage to be specific.",
   "Taste comes before skill. Skill is just taste plus repetition.",
@@ -116,11 +129,10 @@ export const advice: string[] = [
   "If you're embarrassed by what you made a year ago, you've grown. If not, worry.",
   "If everything you make looks the same after a year, your influences are too narrow.",
   "Polish is what amateurs reach for. Constraint is what pros reach for.",
-  "Stop reading reviews of the thing you're making. They're for the next thing.",
   "The work you don't show is the work you don't get better at.",
   "Most creative blocks are unfinished thoughts pretending to be a wall.",
   "If you can't decide what to make, make something for one specific friend.",
-  "You don't have a taste problem. You have an exposure problem. Look at more, longer.",
+  "You don't have a taste problem. You have an exposure problem.",
   "Resist the urge to explain it. Either it works or it needs more work.",
   "Don't optimize what you haven't built yet.",
   "If you've read three articles on the topic, stop reading and try the thing.",
@@ -131,10 +143,10 @@ export const advice: string[] = [
   "Money you save in your twenties is the only money that actually compounds. The rest is just income management.",
   "Money you spend on tools you use every day is rarely wasted. Money on tools you might use someday usually is.",
   "Buy experiences, but only if you'll still talk about them in five years.",
-  "Generosity beats wealth as a feeling. Practice it small.",
+  "Generosity beats wealth as a feeling.",
   "Give some money away without expecting anything back — including gratitude.",
   "Don't lend money to friends you can't afford to lose.",
-  "Cheap people are expensive. Pay the careful ones, even when it costs more.",
+  "Cheap people are expensive.",
   "Wait three days before buying anything that's not food. Most wants pass.",
   "If you're broke, eat at home and walk more. Most fixes are about energy, not cash.",
   "Don't shop when you're sad, hungry, or tired. If you must, only buy food.",
@@ -150,14 +162,15 @@ export const advice: string[] = [
   "A bad decision made in time is often better than the perfect one made late.",
   "If you can't decide between two options, pick the one that makes a better story.",
   "Sleep doesn't solve problems, but it changes which problems count.",
-  "Don't ask \"is this good?\" Ask \"good for what?\" Most arguments dissolve there.",
+  "The decision you make at 11pm is rarely the one you'd make at 8am.",
+  "Don't ask \"is this good?\" Ask \"good for what?\"",
   "Ask \"and then what?\" three times before committing.",
   "If a rule keeps tripping you up, the rule might be wrong.",
   "Most disagreements are about definitions, not values.",
   "If two smart people disagree, you don't have all the facts yet.",
   "The story that explains everything is usually wrong.",
   "Don't trust advice that's selling you something.",
-  "Most things you're worried about will not happen. Plan for the ones that might.",
+  "Most things you're worried about will not happen.",
   "Notice when your environment is the problem, not your willpower.",
   "If you can't explain it to yourself in plain words, you don't understand it yet.",
   "If you're stuck reading, start writing. If you're stuck writing, take a walk.",
@@ -165,25 +178,28 @@ export const advice: string[] = [
   "When you don't know what you want, start with what you don't want. Negative space is easier to draw.",
   "Choose your problems. The ones you don't choose, choose you back.",
   "If your life feels stuck, the question isn't \"what should I do?\" It's \"what am I tolerating that I shouldn't?\"",
+  "If you've made the same mistake three times, it isn't a mistake. It's a choice.",
 
   // ---------- honesty & courage ----------
   "The kind sentence and the honest sentence are usually the same one, said carefully.",
   "The truth doesn't sting longer than a lie. It just stings sooner.",
   "Say the awkward thing in the room. Other people are thinking it.",
-  "If you have to soften it three times, you don't believe it. Don't say it.",
-  "Don't say \"no problem\" when there is one. Say what it actually is.",
+  "If you have to soften it three times, you don't believe it.",
+  "Don't say \"no problem\" when there is one.",
   "If you're hiding something from yourself, you're hiding it worse from everyone else.",
   "If you've been keeping the secret for years, the secret is keeping you.",
   "Tell someone about the embarrassing failure within a week. The story shrinks faster that way.",
   "When you fail publicly, send the apology before anyone asks for it.",
-  "Don't compound a mistake by hiding it. Tell the relevant person within a day.",
+  "Don't compound a mistake by hiding it.",
   "Stop trying to convince people who aren't asking. Persuasion needs a question.",
   "Be slow to take offence. The cost of being wrong about it is much higher than the cost of being right.",
+  "The thing you can't say out loud is the thing you most need to say.",
+  "Changing your mind because of new evidence isn't weakness. It's the whole point.",
 
   // ---------- anger, forgiveness, grief ----------
   "Anger that lasts more than a day is usually about something older.",
   "If someone makes you angry, ask what they're protecting.",
-  "Don't punish from a place of pain. Wait until the pain steps aside.",
+  "Don't punish from a place of pain.",
   "Resentment is a tax you pay on a debt that isn't yours.",
   "Resentment is just an apology you owe yourself, billed to the wrong account.",
   "Forgive your past self. They didn't have what you have now.",
@@ -194,15 +210,13 @@ export const advice: string[] = [
   "If someone is dying, visit. You will never wish you'd skipped it.",
 
   // ---------- joy & presence ----------
-  "Joy is a skill, not a temperament. Most people just never practice.",
+  "Joy is a skill, not a temperament.",
   "Pleasure that needs to be defended isn't pleasure. It's a hobby.",
-  "The good days don't announce themselves. Notice them out loud, in real time, or you'll lose them.",
-  "Eat the pastry. You're not punishing yourself into a better life.",
+  "The good days don't announce themselves.",
   "Wear the good thing on a regular Tuesday.",
   "Save the good plates for now, not for guests.",
-  "Light the candle. Today counts.",
-  "If a stranger compliments you, just say thank you. Don't deflect it.",
-  "When you laugh hard enough to cry, that's the moment. Don't try to remember it — be in it.",
+  "If a stranger compliments you, just say thank you.",
+  "When you laugh hard enough to cry, don't try to remember it — be in it.",
   "You will not remember the night you went to bed early. You'll remember the conversation that kept you up.",
   "Take more pictures of people. The places will still be there.",
   "Underdress for the occasion you're meant to enjoy.",
@@ -210,30 +224,31 @@ export const advice: string[] = [
   // ---------- time, age, mortality ----------
   "What you do in your spare time is who you are. The rest is just employment.",
   "Most of life is Tuesdays. Get good at Tuesdays.",
-  "The years you're in the middle of always feel like a holding pattern. They aren't.",
+  "The years you're in the middle of always feel like a holding pattern.",
   "The decade you're afraid of is the one you'll later wish you'd been more present for.",
-  "Most regrets are about not doing things. Plan accordingly.",
+  "Most regrets are about not doing things.",
   "Your twenties are not a rehearsal. Your forties are not a finale.",
   "Be five years early to the trend you actually believe in.",
   "Don't wait for the next chapter to start living the one you're in.",
   "Old people aren't different from you. They've just had more time to repeat their patterns.",
   "The version of you at 70 is voting now, in every small choice. Make sure they like the candidate.",
   "Every age has its specific gifts. Stop borrowing problems from the next one.",
-  "The thing you keep deferring isn't going to age into something easier. Do it tired.",
+  "The thing you keep deferring won't age into something easier.",
+  "Worry is a tax on the future, paid in advance.",
 
   // ---------- reading the room ----------
   "Compliment people out loud. It costs nothing and changes rooms.",
-  "Most rooms are quieter than you think. Try silence first.",
-  "Notice when you're the most-talking person in the room. Then stop.",
+  "Most rooms are quieter than you think.",
+  "Notice when you're the most-talking person in the room.",
   "Listen for what's not being said.",
   "Quiet people are not shy. They're just fluent in a language that doesn't need that many words.",
   "It's okay to leave the party early.",
-  "Half the people in any room think they're the smartest. The actually-smartest one is rarely among them.",
+  "The smartest person in the room rarely says so.",
   "Recommend things to people specifically. \"You'd like this\" beats \"this is good.\"",
   "Match medium to weight. Bad news in person, mostly.",
-  "Don't send \"we need to talk.\" Just say what it is.",
+  "Don't send \"we need to talk.\"",
   "If you're tempted to say yes out of obligation, you're not saying yes — you're delaying a no.",
-  "Say no to the thing that sounds 'fine.' Save your yes for things that excite you.",
+  "Say no to the thing that sounds \"fine.\" Save your yes for things that excite you.",
 
   // ---------- identity & growth ----------
   "You don't have to be the person you were last year.",
@@ -244,23 +259,24 @@ export const advice: string[] = [
   "Most envy is just unfinished business with yourself.",
   "The thing you envy is often the thing you've decided you can't have.",
   "Talk less about what you're going to do. Do small visible things instead.",
-  "You become the people you spend the most time with. Choose accordingly.",
-  "Your nervous system can't tell the difference between rehearsal and reality. Stop rehearsing the bad outcome.",
+  "You become the people you spend the most time with.",
+  "Your nervous system can't tell the difference between rehearsal and reality.",
   "Nobody is thinking about you as much as you fear. This is the bad news and the good news.",
-  "If you keep making the same mistake, the mistake is comfortable. Comfort is the mistake.",
   "If you keep meeting the same kind of stranger, you might be the one finding them.",
   "The people who seem to have it together are mostly just better at private breakdowns.",
   "Make decisions like an adult and feelings like a child. Mixing them up is most of human suffering.",
   "The work that scares you is usually the work that grows you.",
   "Lose well. Most people don't, and you'll stand out by default.",
-  "After a setback, ship something small in 24 hours. Anything. Restore the muscle.",
+  "After a setback, ship something small within a day. The muscle is the point.",
+  "Confidence isn't the absence of doubt. It's the willingness to act despite it.",
+  "Most adults are children with credit cards.",
 
   // ---------- learning, taste, attention ----------
   "Most of what you'll learn this year you'll learn from one book and three conversations. Don't dilute either.",
   "Read books older than you. They survived for a reason.",
   "If you only read what agrees with you, you're not reading — you're nodding.",
   "Re-read your favourite books. They get better and so do you.",
-  "If a book isn't working at page 50, it's not working. Move on.",
+  "If a book isn't working at page 50, it's not working.",
   "Re-watch the films that shaped you at twenty. They're different now.",
   "If you can't teach it, you don't know it. If you can teach it, you know it well enough to write it down.",
   "Pick one thing this year. Get embarrassingly good at it.",
@@ -268,8 +284,8 @@ export const advice: string[] = [
   "Every skill has a boring middle. Most quitting happens there.",
   "Quit the course you're not finishing. The guilt is louder than the learning.",
   "The opinion you defend hardest is usually the one you're least sure of.",
-  "Attention is the rarest gift. Most people will never have yours and won't notice. Give it to a few who will.",
-  "Boredom is your nervous system asking for higher-quality input. It's almost never asking for more input.",
+  "Attention is the rarest gift. Most people will never have yours.",
+  "Boredom is your nervous system asking for higher-quality input. It's almost never asking for more.",
   "Stop following accounts that make you feel worse about yourself. There's no version of that diet that ends well.",
 
   // ---------- starting & ending ----------
@@ -285,7 +301,6 @@ export const advice: string[] = [
   "Two hours of focus beats eight hours of distraction.",
 
   // ---------- the body, plainly ----------
-  "When tired and undecided, sleep wins.",
   "If you can't tell whether you're tired or sad, sleep first and decide tomorrow.",
   "Move your body before you check your phone. Whichever wins your morning wins your day.",
   "Lift something heavy twice a week. Bones don't keep themselves.",
