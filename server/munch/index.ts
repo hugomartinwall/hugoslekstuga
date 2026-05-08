@@ -143,7 +143,8 @@ setInterval(() => {
   for (const [id, ws] of sockets.entries()) {
     const me = game.players.get(id);
     if (!me) continue;
-    const { hx, hy } = viewportHalfFor(me.mass);
+    const totalMass = me.cells.reduce((a, c) => a + c.mass, 0);
+    const { hx, hy } = viewportHalfFor(Math.max(20, totalMass));
     const snap = game.snapshotFor(id, hx, hy);
     send(ws, {
       type: "state",
@@ -151,7 +152,6 @@ setInterval(() => {
       you: snap.you,
       players: snap.players,
       food: snap.food,
-      projectiles: snap.projectiles,
       leaderboard: snap.leaderboard,
     });
   }

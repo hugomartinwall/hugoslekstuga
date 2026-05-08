@@ -17,14 +17,24 @@ export const MAX_PLAYERS = 50;
 // you're half as fast, etc.
 export const BASE_SPEED = 360;
 
-// To eat another blob you must be at least EAT_RATIO × their mass.
+// To eat another cell you must be at least EAT_RATIO × their mass.
 export const EAT_RATIO = 1.25;
 
-// Split mechanic — halves your mass and ejects a projectile.
+/* ----- Split mechanic (multi-cell with gravity rejoin) -----
+ *
+ * Pressing space halves your largest cell's mass and ejects the new half
+ * forward at SPLIT_EJECT_SPEED. The cells then move as ONE player but
+ * with a gravity-style pull toward their centroid, plus exponential
+ * velocity damping on the eject momentum, so the second cell shoots out
+ * a little and quickly drifts back. After SPLIT_REJOIN_MS the two cells
+ * are allowed to merge again on contact.
+ */
 export const SPLIT_MIN_MASS = 40;
-export const SPLIT_PROJECTILE_SPEED = 900;
-export const SPLIT_PROJECTILE_DECEL = 1.4; // multiplicative per second
-export const SPLIT_PROJECTILE_LIFETIME_MS = 6000;
+export const SPLIT_EJECT_SPEED = 700; // initial forward velocity (px/s)
+export const SPLIT_VELOCITY_DAMP = 0.92; // multiplicative per tick (8% loss)
+export const SPLIT_REJOIN_MS = 30_000; // 30s before two own cells may merge
+export const CELL_PULL = 4.5; // gravity toward centroid (px/s per px of gap)
+export const MAX_CELLS_PER_PLAYER = 8; // hard cap so people don't spam space
 
 // Server tick rate; client interpolates between snapshots.
 export const TICK_HZ = 30;
@@ -37,28 +47,25 @@ export const AFK_TIMEOUT_MS = 60_000;
 /* Shared entity shapes                                                */
 /* ------------------------------------------------------------------ */
 
-export type PlayerView = {
-  id: string;
-  name: string;
+/** A single body on the map. A player can have 1..N cells while split. */
+export type CellView = {
+  id: number;
   x: number;
   y: number;
   mass: number;
+};
+
+export type PlayerView = {
+  id: string;
+  name: string;
   color: string;
+  cells: CellView[];
 };
 
 export type FoodView = {
   id: number;
   x: number;
   y: number;
-  color: string;
-};
-
-export type ProjectileView = {
-  id: number;
-  ownerId: string; // not eaten by your own player
-  x: number;
-  y: number;
-  mass: number;
   color: string;
 };
 
@@ -82,14 +89,19 @@ export type ClientMsg =
 /* ------------------------------------------------------------------ */
 
 export type ServerMsg =
-  | { type: "welcome"; playerId: string; worldSize: number; color: string; name: string }
+  | {
+      type: "welcome";
+      playerId: string;
+      worldSize: number;
+      color: string;
+      name: string;
+    }
   | {
       type: "state";
       tick: number;
-      you: { x: number; y: number; mass: number; alive: boolean };
+      you: { cells: CellView[]; alive: boolean };
       players: PlayerView[];
       food: FoodView[];
-      projectiles: ProjectileView[];
       leaderboard: LeaderboardEntry[];
     }
   | {
@@ -115,9 +127,29 @@ export function speedForMass(mass: number): number {
   return BASE_SPEED / Math.sqrt(Math.max(1, mass / START_MASS));
 }
 
-/** Viewport half-extents for a given mass — bigger = see further. */
-export function viewportHalfFor(mass: number): { hx: number; hy: number } {
-  // Base view 800x600, scales with sqrt(mass).
-  const scale = Math.sqrt(mass / START_MASS);
+/** Viewport half-extents for a given total-mass — bigger = see further. */
+export function viewportHalfFor(totalMass: number): { hx: number; hy: number } {
+  const scale = Math.sqrt(totalMass / START_MASS);
   return { hx: 700 * scale, hy: 500 * scale };
+}
+
+/** Sum a player's cells. */
+export function totalMassOf(cells: CellView[]): number {
+  let sum = 0;
+  for (const c of cells) sum += c.mass;
+  return sum;
+}
+
+/** Mass-weighted centroid of a set of cells. */
+export function centroidOf(cells: CellView[]): { x: number; y: number } {
+  let cx = 0;
+  let cy = 0;
+  let sum = 0;
+  for (const c of cells) {
+    cx += c.x * c.mass;
+    cy += c.y * c.mass;
+    sum += c.mass;
+  }
+  if (sum === 0) return { x: 0, y: 0 };
+  return { x: cx / sum, y: cy / sum };
 }

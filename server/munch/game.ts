@@ -1,26 +1,34 @@
 // Server-authoritative simulation for Munch.
 //
+// Multi-cell players: each player has 1..MAX_CELLS cells. Pressing space
+// halves the largest cell and ejects the new half forward. Cells of the
+// same player feel a strong gravitational pull toward their centroid so
+// the ejected cell quickly drifts back; once SPLIT_REJOIN_MS has passed
+// they're allowed to merge on contact.
+//
 // One tick per ~33 ms (TICK_HZ). All state lives here; the WebSocket
 // layer just feeds inputs in and pulls snapshots out.
 
 import {
+  CELL_PULL,
   EAT_RATIO,
   FOOD_MASS,
   FOOD_TARGET,
+  MAX_CELLS_PER_PLAYER,
   MIN_MASS,
+  SPLIT_EJECT_SPEED,
   SPLIT_MIN_MASS,
-  SPLIT_PROJECTILE_DECEL,
-  SPLIT_PROJECTILE_LIFETIME_MS,
-  SPLIT_PROJECTILE_SPEED,
+  SPLIT_REJOIN_MS,
+  SPLIT_VELOCITY_DAMP,
   START_MASS,
   TICK_HZ,
   WORLD_SIZE,
   radiusForMass,
   speedForMass,
+  type CellView,
   type FoodView,
   type LeaderboardEntry,
   type PlayerView,
-  type ProjectileView,
 } from "../../lib/munch/protocol.js";
 import { SpatialGrid } from "./spatial.js";
 
@@ -35,26 +43,31 @@ const PALETTE = [
   "#0d9488",
 ];
 
+export type Cell = {
+  id: number;
+  x: number;
+  y: number;
+  vx: number; // residual eject momentum (decays each tick)
+  vy: number;
+  mass: number;
+  /** Epoch ms when this cell came from a split. 0 means it's allowed
+   *  to merge immediately (i.e. an original or post-merge cell). */
+  splitAt: number;
+};
+
 export type Player = {
   id: string;
   name: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  mass: number;
   color: string;
+  cells: Cell[];
   alive: boolean;
-  // Pending input — set by the WebSocket layer when a packet arrives,
-  // consumed at the next tick.
   inputDir: { x: number; y: number };
   splitRequested: boolean;
-  // For AFK kicking and dead → respawn UX.
   lastInputAt: number;
   killedBy: string | null;
   finalScore: number;
-  // Aim direction is the last non-zero input dir, used as the vector
-  // for splits when the player is currently stationary.
+  /** Last non-zero input direction; used as the ejection vector when
+   *  splitting from a stationary blob. */
   lastAim: { x: number; y: number };
 };
 
@@ -65,26 +78,12 @@ export type Food = {
   color: string;
 };
 
-export type Projectile = {
-  id: number;
-  ownerId: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  mass: number;
-  color: string;
-  expiresAt: number; // ms epoch
-};
-
 export class Game {
   players = new Map<string, Player>();
   food = new Map<number, Food>();
-  projectiles = new Map<number, Projectile>();
 
   private nextFoodId = 1;
-  private nextProjectileId = 1;
-  private tickCount = 0;
+  private nextCellId = 1;
 
   constructor() {
     this.refillFood();
@@ -94,22 +93,27 @@ export class Game {
 
   addPlayer(id: string, name: string): Player {
     const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
-    const player: Player = {
-      id,
-      name,
+    const cell: Cell = {
+      id: this.nextCellId++,
       x: Math.random() * WORLD_SIZE,
       y: Math.random() * WORLD_SIZE,
       vx: 0,
       vy: 0,
       mass: START_MASS,
+      splitAt: 0,
+    };
+    const player: Player = {
+      id,
+      name,
       color,
+      cells: [cell],
       alive: true,
       inputDir: { x: 0, y: 0 },
       splitRequested: false,
       lastInputAt: Date.now(),
       killedBy: null,
       finalScore: 0,
-      lastAim: { x: 0, y: -1 }, // default aim is up
+      lastAim: { x: 0, y: -1 },
     };
     this.players.set(id, player);
     return player;
@@ -126,7 +130,6 @@ export class Game {
   ): void {
     const p = this.players.get(id);
     if (!p) return;
-    // Normalise so a key combo of two arrows isn't sqrt(2) faster.
     const len = Math.hypot(dir.x, dir.y);
     if (len > 0.001) {
       p.inputDir = { x: dir.x / len, y: dir.y / len };
@@ -141,11 +144,17 @@ export class Game {
   respawn(id: string): void {
     const p = this.players.get(id);
     if (!p) return;
-    p.x = Math.random() * WORLD_SIZE;
-    p.y = Math.random() * WORLD_SIZE;
-    p.vx = 0;
-    p.vy = 0;
-    p.mass = START_MASS;
+    p.cells = [
+      {
+        id: this.nextCellId++,
+        x: Math.random() * WORLD_SIZE,
+        y: Math.random() * WORLD_SIZE,
+        vx: 0,
+        vy: 0,
+        mass: START_MASS,
+        splitAt: 0,
+      },
+    ];
     p.alive = true;
     p.killedBy = null;
     p.finalScore = 0;
@@ -158,155 +167,236 @@ export class Game {
   tick(): void {
     const dt = 1 / TICK_HZ;
     const now = Date.now();
-    this.tickCount++;
 
-    // ---- 1. integrate player movement ----
+    // ---- 1. integrate cell motion (input + eject momentum + centroid pull) ----
     for (const p of this.players.values()) {
-      if (!p.alive) continue;
-      const speed = speedForMass(p.mass);
-      p.vx = p.inputDir.x * speed;
-      p.vy = p.inputDir.y * speed;
-      p.x = clamp(p.x + p.vx * dt, 0, WORLD_SIZE);
-      p.y = clamp(p.y + p.vy * dt, 0, WORLD_SIZE);
+      if (!p.alive || p.cells.length === 0) continue;
+
+      // Centroid for inter-cell gravity. Skip if only one cell.
+      let cx = 0;
+      let cy = 0;
+      if (p.cells.length > 1) {
+        let sum = 0;
+        for (const c of p.cells) {
+          cx += c.x * c.mass;
+          cy += c.y * c.mass;
+          sum += c.mass;
+        }
+        if (sum > 0) {
+          cx /= sum;
+          cy /= sum;
+        }
+      }
+
+      for (const cell of p.cells) {
+        const speed = speedForMass(cell.mass);
+        const inputVx = p.inputDir.x * speed;
+        const inputVy = p.inputDir.y * speed;
+
+        // Decay eject momentum exponentially.
+        cell.vx *= SPLIT_VELOCITY_DAMP;
+        cell.vy *= SPLIT_VELOCITY_DAMP;
+
+        // Pull toward centroid (only meaningful with 2+ cells).
+        let pullVx = 0;
+        let pullVy = 0;
+        if (p.cells.length > 1) {
+          pullVx = (cx - cell.x) * CELL_PULL;
+          pullVy = (cy - cell.y) * CELL_PULL;
+        }
+
+        const totalVx = inputVx + cell.vx + pullVx;
+        const totalVy = inputVy + cell.vy + pullVy;
+
+        cell.x = clamp(cell.x + totalVx * dt, 0, WORLD_SIZE);
+        cell.y = clamp(cell.y + totalVy * dt, 0, WORLD_SIZE);
+      }
     }
 
     // ---- 2. handle splits ----
     for (const p of this.players.values()) {
       if (!p.alive || !p.splitRequested) continue;
       p.splitRequested = false;
-      if (p.mass < SPLIT_MIN_MASS) continue;
+      if (p.cells.length >= MAX_CELLS_PER_PLAYER) continue;
+      // Find the largest cell that's big enough to split.
+      let source: Cell | null = null;
+      for (const c of p.cells) {
+        if (c.mass >= SPLIT_MIN_MASS && (!source || c.mass > source.mass)) {
+          source = c;
+        }
+      }
+      if (!source) continue;
+
       const aim = p.lastAim;
       const aimLen = Math.hypot(aim.x, aim.y) || 1;
       const ax = aim.x / aimLen;
       const ay = aim.y / aimLen;
-      const halfMass = p.mass / 2;
-      p.mass = halfMass;
-      const projId = this.nextProjectileId++;
-      // Spawn just outside the player's body so it doesn't immediately
-      // collide with itself.
+      const halfMass = source.mass / 2;
+      source.mass = halfMass;
+      source.splitAt = now;
       const r = radiusForMass(halfMass);
-      const projectile: Projectile = {
-        id: projId,
-        ownerId: p.id,
-        x: p.x + ax * (r + 4),
-        y: p.y + ay * (r + 4),
-        vx: ax * SPLIT_PROJECTILE_SPEED,
-        vy: ay * SPLIT_PROJECTILE_SPEED,
+      const newCell: Cell = {
+        id: this.nextCellId++,
+        x: source.x + ax * (r * 2 + 4),
+        y: source.y + ay * (r * 2 + 4),
+        vx: ax * SPLIT_EJECT_SPEED,
+        vy: ay * SPLIT_EJECT_SPEED,
         mass: halfMass,
-        color: p.color,
-        expiresAt: now + SPLIT_PROJECTILE_LIFETIME_MS,
+        splitAt: now,
       };
-      this.projectiles.set(projId, projectile);
+      p.cells.push(newCell);
     }
 
-    // ---- 3. integrate projectiles (decelerate, expire) ----
-    for (const proj of [...this.projectiles.values()]) {
-      if (now >= proj.expiresAt) {
-        this.projectiles.delete(proj.id);
-        continue;
-      }
-      proj.x = clamp(proj.x + proj.vx * dt, 0, WORLD_SIZE);
-      proj.y = clamp(proj.y + proj.vy * dt, 0, WORLD_SIZE);
-      // Multiplicative deceleration each second.
-      const decay = Math.pow(1 / SPLIT_PROJECTILE_DECEL, dt);
-      proj.vx *= decay;
-      proj.vy *= decay;
-    }
-
-    // ---- 4. resolve eats ----
-    // Build a fresh spatial grid each tick — simple and correct.
-    const grid = new SpatialGrid<{ id: string | number; x: number; y: number; kind: "player" | "food" | "proj" }>(
+    // ---- 3. resolve eats (per-cell, against food and other players' cells) ----
+    type CellRef = { kind: "player"; ownerId: string; cellIdx: number; x: number; y: number };
+    type FoodRef = { kind: "food"; id: number; x: number; y: number };
+    const grid = new SpatialGrid<{ id: string | number; x: number; y: number } & (CellRef | FoodRef)>(
       WORLD_SIZE,
       200,
     );
     grid.clear();
     for (const p of this.players.values()) {
-      if (p.alive) grid.insert({ id: p.id, x: p.x, y: p.y, kind: "player" });
+      if (!p.alive) continue;
+      for (let i = 0; i < p.cells.length; i++) {
+        const c = p.cells[i];
+        grid.insert({
+          id: c.id,
+          x: c.x,
+          y: c.y,
+          kind: "player",
+          ownerId: p.id,
+          cellIdx: i,
+        });
+      }
     }
     for (const f of this.food.values()) {
       grid.insert({ id: f.id, x: f.x, y: f.y, kind: "food" });
     }
-    for (const proj of this.projectiles.values()) {
-      grid.insert({ id: proj.id, x: proj.x, y: proj.y, kind: "proj" });
-    }
+
+    // We need stable indices into player.cells, but eats may remove cells.
+    // To keep things simple: collect all eats first, then apply them.
+    type Eat =
+      | { kind: "food"; eaterPlayer: string; eaterCellId: number; foodId: number }
+      | {
+          kind: "player";
+          eaterPlayer: string;
+          eaterCellId: number;
+          victimPlayer: string;
+          victimCellId: number;
+        };
+    const eats: Eat[] = [];
 
     for (const p of this.players.values()) {
       if (!p.alive) continue;
-      const r = radiusForMass(p.mass);
-      const candidates = grid.nearby(p.x, p.y, r + 60);
-      for (const c of candidates) {
-        if (c.kind === "food") {
-          const f = this.food.get(c.id as number);
-          if (!f) continue;
-          const dx = f.x - p.x;
-          const dy = f.y - p.y;
-          if (dx * dx + dy * dy < r * r) {
-            this.food.delete(f.id);
-            p.mass += FOOD_MASS;
-          }
-        } else if (c.kind === "player") {
-          if (c.id === p.id) continue;
-          const other = this.players.get(c.id as string);
-          if (!other || !other.alive) continue;
-          if (p.mass < other.mass * EAT_RATIO) continue; // can't eat
-          const dx = other.x - p.x;
-          const dy = other.y - p.y;
-          const dist = Math.hypot(dx, dy);
-          // Engulf rule: closest edge of small must be inside big.
-          if (dist < r - radiusForMass(other.mass) * 0.5) {
-            p.mass += other.mass;
-            other.alive = false;
-            other.killedBy = p.name;
-            other.finalScore = Math.max(MIN_MASS, Math.floor(other.mass));
-            other.mass = MIN_MASS;
-          }
-        } else if (c.kind === "proj") {
-          const proj = this.projectiles.get(c.id as number);
-          if (!proj) continue;
-          if (proj.ownerId === p.id) continue; // own projectile passes through
-          const dx = proj.x - p.x;
-          const dy = proj.y - p.y;
-          const dist = Math.hypot(dx, dy);
-          const projR = radiusForMass(proj.mass);
-          if (p.mass >= proj.mass * EAT_RATIO && dist < r - projR * 0.5) {
-            // Player eats the projectile.
-            p.mass += proj.mass;
-            this.projectiles.delete(proj.id);
-          } else if (proj.mass >= p.mass * EAT_RATIO && dist < projR - r * 0.5) {
-            // Projectile is bigger and engulfs the player.
-            const owner = this.players.get(proj.ownerId);
-            const killerName = owner?.name ?? "a stray";
-            // The projectile absorbs the player's mass.
-            proj.mass += p.mass;
-            p.alive = false;
-            p.killedBy = killerName;
-            p.finalScore = Math.max(MIN_MASS, Math.floor(p.mass));
-            p.mass = MIN_MASS;
+      for (const cell of p.cells) {
+        const r = radiusForMass(cell.mass);
+        const candidates = grid.nearby(cell.x, cell.y, r + 60);
+        for (const cand of candidates) {
+          if (cand.kind === "food") {
+            const dx = cand.x - cell.x;
+            const dy = cand.y - cell.y;
+            if (dx * dx + dy * dy < r * r) {
+              eats.push({
+                kind: "food",
+                eaterPlayer: p.id,
+                eaterCellId: cell.id,
+                foodId: cand.id as number,
+              });
+            }
+          } else if (cand.kind === "player") {
+            if (cand.ownerId === p.id) continue; // own cells handled by merge
+            const victim = this.players.get(cand.ownerId);
+            if (!victim || !victim.alive) continue;
+            const victimCell = victim.cells.find((c) => c.id === (cand.id as number));
+            if (!victimCell) continue;
+            if (cell.mass < victimCell.mass * EAT_RATIO) continue;
+            const dx = victimCell.x - cell.x;
+            const dy = victimCell.y - cell.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < r - radiusForMass(victimCell.mass) * 0.5) {
+              eats.push({
+                kind: "player",
+                eaterPlayer: p.id,
+                eaterCellId: cell.id,
+                victimPlayer: victim.id,
+                victimCellId: victimCell.id,
+              });
+            }
           }
         }
       }
     }
 
-    // Projectile-vs-projectile: bigger eats smaller.
-    const projList = [...this.projectiles.values()];
-    for (let i = 0; i < projList.length; i++) {
-      const a = projList[i];
-      if (!this.projectiles.has(a.id)) continue;
-      for (let j = i + 1; j < projList.length; j++) {
-        const b = projList[j];
-        if (!this.projectiles.has(b.id)) continue;
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const dist = Math.hypot(dx, dy);
-        const ra = radiusForMass(a.mass);
-        const rb = radiusForMass(b.mass);
-        if (a.mass >= b.mass * EAT_RATIO && dist < ra - rb * 0.5) {
-          a.mass += b.mass;
-          this.projectiles.delete(b.id);
-        } else if (b.mass >= a.mass * EAT_RATIO && dist < rb - ra * 0.5) {
-          b.mass += a.mass;
-          this.projectiles.delete(a.id);
-          break;
+    // Apply eats. A given cell or food is eaten only by the first eater
+    // we see (deterministic-ish — first iteration wins).
+    const eatenFood = new Set<number>();
+    const eatenCells = new Set<number>(); // cell id, regardless of owner
+    for (const e of eats) {
+      if (e.kind === "food") {
+        if (eatenFood.has(e.foodId)) continue;
+        const eater = this.players.get(e.eaterPlayer);
+        const cell = eater?.cells.find((c) => c.id === e.eaterCellId);
+        if (!cell || !this.food.has(e.foodId)) continue;
+        cell.mass += FOOD_MASS;
+        this.food.delete(e.foodId);
+        eatenFood.add(e.foodId);
+      } else {
+        if (eatenCells.has(e.victimCellId)) continue;
+        const eater = this.players.get(e.eaterPlayer);
+        const eaterCell = eater?.cells.find((c) => c.id === e.eaterCellId);
+        const victim = this.players.get(e.victimPlayer);
+        if (!eater || !eaterCell || !victim) continue;
+        const victimCell = victim.cells.find((c) => c.id === e.victimCellId);
+        if (!victimCell) continue;
+        eaterCell.mass += victimCell.mass;
+        victim.cells = victim.cells.filter((c) => c.id !== victimCell.id);
+        eatenCells.add(victimCell.id);
+        // Did this kill the victim?
+        if (victim.cells.length === 0 && victim.alive) {
+          victim.alive = false;
+          victim.killedBy = eater.name;
+          victim.finalScore = Math.max(MIN_MASS, Math.floor(victim.finalScore));
+        }
+      }
+    }
+
+    // Track running peak mass per player so the score reflects what they
+    // achieved at the high point, not the dribbled-down post-eaten state.
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      const total = p.cells.reduce((a, c) => a + c.mass, 0);
+      if (total > p.finalScore) p.finalScore = Math.floor(total);
+    }
+
+    // ---- 4. own-cell merges (after split cooldown) ----
+    for (const p of this.players.values()) {
+      if (!p.alive || p.cells.length < 2) continue;
+      const cooled = (c: Cell) => c.splitAt === 0 || now - c.splitAt > SPLIT_REJOIN_MS;
+      // We may merge multiple times in one tick; keep going until no merges happen.
+      let didMerge = true;
+      while (didMerge) {
+        didMerge = false;
+        for (let i = 0; i < p.cells.length; i++) {
+          for (let j = i + 1; j < p.cells.length; j++) {
+            const a = p.cells[i];
+            const b = p.cells[j];
+            if (!cooled(a) || !cooled(b)) continue;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.hypot(dx, dy);
+            const overlap = (radiusForMass(a.mass) + radiusForMass(b.mass)) * 0.7;
+            if (dist < overlap) {
+              const total = a.mass + b.mass;
+              a.x = (a.x * a.mass + b.x * b.mass) / total;
+              a.y = (a.y * a.mass + b.y * b.mass) / total;
+              a.mass = total;
+              a.splitAt = 0;
+              p.cells.splice(j, 1);
+              didMerge = true;
+              break;
+            }
+          }
+          if (didMerge) break;
         }
       }
     }
@@ -321,73 +411,87 @@ export class Game {
   /* -------------------------- snapshots --------------------------- */
 
   snapshotFor(playerId: string, viewHx: number, viewHy: number): {
-    you: { x: number; y: number; mass: number; alive: boolean };
+    you: { cells: CellView[]; alive: boolean };
     players: PlayerView[];
     food: FoodView[];
-    projectiles: ProjectileView[];
     leaderboard: LeaderboardEntry[];
   } {
     const me = this.players.get(playerId);
     if (!me) {
       return {
-        you: { x: 0, y: 0, mass: START_MASS, alive: false },
+        you: { cells: [], alive: false },
         players: [],
         food: [],
-        projectiles: [],
         leaderboard: this.leaderboard(),
       };
     }
-    const cx = me.x;
-    const cy = me.y;
+    // Centroid drives the camera + viewport-cull.
+    let cx = 0;
+    let cy = 0;
+    if (me.cells.length > 0) {
+      let sum = 0;
+      for (const c of me.cells) {
+        cx += c.x * c.mass;
+        cy += c.y * c.mass;
+        sum += c.mass;
+      }
+      if (sum > 0) {
+        cx /= sum;
+        cy /= sum;
+      }
+    }
+
     const players: PlayerView[] = [];
     for (const p of this.players.values()) {
       if (!p.alive) continue;
-      if (p.id === playerId) continue; // self is delivered via `you`
-      if (Math.abs(p.x - cx) > viewHx + 80) continue;
-      if (Math.abs(p.y - cy) > viewHy + 80) continue;
+      if (p.id === playerId) continue;
+      // Include any of their cells that intersect our viewport.
+      const visible: CellView[] = [];
+      for (const cell of p.cells) {
+        if (Math.abs(cell.x - cx) > viewHx + 80) continue;
+        if (Math.abs(cell.y - cy) > viewHy + 80) continue;
+        visible.push({ id: cell.id, x: cell.x, y: cell.y, mass: cell.mass });
+      }
+      if (visible.length === 0) continue;
       players.push({
         id: p.id,
         name: p.name,
-        x: p.x,
-        y: p.y,
-        mass: p.mass,
         color: p.color,
+        cells: visible,
       });
     }
+
     const food: FoodView[] = [];
     for (const f of this.food.values()) {
       if (Math.abs(f.x - cx) > viewHx + 20) continue;
       if (Math.abs(f.y - cy) > viewHy + 20) continue;
       food.push({ id: f.id, x: f.x, y: f.y, color: f.color });
     }
-    const projectiles: ProjectileView[] = [];
-    for (const proj of this.projectiles.values()) {
-      if (Math.abs(proj.x - cx) > viewHx + 80) continue;
-      if (Math.abs(proj.y - cy) > viewHy + 80) continue;
-      projectiles.push({
-        id: proj.id,
-        ownerId: proj.ownerId,
-        x: proj.x,
-        y: proj.y,
-        mass: proj.mass,
-        color: proj.color,
-      });
-    }
+
     return {
-      you: { x: me.x, y: me.y, mass: me.mass, alive: me.alive },
+      you: {
+        cells: me.cells.map((c) => ({
+          id: c.id,
+          x: c.x,
+          y: c.y,
+          mass: c.mass,
+        })),
+        alive: me.alive,
+      },
       players,
       food,
-      projectiles,
       leaderboard: this.leaderboard(),
     };
   }
 
   leaderboard(): LeaderboardEntry[] {
-    const alive: LeaderboardEntry[] = [];
+    const out: LeaderboardEntry[] = [];
     for (const p of this.players.values()) {
-      if (p.alive) alive.push({ id: p.id, name: p.name, mass: Math.floor(p.mass) });
+      if (!p.alive) continue;
+      const total = p.cells.reduce((a, c) => a + c.mass, 0);
+      out.push({ id: p.id, name: p.name, mass: Math.floor(total) });
     }
-    return alive.sort((a, b) => b.mass - a.mass).slice(0, 10);
+    return out.sort((a, b) => b.mass - a.mass).slice(0, 10);
   }
 
   /* -------------------------- helpers ----------------------------- */

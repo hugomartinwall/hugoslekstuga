@@ -10,14 +10,16 @@ import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
+  centroidOf,
   radiusForMass,
+  totalMassOf,
   viewportHalfFor,
   WORLD_SIZE,
+  type CellView,
   type ClientMsg,
   type FoodView,
   type LeaderboardEntry,
   type PlayerView,
-  type ProjectileView,
   type ServerMsg,
 } from "@/lib/munch/protocol";
 
@@ -25,10 +27,9 @@ type Phase = "lobby" | "connecting" | "playing" | "dead" | "disconnected";
 
 type Snapshot = {
   receivedAt: number;
-  you: { x: number; y: number; mass: number; alive: boolean };
+  you: { cells: CellView[]; alive: boolean };
   players: PlayerView[];
   food: FoodView[];
-  projectiles: ProjectileView[];
   leaderboard: LeaderboardEntry[];
 };
 
@@ -60,10 +61,7 @@ export default function MunchPage() {
   const keysRef = useRef<Set<string>>(new Set());
   const splitFlagRef = useRef(false);
   const rafRef = useRef<number | null>(null);
-  // Tracks whether a close event was triggered by the user clicking
-  // Leave (so we should land on the lobby, not the disconnected screen).
   const intentRef = useRef<"connected" | "leaving">("connected");
-  // Filled by the welcome message — color & name are server-assigned.
   const selfRef = useRef<Self | null>(null);
 
   /* -------------------- connect / disconnect -------------------- */
@@ -102,12 +100,10 @@ export default function MunchPage() {
           you: msg.you,
           players: msg.players,
           food: msg.food,
-          projectiles: msg.projectiles,
           leaderboard: msg.leaderboard,
         };
         setLeaderboard(msg.leaderboard);
-        setMyMass(msg.you.mass);
-        // If we just respawned, server says alive=true; flip back to playing.
+        setMyMass(Math.floor(totalMassOf(msg.you.cells)));
         if (msg.you.alive) {
           setPhase((prev) => (prev === "dead" ? "playing" : prev));
         }
@@ -122,8 +118,6 @@ export default function MunchPage() {
     };
     ws.onclose = () => {
       wsRef.current = null;
-      // If the user clicked Leave we already routed to the lobby.
-      // Anything else is unexpected.
       if (intentRef.current === "leaving") {
         setPhase("lobby");
       } else {
@@ -157,19 +151,22 @@ export default function MunchPage() {
   /* -------------------- input + render loop --------------------- */
 
   // Track held keys (for movement) and edge-trigger split.
+  // preventDefault on EVERY relevant keydown (including auto-repeat) so
+  // the page itself never scrolls while playing.
   useEffect(() => {
     if (phase !== "playing" && phase !== "dead") return;
     const onDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
       const key = normaliseKey(e.key);
       if (key === null) return;
       e.preventDefault();
+      if (e.repeat) return; // already added to set; just keep the page from scrolling
       keysRef.current.add(key);
       if (key === "Space") splitFlagRef.current = true;
     };
     const onUp = (e: KeyboardEvent) => {
       const key = normaliseKey(e.key);
       if (key === null) return;
+      e.preventDefault();
       keysRef.current.delete(key);
     };
     window.addEventListener("keydown", onDown);
@@ -177,6 +174,20 @@ export default function MunchPage() {
     return () => {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
+    };
+  }, [phase]);
+
+  // Lock body scroll while in-game so even non-arrow accidents (mouse
+  // wheel, trackpad) don't shift the page out from under the canvas.
+  useEffect(() => {
+    if (phase !== "playing" && phase !== "dead") return;
+    const prevHtml = document.documentElement.style.overflow;
+    const prevBody = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = prevHtml;
+      document.body.style.overflow = prevBody;
     };
   }, [phase]);
 
@@ -229,6 +240,7 @@ export default function MunchPage() {
   /* -------------------- canvas auto-size ------------------------ */
 
   useEffect(() => {
+    if (phase !== "playing" && phase !== "dead") return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const resize = () => {
@@ -257,11 +269,9 @@ export default function MunchPage() {
   const respawn = useCallback(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      // Reconnect from scratch
       connect(name);
       return;
     }
-    // Server treats split-while-dead as a respawn intent.
     ws.send(
       JSON.stringify({
         type: "input",
@@ -287,6 +297,36 @@ export default function MunchPage() {
 
   /* -------------------- render ----------------------------------- */
 
+  // Lobby and disconnected screens still live inside ToolFrame; the
+  // playing/dead phases break out into a fullscreen overlay so arrow
+  // keys don't fight with the page chrome.
+  if (phase === "playing" || phase === "dead") {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-cream-deep">
+        <canvas
+          ref={canvasRef}
+          className="block h-full w-full bg-cream"
+          tabIndex={0}
+        />
+        <Leaderboard
+          entries={leaderboard}
+          myMass={myMass}
+          onLeave={disconnect}
+        />
+        {phase === "dead" && deadInfo && (
+          <DeadOverlay
+            score={deadInfo.score}
+            killer={deadInfo.killer}
+            onRespawn={respawn}
+            onShare={shareScore}
+            onLeave={disconnect}
+            copied={copied}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <ToolFrame tool={tool}>
       <div className="flex flex-col gap-4">
@@ -303,34 +343,6 @@ export default function MunchPage() {
           <p className="card-chunk rounded-[var(--radius-card)] bg-cream p-6 text-center font-display text-lg font-bold">
             …connecting to the map…
           </p>
-        )}
-
-        {(phase === "playing" || phase === "dead") && (
-          <>
-            <div className="relative">
-              <canvas
-                ref={canvasRef}
-                className="card-chunk block h-[60vh] w-full rounded-[var(--radius-card)] bg-cream"
-                tabIndex={0}
-              />
-              <Leaderboard
-                entries={leaderboard}
-                myMass={Math.floor(myMass)}
-                onLeave={disconnect}
-              />
-              {phase === "dead" && deadInfo && (
-                <DeadOverlay
-                  score={deadInfo.score}
-                  killer={deadInfo.killer}
-                  onRespawn={respawn}
-                  onShare={shareScore}
-                  onLeave={disconnect}
-                  copied={copied}
-                />
-              )}
-            </div>
-            <Help />
-          </>
         )}
 
         {phase === "disconnected" && (
@@ -374,7 +386,8 @@ function Lobby({
       <p className="font-display text-2xl font-extrabold">A small map. Smaller blobs.</p>
       <p className="text-sm text-ink-soft">
         Eat the dots. Eat the smaller players. Avoid the bigger ones.
-        Press <Kbd>Space</Kbd> to fire half of yourself forward as a weapon.
+        Press <Kbd>Space</Kbd> to split into two — they&apos;ll drift back
+        and merge after about 30 seconds.
       </p>
       <label className="flex flex-col gap-1 text-xs">
         <span className="font-semibold uppercase tracking-wide text-ink-muted">
@@ -407,8 +420,9 @@ function Lobby({
           <Kbd>Space</Kbd> to split.
         </p>
         <p>
-          Bigger = slower, but you see further. Splitting halves you and shoots
-          one half forward — a desperate move with a real cost.
+          Bigger = slower, but you see further. Splitting halves your largest
+          cell and shoots the new half forward — gravity pulls it back, and
+          after 30 seconds it can merge again on contact.
         </p>
       </div>
     </form>
@@ -484,7 +498,7 @@ function DeadOverlay({
   copied: boolean;
 }) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center rounded-[var(--radius-card)] bg-ink/70 p-4">
+    <div className="absolute inset-0 flex items-center justify-center bg-ink/70 p-4">
       <div className="card-chunk flex max-w-md flex-col items-center gap-3 rounded-[var(--radius-card)] bg-cream p-6 text-center">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Eaten
@@ -493,7 +507,7 @@ function DeadOverlay({
         <p className="font-display text-5xl font-extrabold tabular-nums">
           {score}
         </p>
-        <p className="text-sm text-ink-soft">final mass</p>
+        <p className="text-sm text-ink-soft">peak mass</p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <button
             type="button"
@@ -523,20 +537,8 @@ function DeadOverlay({
 }
 
 /* ------------------------------------------------------------------ */
-/* Help / footer                                                        */
+/* Misc                                                                 */
 /* ------------------------------------------------------------------ */
-
-function Help() {
-  return (
-    <p className="text-xs text-ink-muted">
-      Multiplayer in real-time on a single shared map. The server is
-      authoritative — what you see is what everyone sees, give or take a
-      tick. No accounts, no chat. Beating the high score on the
-      leaderboard is the only thing being recorded, and even that resets
-      when the room empties.
-    </p>
-  );
-}
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
@@ -546,22 +548,21 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Render utilities                                                     */
-/* ------------------------------------------------------------------ */
-
 function normaliseKey(k: string): string | null {
   if (k === "ArrowUp" || k === "ArrowDown" || k === "ArrowLeft" || k === "ArrowRight") {
     return k;
   }
   if (k === " " || k === "Spacebar" || k === "Space") return "Space";
-  // WASD as a polite alternative.
   if (k === "w" || k === "W") return "ArrowUp";
   if (k === "s" || k === "S") return "ArrowDown";
   if (k === "a" || k === "A") return "ArrowLeft";
   if (k === "d" || k === "D") return "ArrowRight";
   return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Canvas drawing                                                       */
+/* ------------------------------------------------------------------ */
 
 function drawScene(
   canvas: HTMLCanvasElement,
@@ -576,25 +577,25 @@ function drawScene(
   const h = canvas.height / dpr;
 
   ctx.clearRect(0, 0, w, h);
-  // Background grid for depth perception.
   ctx.fillStyle = "#fbf6ee";
   ctx.fillRect(0, 0, w, h);
 
   if (!cur) return;
 
-  // Interpolation: blend between prev and cur snapshots based on time
-  // since cur arrived. Server snapshots ~50ms apart, so we lag rendering
-  // by ~50ms to interpolate cleanly.
+  // Interpolation: blend between prev and cur snapshots.
   const SNAP_GAP = 50;
   const now = performance.now();
   const t = prev ? Math.min(1, (now - cur.receivedAt) / SNAP_GAP) : 1;
   const lerp = (a: number, b: number) => a + (b - a) * t;
 
-  const myCx = prev ? lerp(prev.you.x, cur.you.x) : cur.you.x;
-  const myCy = prev ? lerp(prev.you.y, cur.you.y) : cur.you.y;
+  // Camera centroid: interpolate between previous and current centroid.
+  const myCenter = centroidOf(cur.you.cells);
+  const prevCenter = prev ? centroidOf(prev.you.cells) : myCenter;
+  const myCx = lerp(prevCenter.x, myCenter.x);
+  const myCy = lerp(prevCenter.y, myCenter.y);
 
-  // Camera & zoom from current mass.
-  const { hx } = viewportHalfFor(cur.you.mass);
+  const myMass = Math.max(20, totalMassOf(cur.you.cells));
+  const { hx } = viewportHalfFor(myMass);
   const scale = Math.min(w, h * (16 / 9)) / (2 * hx);
 
   const toScreen = (wx: number, wy: number) => ({
@@ -627,14 +628,14 @@ function drawScene(
     ctx.stroke();
   }
 
-  // World bounds (a thick border to show map edges).
+  // World bounds.
   ctx.strokeStyle = "#1a1812";
   ctx.lineWidth = 4;
   const tl = toScreen(0, 0);
   const br = toScreen(WORLD_SIZE, WORLD_SIZE);
   ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
 
-  // Food — minimum visual radius so dots are obviously edible.
+  // Food.
   for (const f of cur.food) {
     const { sx, sy } = toScreen(f.x, f.y);
     if (sx < -10 || sx > w + 10 || sy < -10 || sy > h + 10) continue;
@@ -644,47 +645,42 @@ function drawScene(
     ctx.fill();
   }
 
-  // Projectiles (interpolated by id if present in prev).
-  const prevProjMap = new Map<number, ProjectileView>();
+  // Other players: each one has a list of cells; interpolate per cell id.
+  // Build a prev-cell lookup: cellId → prev position.
+  const prevCellMap = new Map<number, CellView>();
   if (prev) {
-    for (const p of prev.projectiles) prevProjMap.set(p.id, p);
-  }
-  for (const proj of cur.projectiles) {
-    const pPrev = prevProjMap.get(proj.id);
-    const px = pPrev ? lerp(pPrev.x, proj.x) : proj.x;
-    const py = pPrev ? lerp(pPrev.y, proj.y) : proj.y;
-    const { sx, sy } = toScreen(px, py);
-    const r = radiusForMass(proj.mass) * scale;
-    drawCell(ctx, sx, sy, r, proj.color, "");
-  }
-
-  // Other players (interpolated by id).
-  const prevPlayerMap = new Map<string, PlayerView>();
-  if (prev) {
-    for (const p of prev.players) prevPlayerMap.set(p.id, p);
+    for (const p of prev.players) {
+      for (const c of p.cells) prevCellMap.set(c.id, c);
+    }
   }
   for (const p of cur.players) {
-    const pPrev = prevPlayerMap.get(p.id);
-    const px = pPrev ? lerp(pPrev.x, p.x) : p.x;
-    const py = pPrev ? lerp(pPrev.y, p.y) : p.y;
-    const { sx, sy } = toScreen(px, py);
-    const r = radiusForMass(p.mass) * scale;
-    drawCell(ctx, sx, sy, r, p.color, p.name);
+    for (const cell of p.cells) {
+      const prevCell = prevCellMap.get(cell.id);
+      const cx = prevCell ? lerp(prevCell.x, cell.x) : cell.x;
+      const cy = prevCell ? lerp(prevCell.y, cell.y) : cell.y;
+      const { sx, sy } = toScreen(cx, cy);
+      const r = radiusForMass(cell.mass) * scale;
+      drawCell(ctx, sx, sy, r, p.color, p.name);
+    }
   }
 
-  // Self last so the name draws on top. Color & name come from the
-  // welcome message, not the snapshot (which excludes self).
-  const r = radiusForMass(cur.you.mass) * scale;
-  const { sx, sy } = toScreen(myCx, myCy);
-  drawCell(
-    ctx,
-    sx,
-    sy,
-    r,
-    self?.color ?? "#9333ea",
-    self?.name ?? "you",
-    true,
-  );
+  // Self last so own cells render on top of others overlapping. Color &
+  // name come from the welcome message.
+  const myColor = self?.color ?? "#9333ea";
+  const myName = self?.name ?? "you";
+  // Per-cell interpolation for self too.
+  const prevSelfCellMap = new Map<number, CellView>();
+  if (prev) {
+    for (const c of prev.you.cells) prevSelfCellMap.set(c.id, c);
+  }
+  for (const cell of cur.you.cells) {
+    const prevCell = prevSelfCellMap.get(cell.id);
+    const cx = prevCell ? lerp(prevCell.x, cell.x) : cell.x;
+    const cy = prevCell ? lerp(prevCell.y, cell.y) : cell.y;
+    const { sx, sy } = toScreen(cx, cy);
+    const r = radiusForMass(cell.mass) * scale;
+    drawCell(ctx, sx, sy, r, myColor, myName, true);
+  }
 }
 
 function drawCell(
@@ -715,4 +711,3 @@ function drawCell(
     ctx.fillText(label, x, y);
   }
 }
-
