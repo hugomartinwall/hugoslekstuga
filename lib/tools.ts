@@ -467,6 +467,18 @@ export const tools: Tool[] = [
     color: "tomato",
     emoji: "▣",
   },
+
+  // ---------- Round 4: games ----------
+
+  {
+    slug: "munch",
+    title: "Munch",
+    tagline: "A small map. Smaller blobs.",
+    description:
+      "Real-time multiplayer on a single shared map. Eat the dots, eat the smaller players, dodge the bigger ones. Press space to fire half of yourself forward as a weapon. No accounts, no chat, just one shared room.",
+    color: "purple",
+    emoji: "◉",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

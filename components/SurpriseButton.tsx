@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
+import { pathFor } from "@/lib/clusters";
 
 const ROLL_FRAMES = 8;
 const ROLL_FRAME_MS = 60;
@@ -44,7 +45,7 @@ export default function SurpriseButton() {
     }
     setFace(target);
     await sleep(LAND_HOLD_MS);
-    router.push(`/tools/${target.slug}`);
+    router.push(pathFor(target.slug));
   }, [router]);
 
   return (

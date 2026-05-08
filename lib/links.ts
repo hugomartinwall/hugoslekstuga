@@ -136,6 +136,14 @@ export const LINKS: Link[] = [
   ["shot", "favicon"],
   ["shot", "squeeze"],
   ["shot", "markdown"],
+
+  // munch (games) — first game on the map. Bridges to the playful
+  // single-purpose tools that share its energy.
+  ["munch", "tally"],
+  ["munch", "noise"],
+  ["munch", "typing"],
+  ["munch", "roll"],
+  ["munch", "picker"],
 ];
 
 // Quick lookup: how many neighbours does each tool have?

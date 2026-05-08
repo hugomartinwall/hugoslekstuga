@@ -15,6 +15,7 @@ import {
   CLUSTERS,
   CLUSTER_ORDER,
   TOOL_CLUSTER,
+  pathFor,
   type ClusterId,
 } from "@/lib/clusters";
 
@@ -450,7 +451,7 @@ export default function ToolMap({
         setBouncingSlug(drag.slug);
         triggerClickFx(drag.slug);
         window.setTimeout(() => {
-          router.push(`/tools/${drag.slug}`);
+          router.push(pathFor(drag.slug));
         }, CLICK_BOUNCE_MS);
       }
     },
@@ -636,7 +637,7 @@ export default function ToolMap({
                     setBouncingSlug(n.tool.slug);
                     triggerClickFx(n.tool.slug);
                     window.setTimeout(() => {
-                      router.push(`/tools/${n.tool.slug}`);
+                      router.push(pathFor(n.tool.slug));
                     }, CLICK_BOUNCE_MS);
                   }
                 }}

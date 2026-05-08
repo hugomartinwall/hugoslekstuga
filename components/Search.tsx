@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { tools, type Tool, type ToolColor } from "@/lib/tools";
+import { pathFor } from "@/lib/clusters";
 
 type Ctx = { open: boolean; setOpen: (v: boolean) => void };
 
@@ -145,7 +146,7 @@ export function SearchPalette() {
       const t = results[idx];
       if (!t) return;
       setOpen(false);
-      router.push(`/tools/${t.slug}`);
+      router.push(pathFor(t.slug));
     },
     [results, router, setOpen],
   );

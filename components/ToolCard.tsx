@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Tool } from "@/lib/tools";
+import { pathFor } from "@/lib/clusters";
 
 const colorBg: Record<Tool["color"], string> = {
   tomato: "bg-tomato-soft",
@@ -26,7 +27,7 @@ const colorAccent: Record<Tool["color"], string> = {
 export default function ToolCard({ tool }: { tool: Tool }) {
   return (
     <Link
-      href={`/tools/${tool.slug}`}
+      href={pathFor(tool.slug)}
       className={`card-chunk group flex flex-col gap-4 rounded-[var(--radius-card)] ${colorBg[tool.color]} p-6 sm:p-7`}
     >
       <div className="flex items-start justify-between">

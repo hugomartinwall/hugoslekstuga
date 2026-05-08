@@ -8,7 +8,8 @@ export type ClusterId =
   | "time"
   | "wellness"
   | "creative"
-  | "code";
+  | "code"
+  | "games";
 
 export type Cluster = {
   id: ClusterId;
@@ -55,6 +56,12 @@ export const CLUSTERS: Record<ClusterId, Cluster> = {
     color: "#0d9488",
     description: "Pixels, CSS, patterns",
   },
+  games: {
+    id: "games",
+    label: "Games",
+    color: "#9333ea",
+    description: "Quick play, sharable scores",
+  },
 };
 
 export const CLUSTER_ORDER: ClusterId[] = [
@@ -64,6 +71,7 @@ export const CLUSTER_ORDER: ClusterId[] = [
   "wellness",
   "creative",
   "code",
+  "games",
 ];
 
 export const TOOL_CLUSTER: Record<string, ClusterId> = {
@@ -121,6 +129,8 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   easing: "code",
   regex: "code",
   shot: "code",
+  // Games (new)
+  munch: "games",
 };
 
 export function clusterFor(slug: string): ClusterId | undefined {
@@ -131,4 +141,13 @@ export function sameCluster(a: string, b: string): boolean {
   const ca = TOOL_CLUSTER[a];
   const cb = TOOL_CLUSTER[b];
   return ca !== undefined && ca === cb;
+}
+
+/**
+ * The route a tool lives at. Most tools are under /tools/<slug>; games
+ * get their own /games/<slug> prefix so the URL reads honestly as a
+ * game and not yet-another-utility.
+ */
+export function pathFor(slug: string): string {
+  return TOOL_CLUSTER[slug] === "games" ? `/games/${slug}` : `/tools/${slug}`;
 }
