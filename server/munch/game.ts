@@ -21,6 +21,7 @@ import {
   SPLIT_MIN_MASS,
   SPLIT_PULL_DELAY_MS,
   SPLIT_PULL_RAMP_MS,
+  SPAWN_PROTECT_MS,
   SPLIT_REJOIN_MS,
   SPLIT_VELOCITY_DAMP,
   START_MASS,
@@ -82,6 +83,11 @@ export type Player = {
   /** Last non-zero input direction; used as the ejection vector when
    *  splitting from a stationary blob. */
   lastAim: { x: number; y: number };
+  /** Epoch ms when this player spawned (or respawned). Used to grant
+   * temporary spawn protection — they can't be eaten and can't eat
+   * during SPAWN_PROTECT_MS. Cleared (set to 0) when they split, so
+   * protection can't be used offensively. */
+  spawnedAt: number;
 };
 
 export type Food = {
@@ -129,6 +135,7 @@ export class Game {
       killedBy: null,
       finalScore: 0,
       lastAim: { x: 0, y: -1 },
+      spawnedAt: Date.now(),
     };
     this.players.set(id, player);
     return player;
@@ -177,6 +184,7 @@ export class Game {
     p.finalScore = 0;
     p.inputDir = { x: 0, y: 0 };
     p.splitRequested = false;
+    p.spawnedAt = Date.now();
   }
 
   /* -------------------------- main tick --------------------------- */
@@ -283,6 +291,9 @@ export class Game {
       }
       if (!source) continue;
 
+      // Splitting cancels spawn protection — you can't shoot while
+      // invulnerable.
+      p.spawnedAt = 0;
       const aim = p.lastAim;
       const aimLen = Math.hypot(aim.x, aim.y) || 1;
       const ax = aim.x / aimLen;
@@ -346,13 +357,20 @@ export class Game {
         };
     const eats: Eat[] = [];
 
+    const isProtected = (player: Player): boolean =>
+      player.spawnedAt > 0 && now - player.spawnedAt < SPAWN_PROTECT_MS;
+
     for (const p of this.players.values()) {
       if (!p.alive) continue;
+      const eaterProtected = isProtected(p);
       for (const cell of p.cells) {
         const r = radiusForMass(cell.mass);
         const candidates = grid.nearby(cell.x, cell.y, r + 60);
         for (const cand of candidates) {
           if (cand.kind === "food") {
+            // Food eating is always allowed — protection only gates
+            // player-vs-player eats, otherwise spawn protection would
+            // mean you can't grow either.
             const dx = cand.x - cell.x;
             const dy = cand.y - cell.y;
             if (dx * dx + dy * dy < r * r) {
@@ -367,6 +385,8 @@ export class Game {
             if (cand.ownerId === p.id) continue; // own cells handled by merge
             const victim = this.players.get(cand.ownerId);
             if (!victim || !victim.alive) continue;
+            // Protected players are immune in either direction.
+            if (eaterProtected || isProtected(victim)) continue;
             const victimCell = victim.cells.find((c) => c.id === (cand.id as number));
             if (!victimCell) continue;
             if (cell.mass < victimCell.mass * EAT_RATIO) continue;
@@ -524,6 +544,9 @@ export class Game {
       return Math.max(0, 1 - since / SPLIT_REJOIN_MS);
     };
 
+    const isProtected = (player: Player): boolean =>
+      player.spawnedAt > 0 && now - player.spawnedAt < SPAWN_PROTECT_MS;
+
     if (!me) {
       return {
         you: { cells: [], alive: false },
@@ -552,6 +575,7 @@ export class Game {
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       if (p.id === playerId) continue;
+      const playerProt = isProtected(p);
       const visible: CellView[] = [];
       for (const cell of p.cells) {
         if (Math.abs(cell.x - cx) > viewHx + 80) continue;
@@ -562,6 +586,7 @@ export class Game {
           y: cell.y,
           mass: cell.mass,
           cd: cooldownFor(cell),
+          prot: playerProt,
         });
       }
       if (visible.length === 0) continue;
@@ -580,6 +605,7 @@ export class Game {
       food.push({ id: f.id, x: f.x, y: f.y, color: f.color });
     }
 
+    const meProt = isProtected(me);
     return {
       you: {
         cells: me.cells.map((c) => ({
@@ -588,6 +614,7 @@ export class Game {
           y: c.y,
           mass: c.mass,
           cd: cooldownFor(c),
+          prot: meProt,
         })),
         alive: me.alive,
       },

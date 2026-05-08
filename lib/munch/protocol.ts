@@ -58,6 +58,12 @@ export const SNAPSHOT_HZ = 20;
 // AFK kick: no input received for this long → drop the player.
 export const AFK_TIMEOUT_MS = 60_000;
 
+// Spawn protection: just-spawned (or just-respawned) players can't be
+// eaten and can't eat for this long. Lifts immediately if they split,
+// so it can't be exploited offensively. The client renders a pulsing
+// halo around protected cells.
+export const SPAWN_PROTECT_MS = 1500;
+
 /* ------------------------------------------------------------------ */
 /* Shared entity shapes                                                */
 /* ------------------------------------------------------------------ */
@@ -73,6 +79,10 @@ export type CellView = {
    * still in the post-split window. Clients render this as an arc so
    * the player can see when they'll be whole again. */
   cd: number;
+  /** True while this cell's player is in spawn protection — clients
+   * render a pulsing halo and the server skips eat resolution either
+   * direction. Lifts on first split. */
+  prot: boolean;
 };
 
 export type PlayerView = {

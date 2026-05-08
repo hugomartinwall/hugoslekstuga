@@ -35,6 +35,18 @@ type Snapshot = {
 
 type Self = { id: string; color: string; name: string };
 
+/** A brief expanding ring rendered when a food or cell disappears,
+ *  indicating something just got eaten at that spot. */
+type Pulse = {
+  x: number;
+  y: number;
+  baseR: number;
+  color: string;
+  bornAt: number;
+};
+
+const PULSE_DURATION_MS = 420;
+
 const WS_URL =
   process.env.NEXT_PUBLIC_MUNCH_WS_URL ?? "ws://localhost:8080";
 
@@ -63,6 +75,16 @@ export default function MunchPage() {
   const rafRef = useRef<number | null>(null);
   const intentRef = useRef<"connected" | "leaving">("connected");
   const selfRef = useRef<Self | null>(null);
+  // Visual pulses queued when food/cells disappear. Drained by the
+  // render loop.
+  const pulsesRef = useRef<Pulse[]>([]);
+  // For light auto-reconnect: one retry on an unexpected close before
+  // we surface the disconnected screen.
+  const retriedRef = useRef(false);
+  // Lets ws.onclose call connect() despite the closure capturing the
+  // first definition; we set this on every render so the timeout
+  // reaches the latest connect.
+  const connectRef = useRef<((name: string) => void) | null>(null);
 
   /* -------------------- connect / disconnect -------------------- */
 
@@ -92,9 +114,71 @@ export default function MunchPage() {
           color: msg.color,
           name: msg.name,
         };
+        retriedRef.current = false; // reset retry budget on success
         setPhase("playing");
       } else if (msg.type === "state") {
-        prevSnapRef.current = curSnapRef.current;
+        const prev = curSnapRef.current;
+        // Detect things that disappeared from view since the last
+        // snapshot. Anything that vanished while still inside the
+        // current viewport was almost certainly eaten — emit a pulse.
+        if (prev) {
+          const myCenter = centroidOf(
+            msg.you.cells.length > 0 ? msg.you.cells : prev.you.cells,
+          );
+          const totalMass = Math.max(20, totalMassOf(msg.you.cells));
+          const view = viewportHalfFor(totalMass);
+          const stillInView = (x: number, y: number) =>
+            Math.abs(x - myCenter.x) < view.hx + 40 &&
+            Math.abs(y - myCenter.y) < view.hy + 40;
+          const now = performance.now();
+          // Food
+          const curFoodIds = new Set(msg.food.map((f) => f.id));
+          for (const f of prev.food) {
+            if (!curFoodIds.has(f.id) && stillInView(f.x, f.y)) {
+              pulsesRef.current.push({
+                x: f.x,
+                y: f.y,
+                baseR: 8,
+                color: f.color,
+                bornAt: now,
+              });
+            }
+          }
+          // Other players' cells
+          const curOtherCellIds = new Set<number>();
+          for (const p of msg.players) for (const c of p.cells) curOtherCellIds.add(c.id);
+          for (const p of prev.players) {
+            for (const c of p.cells) {
+              if (!curOtherCellIds.has(c.id) && stillInView(c.x, c.y)) {
+                pulsesRef.current.push({
+                  x: c.x,
+                  y: c.y,
+                  baseR: radiusForMass(c.mass) + 4,
+                  color: p.color,
+                  bornAt: now,
+                });
+              }
+            }
+          }
+          // Your own cells (death or partial cell-loss)
+          const curOwnIds = new Set(msg.you.cells.map((c) => c.id));
+          for (const c of prev.you.cells) {
+            if (!curOwnIds.has(c.id) && stillInView(c.x, c.y)) {
+              pulsesRef.current.push({
+                x: c.x,
+                y: c.y,
+                baseR: radiusForMass(c.mass) + 6,
+                color: selfRef.current?.color ?? "#9333ea",
+                bornAt: now,
+              });
+            }
+          }
+          // Cap the queue so a chaotic moment doesn't allocate forever.
+          if (pulsesRef.current.length > 80) {
+            pulsesRef.current = pulsesRef.current.slice(-80);
+          }
+        }
+        prevSnapRef.current = prev;
         curSnapRef.current = {
           receivedAt: performance.now(),
           you: msg.you,
@@ -120,14 +204,32 @@ export default function MunchPage() {
       wsRef.current = null;
       if (intentRef.current === "leaving") {
         setPhase("lobby");
-      } else {
-        setPhase("disconnected");
+        return;
       }
+      // Light auto-reconnect: try once before showing the disconnected
+      // screen. The retry is cheap, the pause hides a single transient
+      // network blip without the user having to click anything.
+      if (!retriedRef.current) {
+        retriedRef.current = true;
+        window.setTimeout(() => {
+          // Only retry if the user hasn't intentionally left in the
+          // meantime.
+          if (intentRef.current !== "leaving") connectRef.current?.(chosenName);
+        }, 1500);
+        return;
+      }
+      setPhase("disconnected");
     };
     ws.onerror = () => {
       setError("Couldn't reach the server. Is it running?");
     };
   }, []);
+
+  // Keep the ref pointing at the current connect closure so the
+  // ws.onclose retry timeout can reach it.
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     intentRef.current = "leaving";
@@ -138,6 +240,8 @@ export default function MunchPage() {
     setDeadInfo(null);
     prevSnapRef.current = null;
     curSnapRef.current = null;
+    pulsesRef.current = [];
+    retriedRef.current = false;
   }, []);
 
   // Cleanup socket on unmount.
@@ -233,6 +337,7 @@ export default function MunchPage() {
           prevSnapRef.current,
           curSnapRef.current,
           selfRef.current,
+          pulsesRef.current,
         );
       }
       rafRef.current = requestAnimationFrame(draw);
@@ -392,8 +497,10 @@ function Lobby({
       <p className="font-display text-2xl font-extrabold">The bigger the better.</p>
       <p className="text-sm text-ink-soft">
         Eat the dots. Eat the smaller players. Avoid the bigger ones.
-        Press <Kbd>Space</Kbd> to split into two — they&apos;ll drift back
-        and merge after about 30 seconds.
+        Press <Kbd>Space</Kbd> to fire half of yourself forward as an
+        attack — gravity drags it back toward you, and after about 30
+        seconds it can merge again. Bigger means slower; smaller pieces
+        of a split cluster trail in the water behind you.
       </p>
       <label className="flex flex-col gap-1 text-xs">
         <span className="font-semibold uppercase tracking-wide text-ink-muted">
@@ -537,6 +644,9 @@ function DeadOverlay({
             Leave
           </button>
         </div>
+        <p className="mt-1 text-xs text-ink-muted">
+          or press <Kbd>Space</Kbd> to play again, <Kbd>Esc</Kbd> to leave
+        </p>
       </div>
     </div>
   );
@@ -575,6 +685,7 @@ function drawScene(
   prev: Snapshot | null,
   cur: Snapshot | null,
   self: Self | null,
+  pulses: Pulse[],
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -669,7 +780,7 @@ function drawScene(
       const cy = prevCell ? lerp(prevCell.y, cell.y) : cell.y;
       const { sx, sy } = toScreen(cx, cy);
       const r = radiusForMass(cell.mass) * scale;
-      drawCell(ctx, sx, sy, r, p.color, p.name, false, cell.cd);
+      drawCell(ctx, sx, sy, r, p.color, p.name, false, cell.cd, cell.prot);
     }
   }
 
@@ -688,8 +799,42 @@ function drawScene(
     const cy = prevCell ? lerp(prevCell.y, cell.y) : cell.y;
     const { sx, sy } = toScreen(cx, cy);
     const r = radiusForMass(cell.mass) * scale;
-    drawCell(ctx, sx, sy, r, myColor, myName, true, cell.cd);
+    drawCell(ctx, sx, sy, r, myColor, myName, true, cell.cd, cell.prot);
   }
+
+  // Pulses on top — expanding rings where food/cells just disappeared.
+  // Prune in place so the array doesn't grow forever.
+  if (pulses.length > 0) {
+    const tNow = performance.now();
+    let writeIdx = 0;
+    for (let i = 0; i < pulses.length; i++) {
+      const pulse = pulses[i];
+      const age = tNow - pulse.bornAt;
+      if (age >= PULSE_DURATION_MS) continue; // drop expired
+      pulses[writeIdx++] = pulse;
+      const t = age / PULSE_DURATION_MS;
+      const alpha = 1 - t;
+      const radius = (pulse.baseR * (1 + t * 1.6)) * scale;
+      const { sx, sy } = toScreen(pulse.x, pulse.y);
+      ctx.beginPath();
+      ctx.arc(sx, sy, Math.max(2, radius), 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(1.5, 3 * (1 - t * 0.5));
+      ctx.strokeStyle = withAlpha(pulse.color, alpha * 0.8);
+      ctx.stroke();
+    }
+    pulses.length = writeIdx;
+  }
+}
+
+/** Mix an existing 6-digit hex colour with a 0..1 alpha into rgba(). */
+function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith("#") && color.length === 7) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+  }
+  return color;
 }
 
 function drawCell(
@@ -701,8 +846,23 @@ function drawCell(
   label: string,
   isSelf = false,
   cooldown = 0,
+  protected_ = false,
 ): void {
   if (r < 1) r = 1;
+
+  // Spawn-protection halo — drawn UNDER the cell so it reads as
+  // ambient glow rather than chrome. A slow 1Hz pulse signals "you
+  // can't eat or be eaten right now".
+  if (protected_ && r > 4) {
+    const phase = (performance.now() / 1000) % 1; // 0..1 over a second
+    const pulse = 0.35 + 0.45 * Math.abs(Math.sin(phase * Math.PI * 2));
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.45, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(3, r * 0.18);
+    ctx.strokeStyle = `rgba(255, 255, 255, ${pulse.toFixed(3)})`;
+    ctx.stroke();
+  }
+
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
