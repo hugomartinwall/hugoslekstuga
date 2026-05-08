@@ -127,9 +127,16 @@ export function speedForMass(mass: number): number {
   return BASE_SPEED / Math.sqrt(Math.max(1, mass / START_MASS));
 }
 
-/** Viewport half-extents for a given total-mass — bigger = see further. */
+/** Viewport half-extents for a given total-mass — bigger = see further.
+ *
+ * Important: this scales with mass^0.35, NOT sqrt (mass^0.5). Why: a
+ * blob's world radius scales with sqrt(mass), so if the viewport also
+ * scaled with sqrt(mass), the blob's *screen* size would be exactly
+ * constant — you'd grow numerically without any visual feedback. By
+ * scaling the viewport slower than the blob, your cell visibly takes
+ * up more of the screen as you grow, while the world also widens. */
 export function viewportHalfFor(totalMass: number): { hx: number; hy: number } {
-  const scale = Math.sqrt(totalMass / START_MASS);
+  const scale = Math.pow(Math.max(1, totalMass / START_MASS), 0.35);
   return { hx: 700 * scale, hy: 500 * scale };
 }
 

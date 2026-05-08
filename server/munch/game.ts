@@ -368,11 +368,50 @@ export class Game {
       if (total > p.finalScore) p.finalScore = Math.floor(total);
     }
 
-    // ---- 4. own-cell merges (after split cooldown) ----
+    // ---- 4. own-cell separation: cells of the same player can touch
+    // but never overlap while still within the rejoin cooldown. The
+    // gravity from step 1 keeps pulling them together; this constraint
+    // resolves the resulting clip so they rest exactly at touch.
     for (const p of this.players.values()) {
       if (!p.alive || p.cells.length < 2) continue;
       const cooled = (c: Cell) => c.splitAt === 0 || now - c.splitAt > SPLIT_REJOIN_MS;
-      // We may merge multiple times in one tick; keep going until no merges happen.
+      // Up to a couple of relaxation passes to settle multi-cell jams.
+      for (let pass = 0; pass < 3; pass++) {
+        let moved = false;
+        for (let i = 0; i < p.cells.length; i++) {
+          for (let j = i + 1; j < p.cells.length; j++) {
+            const a = p.cells[i];
+            const b = p.cells[j];
+            // Skip pairs that ARE allowed to merge — those go through
+            // the merge step below instead of bouncing apart.
+            if (cooled(a) && cooled(b)) continue;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.hypot(dx, dy);
+            const minDist = radiusForMass(a.mass) + radiusForMass(b.mass);
+            if (dist < minDist && dist > 0.0001) {
+              const overlap = minDist - dist;
+              const nx = dx / dist;
+              const ny = dy / dist;
+              // Push along the contact normal, weighted by inverse mass
+              // so a small cell gets pushed more than a big one.
+              const total = a.mass + b.mass;
+              a.x = clamp(a.x - nx * overlap * (b.mass / total), 0, WORLD_SIZE);
+              a.y = clamp(a.y - ny * overlap * (b.mass / total), 0, WORLD_SIZE);
+              b.x = clamp(b.x + nx * overlap * (a.mass / total), 0, WORLD_SIZE);
+              b.y = clamp(b.y + ny * overlap * (a.mass / total), 0, WORLD_SIZE);
+              moved = true;
+            }
+          }
+        }
+        if (!moved) break;
+      }
+    }
+
+    // ---- 5. own-cell merges (after split cooldown) ----
+    for (const p of this.players.values()) {
+      if (!p.alive || p.cells.length < 2) continue;
+      const cooled = (c: Cell) => c.splitAt === 0 || now - c.splitAt > SPLIT_REJOIN_MS;
       let didMerge = true;
       while (didMerge) {
         didMerge = false;
@@ -401,7 +440,7 @@ export class Game {
       }
     }
 
-    // ---- 5. refill food ----
+    // ---- 6. refill food ----
     if (this.food.size < FOOD_TARGET) {
       const need = Math.min(20, FOOD_TARGET - this.food.size);
       for (let i = 0; i < need; i++) this.spawnFood();

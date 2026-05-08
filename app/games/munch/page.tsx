@@ -635,13 +635,16 @@ function drawScene(
   const br = toScreen(WORLD_SIZE, WORLD_SIZE);
   ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
 
-  // Food.
+  // Food. We use a fixed world radius (not radiusForMass(1) which is
+  // tiny) so pellets stay readable, and we let them genuinely shrink on
+  // screen as the camera zooms out — that's the "you're huge now" cue.
+  const FOOD_WORLD_R = 9;
   for (const f of cur.food) {
     const { sx, sy } = toScreen(f.x, f.y);
     if (sx < -10 || sx > w + 10 || sy < -10 || sy > h + 10) continue;
     ctx.fillStyle = f.color;
     ctx.beginPath();
-    ctx.arc(sx, sy, Math.max(4, radiusForMass(1) * scale), 0, Math.PI * 2);
+    ctx.arc(sx, sy, Math.max(1.5, FOOD_WORLD_R * scale), 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -700,14 +703,36 @@ function drawCell(
   ctx.lineWidth = isSelf ? 3 : 2;
   ctx.strokeStyle = "#1a1812";
   ctx.stroke();
-  if (label && r > 14) {
-    ctx.fillStyle = "#fbf6ee";
-    ctx.strokeStyle = "#1a1812";
-    ctx.lineWidth = 3;
-    ctx.font = `${Math.min(20, Math.max(11, r / 2.2))}px ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif`;
+  if (label && r >= 10) {
+    // Font size grows with the cell radius so the name visibly scales
+    // as you grow. The shrink-to-fit pass below also tightens it down
+    // so long names never poke past the cell edge.
+    let font = clamp(r * 0.7, 10, 36);
+    ctx.font = makeFont(font);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    // If the text is wider than the cell, shrink the font until it
+    // does fit (or hits the floor), with horizontal padding for the
+    // cell's stroke and a tiny bit of breathing room.
+    const maxWidth = r * 1.7;
+    while (font > 10 && ctx.measureText(label).width > maxWidth) {
+      font -= 1;
+      ctx.font = makeFont(font);
+    }
+    ctx.lineWidth = Math.max(2, font * 0.18);
+    ctx.strokeStyle = "#1a1812";
+    ctx.fillStyle = "#fbf6ee";
     ctx.strokeText(label, x, y);
     ctx.fillText(label, x, y);
   }
+}
+
+function makeFont(px: number): string {
+  return `${px.toFixed(1)}px ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif`;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
 }
