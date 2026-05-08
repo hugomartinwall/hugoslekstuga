@@ -22,19 +22,31 @@ export const EAT_RATIO = 1.25;
 
 /* ----- Split mechanic (multi-cell with gravity rejoin) -----
  *
- * Pressing space halves your largest cell's mass and ejects the new half
- * forward at SPLIT_EJECT_SPEED. The cells then move as ONE player but
- * with a gravity-style pull toward their centroid, plus exponential
- * velocity damping on the eject momentum, so the second cell shoots out
- * a little and quickly drifts back. After SPLIT_REJOIN_MS the two cells
- * are allowed to merge again on contact.
+ * Pressing space halves your largest cell and ejects the new half forward
+ * at SPLIT_EJECT_SPEED. For SPLIT_PULL_DELAY_MS after the split, the
+ * centroid pull is OFF so the new cell actually travels — then it ramps
+ * back in over SPLIT_PULL_RAMP_MS, gravity catches the cell, and it
+ * drifts back home. After SPLIT_REJOIN_MS the two cells are allowed to
+ * merge again on contact.
  */
 export const SPLIT_MIN_MASS = 40;
-export const SPLIT_EJECT_SPEED = 700; // initial forward velocity (px/s)
-export const SPLIT_VELOCITY_DAMP = 0.92; // multiplicative per tick (8% loss)
+export const SPLIT_EJECT_SPEED = 1400; // initial forward velocity (px/s)
+export const SPLIT_VELOCITY_DAMP = 0.95; // multiplicative per tick (5% loss)
+export const SPLIT_PULL_DELAY_MS = 500; // free flight before gravity engages
+export const SPLIT_PULL_RAMP_MS = 500; // ramp pull from 0 to 1 over this window
 export const SPLIT_REJOIN_MS = 30_000; // 30s before two own cells may merge
 export const CELL_PULL = 4.5; // gravity toward centroid (px/s per px of gap)
 export const MAX_CELLS_PER_PLAYER = 8; // hard cap so people don't spam space
+
+/* ----- Multi-cell trailing physics -----
+ *
+ * In a cluster, all cells move at the largest cell's reference speed
+ * scaled by (cell.mass / maxMass)^TRAIL_EXPONENT. With TRAIL_EXPONENT in
+ * (0, 1) the smaller cells genuinely lag behind the primary in the
+ * input direction — that's the "moving through water" feel. The single-
+ * cell case is unaffected (mass/max = 1, exponent doesn't matter).
+ */
+export const TRAIL_EXPONENT = 0.55;
 
 // Server tick rate; client interpolates between snapshots.
 export const TICK_HZ = 30;

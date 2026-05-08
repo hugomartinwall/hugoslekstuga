@@ -18,10 +18,13 @@ import {
   MIN_MASS,
   SPLIT_EJECT_SPEED,
   SPLIT_MIN_MASS,
+  SPLIT_PULL_DELAY_MS,
+  SPLIT_PULL_RAMP_MS,
   SPLIT_REJOIN_MS,
   SPLIT_VELOCITY_DAMP,
   START_MASS,
   TICK_HZ,
+  TRAIL_EXPONENT,
   WORLD_SIZE,
   radiusForMass,
   speedForMass,
@@ -168,41 +171,74 @@ export class Game {
     const dt = 1 / TICK_HZ;
     const now = Date.now();
 
-    // ---- 1. integrate cell motion (input + eject momentum + centroid pull) ----
+    // ---- 1. integrate cell motion ----
+    //
+    // Each cell's position evolves from three forces:
+    //   a) Input velocity — the player pressing arrows. Multi-cell uses
+    //      a unified speed reference so the small split-off doesn't
+    //      magically outpace the heavy primary; a TRAIL_EXPONENT scales
+    //      smaller cells' contribution down so they lag behind in the
+    //      direction of motion (the "moving through water" feel).
+    //   b) Eject momentum — from a recent split. Decays exponentially
+    //      via SPLIT_VELOCITY_DAMP each tick.
+    //   c) Centroid pull — gravity toward the cluster's mass-weighted
+    //      centre. Suppressed for the first SPLIT_PULL_DELAY_MS after a
+    //      split (so the eject actually travels) and ramped back in over
+    //      SPLIT_PULL_RAMP_MS.
     for (const p of this.players.values()) {
       if (!p.alive || p.cells.length === 0) continue;
 
-      // Centroid for inter-cell gravity. Skip if only one cell.
+      // Centroid + max mass for the cluster.
       let cx = 0;
       let cy = 0;
-      if (p.cells.length > 1) {
-        let sum = 0;
-        for (const c of p.cells) {
-          cx += c.x * c.mass;
-          cy += c.y * c.mass;
-          sum += c.mass;
-        }
-        if (sum > 0) {
-          cx /= sum;
-          cy /= sum;
-        }
+      let sumMass = 0;
+      let maxMass = 0;
+      for (const c of p.cells) {
+        cx += c.x * c.mass;
+        cy += c.y * c.mass;
+        sumMass += c.mass;
+        if (c.mass > maxMass) maxMass = c.mass;
+      }
+      if (sumMass > 0) {
+        cx /= sumMass;
+        cy /= sumMass;
       }
 
-      for (const cell of p.cells) {
-        const speed = speedForMass(cell.mass);
-        const inputVx = p.inputDir.x * speed;
-        const inputVy = p.inputDir.y * speed;
+      const isCluster = p.cells.length > 1;
+      const refSpeed = speedForMass(maxMass);
 
-        // Decay eject momentum exponentially.
+      for (const cell of p.cells) {
+        // (a) Input velocity. In a cluster, scale by mass-ratio with
+        // the trailing exponent so smaller cells move slower in the
+        // input direction.
+        const massFraction = isCluster
+          ? Math.pow(cell.mass / maxMass, TRAIL_EXPONENT)
+          : 1;
+        const inputSpeed = isCluster
+          ? refSpeed * massFraction
+          : speedForMass(cell.mass);
+        const inputVx = p.inputDir.x * inputSpeed;
+        const inputVy = p.inputDir.y * inputSpeed;
+
+        // (b) Decay eject momentum exponentially.
         cell.vx *= SPLIT_VELOCITY_DAMP;
         cell.vy *= SPLIT_VELOCITY_DAMP;
 
-        // Pull toward centroid (only meaningful with 2+ cells).
+        // (c) Centroid pull, gated by post-split delay/ramp.
         let pullVx = 0;
         let pullVy = 0;
-        if (p.cells.length > 1) {
-          pullVx = (cx - cell.x) * CELL_PULL;
-          pullVy = (cy - cell.y) * CELL_PULL;
+        if (isCluster) {
+          const sinceSplit = cell.splitAt > 0 ? now - cell.splitAt : Infinity;
+          let pullFactor = 1;
+          if (sinceSplit < SPLIT_PULL_DELAY_MS) {
+            pullFactor = 0;
+          } else if (sinceSplit < SPLIT_PULL_DELAY_MS + SPLIT_PULL_RAMP_MS) {
+            pullFactor = (sinceSplit - SPLIT_PULL_DELAY_MS) / SPLIT_PULL_RAMP_MS;
+          }
+          if (pullFactor > 0) {
+            pullVx = (cx - cell.x) * CELL_PULL * pullFactor;
+            pullVy = (cy - cell.y) * CELL_PULL * pullFactor;
+          }
         }
 
         const totalVx = inputVx + cell.vx + pullVx;
