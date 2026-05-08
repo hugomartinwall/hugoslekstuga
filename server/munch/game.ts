@@ -14,6 +14,7 @@ import {
   EAT_RATIO,
   FOOD_MASS,
   FOOD_TARGET,
+  INPUT_SMOOTH,
   MAX_CELLS_PER_PLAYER,
   MIN_MASS,
   SPLIT_EJECT_SPEED,
@@ -50,8 +51,17 @@ export type Cell = {
   id: number;
   x: number;
   y: number;
-  vx: number; // residual eject momentum (decays each tick)
+  /** Residual eject momentum from a split. Decays exponentially each
+   *  tick via SPLIT_VELOCITY_DAMP — separate from the smoothed input
+   *  velocity so a desperate eject can punch through pull/drag without
+   *  getting smoothed away. */
+  vx: number;
   vy: number;
+  /** Smoothed input velocity. Each tick eases toward the target
+   *  (input direction × per-cell speed) with INPUT_SMOOTH so pressing
+   *  arrows feels responsive but not snappy/twitchy. */
+  svx: number;
+  svy: number;
   mass: number;
   /** Epoch ms when this cell came from a split. 0 means it's allowed
    *  to merge immediately (i.e. an original or post-merge cell). */
@@ -102,6 +112,8 @@ export class Game {
       y: Math.random() * WORLD_SIZE,
       vx: 0,
       vy: 0,
+      svx: 0,
+      svy: 0,
       mass: START_MASS,
       splitAt: 0,
     };
@@ -154,6 +166,8 @@ export class Game {
         y: Math.random() * WORLD_SIZE,
         vx: 0,
         vy: 0,
+        svx: 0,
+        svy: 0,
         mass: START_MASS,
         splitAt: 0,
       },
@@ -208,17 +222,23 @@ export class Game {
       const refSpeed = speedForMass(maxMass);
 
       for (const cell of p.cells) {
-        // (a) Input velocity. In a cluster, scale by mass-ratio with
-        // the trailing exponent so smaller cells move slower in the
-        // input direction.
+        // (a) Target input velocity. In a cluster, scale by mass-ratio
+        // with the trailing exponent so smaller cells move slower in
+        // the input direction.
         const massFraction = isCluster
           ? Math.pow(cell.mass / maxMass, TRAIL_EXPONENT)
           : 1;
         const inputSpeed = isCluster
           ? refSpeed * massFraction
           : speedForMass(cell.mass);
-        const inputVx = p.inputDir.x * inputSpeed;
-        const inputVy = p.inputDir.y * inputSpeed;
+        const targetVx = p.inputDir.x * inputSpeed;
+        const targetVy = p.inputDir.y * inputSpeed;
+
+        // Ease the smoothed velocity toward the target. This is what
+        // makes movement feel weighty rather than twitchy — pressing or
+        // releasing arrows has a brief ramp instead of a hard snap.
+        cell.svx += (targetVx - cell.svx) * INPUT_SMOOTH;
+        cell.svy += (targetVy - cell.svy) * INPUT_SMOOTH;
 
         // (b) Decay eject momentum exponentially.
         cell.vx *= SPLIT_VELOCITY_DAMP;
@@ -241,8 +261,8 @@ export class Game {
           }
         }
 
-        const totalVx = inputVx + cell.vx + pullVx;
-        const totalVy = inputVy + cell.vy + pullVy;
+        const totalVx = cell.svx + cell.vx + pullVx;
+        const totalVy = cell.svy + cell.vy + pullVy;
 
         cell.x = clamp(cell.x + totalVx * dt, 0, WORLD_SIZE);
         cell.y = clamp(cell.y + totalVy * dt, 0, WORLD_SIZE);
@@ -277,6 +297,10 @@ export class Game {
         y: source.y + ay * (r * 2 + 4),
         vx: ax * SPLIT_EJECT_SPEED,
         vy: ay * SPLIT_EJECT_SPEED,
+        // Inherit the source cell's smoothed velocity so the new cell
+        // doesn't suffer a fresh acceleration ramp on top of its eject.
+        svx: source.svx,
+        svy: source.svy,
         mass: halfMass,
         splitAt: now,
       };

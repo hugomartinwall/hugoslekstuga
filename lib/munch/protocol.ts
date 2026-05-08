@@ -13,9 +13,12 @@ export const START_MASS = 20;
 export const MIN_MASS = 20;
 export const MAX_PLAYERS = 50;
 
-// Speed falls off with mass: at START_MASS you go BASE_SPEED, at 4×
-// you're half as fast, etc.
+// Speed falls off with mass: at START_MASS you go BASE_SPEED, then a
+// gentle power curve (see speedForMass). The exponent tunes how punishing
+// growth is — sqrt (0.5) felt like wading through molasses past mass
+// 200, so we use a softer 0.3.
 export const BASE_SPEED = 360;
+export const SPEED_FALLOFF = 0.3;
 
 // To eat another cell you must be at least EAT_RATIO × their mass.
 export const EAT_RATIO = 1.25;
@@ -139,10 +142,17 @@ export function radiusForMass(mass: number): number {
   return Math.sqrt(mass) * 4;
 }
 
-/** Movement speed for a given mass. Bigger = slower. */
+/** Movement speed for a given mass. Bigger = slower, but on a gentle
+ *  curve — at mass 1280 you're still around 100 px/s, not 45. */
 export function speedForMass(mass: number): number {
-  return BASE_SPEED / Math.sqrt(Math.max(1, mass / START_MASS));
+  return BASE_SPEED * Math.pow(Math.max(1, mass / START_MASS), -SPEED_FALLOFF);
 }
+
+/** Per-tick smoothing factor for input velocity. 0..1 — the cell's
+ *  effective velocity each tick moves this fraction of the way toward
+ *  the target velocity. 0.6 ≈ 100ms to reach 90% of target, which
+ *  gives weight without making controls feel mushy. */
+export const INPUT_SMOOTH = 0.6;
 
 /** Viewport half-extents for a given total-mass — bigger = see further.
  *
