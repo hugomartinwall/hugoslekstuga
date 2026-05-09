@@ -124,3 +124,18 @@ body {
   outline-offset: 3px;
   border-radius: 4px;
 }
+
+/* Honour the OS-level "reduce motion" preference for the named keyframes
+   and the chunk-shadow micro-animations. The map's wobble is gated in JS
+   (ToolMap.tsx, reduceMotionRef); this rule completes the coverage. */
+@media (prefers-reduced-motion: reduce) {
+  .fade-rise,
+  .featured-in,
+  .pulse-dot {
+    animation: none !important;
+  }
+  .btn-chunk,
+  .card-chunk {
+    transition: none !important;
+  }
+}
