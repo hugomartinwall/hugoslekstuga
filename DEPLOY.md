@@ -102,9 +102,6 @@ These were flagged during launch but not done:
      drop, sketch drawing, etc.) need a real-touch sanity check.
    - Run Lighthouse on `/`, `/tools/sum`, `/tools/sift`,
      `/games/munch`. Target ≥90 a11y, ≥90 perf.
-4. **Move PLAN.md to `docs/`** (or delete). It was the execution doc
-   for the May 9 cleanup pass; it's historical now and clutters the
-   repo root. AGENTS.md and this file are the live docs.
 
 ## When something breaks
 
