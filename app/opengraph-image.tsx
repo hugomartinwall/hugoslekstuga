@@ -56,8 +56,8 @@ export default async function OGImage() {
           style={{
             display: "flex",
             alignItems: "flex-end",
-            marginTop: "60px",
-            fontSize: "150px",
+            marginTop: "40px",
+            fontSize: "130px",
             fontWeight: 900,
             lineHeight: 1,
             letterSpacing: "-0.04em",
@@ -66,12 +66,12 @@ export default async function OGImage() {
           hugoslekstuga
           <div
             style={{
-              width: "26px",
-              height: "26px",
+              width: "22px",
+              height: "22px",
               borderRadius: "9999px",
               background: "#ff5a3c",
               marginLeft: "10px",
-              marginBottom: "20px",
+              marginBottom: "18px",
             }}
           />
         </div>
@@ -80,8 +80,8 @@ export default async function OGImage() {
         <div
           style={{
             display: "flex",
-            marginTop: "30px",
-            fontSize: "44px",
+            marginTop: "24px",
+            fontSize: "38px",
             fontWeight: 600,
             color: "#4a463d",
             lineHeight: 1.2,
@@ -92,12 +92,13 @@ export default async function OGImage() {
 
         {/* Tool slug row — derived from the registry. Wraps to multiple lines
             as the catalogue grows, so adding a tool to lib/tools.ts updates
-            the OG image automatically. Sized small enough to fit ~50 chips. */}
+            the OG image automatically. Sized to fit ~50 chips in 4 rows
+            without crowding the tagline above. */}
         <div
           style={{
             display: "flex",
             flexWrap: "wrap",
-            gap: "10px",
+            gap: "8px",
             marginTop: "auto",
           }}
         >
@@ -107,11 +108,11 @@ export default async function OGImage() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "6px 14px",
+                padding: "5px 12px",
                 background: COLOR_HEX[t.color],
                 border: "3px solid #1a1812",
                 borderRadius: "9999px",
-                fontSize: "18px",
+                fontSize: "16px",
                 fontWeight: 800,
                 color: preferredTextHex(t.color),
               }}
