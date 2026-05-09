@@ -147,3 +147,12 @@ export function sameCluster(a: string, b: string): boolean {
 export function pathFor(slug: string): string {
   return TOOL_CLUSTER[slug] === "games" ? `/games/${slug}` : `/tools/${slug}`;
 }
+
+/**
+ * Readable text colour to layer on top of a cluster's accent. Time (yellow)
+ * and Creative (pink) take ink; the other clusters take cream. Mirrors the
+ * tool-color rule in lib/colors.ts but indexed by cluster instead of accent.
+ */
+export function preferredTextOnCluster(id: ClusterId): "#1a1812" | "#fbf6ee" {
+  return id === "time" || id === "creative" ? "#1a1812" : "#fbf6ee";
+}
