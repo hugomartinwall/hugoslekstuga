@@ -567,6 +567,51 @@ function FramedContent({
     wrapperStyle.outline = "2px solid #1a1812";
     wrapperStyle.outlineOffset = "-2px";
   }
+
+  // iPhone wraps the content in a phone-shaped bezel with a notch on top.
+  // The inner content gets its own rounded corners that nest inside the
+  // outer bezel's larger radius.
+  if (frame === "iphone") {
+    const bezelPadX = 14;
+    const bezelPadTop = 22;
+    const bezelPadBottom = 28;
+    return (
+      <div
+        style={{
+          padding: `${bezelPadTop}px ${bezelPadX}px ${bezelPadBottom}px`,
+          background: "#1a1812",
+          borderRadius: `${radius + 22}px`,
+          boxShadow: shadow,
+          maxWidth: "100%",
+          position: "relative",
+        }}
+      >
+        {/* Notch */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "32%",
+            height: "18px",
+            background: "#1a1812",
+            borderRadius: "0 0 14px 14px",
+          }}
+        />
+        <div
+          style={{
+            borderRadius: `${radius}px`,
+            overflow: "hidden",
+            background: themeBg,
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={wrapperStyle}>
       {frame === "macos" && <MacosTitleBar title={windowTitle} />}
