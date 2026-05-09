@@ -334,15 +334,6 @@ export const tools: Tool[] = [
 
   // Creative
   {
-    slug: "picker",
-    title: "Picker",
-    tagline: "Pull a name from the hat.",
-    description:
-      "Paste a list, hit go, and watch the names shuffle until one drops out. For raffles, pair-ups, who-pays, who-goes-first.",
-    color: "tomato",
-    emoji: "⌖",
-  },
-  {
     slug: "mash",
     title: "Mash",
     tagline: "Smash two word lists together.",

@@ -6,6 +6,7 @@ import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:roll:options";
+const WITHOUT_REPLACEMENT_KEY = "hugoslekstuga:roll:without-replacement";
 
 const SLICE_COLORS = [
   { fill: "#ff5a3c", text: "#fbf6ee" }, // tomato
@@ -27,9 +28,13 @@ Cook at home`;
 export default function RollPage() {
   const tool = findTool("roll")!;
   const [raw, setRaw] = useLocalStorageState<string>(STORAGE_KEY, "");
+  const [withoutReplacement, setWithoutReplacement] =
+    useLocalStorageState<boolean>(WITHOUT_REPLACEMENT_KEY, false);
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
+  /** Indices of slices already won in without-replacement mode. */
+  const [removed, setRemoved] = useState<Set<number>>(new Set());
   const wheelRef = useRef<SVGGElement>(null);
 
   const options = useMemo(
@@ -41,13 +46,24 @@ export default function RollPage() {
     [raw],
   );
 
-  const canSpin = options.length >= 2;
+  const eligibleIdxs = useMemo(
+    () =>
+      withoutReplacement
+        ? options.map((_, i) => i).filter((i) => !removed.has(i))
+        : options.map((_, i) => i),
+    [options, removed, withoutReplacement],
+  );
+
+  const canSpin = eligibleIdxs.length >= 1 && options.length >= 2;
 
   const spin = useCallback(() => {
     if (!canSpin || spinning) return;
     const n = options.length;
     const step = 360 / n;
-    const idx = Math.floor(Math.random() * n);
+    // Pick from the eligible pool (i.e. respecting without-replacement) but
+    // rotate to that absolute slice index so the visual is honest.
+    const eligible = eligibleIdxs;
+    const idx = eligible[Math.floor(Math.random() * eligible.length)];
     const winnerCenter = (idx + 0.5) * step;
     // Rotate so winnerCenter ends at 0 (top, where the pointer sits).
     const targetMod = ((360 - winnerCenter) % 360 + 360) % 360;
@@ -62,8 +78,20 @@ export default function RollPage() {
     window.setTimeout(() => {
       setWinner(idx);
       setSpinning(false);
+      if (withoutReplacement) {
+        setRemoved((prev) => {
+          const next = new Set(prev);
+          next.add(idx);
+          return next;
+        });
+      }
     }, 4100);
-  }, [canSpin, spinning, options.length, rotation]);
+  }, [canSpin, spinning, options.length, rotation, eligibleIdxs, withoutReplacement]);
+
+  const resetRemoved = useCallback(() => {
+    setRemoved(new Set());
+    setWinner(null);
+  }, []);
 
   return (
     <ToolFrame tool={tool}>
@@ -97,8 +125,33 @@ export default function RollPage() {
               ? "Add at least two options to spin."
               : options.length === 1
                 ? "Add one more option to spin."
-                : `${options.length} option${options.length === 1 ? "" : "s"} ready.`}
+                : withoutReplacement
+                  ? `${eligibleIdxs.length} of ${options.length} left.`
+                  : `${options.length} option${options.length === 1 ? "" : "s"} ready.`}
           </p>
+
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={withoutReplacement}
+              onChange={(e) => {
+                setWithoutReplacement(e.target.checked);
+                if (!e.target.checked) resetRemoved();
+              }}
+              className="h-4 w-4 accent-orange"
+            />
+            <span className="font-semibold">Remove winners as they spin</span>
+          </label>
+
+          {withoutReplacement && removed.size > 0 && (
+            <button
+              type="button"
+              onClick={resetRemoved}
+              className="self-start text-xs font-semibold text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+            >
+              Put everyone back ({removed.size} removed)
+            </button>
+          )}
         </div>
 
         <div className="flex flex-col items-center gap-5">
@@ -140,6 +193,7 @@ export default function RollPage() {
                     index={i}
                     label={opt}
                     color={SLICE_COLORS[i % SLICE_COLORS.length]}
+                    dimmed={removed.has(i)}
                   />
                 ))}
               </g>
@@ -203,6 +257,7 @@ function Slice({
   index,
   label,
   color,
+  dimmed = false,
 }: {
   cx: number;
   cy: number;
@@ -211,10 +266,12 @@ function Slice({
   index: number;
   label: string;
   color: { fill: string; text: string };
+  dimmed?: boolean;
 }) {
+  const groupOpacity = dimmed ? 0.32 : 1;
   if (total === 1) {
     return (
-      <g>
+      <g opacity={groupOpacity}>
         <circle cx={cx} cy={cy} r={r} fill={color.fill} />
         <text
           x={cx}
@@ -224,6 +281,7 @@ function Slice({
           fontSize="22"
           fill={color.text}
           textAnchor="middle"
+          textDecoration={dimmed ? "line-through" : undefined}
         >
           {truncate(label, 18)}
         </text>
@@ -250,7 +308,7 @@ function Slice({
   const maxChars = total <= 4 ? 14 : total <= 6 ? 12 : total <= 9 ? 10 : 8;
 
   return (
-    <g>
+    <g opacity={groupOpacity}>
       <path d={path} fill={color.fill} stroke="#1a1812" strokeWidth="2" />
       <text
         x={labelPos.x}
@@ -262,6 +320,7 @@ function Slice({
         textAnchor="middle"
         dominantBaseline="middle"
         transform={`rotate(${textRotation} ${labelPos.x} ${labelPos.y})`}
+        textDecoration={dimmed ? "line-through" : undefined}
       >
         {truncate(label, maxChars)}
       </text>

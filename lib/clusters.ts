@@ -116,7 +116,6 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   idea: "creative",
   roll: "creative",
   tip: "creative",
-  picker: "creative",
   mash: "creative",
   // Code (new)
   gradient: "code",

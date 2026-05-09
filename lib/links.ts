@@ -77,9 +77,7 @@ export const LINKS: Link[] = [
   ["idea", "roll"],
   ["idea", "advice"],
   ["roll", "advice"],
-  ["picker", "roll"],
-  ["picker", "tip"],
-  ["picker", "mash"],
+  ["roll", "tip"],
   ["mash", "idea"],
   ["mash", "slug"],
 
@@ -131,7 +129,7 @@ export const LINKS: Link[] = [
   ["munch", "noise"],
   ["munch", "typing"],
   ["munch", "roll"],
-  ["munch", "picker"],
+  ["munch", "idea"],
 ];
 
 // Quick lookup: how many neighbours does each tool have?
