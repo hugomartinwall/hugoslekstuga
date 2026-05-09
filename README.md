@@ -5,6 +5,8 @@ A small playhouse of useful, friendly browser tools.
 Each tool tries to do one thing well, without asking anything of you. No
 accounts. No uploads. No analytics.
 
+Live at https://hugoslekstuga.com
+
 ## Run locally
 
 ```sh

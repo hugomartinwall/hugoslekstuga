@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { tools } from "@/lib/tools";
 import { pathFor } from "@/lib/clusters";
 
-const BASE = "https://hugoslekstuga.se";
+const BASE = "https://hugoslekstuga.com";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();

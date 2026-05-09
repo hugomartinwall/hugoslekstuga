@@ -44,7 +44,7 @@ export default function ShotPage() {
   const [theme, setTheme] = useState("vitesse-dark");
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [windowTitle, setWindowTitle] = useState("Counter.tsx");
-  const [browserUrl, setBrowserUrl] = useState("hugoslekstuga.se/sum");
+  const [browserUrl, setBrowserUrl] = useState("hugoslekstuga.com/sum");
 
   // Rendered code from Shiki
   const [highlightedHtml, setHighlightedHtml] = useState<string>("");

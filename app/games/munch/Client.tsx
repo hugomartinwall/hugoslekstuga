@@ -404,7 +404,7 @@ export default function MunchPage() {
 
   const shareScore = useCallback(async () => {
     if (!deadInfo) return;
-    const text = `I got ${deadInfo.score} on hugoslekstuga.se/games/munch — beat me?`;
+    const text = `I got ${deadInfo.score} on hugoslekstuga.com/games/munch — beat me?`;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);

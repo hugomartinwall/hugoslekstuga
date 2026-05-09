@@ -23,12 +23,12 @@ export const metadata: Metadata = {
   },
   description:
     "A small playhouse of useful, friendly browser tools. Built with care, in the open.",
-  metadataBase: new URL("https://hugoslekstuga.se"),
+  metadataBase: new URL("https://hugoslekstuga.com"),
   openGraph: {
     title: "hugoslekstuga",
     description:
       "A small playhouse of useful, friendly browser tools.",
-    url: "https://hugoslekstuga.se",
+    url: "https://hugoslekstuga.com",
     siteName: "hugoslekstuga",
     locale: "en",
     type: "website",

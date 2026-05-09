@@ -324,7 +324,7 @@ function UrlInput({
         type="url"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="https://hugoslekstuga.se"
+        placeholder="https://hugoslekstuga.com"
         className="card-chunk rounded-[var(--radius-card)] bg-cream px-4 py-3 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
       />
       <p className="text-xs text-ink-muted">
