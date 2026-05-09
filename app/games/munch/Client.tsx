@@ -9,6 +9,7 @@ import {
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import { clamp } from "@/lib/math";
 import {
   centroidOf,
   radiusForMass,
@@ -916,10 +917,4 @@ function drawCell(
 
 function makeFont(px: number): string {
   return `${px.toFixed(1)}px ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif`;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  if (v < lo) return lo;
-  if (v > hi) return hi;
-  return v;
 }

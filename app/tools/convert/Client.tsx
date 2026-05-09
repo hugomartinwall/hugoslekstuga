@@ -9,6 +9,7 @@ import {
   type Format,
 } from "@/lib/convert/types";
 import { runConversion, targetsFor } from "@/lib/convert/registry";
+import { formatBytes } from "@/lib/format";
 
 const IMAGE_FORMATS: Format[] = ["png", "jpg", "webp", "gif"];
 
@@ -369,10 +370,4 @@ function SupportInfo() {
       </p>
     </details>
   );
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }

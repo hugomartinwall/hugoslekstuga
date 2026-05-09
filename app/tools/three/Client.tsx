@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import { localISODate } from "@/lib/dates";
 
 const STORAGE_KEY = "hugoslekstuga:three:entries";
 
@@ -357,13 +358,6 @@ function Footer() {
       entries stay on this device.
     </p>
   );
-}
-
-function localISODate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function parseLocalISODate(s: string): Date {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { formatBytes } from "@/lib/format";
 
 type Mode = "merge" | "extract";
 
@@ -491,10 +492,4 @@ function summariseRange(pages: number[]): string {
     prev = p;
   }
   return out.join(", ");
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }

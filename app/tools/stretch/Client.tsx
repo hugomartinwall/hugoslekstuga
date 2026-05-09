@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import { localISODate } from "@/lib/dates";
 
 type StretchStep = {
   name: string;
@@ -208,11 +209,7 @@ const DEFAULT_STATE: StretchState = {
 };
 
 function todayIso(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+  return localISODate(new Date());
 }
 
 /* ------------------------------------------------------------------ */

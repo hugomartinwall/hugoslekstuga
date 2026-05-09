@@ -20,6 +20,7 @@ import {
   type ClusterId,
 } from "@/lib/clusters";
 import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
+import { clamp } from "@/lib/math";
 
 type Node = {
   tool: Tool;
@@ -879,10 +880,6 @@ function step(
     totalMotion += Math.abs(n.vx) + Math.abs(n.vy);
   }
   return totalMotion;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
 }
 
 function truncate(s: string, max: number): string {
