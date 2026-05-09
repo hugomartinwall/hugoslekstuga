@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import CustomMinutes from "@/components/CustomMinutes";
 
 const STORAGE_KEY = "hugoslekstuga:talk:duration";
 
@@ -169,7 +170,9 @@ function Setup({
           ))}
           <CustomMinutes
             currentSec={durationSec}
+            presets={PRESETS_MIN}
             onChange={(min) => setDurationSec(min * 60)}
+            color="pink"
           />
         </div>
       </div>
@@ -183,41 +186,6 @@ function Setup({
         Start talk
       </button>
     </div>
-  );
-}
-
-function CustomMinutes({
-  currentSec,
-  onChange,
-}: {
-  currentSec: number;
-  onChange: (min: number) => void;
-}) {
-  const isPreset = PRESETS_MIN.includes(currentSec / 60);
-  const [val, setVal] = useState<string>(isPreset ? "" : String(currentSec / 60));
-  return (
-    <label
-      className={`flex items-center gap-2 rounded-full border-2 border-ink px-3 py-2 text-sm font-bold transition-colors ${
-        !isPreset && val ? "bg-pink text-ink" : "bg-cream"
-      }`}
-    >
-      <span>Custom</span>
-      <input
-        type="number"
-        min={1}
-        max={180}
-        value={val}
-        onChange={(e) => {
-          const v = e.target.value;
-          setVal(v);
-          const n = Number(v);
-          if (Number.isFinite(n) && n >= 1) onChange(n);
-        }}
-        className="w-12 bg-transparent text-center outline-none"
-        placeholder="0"
-      />
-      <span>min</span>
-    </label>
   );
 }
 
