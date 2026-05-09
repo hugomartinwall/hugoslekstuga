@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import Slider from "@/components/Slider";
 
 const STORAGE_KEY = "hugoslekstuga:trace:options";
 
@@ -203,6 +204,7 @@ export default function TracePage() {
                 onChange={(v) =>
                   setOptions((o) => ({ ...o, numberofcolors: v }))
                 }
+                color="orange"
               />
               <Slider
                 label="Path detail"
@@ -211,6 +213,7 @@ export default function TracePage() {
                 max={50}
                 onChange={(v) => setOptions((o) => ({ ...o, pathomit: v }))}
                 hint="lower = more paths, more detail"
+                color="orange"
               />
               <Slider
                 label="Scale"
@@ -219,6 +222,7 @@ export default function TracePage() {
                 max={4}
                 step={1}
                 onChange={(v) => setOptions((o) => ({ ...o, scale: v }))}
+                color="orange"
               />
             </div>
 
@@ -279,39 +283,3 @@ export default function TracePage() {
   );
 }
 
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  hint,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (v: number) => void;
-  hint?: string;
-}) {
-  return (
-    <label className="flex flex-col gap-1 rounded-md border-2 border-ink bg-cream-deep p-2 text-xs">
-      <span className="flex items-center justify-between font-semibold uppercase tracking-wide text-ink-muted">
-        <span>{label}</span>
-        <span className="font-mono tabular-nums text-ink">{value}</span>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step ?? 1}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="accent-orange"
-      />
-      {hint && <span className="text-[10px] text-ink-muted">{hint}</span>}
-    </label>
-  );
-}

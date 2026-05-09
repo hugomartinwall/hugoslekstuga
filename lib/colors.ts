@@ -106,6 +106,20 @@ export function textClass(c: ToolColor): string {
   } satisfies Record<ToolColor, string>)[c];
 }
 
+/** Native form-control accent (range thumb, checkbox, radio). */
+export function accentClass(c: ToolColor): string {
+  return ({
+    tomato: "accent-tomato",
+    blue: "accent-blue",
+    yellow: "accent-yellow",
+    pink: "accent-pink",
+    green: "accent-green",
+    purple: "accent-purple",
+    orange: "accent-orange",
+    teal: "accent-teal",
+  } satisfies Record<ToolColor, string>)[c];
+}
+
 /** Ring colour matching the accent. */
 export function ringClass(c: ToolColor): string {
   return ({

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import Slider from "@/components/Slider";
 
 const RAMPS: { id: string; label: string; chars: string }[] = [
   { id: "blocks", label: "Blocks", chars: " ░▒▓█" },
@@ -140,6 +141,7 @@ export default function AsciiPage() {
                 min={20}
                 max={160}
                 onChange={setWidth}
+                color="green"
               />
               <Slider
                 label="Contrast"
@@ -148,6 +150,7 @@ export default function AsciiPage() {
                 max={250}
                 onChange={(v) => setContrast(v / 100)}
                 unit="%"
+                color="green"
               />
             </div>
 
@@ -220,38 +223,3 @@ export default function AsciiPage() {
   );
 }
 
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-  unit,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (v: number) => void;
-  unit?: string;
-}) {
-  return (
-    <label className="flex flex-col gap-1 rounded-md border-2 border-ink bg-cream-deep p-2 text-xs">
-      <span className="flex items-center justify-between font-semibold uppercase tracking-wide text-ink-muted">
-        <span>{label}</span>
-        <span className="font-mono tabular-nums text-ink">
-          {value}
-          {unit ?? ""}
-        </span>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="accent-green"
-      />
-    </label>
-  );
-}
