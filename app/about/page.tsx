@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { tools } from "@/lib/tools";
-import { CLUSTER_ORDER, CLUSTERS, TOOL_CLUSTER } from "@/lib/clusters";
+import { CLUSTER_ORDER, CLUSTERS, TOOL_CLUSTER, pathFor } from "@/lib/clusters";
 
 export const metadata: Metadata = {
   title: "About",
@@ -50,8 +50,12 @@ export default function AboutPage() {
       {/* Stats */}
       <section className="mt-12 grid grid-cols-3 gap-3 sm:gap-4">
         <Stat value={String(tools.length)} label="tools" accent="bg-yellow" />
-        <Stat value="5" label="themes" accent="bg-pink" />
-        <Stat value="0" label="servers" accent="bg-blue" />
+        <Stat
+          value={String(CLUSTER_ORDER.length)}
+          label="themes"
+          accent="bg-pink"
+        />
+        <Stat value="1" label="server (munch)" accent="bg-blue" />
       </section>
 
       {/* Themes */}
@@ -90,7 +94,7 @@ export default function AboutPage() {
                   {inCluster.map((t) => (
                     <li key={t.slug}>
                       <Link
-                        href={`/tools/${t.slug}`}
+                        href={pathFor(t.slug)}
                         className="rounded-full border-2 border-ink bg-cream-deep px-2 py-0.5 text-xs font-bold transition-colors hover:bg-cream"
                       >
                         {t.title}
@@ -141,9 +145,14 @@ export default function AboutPage() {
           <br className="hidden sm:block" /> with a little help.
         </p>
         <p className="mt-3 text-sm text-ink-soft">
-          The site itself runs as a single static page bundle. There&rsquo;s
-          no database, no telemetry, no third-party scripts. Source code lives
-          on a single laptop until it doesn&rsquo;t.
+          Almost everything runs as a single static page bundle. The one
+          exception is{" "}
+          <Link href="/games/munch" className="font-bold underline">
+            Munch
+          </Link>
+          , which connects to a tiny WebSocket server so other players can see
+          your blob. No database, no telemetry, no third-party scripts. Source
+          code lives on a single laptop until it doesn&rsquo;t.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link
