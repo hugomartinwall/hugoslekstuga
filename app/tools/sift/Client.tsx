@@ -247,7 +247,7 @@ function Welcome({
             onChange={(e) => setPasteValue(e.target.value)}
             placeholder={`name,age,city\nFred,29,Stockholm\nIda,42,Göteborg`}
             spellCheck={false}
-            className="h-40 resize-y rounded-md border-2 border-ink bg-cream-deep p-3 font-mono text-sm focus:outline-none"
+            className="h-40 resize-y rounded-md border-2 border-ink bg-cream-deep p-3 font-mono text-sm"
           />
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -391,7 +391,7 @@ function Loaded({
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search every cell…"
-        className="card-chunk rounded-[var(--radius-card)] bg-cream px-4 py-2 font-mono text-sm focus:outline-none"
+        className="card-chunk rounded-[var(--radius-card)] bg-cream px-4 py-2 font-mono text-sm"
       />
 
       {/* Column summary cards — horizontal scroll */}
@@ -665,7 +665,7 @@ function DataTable({
               setFilters((prev: FilterMap) => ({ ...prev, [c.name]: v }));
             }}
             placeholder="filter…"
-            className="h-9 w-full border-r-2 border-ink bg-cream-deep px-2 font-mono text-xs focus:bg-purple-soft focus:outline-none"
+            className="h-9 w-full border-r-2 border-ink bg-cream-deep px-2 font-mono text-xs focus:bg-purple-soft"
           />
         ))}
       </div>

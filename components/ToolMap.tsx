@@ -726,6 +726,7 @@ export default function ToolMap({
             <button
               key={id}
               type="button"
+              aria-pressed={active}
               onClick={() =>
                 setActiveCluster((cur) => (cur === id ? null : id))
               }

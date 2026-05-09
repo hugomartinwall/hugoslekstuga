@@ -172,7 +172,7 @@ export default function RegexPage() {
               onChange={(e) => setPattern(e.target.value)}
               spellCheck={false}
               placeholder="\b\w+@\w+\.\w+\b"
-              className="flex-1 bg-transparent font-mono text-base focus:outline-none"
+              className="flex-1 bg-transparent font-mono text-base"
             />
             <span className="font-mono text-base text-ink-muted">/</span>
             <input
@@ -181,7 +181,7 @@ export default function RegexPage() {
               onChange={(e) => setFlags(e.target.value.replace(/[^gimsuyd]/g, ""))}
               spellCheck={false}
               placeholder="gimsu"
-              className="w-16 bg-transparent font-mono text-base focus:outline-none"
+              className="w-16 bg-transparent font-mono text-base"
             />
           </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
@@ -222,7 +222,7 @@ export default function RegexPage() {
             placeholder="Paste anything here…"
             rows={6}
             spellCheck={false}
-            className="card-chunk min-h-[140px] rounded-[var(--radius-card)] bg-cream p-3 font-mono text-sm focus:outline-none"
+            className="card-chunk min-h-[140px] rounded-[var(--radius-card)] bg-cream p-3 font-mono text-sm"
           />
         </div>
 
