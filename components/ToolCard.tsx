@@ -1,38 +1,17 @@
 import Link from "next/link";
 import type { Tool } from "@/lib/tools";
 import { pathFor } from "@/lib/clusters";
-
-const colorBg: Record<Tool["color"], string> = {
-  tomato: "bg-tomato-soft",
-  blue: "bg-blue-soft",
-  yellow: "bg-yellow-soft",
-  pink: "bg-pink-soft",
-  green: "bg-green-soft",
-  purple: "bg-purple-soft",
-  orange: "bg-orange-soft",
-  teal: "bg-teal-soft",
-};
-
-const colorAccent: Record<Tool["color"], string> = {
-  tomato: "bg-tomato",
-  blue: "bg-blue",
-  yellow: "bg-yellow",
-  pink: "bg-pink",
-  green: "bg-green",
-  purple: "bg-purple",
-  orange: "bg-orange",
-  teal: "bg-teal",
-};
+import { bgClass, bgSoftClass } from "@/lib/colors";
 
 export default function ToolCard({ tool }: { tool: Tool }) {
   return (
     <Link
       href={pathFor(tool.slug)}
-      className={`card-chunk group flex flex-col gap-4 rounded-[var(--radius-card)] ${colorBg[tool.color]} p-6 sm:p-7`}
+      className={`card-chunk group flex flex-col gap-4 rounded-[var(--radius-card)] ${bgSoftClass(tool.color)} p-6 sm:p-7`}
     >
       <div className="flex items-start justify-between">
         <div
-          className={`flex h-12 w-12 items-center justify-center rounded-full border-2 border-ink ${colorAccent[tool.color]} text-2xl text-ink`}
+          className={`flex h-12 w-12 items-center justify-center rounded-full border-2 border-ink ${bgClass(tool.color)} text-2xl text-ink`}
           aria-hidden
         >
           {tool.emoji}

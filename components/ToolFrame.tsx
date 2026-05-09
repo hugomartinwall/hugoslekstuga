@@ -1,28 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Tool } from "@/lib/tools";
-
-const colorBg: Record<Tool["color"], string> = {
-  tomato: "bg-tomato-soft",
-  blue: "bg-blue-soft",
-  yellow: "bg-yellow-soft",
-  pink: "bg-pink-soft",
-  green: "bg-green-soft",
-  purple: "bg-purple-soft",
-  orange: "bg-orange-soft",
-  teal: "bg-teal-soft",
-};
-
-const colorAccent: Record<Tool["color"], string> = {
-  tomato: "bg-tomato",
-  blue: "bg-blue",
-  yellow: "bg-yellow",
-  pink: "bg-pink",
-  green: "bg-green",
-  purple: "bg-purple",
-  orange: "bg-orange",
-  teal: "bg-teal",
-};
+import { bgClass, bgSoftClass } from "@/lib/colors";
 
 export default function ToolFrame({
   tool,
@@ -47,11 +26,11 @@ export default function ToolFrame({
       </Link>
 
       <header
-        className={`card-chunk mb-10 flex flex-col gap-4 rounded-[var(--radius-card)] ${colorBg[tool.color]} p-6 sm:p-8`}
+        className={`card-chunk mb-10 flex flex-col gap-4 rounded-[var(--radius-card)] ${bgSoftClass(tool.color)} p-6 sm:p-8`}
       >
         <div className="flex items-center gap-4">
           <div
-            className={`flex h-14 w-14 items-center justify-center rounded-full border-2 border-ink ${colorAccent[tool.color]} text-2xl`}
+            className={`flex h-14 w-14 items-center justify-center rounded-full border-2 border-ink ${bgClass(tool.color)} text-2xl`}
             aria-hidden
           >
             {tool.emoji}

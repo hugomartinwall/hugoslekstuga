@@ -10,8 +10,9 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { tools, type Tool, type ToolColor } from "@/lib/tools";
+import { tools, type Tool } from "@/lib/tools";
 import { pathFor } from "@/lib/clusters";
+import { bgClass, bgSoftClass, preferredTextClass } from "@/lib/colors";
 
 type Ctx = { open: boolean; setOpen: (v: boolean) => void };
 
@@ -86,27 +87,6 @@ export function MobileSearchButton() {
     </button>
   );
 }
-
-const accentSoft: Record<ToolColor, string> = {
-  tomato: "bg-tomato-soft",
-  blue: "bg-blue-soft",
-  yellow: "bg-yellow-soft",
-  pink: "bg-pink-soft",
-  green: "bg-green-soft",
-  purple: "bg-purple-soft",
-  orange: "bg-orange-soft",
-  teal: "bg-teal-soft",
-};
-const accentBg: Record<ToolColor, string> = {
-  tomato: "bg-tomato",
-  blue: "bg-blue",
-  yellow: "bg-yellow",
-  pink: "bg-pink",
-  green: "bg-green",
-  purple: "bg-purple",
-  orange: "bg-orange",
-  teal: "bg-teal",
-};
 
 export function SearchPalette() {
   const { open, setOpen } = useSearch();
@@ -217,15 +197,11 @@ export function SearchPalette() {
                   onMouseEnter={() => setActiveIdx(i)}
                   onClick={() => select(i)}
                   className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-2 text-left transition-colors ${
-                    activeIdx === i ? accentSoft[t.color] : "bg-transparent"
+                    activeIdx === i ? bgSoftClass(t.color) : "bg-transparent"
                   }`}
                 >
                   <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-ink ${accentBg[t.color]} text-base ${
-                      t.color === "yellow" || t.color === "pink"
-                        ? "text-ink"
-                        : "text-cream"
-                    }`}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-ink ${bgClass(t.color)} text-base ${preferredTextClass(t.color)}`}
                     aria-hidden
                   >
                     {t.emoji}

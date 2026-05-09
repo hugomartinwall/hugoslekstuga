@@ -4,40 +4,7 @@ import { useEffect, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { feelings, type Feeling } from "@/lib/feelings";
-import type { ToolColor } from "@/lib/tools";
-
-const softBg: Record<ToolColor, string> = {
-  tomato: "bg-tomato-soft hover:bg-tomato",
-  blue: "bg-blue-soft hover:bg-blue",
-  yellow: "bg-yellow-soft hover:bg-yellow",
-  pink: "bg-pink-soft hover:bg-pink",
-  green: "bg-green-soft hover:bg-green",
-  purple: "bg-purple-soft hover:bg-purple",
-  orange: "bg-orange-soft hover:bg-orange",
-  teal: "bg-teal-soft hover:bg-teal",
-};
-
-const accentBg: Record<ToolColor, string> = {
-  tomato: "bg-tomato",
-  blue: "bg-blue",
-  yellow: "bg-yellow",
-  pink: "bg-pink",
-  green: "bg-green",
-  purple: "bg-purple",
-  orange: "bg-orange",
-  teal: "bg-teal",
-};
-
-const numberBg: Record<ToolColor, string> = {
-  tomato: "bg-tomato text-cream",
-  blue: "bg-blue text-cream",
-  yellow: "bg-yellow text-ink",
-  pink: "bg-pink text-ink",
-  green: "bg-green text-cream",
-  purple: "bg-purple text-cream",
-  orange: "bg-orange text-cream",
-  teal: "bg-teal text-cream",
-};
+import { bgSoftClass, bgSoftHoverClass, fillClasses } from "@/lib/colors";
 
 export default function FeelingPage() {
   const tool = findTool("feeling")!;
@@ -74,7 +41,7 @@ function FeelingPicker({ onPick }: { onPick: (f: Feeling) => void }) {
             key={f.slug}
             type="button"
             onClick={() => onPick(f)}
-            className={`btn-chunk group flex flex-col items-start gap-2 rounded-[var(--radius-card)] p-4 text-left transition-colors ${softBg[f.color]}`}
+            className={`btn-chunk group flex flex-col items-start gap-2 rounded-[var(--radius-card)] p-4 text-left transition-colors ${bgSoftHoverClass(f.color)}`}
           >
             <span className="text-2xl" aria-hidden>
               {f.emoji}
@@ -115,10 +82,7 @@ function FeelingTips({
       </button>
 
       <div
-        className={`card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] p-5 sm:p-6 ${accentBg[feeling.color] + "/10"}`}
-        style={{
-          background: `var(--color-${feeling.color}-soft)`,
-        }}
+        className={`card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] p-5 sm:p-6 ${bgSoftClass(feeling.color)}`}
       >
         <span className="text-4xl" aria-hidden>
           {feeling.emoji}
@@ -137,7 +101,7 @@ function FeelingTips({
           >
             <div className="flex items-center gap-3">
               <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-ink font-display text-sm font-extrabold ${numberBg[feeling.color]}`}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-ink font-display text-sm font-extrabold ${fillClasses(feeling.color)}`}
                 aria-hidden
               >
                 {i + 1}

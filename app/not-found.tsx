@@ -1,18 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { tools, type ToolColor } from "@/lib/tools";
-import { CLUSTER_ORDER, CLUSTERS } from "@/lib/clusters";
-
-const TOOL_COLOR_HEX: Record<ToolColor, string> = {
-  tomato: "#ff5a3c",
-  blue: "#4f66f2",
-  yellow: "#ffc233",
-  pink: "#ff7ab2",
-  green: "#3fa66e",
-  purple: "#9333ea",
-  orange: "#f97316",
-  teal: "#0d9488",
-};
+import { tools } from "@/lib/tools";
+import { CLUSTER_ORDER, CLUSTERS, pathFor } from "@/lib/clusters";
+import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
 
 export const metadata: Metadata = {
   title: "Lost",
@@ -70,17 +60,14 @@ export default function NotFound() {
             return (
               <li key={t.slug}>
                 <Link
-                  href={`/tools/${t.slug}`}
+                  href={pathFor(t.slug)}
                   className="card-chunk flex items-center gap-3 rounded-[var(--radius-card)] bg-cream p-4 transition-colors hover:bg-cream-deep"
                 >
                   <span
                     className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-ink text-base"
                     style={{
-                      background: TOOL_COLOR_HEX[t.color],
-                      color:
-                        t.color === "yellow" || t.color === "pink"
-                          ? "#1a1812"
-                          : "#fbf6ee",
+                      background: COLOR_HEX[t.color],
+                      color: preferredTextHex(t.color),
                     }}
                     aria-hidden
                   >
@@ -102,7 +89,7 @@ export default function NotFound() {
 
       <section className="mt-12 rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-5 text-sm text-ink-soft">
         <p>
-          The 5 themes:{" "}
+          The {CLUSTER_ORDER.length} themes:{" "}
           {CLUSTER_ORDER.map((id, i) => {
             const c = CLUSTERS[id];
             return (

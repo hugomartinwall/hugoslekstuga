@@ -9,37 +9,17 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { tools, type Tool, type ToolColor } from "@/lib/tools";
+import { tools, type Tool } from "@/lib/tools";
 import { LINKS, neighboursOf } from "@/lib/links";
 import {
   CLUSTERS,
   CLUSTER_ORDER,
   TOOL_CLUSTER,
   pathFor,
+  preferredTextOnCluster,
   type ClusterId,
 } from "@/lib/clusters";
-
-const COLOR_HEX: Record<ToolColor, string> = {
-  tomato: "#ff5a3c",
-  blue: "#4f66f2",
-  yellow: "#ffc233",
-  pink: "#ff7ab2",
-  green: "#3fa66e",
-  purple: "#9333ea",
-  orange: "#f97316",
-  teal: "#0d9488",
-};
-
-const COLOR_TEXT: Record<ToolColor, string> = {
-  tomato: "#fbf6ee",
-  blue: "#fbf6ee",
-  yellow: "#1a1812",
-  pink: "#1a1812",
-  green: "#fbf6ee",
-  purple: "#fbf6ee",
-  orange: "#fbf6ee",
-  teal: "#fbf6ee",
-};
+import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
 
 type Node = {
   tool: Tool;
@@ -654,7 +634,7 @@ export default function ToolMap({
                   textAnchor="middle"
                   dominantBaseline="central"
                   fontSize={20}
-                  fill={COLOR_TEXT[n.tool.color]}
+                  fill={preferredTextHex(n.tool.color)}
                   pointerEvents="none"
                   style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}
                 >
@@ -752,11 +732,7 @@ export default function ToolMap({
               className="rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-all"
               style={{
                 background: active ? c.color : "rgba(251,246,238,0.92)",
-                color: active
-                  ? id === "time" || id === "creative"
-                    ? "#1a1812"
-                    : "#fbf6ee"
-                  : "#1a1812",
+                color: active ? preferredTextOnCluster(id) : "#1a1812",
                 boxShadow: active ? "0 3px 0 0 #1a1812" : "none",
                 transform: active ? "translateY(-1px)" : "none",
               }}
