@@ -13,7 +13,7 @@ const SAMPLE = {
   pattern: "\\b(\\w+)@([\\w.-]+\\.\\w+)\\b",
   flags: "g",
   text: `Email me at hugo@oogywawa.se or noreply@example.com.
-Avoid notreal@. Send invoices to billing@hugos-lekstuga.se for now.`,
+Avoid notreal@. Send invoices to support@anotherdomain.io for now.`,
 };
 
 const CHEATS: { token: string; meaning: string }[] = [
