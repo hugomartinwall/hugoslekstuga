@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { formatBytes } from "@/lib/format";
+import DropZone from "@/components/DropZone";
 
 type Format = "auto" | "jpeg" | "png" | "webp";
 
@@ -25,8 +26,6 @@ export default function SqueezePage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CompressedResult | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [dragActive, setDragActive] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Cleanup object URLs.
   useEffect(() => {
@@ -92,7 +91,6 @@ export default function SqueezePage() {
     setNaturalSize(null);
     setResult(null);
     setResultUrl(null);
-    if (inputRef.current) inputRef.current.value = "";
   };
 
   return (
@@ -100,14 +98,11 @@ export default function SqueezePage() {
       <div className="flex flex-col gap-5">
         {!file ? (
           <DropZone
-            dragActive={dragActive}
-            onDrop={(f) => {
-              setDragActive(false);
-              acceptFile(f);
-            }}
-            onDragOver={() => setDragActive(true)}
-            onDragLeave={() => setDragActive(false)}
-            onPick={() => inputRef.current?.click()}
+            color="orange"
+            primary="Drop an image"
+            acceptMime="image/*"
+            hint="PNG, JPG, WebP, GIF — files never leave your browser."
+            onFile={acceptFile}
           />
         ) : (
           <FileInfo
@@ -137,69 +132,8 @@ export default function SqueezePage() {
             busy={busy}
           />
         )}
-
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) acceptFile(f);
-          }}
-        />
       </div>
     </ToolFrame>
-  );
-}
-
-function DropZone({
-  dragActive,
-  onDrop,
-  onDragOver,
-  onDragLeave,
-  onPick,
-}: {
-  dragActive: boolean;
-  onDrop: (f: File) => void;
-  onDragOver: () => void;
-  onDragLeave: () => void;
-  onPick: () => void;
-}) {
-  return (
-    <div
-      onDrop={(e) => {
-        e.preventDefault();
-        const f = e.dataTransfer.files?.[0];
-        if (f) onDrop(f);
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        onDragOver();
-      }}
-      onDragLeave={onDragLeave}
-      className={`card-chunk flex flex-col items-center gap-4 rounded-[var(--radius-card)] p-10 text-center transition-colors ${
-        dragActive ? "bg-orange-soft" : "bg-cream"
-      }`}
-    >
-      <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-ink bg-orange text-2xl text-cream" aria-hidden>
-        ⇪
-      </div>
-      <p className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
-        Drop an image
-      </p>
-      <p className="text-sm text-ink-soft">or</p>
-      <button
-        type="button"
-        onClick={onPick}
-        className="btn-chunk rounded-[var(--radius-button)] bg-orange px-6 py-3 font-display text-base font-extrabold text-cream"
-      >
-        Choose a file
-      </button>
-      <p className="text-xs text-ink-muted">
-        PNG, JPG, WebP, GIF — files never leave your browser.
-      </p>
-    </div>
   );
 }
 
