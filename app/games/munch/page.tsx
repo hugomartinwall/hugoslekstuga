@@ -221,7 +221,14 @@ export default function MunchPage() {
       setPhase("disconnected");
     };
     ws.onerror = () => {
-      setError("Couldn't reach the server. Is it running?");
+      // In dev the suffix is a useful nudge. In prod it reads as a malfunction
+      // the user is meant to fix, so we soften it.
+      const inDev = process.env.NODE_ENV === "development";
+      setError(
+        inDev
+          ? "Couldn't reach the server. Is it running?"
+          : "Couldn't reach the server. Try again in a minute.",
+      );
     };
   }, []);
 
