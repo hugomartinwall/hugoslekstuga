@@ -1,4 +1,6 @@
 import { ImageResponse } from "next/og";
+import { tools } from "@/lib/tools";
+import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
 
 export const runtime = "nodejs";
 export const size = { width: 1200, height: 630 };
@@ -88,74 +90,33 @@ export default async function OGImage() {
           Small, useful browser tools.
         </div>
 
-        {/* Tool color row — wraps to a second line as the toolset grows. */}
+        {/* Tool slug row — derived from the registry. Wraps to multiple lines
+            as the catalogue grows, so adding a tool to lib/tools.ts updates
+            the OG image automatically. Sized small enough to fit ~50 chips. */}
         <div
           style={{
             display: "flex",
             flexWrap: "wrap",
-            gap: "12px",
+            gap: "10px",
             marginTop: "auto",
           }}
         >
-          {[
-            { c: "#ffc233", t: "advice" },
-            { c: "#ff7ab2", t: "feeling" },
-            { c: "#4f66f2", t: "convert" },
-            { c: "#3fa66e", t: "focus" },
-            { c: "#ff5a3c", t: "qr" },
-            { c: "#9333ea", t: "read" },
-            { c: "#f97316", t: "roll" },
-            { c: "#0d9488", t: "palette" },
-            { c: "#3fa66e", t: "three" },
-            { c: "#4f66f2", t: "breathe" },
-            { c: "#ffc233", t: "tip" },
-            { c: "#9333ea", t: "until" },
-            { c: "#4f66f2", t: "sleep" },
-            { c: "#ff7ab2", t: "idea" },
-            { c: "#ff5a3c", t: "markdown" },
-            { c: "#f97316", t: "diff" },
-            { c: "#3fa66e", t: "stretch" },
-            { c: "#0d9488", t: "sketch" },
-            { c: "#4f66f2", t: "zones" },
-            { c: "#f97316", t: "squeeze" },
-            { c: "#0d9488", t: "pdf" },
-            { c: "#ff7ab2", t: "talk" },
-            { c: "#ff5a3c", t: "slug" },
-            // round 2
-            { c: "#ff5a3c", t: "strip" },
-            { c: "#f97316", t: "trace" },
-            { c: "#3fa66e", t: "ascii" },
-            { c: "#4f66f2", t: "base64" },
-            { c: "#ffc233", t: "favicon" },
-            { c: "#9333ea", t: "case" },
-            { c: "#ff5a3c", t: "cleantext" },
-            { c: "#ffc233", t: "lorem" },
-            { c: "#f97316", t: "tally" },
-            { c: "#4f66f2", t: "noise" },
-            { c: "#3fa66e", t: "typing" },
-            { c: "#ff5a3c", t: "picker" },
-            { c: "#ff7ab2", t: "mash" },
-            { c: "#ff7ab2", t: "gradient" },
-            { c: "#f97316", t: "contrast" },
-            { c: "#0d9488", t: "shadow" },
-            { c: "#0d9488", t: "easing" },
-            { c: "#0d9488", t: "regex" },
-          ].map((p) => (
+          {tools.map((t) => (
             <div
-              key={p.t}
+              key={t.slug}
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "8px 18px",
-                background: p.c,
+                padding: "6px 14px",
+                background: COLOR_HEX[t.color],
                 border: "3px solid #1a1812",
                 borderRadius: "9999px",
-                fontSize: "22px",
+                fontSize: "18px",
                 fontWeight: 800,
-                color: p.c === "#ffc233" || p.c === "#ff7ab2" ? "#1a1812" : "#fbf6ee",
+                color: preferredTextHex(t.color),
               }}
             >
-              {p.t}
+              {t.slug}
             </div>
           ))}
         </div>
