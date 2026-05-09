@@ -88,6 +88,11 @@ export type Player = {
    * during SPAWN_PROTECT_MS. Cleared (set to 0) when they split, so
    * protection can't be used offensively. */
   spawnedAt: number;
+  /** Last reported canvas aspect ratio (width / height). Lets the
+   *  server reshape the snapshot viewport to fit the client's screen
+   *  shape — phones get a tall slice, desktops a wide one — while
+   *  keeping the total visible area identical for fairness. */
+  aspect: number | null;
 };
 
 export type Food = {
@@ -136,6 +141,7 @@ export class Game {
       finalScore: 0,
       lastAim: { x: 0, y: -1 },
       spawnedAt: Date.now(),
+      aspect: null,
     };
     this.players.set(id, player);
     return player;
@@ -149,6 +155,7 @@ export class Game {
     id: string,
     dir: { x: number; y: number },
     split: boolean,
+    aspect?: number,
   ): void {
     const p = this.players.get(id);
     if (!p) return;
@@ -160,6 +167,11 @@ export class Game {
       p.inputDir = { x: 0, y: 0 };
     }
     if (split) p.splitRequested = true;
+    if (typeof aspect === "number" && Number.isFinite(aspect) && aspect > 0) {
+      // Sanity-clamp absurd values so a buggy or malicious client can't
+      // request a 1000:1 sliver.
+      p.aspect = Math.max(0.2, Math.min(5, aspect));
+    }
     p.lastInputAt = Date.now();
   }
 

@@ -111,7 +111,16 @@ export type LeaderboardEntry = {
 
 export type ClientMsg =
   | { type: "join"; name: string }
-  | { type: "input"; dir: { x: number; y: number }; split: boolean }
+  | {
+      type: "input";
+      dir: { x: number; y: number };
+      split: boolean;
+      /** Optional canvas aspect ratio (width/height). When present the
+       *  server sizes the viewport so the visible slice matches this
+       *  shape, preserving total visible area for fairness. Older
+       *  clients that don't send it get the desktop-default 1.4:1. */
+      aspect?: number;
+    }
   | { type: "pong" };
 
 /* ------------------------------------------------------------------ */
@@ -171,10 +180,25 @@ export const INPUT_SMOOTH = 0.6;
  * scaled with sqrt(mass), the blob's *screen* size would be exactly
  * constant — you'd grow numerically without any visual feedback. By
  * scaling the viewport slower than the blob, your cell visibly takes
- * up more of the screen as you grow, while the world also widens. */
-export function viewportHalfFor(totalMass: number): { hx: number; hy: number } {
+ * up more of the screen as you grow, while the world also widens.
+ *
+ * `aspect` is the client's canvas width / height. When provided, the
+ * box is reshaped to match (so a portrait phone gets a tall slice
+ * instead of empty cream above/below) while keeping the total visible
+ * area identical to the desktop default — phone players don't see
+ * more or less of the world, just shaped differently. */
+const VIEW_BASE_AREA = 1400 * 1000; // 2*hx × 2*hy at scale=1, default aspect
+const VIEW_DEFAULT_ASPECT = 1400 / 1000;
+export function viewportHalfFor(
+  totalMass: number,
+  aspect?: number,
+): { hx: number; hy: number } {
   const scale = Math.pow(Math.max(1, totalMass / START_MASS), 0.35);
-  return { hx: 700 * scale, hy: 500 * scale };
+  const a = aspect && aspect > 0 ? aspect : VIEW_DEFAULT_ASPECT;
+  // 4·hx·hy = baseArea · scale²,  hx/hy = a → solve.
+  const hy = Math.sqrt(VIEW_BASE_AREA / (4 * a)) * scale;
+  const hx = a * hy;
+  return { hx, hy };
 }
 
 /** Sum a player's cells. */

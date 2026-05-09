@@ -158,7 +158,7 @@ wss.on("connection", (ws, req) => {
             if (msg.split) game.respawn(playerId);
             return;
           }
-          game.setInput(playerId, msg.dir, msg.split);
+          game.setInput(playerId, msg.dir, msg.split, msg.aspect);
           return;
         }
         // pong handled implicitly via lastInputAt updates above; nothing to do.
@@ -244,7 +244,10 @@ const tickTimer = setInterval(() => {
       const me = game.players.get(id);
       if (!me) continue;
       const totalMass = me.cells.reduce((a, c) => a + c.mass, 0);
-      const { hx, hy } = viewportHalfFor(Math.max(20, totalMass));
+      const { hx, hy } = viewportHalfFor(
+        Math.max(20, totalMass),
+        me.aspect ?? undefined,
+      );
       const snap = game.snapshotFor(id, hx, hy);
       send(ws, {
         type: "state",

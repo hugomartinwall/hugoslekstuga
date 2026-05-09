@@ -134,7 +134,15 @@ export default function MunchPage() {
             msg.you.cells.length > 0 ? msg.you.cells : prev.you.cells,
           );
           const totalMass = Math.max(20, totalMassOf(msg.you.cells));
-          const view = viewportHalfFor(totalMass);
+          // Match the server's viewport shape so pulse detection lines
+          // up with what's actually visible on the player's screen.
+          const canvas = canvasRef.current;
+          const rect = canvas?.getBoundingClientRect();
+          const aspect =
+            rect && rect.width > 0 && rect.height > 0
+              ? rect.width / rect.height
+              : undefined;
+          const view = viewportHalfFor(totalMass, aspect);
           const stillInView = (x: number, y: number) =>
             Math.abs(x - myCenter.x) < view.hx + 40 &&
             Math.abs(y - myCenter.y) < view.hy + 40;
@@ -341,10 +349,22 @@ export default function MunchPage() {
       }
       const split = splitFlagRef.current;
       splitFlagRef.current = false;
+      // Tell the server our canvas shape so it can size the snapshot
+      // viewport to match — phones get a tall slice, desktops a wide
+      // one. Recomputed every tick so it tracks orientation changes.
+      const canvas = canvasRef.current;
+      let aspect: number | undefined;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          aspect = rect.width / rect.height;
+        }
+      }
       const msg: ClientMsg = {
         type: "input",
         dir: { x: dx, y: dy },
         split,
+        ...(aspect !== undefined ? { aspect } : {}),
       };
       ws.send(JSON.stringify(msg));
     }, 33);
@@ -832,8 +852,13 @@ function drawScene(
   const myCy = lerp(prevCenter.y, myCenter.y);
 
   const myMass = Math.max(20, totalMassOf(cur.you.cells));
-  const { hx } = viewportHalfFor(myMass);
-  const scale = Math.min(w, h * (16 / 9)) / (2 * hx);
+  // Match the server's viewport shape using the canvas's actual aspect.
+  // The server sized the snapshot using this exact same call, so the
+  // (hx, hy) box maps 1:1 to the rendered canvas — no empty cream
+  // above/below on portrait phones, no surprise cropping on desktop.
+  const aspect = w > 0 && h > 0 ? w / h : undefined;
+  const { hx, hy } = viewportHalfFor(myMass, aspect);
+  const scale = Math.min(w / (2 * hx), h / (2 * hy));
 
   const toScreen = (wx: number, wy: number) => ({
     sx: (wx - myCx) * scale + w / 2,
