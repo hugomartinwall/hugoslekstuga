@@ -29,7 +29,7 @@ export default function Footer() {
               No
             </p>
             <p className="text-sm text-ink-soft">tracking · no accounts</p>
-            <p className="text-sm text-ink-soft">uploads · no servers</p>
+            <p className="text-sm text-ink-soft">uploads · no analytics</p>
           </div>
         </div>
 

@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# hugoslekstuga
 
-## Getting Started
+A small playhouse of useful, friendly browser tools.
 
-First, run the development server:
+Each tool tries to do one thing well, without asking anything of you. No
+accounts. No uploads. No analytics.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Run locally
+
+```sh
+npm install
+npm run dev          # Next dev on :3000
+npm run munch        # WebSocket server for the multiplayer game on :8080
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`munch` only needs to run if you want to play the game at `/games/munch`.
+Everything else works without it.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Next.js 16 + React 19 + Tailwind v4 + TypeScript
+- 43 single-purpose tools at `app/tools/<slug>/page.tsx`
+- One real-time multiplayer game at `app/games/munch/page.tsx` + `server/munch/`
+- Source of truth for the catalogue: `lib/tools.ts`, `lib/clusters.ts`, `lib/links.ts`
+- Single source of truth for accent colours: `lib/colors.ts`
 
-## Learn More
+## Principles
 
-To learn more about Next.js, take a look at the following resources:
+1. **One thing, well.** If a tool grows, it splits.
+2. **Your device, your data.** No uploads, no accounts, no analytics.
+3. **Open a tab, use it, close it.** No onboarding, no settings.
+4. **A bit of personality.** Bold colours, chunky shadows, a small wink.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The one exception to (2) is Munch, which connects to a small WebSocket server
+so other players can see your blob.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Contributing
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This is a personal project. The bar for adding a tool is "(a) it beats the
+alternatives, (b) it's genuinely useful, (c) it feels cool." Most pitches
+don't clear it; that's the point.
