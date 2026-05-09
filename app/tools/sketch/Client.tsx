@@ -9,6 +9,7 @@ import {
 } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 type Point = { x: number; y: number };
 
@@ -37,9 +38,19 @@ const CANVAS_W = 1280;
 const CANVAS_H = 800;
 const BG = "#fbf6ee";
 
+/** Cap on persisted strokes. Long sessions can otherwise grow into
+ *  megabytes; we keep the most recent 500. */
+const MAX_STROKES = 500;
+
+/** Stable reference for the hook's initial value. */
+const EMPTY_STROKES: Stroke[] = [];
+
 export default function SketchPage() {
   const tool = findTool("sketch")!;
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [strokes, setStrokes] = useLocalStorageState<Stroke[]>(
+    "hugoslekstuga:sketch:strokes",
+    EMPTY_STROKES,
+  );
   const [color, setColor] = useState<string>(COLORS[0]);
   const [size, setSize] = useState<number>(4);
   const [mode, setMode] = useState<"pen" | "eraser">("pen");
@@ -104,16 +115,19 @@ export default function SketchPage() {
       // Treat single-tap as a tiny dot
       stroke.points = [stroke.points[0], stroke.points[0]];
     }
-    setStrokes((prev) => [...prev, stroke]);
-  }, []);
+    setStrokes((prev) => {
+      const next = prev.length >= MAX_STROKES ? prev.slice(1) : prev;
+      return [...next, stroke];
+    });
+  }, [setStrokes]);
 
   const undo = useCallback(() => {
     setStrokes((prev) => prev.slice(0, -1));
-  }, []);
+  }, [setStrokes]);
 
   const clear = useCallback(() => {
-    setStrokes([]);
-  }, []);
+    setStrokes(EMPTY_STROKES);
+  }, [setStrokes]);
 
   const download = useCallback(() => {
     const c = canvasRef.current;
