@@ -73,6 +73,13 @@ export default function MunchPage() {
   const curSnapRef = useRef<Snapshot | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const splitFlagRef = useRef(false);
+  /** Unit-vector direction the player wants to move from a touch
+   *  contact. (0,0) when no touch is active. Wins over the keyboard
+   *  while non-zero. */
+  const touchDirRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  /** Which active pointer is doing the steering, so a second finger
+   *  (or a button tap) can't hijack the direction. */
+  const steeringPointerIdRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
   const intentRef = useRef<"connected" | "leaving">("connected");
   const selfRef = useRef<Self | null>(null);
@@ -315,13 +322,23 @@ export default function MunchPage() {
     const id = window.setInterval(() => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      const keys = keysRef.current;
-      let dx = 0;
-      let dy = 0;
-      if (keys.has("ArrowUp")) dy -= 1;
-      if (keys.has("ArrowDown")) dy += 1;
-      if (keys.has("ArrowLeft")) dx -= 1;
-      if (keys.has("ArrowRight")) dx += 1;
+      // Touch wins when active; keyboard otherwise. The touch vector is
+      // already a unit vector pointing from canvas-centre to the finger.
+      const touch = touchDirRef.current;
+      let dx: number;
+      let dy: number;
+      if (touch.x !== 0 || touch.y !== 0) {
+        dx = touch.x;
+        dy = touch.y;
+      } else {
+        const keys = keysRef.current;
+        dx = 0;
+        dy = 0;
+        if (keys.has("ArrowUp")) dy -= 1;
+        if (keys.has("ArrowDown")) dy += 1;
+        if (keys.has("ArrowLeft")) dx -= 1;
+        if (keys.has("ArrowRight")) dx += 1;
+      }
       const split = splitFlagRef.current;
       splitFlagRef.current = false;
       const msg: ClientMsg = {
@@ -385,6 +402,67 @@ export default function MunchPage() {
     connect(final);
   };
 
+  /** Compute the unit-vector direction from canvas-centre to the touch
+   *  point, with a small dead-zone so a near-centre tap reads as "stop". */
+  const updateTouchDir = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const dx = x - rect.width / 2;
+      const dy = y - rect.height / 2;
+      const mag = Math.sqrt(dx * dx + dy * dy);
+      if (mag < 12) {
+        touchDirRef.current = { x: 0, y: 0 };
+      } else {
+        touchDirRef.current = { x: dx / mag, y: dy / mag };
+      }
+    },
+    [],
+  );
+
+  const onCanvasPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      // Only touch contacts steer — mouse on desktop stays purely
+      // for clicking buttons. Keyboard still works in either mode.
+      if (e.pointerType !== "touch") return;
+      if (steeringPointerIdRef.current !== null) return;
+      steeringPointerIdRef.current = e.pointerId;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {}
+      updateTouchDir(e);
+    },
+    [updateTouchDir],
+  );
+
+  const onCanvasPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (e.pointerId !== steeringPointerIdRef.current) return;
+      updateTouchDir(e);
+    },
+    [updateTouchDir],
+  );
+
+  const onCanvasPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (e.pointerId !== steeringPointerIdRef.current) return;
+      steeringPointerIdRef.current = null;
+      touchDirRef.current = { x: 0, y: 0 };
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+    },
+    [],
+  );
+
+  /** Fire — same effect as pressing space. Pointerdown so the response
+   *  is instant on touch (onClick fires after release). */
+  const onFirePress = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    splitFlagRef.current = true;
+  }, []);
+
   const respawn = useCallback(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -425,13 +503,19 @@ export default function MunchPage() {
         <canvas
           ref={canvasRef}
           className="block h-full w-full bg-cream"
+          style={{ touchAction: "none" }}
           tabIndex={0}
+          onPointerDown={onCanvasPointerDown}
+          onPointerMove={onCanvasPointerMove}
+          onPointerUp={onCanvasPointerUp}
+          onPointerCancel={onCanvasPointerUp}
         />
         <Leaderboard
           entries={leaderboard}
           myMass={myMass}
           onLeave={disconnect}
         />
+        {phase === "playing" && <FireButton onPress={onFirePress} />}
         {phase === "dead" && deadInfo && (
           <DeadOverlay
             score={deadInfo.score}
@@ -537,8 +621,12 @@ function Lobby({
       )}
       <div className="flex flex-col gap-1 text-xs text-ink-muted">
         <p>
-          Controls: <Kbd>↑</Kbd> <Kbd>↓</Kbd> <Kbd>←</Kbd> <Kbd>→</Kbd> to move.{" "}
+          Desktop: <Kbd>↑</Kbd> <Kbd>↓</Kbd> <Kbd>←</Kbd> <Kbd>→</Kbd> to move,{" "}
           <Kbd>Space</Kbd> to split.
+        </p>
+        <p>
+          Phone: drag your thumb anywhere on the map to steer, hit the{" "}
+          <span className="font-bold text-purple">Fire</span> button to split.
         </p>
         <p>
           Bigger = slower, but you see further. Splitting halves your largest
@@ -657,6 +745,30 @@ function DeadOverlay({
         </p>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Fire button                                                          */
+/* ------------------------------------------------------------------ */
+
+function FireButton({
+  onPress,
+}: {
+  onPress: (e: React.PointerEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label="Fire (split cell)"
+      onPointerDown={onPress}
+      // touchAction:none keeps the press from being interpreted as a
+      // scroll/zoom gesture on mobile.
+      style={{ touchAction: "none" }}
+      className="btn-chunk absolute bottom-6 right-6 flex h-20 w-20 items-center justify-center rounded-full bg-purple font-display text-base font-extrabold uppercase tracking-wide text-cream sm:bottom-8 sm:right-8"
+    >
+      Fire
+    </button>
   );
 }
 
