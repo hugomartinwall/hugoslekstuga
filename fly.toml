@@ -1,0 +1,37 @@
+# Fly.io config for the Munch WebSocket server.
+#
+# - Stockholm region (`arn`) — closest to Hugo, lowest latency for the
+#   primary audience.
+# - One small machine, autoscaled to zero when no players are online so
+#   the cost approaches zero at idle. Fly auto-starts the machine when a
+#   new connection comes in. WebSocket upgrades go through Fly's HTTP
+#   proxy which handles the wake-and-proxy dance transparently.
+# - Health check on /health (the HTTP endpoint added in server/munch/index.ts).
+#
+# If cold starts ever feel sluggish (a few seconds on first connection
+# after idle), bump `min_machines_running = 1` — keeps the machine warm
+# for ~$2/month.
+
+app = "hugoslekstuga-munch"
+primary_region = "arn"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
