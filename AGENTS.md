@@ -14,17 +14,26 @@ this repo.
 
 Next 16 (Turbopack) + React 19 + Tailwind v4 + TypeScript.
 
-## The four principles (load-bearing — don't reword)
+## The three house rules (load-bearing — don't reword)
 
 From `app/about/page.tsx`:
 
-1. **One thing, well** — if a tool grows, it splits.
-2. **Your device, your data** — no uploads, no accounts, no analytics.
-3. **Open a tab, use it, close it** — no onboarding, no settings.
-4. **A bit of personality** — bold colours, chunky shadows, a small wink.
+1. **One thing, sharply** — if a tool grows past one thing, it splits.
+2. **Quiet by default** — no analytics, no accounts, no third-party
+   scripts, no cookie banner.
+3. **Open a tab, use it, close it** — no onboarding, no settings buried
+   in menus.
 
-The one exception to (2) is Munch, which uses a small WebSocket server.
-That's the only network round-trip in the whole site.
+The one exception to (2) is Munch, which uses a small WebSocket server
+for multiplayer state. The server keeps no logs, no DB, no third-party
+connections. That's the only network round-trip in the whole site, and
+it's documented honestly on `/promise`.
+
+There's also a fourth thing on `/about` — *Things you won't find here*
+(newsletters, venture capital, chat bubble, "subscribe to our blog"
+popup, an algorithm that learns about you, your data anywhere it
+shouldn't be). It's part of the brand voice, treat it the same way as
+the rules: don't quietly reword without asking.
 
 ## Source-of-truth files
 
@@ -79,7 +88,7 @@ export `metadata`.
 4. **Don't fetch live data at runtime.** Currency rates in Sum are a
    deliberate static snapshot. If a feature needs live data, the feature
    doesn't ship.
-5. **Don't reword the four principles** on `/about`.
+5. **Don't reword the three house rules** on `/about` without asking.
 6. **Don't introduce another CSS framework.** Tailwind + the `card-chunk` /
    `btn-chunk` shadow language is the system.
 7. **Don't add new server features.** Munch is the one server-backed tool —

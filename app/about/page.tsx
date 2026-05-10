@@ -6,26 +6,34 @@ import { CLUSTER_ORDER, CLUSTERS, TOOL_CLUSTER, pathFor } from "@/lib/clusters";
 export const metadata: Metadata = {
   title: "About",
   description:
-    "About hugoslekstuga — a small playhouse of useful, friendly browser tools.",
+    "hugoslekstuga is Hugo's playhouse — a place where potentially useful things end up.",
 };
 
-const PRINCIPLES = [
+const HOUSE_RULES = [
   {
-    title: "One thing, well",
-    body: "Each tool tries to do one specific thing. If it grows, it becomes two tools.",
+    title: "One thing, sharply",
+    body:
+      "Each tool tries to do exactly one thing. If it grows past that, it splits. The day Sum starts sending emails, you'll know I've given up.",
   },
   {
-    title: "Your device, your data",
-    body: "Everything runs in your browser. Nothing is uploaded; no account is required; no analytics watch you.",
+    title: "Quiet by default",
+    body:
+      "No analytics, no accounts, no third-party scripts, no cookie banner (because there's nothing to put in it). The one server keeps Munch's multiplayer alive — it keeps no logs.",
   },
   {
     title: "Open a tab, use it, close it",
-    body: "No onboarding, no settings. Land on a tool, do the thing, get back to your day.",
+    body:
+      "No onboarding. No settings buried three menus deep. If a tool needs a tour to be useful, the tool is wrong.",
   },
-  {
-    title: "A bit of personality",
-    body: "Bold colours, chunky shadows, a small wink here and there. Useful doesn't mean dry.",
-  },
+];
+
+const NOT_HERE = [
+  "newsletters",
+  "venture capital",
+  "a chat bubble in the corner",
+  "a “subscribe to our blog” popup",
+  "an algorithm that learns about you",
+  "your data, anywhere it shouldn’t be",
 ];
 
 export default function AboutPage() {
@@ -34,29 +42,28 @@ export default function AboutPage() {
       {/* Hero */}
       <header className="flex flex-col gap-5">
         <span className="inline-flex w-fit items-center gap-2 rounded-full border-2 border-ink bg-yellow px-3 py-1 text-xs font-bold uppercase tracking-wide">
-          <span className="pulse-dot h-2 w-2 rounded-full bg-ink" aria-hidden /> about the playhouse
+          <span className="pulse-dot h-2 w-2 rounded-full bg-ink" aria-hidden />{" "}
+          about the playhouse
         </span>
         <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl">
-          About <span className="text-tomato">hugoslekstuga</span>
+          A playhouse for{" "}
+          <span className="text-tomato">potentially</span>{" "}
+          <span className="text-blue">useful</span>{" "}
+          things.
         </h1>
         <p className="text-lg leading-relaxed text-ink-soft sm:text-xl">
           <span className="font-display font-bold text-ink">hugoslekstuga</span>{" "}
-          (Swedish for &ldquo;Hugo&rsquo;s playhouse&rdquo;) is a small home
-          for useful browser tools. Each one tries to do a single thing well,
-          without asking anything of you.
+          is Swedish for &ldquo;Hugo&rsquo;s playhouse.&rdquo; It&rsquo;s the
+          space and the joke: a small corner of the internet where I release
+          things I made for myself that turned out to maybe be useful for
+          someone else too.
+        </p>
+        <p className="text-base leading-relaxed text-ink-soft sm:text-lg">
+          Some of it is genuinely useful. Some of it is mostly an excuse to
+          play with a font, a colour, or a strange idea I had on a Tuesday.
+          Pick whichever.
         </p>
       </header>
-
-      {/* Stats */}
-      <section className="mt-12 grid grid-cols-3 gap-3 sm:gap-4">
-        <Stat value={String(tools.length)} label="tools" accent="bg-yellow" />
-        <Stat
-          value={String(CLUSTER_ORDER.length)}
-          label="themes"
-          accent="bg-pink"
-        />
-        <Stat value="1" label="server (munch)" accent="bg-blue" />
-      </section>
 
       {/* Themes */}
       <section className="mt-14">
@@ -64,8 +71,8 @@ export default function AboutPage() {
           What&rsquo;s in here
         </h2>
         <p className="mt-2 text-base text-ink-soft sm:text-lg">
-          {tools.length} tools, grouped by what they help with. Hover any
-          theme on the homepage Map to see its cluster light up.
+          The map on the homepage is the real index. This is the
+          straight-faced version — themes, with the things in them.
         </p>
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {CLUSTER_ORDER.map((id) => {
@@ -86,7 +93,7 @@ export default function AboutPage() {
                     {c.label}
                   </p>
                   <span className="ml-auto text-xs text-ink-muted">
-                    {inCluster.length} tools
+                    {inCluster.length}
                   </span>
                 </div>
                 <p className="text-sm text-ink-soft">{c.description}</p>
@@ -108,13 +115,16 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Principles */}
+      {/* House rules */}
       <section className="mt-14">
         <h2 className="font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
-          Four principles
+          Three house rules
         </h2>
+        <p className="mt-2 text-base text-ink-soft sm:text-lg">
+          Less a manifesto, more a list of things I keep reminding myself.
+        </p>
         <ol className="mt-6 flex flex-col gap-3">
-          {PRINCIPLES.map((p, i) => (
+          {HOUSE_RULES.map((p, i) => (
             <li
               key={p.title}
               className="card-chunk flex gap-4 rounded-[var(--radius-card)] bg-cream p-5"
@@ -138,6 +148,26 @@ export default function AboutPage() {
         </ol>
       </section>
 
+      {/* Things you won't find here */}
+      <section className="mt-14 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-6 sm:p-8">
+        <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
+          Things you won&rsquo;t find here
+        </h2>
+        <p className="mt-2 text-sm text-ink-soft">
+          A non-exhaustive list, with a smile.
+        </p>
+        <ul className="mt-4 flex flex-wrap gap-2">
+          {NOT_HERE.map((item) => (
+            <li
+              key={item}
+              className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-sm font-semibold text-ink-soft line-through decoration-ink/60"
+            >
+              {item}
+            </li>
+          ))}
+        </ul>
+      </section>
+
       {/* Closing */}
       <section className="mt-14 rounded-[var(--radius-card)] border-2 border-ink bg-cream-deep p-6 sm:p-8">
         <p className="font-display text-2xl font-extrabold leading-snug tracking-tight sm:text-3xl">
@@ -150,38 +180,24 @@ export default function AboutPage() {
           <Link href="/games/munch" className="font-bold underline">
             Munch
           </Link>
-          , which connects to a tiny WebSocket server so other players can see
-          your blob. No database, no telemetry, no third-party scripts. Source
-          code lives on a single laptop until it doesn&rsquo;t.
+          , which connects to a small WebSocket server so other players can
+          see your blob. No database, no telemetry, no third-party scripts.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link
             href="/"
             className="btn-chunk rounded-[var(--radius-button)] bg-tomato px-5 py-2 font-display text-sm font-extrabold text-cream"
           >
-            Back to the tools
+            Back to the dots
+          </Link>
+          <Link
+            href="/promise"
+            className="btn-chunk rounded-[var(--radius-button)] bg-cream px-5 py-2 font-display text-sm font-extrabold"
+          >
+            Read the promise →
           </Link>
         </div>
       </section>
-    </div>
-  );
-}
-
-function Stat({
-  value,
-  label,
-  accent,
-}: {
-  value: string;
-  label: string;
-  accent: string;
-}) {
-  return (
-    <div className={`card-chunk flex flex-col items-start gap-1 rounded-[var(--radius-card)] ${accent} p-4 sm:p-5`}>
-      <p className="font-display text-4xl font-extrabold leading-none tabular-nums sm:text-5xl">
-        {value}
-      </p>
-      <p className="text-xs font-semibold uppercase tracking-wide">{label}</p>
     </div>
   );
 }
