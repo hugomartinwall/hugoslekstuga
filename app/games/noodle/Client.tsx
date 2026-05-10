@@ -130,6 +130,33 @@ const ZOOM_HALF_LIFE = 0.45;
  *  produce +1..+3 length, kills add many. Above this, we snap so a
  *  respawn or a big kill doesn't drag a stale zoom across seconds. */
 const ZOOM_SNAP_DELTA = 18;
+/** While boosting, the viewport quietly widens by this factor —
+ *  speed feels faster when the world breathes out a bit. */
+const BOOST_ZOOM_OUT = 1.12;
+const BOOST_ZOOM_HALF_LIFE = 0.22;
+
+/* ---- dark-world palette ---- */
+
+/** Game canvas background. A deep ink-derived navy — close to the
+ *  brand's warm ink (#1a1812) but cooler, so the colorful snakes
+ *  read as lit objects against a night sky. */
+const BG_COLOR = "#15131c";
+/** Faint cream alpha for the dotted "garden" texture so the world
+ *  has presence without competing with anything. */
+const BG_DOT_COLOR = "rgba(251, 246, 238, 0.06)";
+/** Cream-soft tint for the world border. Visible enough to read
+ *  "edge of the world" without dominating the frame. */
+const BORDER_COLOR = "rgba(251, 246, 238, 0.32)";
+/** Each snake's outline is rendered as the body colour darkened by
+ *  this fraction — a soft inset rim that lets the body read as a
+ *  lit bead against the dark, rather than a hard black-outlined
+ *  cartoon shape. */
+const OUTLINE_DARKEN = 0.38;
+/** Glow halo behind each food pellet. Multiplier on radius and the
+ *  alpha for the fill pass. Replaces slither's additive glow with
+ *  something close enough on plain canvas. */
+const FOOD_GLOW_SCALE = 2.4;
+const FOOD_GLOW_ALPHA = 0.32;
 
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
@@ -193,6 +220,10 @@ export default function NoodleClient() {
    *  snapping. Snaps on big jumps (respawn, reconnect) where lerping
    *  would feel like the camera "remembers" a dead snake. */
   const viewLengthRef = useRef<number>(INITIAL_LENGTH);
+  /** Eased boost-zoom factor. 1 = not boosting, BOOST_ZOOM_OUT while
+   *  boosting. Lerps with a short half-life so the world breathes
+   *  with the sprint, not snaps. */
+  const boostZoomRef = useRef<number>(1);
 
   /* -------------------- connect / disconnect -------------------- */
 
@@ -400,6 +431,7 @@ export default function NoodleClient() {
     otherHeadRef.current.clear();
     lastMyLengthRef.current = INITIAL_LENGTH;
     viewLengthRef.current = INITIAL_LENGTH;
+    boostZoomRef.current = 1;
   }, []);
 
   // Cleanup on unmount.
@@ -514,6 +546,14 @@ export default function NoodleClient() {
           viewLengthRef.current += diff * blend;
         }
       }
+      // Boost zoom — eases out while sprinting, back in when not.
+      const targetBoost = localSelfRef.current?.boosting ? BOOST_ZOOM_OUT : 1;
+      if (dt > 0) {
+        const boostBlend = 1 - Math.pow(0.5, dt / BOOST_ZOOM_HALF_LIFE);
+        boostZoomRef.current += (targetBoost - boostZoomRef.current) * boostBlend;
+      } else {
+        boostZoomRef.current = targetBoost;
+      }
       if (canvas) {
         drawScene(
           canvas,
@@ -525,6 +565,7 @@ export default function NoodleClient() {
           eatAtRef.current,
           deathAtRef.current,
           viewLengthRef.current,
+          boostZoomRef.current,
         );
       }
       rafRef.current = requestAnimationFrame(draw);
@@ -664,11 +705,15 @@ export default function NoodleClient() {
 
   if (phase === "playing" || phase === "dead") {
     return (
-      <div className="fixed inset-0 z-50 flex select-none flex-col bg-cream-deep">
+      <div
+        className="fixed inset-0 z-50 flex select-none flex-col"
+        style={{ backgroundColor: BG_COLOR }}
+      >
         <canvas
           ref={canvasRef}
-          className="block h-full w-full bg-cream"
+          className="block h-full w-full"
           style={{
+            backgroundColor: BG_COLOR,
             touchAction: "none",
             WebkitUserSelect: "none",
             WebkitTouchCallout: "none",
@@ -980,6 +1025,7 @@ function drawScene(
   eatAt: number,
   deathAt: number,
   viewLength: number,
+  boostZoom: number,
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -988,7 +1034,7 @@ function drawScene(
   const h = canvas.height / dpr;
 
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#fbf6ee";
+  ctx.fillStyle = BG_COLOR;
   ctx.fillRect(0, 0, w, h);
 
   if (!cur) return;
@@ -1010,12 +1056,13 @@ function drawScene(
 
   // Viewport. Sized from the eased viewLength so per-pellet growth
   // doesn't jolt the camera. Death zoom shrinks the effective half-
-  // extents (zoom in) for a brief moment after own death.
+  // extents (zoom in) for a brief moment after own death; boostZoom
+  // widens them slightly while sprinting.
   const aspect = w > 0 && h > 0 ? w / h : undefined;
   const { hx, hy } = viewportHalfFor(viewLength, aspect);
   const deathZoom = computeDeathZoom(deathAt, now);
-  const ehx = hx / deathZoom;
-  const ehy = hy / deathZoom;
+  const ehx = (hx / deathZoom) * boostZoom;
+  const ehy = (hy / deathZoom) * boostZoom;
   const scale = Math.min(w / (2 * ehx), h / (2 * ehy));
 
   const toScreen = (wx: number, wy: number) => ({
@@ -1027,10 +1074,11 @@ function drawScene(
   // line grid so noodle reads as a different sandbox at a glance.
   drawDottedBackground(ctx, w, h, myCx, myCy, scale, toScreen);
 
-  // World bounds — bold ink rectangle. Walls kill, so the boundary
-  // earns a heavy stroke.
-  ctx.strokeStyle = "#1a1812";
-  ctx.lineWidth = 4;
+  // World bounds — a soft cream rectangle that just barely reads.
+  // On the dark world a chunky ink stroke would vanish; the walls
+  // earn their menace from the death rule, not the line weight.
+  ctx.strokeStyle = BORDER_COLOR;
+  ctx.lineWidth = 3;
   const tl = toScreen(0, 0);
   const br = toScreen(WORLD_SIZE, WORLD_SIZE);
   ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
@@ -1039,14 +1087,18 @@ function drawScene(
   // (same as munch), death-drop food is a colored rounded square so
   // a "feast" reads as something different from natural pellets.
   // Regular pellets are batched by colour into one path per group so
-  // the canvas pipeline sees ~6 fills per frame instead of ~50.
+  // the canvas pipeline sees a handful of fills per frame instead of
+  // ~50. Each colour group is drawn in three passes: glow halo →
+  // solid pellet → bright core, so each pellet reads as a small lit
+  // object against the dark world.
   const pelletGroups = new Map<string, { sx: number; sy: number; r: number }[]>();
+  const deathDrops: { sx: number; sy: number; r: number; color: string }[] = [];
   for (const f of cur.food) {
     const { sx, sy } = toScreen(f.x, f.y);
-    if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
+    if (sx < -40 || sx > w + 40 || sy < -40 || sy > h + 40) continue;
     const r = Math.max(2, f.r * scale);
     if (f.r > 7) {
-      drawRoundedSquare(ctx, sx, sy, r * 1.7, r * 0.4, f.color);
+      deathDrops.push({ sx, sy, r, color: f.color });
     } else {
       let arr = pelletGroups.get(f.color);
       if (!arr) {
@@ -1056,6 +1108,20 @@ function drawScene(
       arr.push({ sx, sy, r });
     }
   }
+  // Pass 1 — soft glow halo for every regular pellet.
+  ctx.globalAlpha = FOOD_GLOW_ALPHA;
+  for (const [color, arr] of pelletGroups) {
+    ctx.beginPath();
+    for (const p of arr) {
+      const gr = p.r * FOOD_GLOW_SCALE;
+      ctx.moveTo(p.sx + gr, p.sy);
+      ctx.arc(p.sx, p.sy, gr, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // Pass 2 — solid pellet.
   for (const [color, arr] of pelletGroups) {
     ctx.beginPath();
     for (const p of arr) {
@@ -1064,6 +1130,37 @@ function drawScene(
     }
     ctx.fillStyle = color;
     ctx.fill();
+  }
+  // Pass 3 — tiny cream core for the "lit pellet" look. Batched into
+  // a single path since the core colour is the same regardless of
+  // pellet colour.
+  if (pelletGroups.size > 0) {
+    ctx.beginPath();
+    for (const arr of pelletGroups.values()) {
+      for (const p of arr) {
+        const cr = Math.max(1, p.r * 0.35);
+        ctx.moveTo(p.sx + cr, p.sy);
+        ctx.arc(p.sx, p.sy, cr, 0, Math.PI * 2);
+      }
+    }
+    ctx.fillStyle = "rgba(251, 246, 238, 0.55)";
+    ctx.fill();
+  }
+  // Death-drop food: same halo treatment plus the rounded-square
+  // body so a feast is still visually distinct from natural pellets.
+  if (deathDrops.length > 0) {
+    ctx.globalAlpha = FOOD_GLOW_ALPHA;
+    for (const d of deathDrops) {
+      const gr = d.r * FOOD_GLOW_SCALE;
+      ctx.beginPath();
+      ctx.arc(d.sx, d.sy, gr, 0, Math.PI * 2);
+      ctx.fillStyle = d.color;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    for (const d of deathDrops) {
+      drawRoundedSquare(ctx, d.sx, d.sy, d.r * 1.7, d.r * 0.4, d.color);
+    }
   }
 
   // Build prev-snake map for interpolation.
@@ -1180,11 +1277,13 @@ function drawSnake(
     return i === 0 ? base * headPulseScale : base;
   };
   const dark = darkenHex(color, 0.13);
+  const rim = darkenHex(color, OUTLINE_DARKEN);
   const shell = Math.max(2, scale * 2);
 
-  // Pass 1 — all ink shells in a single batched path. Same colour for
-  // every shell, so order doesn't matter; this is 1 fill per snake
-  // instead of N.
+  // Pass 1 — all outline shells in a single batched path. Coloured as
+  // a darker tint of the body, so on the dark world the snake reads
+  // as a lit bead with a soft inset rim rather than a cartoon outline.
+  // One fill per snake instead of N.
   ctx.beginPath();
   for (let i = N - 1; i >= 0; i--) {
     const p = points[i];
@@ -1194,7 +1293,7 @@ function drawSnake(
     ctx.moveTo(p.sx + R, p.sy);
     ctx.arc(p.sx, p.sy, R, 0, Math.PI * 2);
   }
-  ctx.fillStyle = "#1a1812";
+  ctx.fillStyle = rim;
   ctx.fill();
   // Pass 2 — coloured fills, walked tail → head so each segment's
   // exposed crescent gets the right shade. Banding lives here; this
@@ -1297,7 +1396,7 @@ function drawHead(
 
   // Eyes — only big enough to read at scale.
   if (r >= 6) {
-    drawEyes(ctx, sx, sy, r, heading, eyeOpenness(seed));
+    drawEyes(ctx, sx, sy, r, heading, eyeOpenness(seed), color);
   }
 
   if (label && r >= 6) {
@@ -1310,11 +1409,14 @@ function drawHead(
       font -= 1;
       ctx.font = `${font.toFixed(1)}px ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif`;
     }
-    ctx.lineWidth = Math.max(2, font * 0.18);
-    ctx.strokeStyle = "#1a1812";
+    // Soft dark drop-shadow so cream text reads against any body
+    // colour underneath. Faster than a real stroke and more legible
+    // on the dark world.
+    ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
+    ctx.shadowBlur = 4;
     ctx.fillStyle = "#fbf6ee";
-    ctx.strokeText(label, sx, sy - r - 6);
     ctx.fillText(label, sx, sy - r - 6);
+    ctx.shadowBlur = 0;
   }
 }
 
@@ -1330,7 +1432,11 @@ function drawEyes(
   headR: number,
   heading: number,
   openness: number,
+  bodyColor: string,
 ): void {
+  // Tint outlines slightly darker than the head fill so the eye rims
+  // read on the dark world without falling back to a hard ink line.
+  const rim = darkenHex(bodyColor, OUTLINE_DARKEN);
   const eyeR = Math.max(1.6, headR * 0.32);
   // Smaller pupils relative to whites — reads more "snake-like" than
   // the previous 0.55, less googly-eyed.
@@ -1349,8 +1455,9 @@ function drawEyes(
   const ry = hy + fy * fwd - py * offset;
 
   if (openness <= 0.04) {
-    // Fully closed — short ink slit perpendicular to the heading.
-    ctx.strokeStyle = "#1a1812";
+    // Fully closed — short rim-coloured slit perpendicular to the
+    // heading. Reads as a darker crease on the lit head.
+    ctx.strokeStyle = rim;
     ctx.lineWidth = Math.max(1, eyeR * 0.45);
     ctx.lineCap = "round";
     const slitLen = eyeR * 0.85;
@@ -1368,7 +1475,7 @@ function drawEyes(
   // Whites — ellipse whose perpendicular-to-heading radius scales
   // with openness. Major axis (eyeR) lies along the heading.
   ctx.fillStyle = "#fbf6ee";
-  ctx.strokeStyle = "#1a1812";
+  ctx.strokeStyle = rim;
   ctx.lineWidth = 1;
   const eyeRy = eyeR * openness;
   ctx.beginPath();
@@ -1422,12 +1529,13 @@ function drawDottedBackground(
       ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
     }
   }
-  ctx.fillStyle = "rgba(26, 24, 18, 0.10)";
+  ctx.fillStyle = BG_DOT_COLOR;
   ctx.fill();
 }
 
 /** A solid rounded-square food pellet for death-drop food. Visually
- *  distinguishes a "feast" from natural pellets. */
+ *  distinguishes a "feast" from natural pellets. Outlined with a
+ *  darker tint of its own colour so it reads on the dark world. */
 function drawRoundedSquare(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -1452,8 +1560,8 @@ function drawRoundedSquare(
   ctx.closePath();
   ctx.fillStyle = color;
   ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "#1a1812";
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = darkenHex(color, OUTLINE_DARKEN);
   ctx.stroke();
 }
 

@@ -83,9 +83,12 @@ export const SPAWN_PROTECT_MS = 2200;
 
 /** Default desktop viewport half-extents at base length. The server
  *  sizes per-player snapshots so each client gets roughly this much
- *  of the world; reshaped by aspect ratio for portrait phones. */
-const VIEW_BASE_AREA = 1200 * 800;
-const VIEW_DEFAULT_ASPECT = 1200 / 800;
+ *  of the world; reshaped by aspect ratio for portrait phones.
+ *  Pulled in (was 1200×800) so the camera sits closer to the snake
+ *  — closer to slither's default zoom, makes the world feel
+ *  inhabited rather than surveyed. */
+const VIEW_BASE_AREA = 800 * 540;
+const VIEW_DEFAULT_ASPECT = 800 / 540;
 
 /** Bigger snakes see further. Same exponent as munch's viewport. */
 export const VIEW_LENGTH_EXPONENT = 0.25;
