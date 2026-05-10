@@ -6,10 +6,11 @@
 /* Tuning constants                                                    */
 /* ------------------------------------------------------------------ */
 
-export const WORLD_SIZE = 4000; // square map, units = pixels.
-                                // smaller than munch (6000) — snakes
-                                // reach across the map faster, the
-                                // game stays read-able.
+export const WORLD_SIZE = 5000; // square map, units = pixels.
+                                // started at 4000 (vs munch's 6000) but
+                                // tight once snakes grew — 5000 gives
+                                // long snakes somewhere to go without
+                                // making the map feel deserted.
 
 /** Population caps. Same shape as munch. */
 export const MAX_PLAYERS = 80;
@@ -31,7 +32,7 @@ export const AFK_TIMEOUT_MS = 60_000;
 export const HEAD_SPEED = 280;
 
 /** Forward speed when boosting. */
-export const BOOST_SPEED = 480;
+export const BOOST_SPEED = 540;
 
 /** Length lost per second of boost. Costs ~16 segments over a 16-second
  *  sprint at 1/sec drain. Strategic: catch slower prey, escape danger,
@@ -40,7 +41,7 @@ export const BOOST_LENGTH_DRAIN_PER_SEC = 1;
 
 /** Maximum head turn rate, radians per second. Slower = more committed
  *  turns, harder to dodge. */
-export const TURN_RATE = 4;
+export const TURN_RATE = 5;
 
 /** Distance between consecutive body segments along the head's path. */
 export const SEGMENT_GAP = 12;
@@ -62,8 +63,10 @@ export const GROW_PER_DEATH_FOOD = 3;
 /* ----- World contents ----- */
 
 /** Server keeps roughly this many food pellets alive. Spawned across
- *  the map at random; eaten ones get respawned. */
-export const FOOD_TARGET = 600;
+ *  the map at random; eaten ones get respawned. Scales with world area
+ *  — 600 was tuned for 4000² (≈ 37.5 per Mu²); 940 keeps the density
+ *  the same at 5000². */
+export const FOOD_TARGET = 940;
 
 /** Pellet visual radius. */
 export const FOOD_RADIUS = 6;
@@ -74,7 +77,7 @@ export const DEATH_FOOD_RADIUS = 10;
 
 /** Just-spawned snakes can't be killed for this long. Lifts on first
  *  boost. Same idea as munch's spawn protection. */
-export const SPAWN_PROTECT_MS = 1500;
+export const SPAWN_PROTECT_MS = 2200;
 
 /* ----- Camera / viewport ----- */
 
