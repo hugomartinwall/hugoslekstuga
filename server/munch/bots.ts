@@ -28,6 +28,8 @@ import {
   MAX_PLAYERS,
   SPLIT_EJECT_SPEED,
   SPLIT_PULL_DELAY_MS,
+  START_MASS,
+  WORLD_SIZE,
 } from "../../lib/munch/protocol.js";
 import type { Game, Player } from "./game.js";
 
@@ -35,10 +37,13 @@ import type { Game, Player } from "./game.js";
 /* Tuning                                                              */
 /* ------------------------------------------------------------------ */
 
-/** World units a bot reacts within. ~700 matches the default desktop
- *  viewport, so bots roughly react to anything that would be on their
- *  screen — no superhuman omniscience, no blindness. */
-const SIGHT_RADIUS = 700;
+/** Base sight radius at START_MASS. Scales up with mass^0.35 (matching
+ *  the per-player viewport scale in the protocol) so a mass-400 bot
+ *  sees ~2000 units instead of always-700 — bigger blobs see further,
+ *  same as humans. Without this, late-game bots would ignore prey just
+ *  outside their viewport while humans see them perfectly fine. */
+const SIGHT_RADIUS_BASE = 700;
+const SIGHT_MASS_EXPONENT = 0.35;
 
 /** Min ms between bot AI decisions. Between decisions the bot keeps
  *  moving toward its cached target — looks goal-directed without
@@ -168,11 +173,15 @@ export class BotManager {
       if (!p.isBot || !p.bot) continue;
       if (!p.alive) {
         if (p.bot.diedAt > 0 && now - p.bot.diedAt >= RESPAWN_COOLDOWN_MS) {
-          this.game.respawn(p.id);
+          // Respawn near a human if any are connected, same logic as
+          // the initial bot spawn — keeps the room feeling lived-in.
+          const { x, y } = this.pickSpawnPosition();
+          this.game.respawn(p.id, x, y);
           p.bot.diedAt = 0;
           p.bot.hasTarget = false;
           p.bot.fleeing = false;
           p.bot.lastDecisionAt = 0;
+          p.bot.spawnedAtMs = Date.now();
         }
         continue;
       }
@@ -216,7 +225,69 @@ export class BotManager {
   private spawnBot(): void {
     const id = `bot-${this.nextBotId++}`;
     const name = this.nextName();
-    this.game.addBot(id, name);
+    const { x, y } = this.pickSpawnPosition();
+    this.game.addBot(id, name, x, y);
+  }
+
+  /** Choose a spawn position for a new HUMAN — the inverse of bot
+   *  spawn. Place them near a random alive bot at 500–800 units, so
+   *  the bot is inside the human's mass-20 snapshot box (half-extents
+   *  ~780×580). The human sees company on their first frame instead
+   *  of an empty world for 2–3 seconds while bots converge. Spawn
+   *  protection (1.5s) keeps them safe from being eaten while they
+   *  orient.
+   *
+   *  Falls back to random world position if there are no bots —
+   *  shouldn't happen in practice (bots fill the floor) but covers
+   *  the edge case cleanly. */
+  pickHumanSpawnPosition(): { x: number; y: number } {
+    const bots: Player[] = [];
+    for (const p of this.game.players.values()) {
+      if (p.isBot && p.alive && p.cells.length > 0) bots.push(p);
+    }
+    if (bots.length === 0) {
+      return {
+        x: Math.random() * WORLD_SIZE,
+        y: Math.random() * WORLD_SIZE,
+      };
+    }
+    const target = bots[Math.floor(Math.random() * bots.length)];
+    const cx = centroidX(target);
+    const cy = centroidY(target);
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 500 + Math.random() * 300;
+    return {
+      x: clamp(cx + Math.cos(angle) * dist, 100, WORLD_SIZE - 100),
+      y: clamp(cy + Math.sin(angle) * dist, 100, WORLD_SIZE - 100),
+    };
+  }
+
+  /** Place a new (or respawning) bot near a random connected human if
+   *  there is one, otherwise random world position. The "near a human"
+   *  case picks a random angle and a 800–2500 unit radius — close
+   *  enough that the bot will be in the human's snapshot viewport
+   *  (~1500×1100 box server-side) within a few seconds of wandering,
+   *  far enough that they don't spawn directly in the human's mouth. */
+  private pickSpawnPosition(): { x: number; y: number } {
+    const humans: Player[] = [];
+    for (const p of this.game.players.values()) {
+      if (!p.isBot && p.alive && p.cells.length > 0) humans.push(p);
+    }
+    if (humans.length === 0) {
+      return {
+        x: Math.random() * WORLD_SIZE,
+        y: Math.random() * WORLD_SIZE,
+      };
+    }
+    const target = humans[Math.floor(Math.random() * humans.length)];
+    const cx = centroidX(target);
+    const cy = centroidY(target);
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 800 + Math.random() * 1700;
+    return {
+      x: clamp(cx + Math.cos(angle) * dist, 100, WORLD_SIZE - 100),
+      y: clamp(cy + Math.sin(angle) * dist, 100, WORLD_SIZE - 100),
+    };
   }
 
   /** Pick the oldest bot (longest spawnedAtMs ago); ties broken by
@@ -292,10 +363,27 @@ export class BotManager {
     const myCy = centroidY(p);
     const myMass = totalMass(p);
 
+    // Sight scales with mass^0.35, mirroring the per-player viewport.
+    // Bigger bots see further. This is what lets a mass-400 bot notice
+    // a fresh human at mass 20 from across half the map.
+    const sight =
+      SIGHT_RADIUS_BASE *
+      Math.pow(Math.max(1, myMass / START_MASS), SIGHT_MASS_EXPONENT);
+
     let closestThreat: Player | null = null;
     let closestThreatDist = Infinity;
     let closestPrey: Player | null = null;
     let closestPreyDist = Infinity;
+
+    // Long-range wander attractor: the closest HUMAN who isn't a
+    // meaningful threat. Used only when nothing in close sight — so
+    // bots converge slowly toward where the action actually is rather
+    // than getting pinned eating pellets in an empty corner. Bot-bot
+    // attraction was tried first but bots clustered at equal masses
+    // and starved (no eat ratio between them); only humans pull, so
+    // bots in an empty room still seek food normally and grow.
+    let wanderTarget: Player | null = null;
+    let wanderTargetDist = Infinity;
 
     for (const other of this.game.players.values()) {
       if (other.id === p.id) continue;
@@ -304,7 +392,19 @@ export class BotManager {
       const ocx = centroidX(other);
       const ocy = centroidY(other);
       const dist = Math.hypot(ocx - myCx, ocy - myCy);
-      if (dist > SIGHT_RADIUS) continue;
+
+      // Long-range attractor: humans only, skip much-bigger threats.
+      if (
+        !other.isBot &&
+        otherMass <= myMass * 1.5 &&
+        dist < wanderTargetDist
+      ) {
+        wanderTarget = other;
+        wanderTargetDist = dist;
+      }
+
+      // Close-range flee/chase logic — only in mass-scaled sight.
+      if (dist > sight) continue;
       if (otherMass > myMass * EAT_RATIO) {
         if (dist < closestThreatDist) {
           closestThreat = other;
@@ -350,13 +450,28 @@ export class BotManager {
       return;
     }
 
-    // 3) Food.
+    // 3) Long-range attractor — drift toward the nearest non-threat
+    // player. Comes BEFORE food so bots don't get pinned eating pellets
+    // forever when there's a 1400-pellet uniform distribution covering
+    // every sight cone. They still pick up food en route — the bot's
+    // path crosses pellets and the eat-resolution loop catches them
+    // automatically.
+    if (wanderTarget) {
+      bot.targetX = centroidX(wanderTarget);
+      bot.targetY = centroidY(wanderTarget);
+      bot.hasTarget = true;
+      bot.fleeing = false;
+      return;
+    }
+
+    // 4) Food (within close-range sight) — fallback when there are no
+    // other players at all (truly empty room with one lone bot).
     let bestFoodX = 0;
     let bestFoodY = 0;
     let bestFoodDist = Infinity;
     for (const f of this.game.food.values()) {
       const dist = Math.hypot(f.x - myCx, f.y - myCy);
-      if (dist > SIGHT_RADIUS) continue;
+      if (dist > sight) continue;
       if (dist < bestFoodDist) {
         bestFoodX = f.x;
         bestFoodY = f.y;
@@ -371,7 +486,8 @@ export class BotManager {
       return;
     }
 
-    // 4) Wander.
+    // 5) True wander — heading drift only. Reached only when there's
+    // nothing in any direction.
     bot.hasTarget = false;
   }
 }
@@ -379,6 +495,12 @@ export class BotManager {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
+
+function clamp(v: number, lo: number, hi: number): number {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
 
 function totalMass(p: Player): number {
   let s = 0;

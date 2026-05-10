@@ -140,7 +140,15 @@ wss.on("connection", (ws, req) => {
           const id = `p${nextPlayerId++}`;
           playerId = id;
           sockets.set(id, ws);
-          const player = game.addPlayer(id, name);
+          // Place new humans near a random bot when bots exist — the
+          // bot is in their snapshot box on first frame, so the world
+          // doesn't look empty for the 2-3s a scattered population
+          // would take to wander into view. Falls back to random
+          // position when nobots is on (no bots to seed from).
+          const spawn = msg.nobots === true ? null : bots.pickHumanSpawnPosition();
+          const player = spawn
+            ? game.addPlayer(id, name, spawn.x, spawn.y)
+            : game.addPlayer(id, name);
           // Solo-testing flag: pause the bot floor while this human is
           // connected. Resumes when they leave.
           if (msg.nobots === true) bots.setNobots(id, true);

@@ -144,12 +144,12 @@ export class Game {
 
   /* -------------------------- player ops -------------------------- */
 
-  addPlayer(id: string, name: string): Player {
+  addPlayer(id: string, name: string, x?: number, y?: number): Player {
     const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
     const cell: Cell = {
       id: this.nextCellId++,
-      x: Math.random() * WORLD_SIZE,
-      y: Math.random() * WORLD_SIZE,
+      x: typeof x === "number" ? x : Math.random() * WORLD_SIZE,
+      y: typeof y === "number" ? y : Math.random() * WORLD_SIZE,
       vx: 0,
       vy: 0,
       svx: 0,
@@ -180,9 +180,18 @@ export class Game {
 
   /** Spawn a server-controlled bot. Same physics as a human player but
    *  flagged with isBot + initial bot AI state. The wire format is
-   *  identical — clients can't distinguish. */
-  addBot(id: string, name: string): Player {
+   *  identical — clients can't distinguish. Optional x/y override the
+   *  random spawn position from addPlayer — used by the bot manager to
+   *  drop new bots near existing humans so the room feels populated
+   *  immediately, not after several minutes of bot drift. */
+  addBot(id: string, name: string, x?: number, y?: number): Player {
     const player = this.addPlayer(id, name);
+    if (typeof x === "number" && typeof y === "number") {
+      for (const cell of player.cells) {
+        cell.x = x;
+        cell.y = y;
+      }
+    }
     player.isBot = true;
     player.bot = {
       spawnedAtMs: Date.now(),
@@ -225,14 +234,16 @@ export class Game {
     p.lastInputAt = Date.now();
   }
 
-  respawn(id: string): void {
+  respawn(id: string, x?: number, y?: number): void {
     const p = this.players.get(id);
     if (!p) return;
+    const spawnX = typeof x === "number" ? x : Math.random() * WORLD_SIZE;
+    const spawnY = typeof y === "number" ? y : Math.random() * WORLD_SIZE;
     p.cells = [
       {
         id: this.nextCellId++,
-        x: Math.random() * WORLD_SIZE,
-        y: Math.random() * WORLD_SIZE,
+        x: spawnX,
+        y: spawnY,
         vx: 0,
         vy: 0,
         svx: 0,
