@@ -122,6 +122,14 @@ const PARTICLE_BUDGET = 240;
  *  (vs walked off the side). 0.78 catches deep kills, ignores
  *  edge-walkers. */
 const DEATH_VIEW_INSET = 0.78;
+/** Half-life (seconds) for the viewport-length ease. ~0.45 means a
+ *  pellet's worth of zoom-out resolves over roughly half a second —
+ *  visible enough to feel like growth, gentle enough to not jolt. */
+const ZOOM_HALF_LIFE = 0.45;
+/** Threshold for snapping viewLength instead of easing. Pellet eats
+ *  produce +1..+3 length, kills add many. Above this, we snap so a
+ *  respawn or a big kill doesn't drag a stale zoom across seconds. */
+const ZOOM_SNAP_DELTA = 18;
 
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
@@ -180,6 +188,11 @@ export default function NoodleClient() {
   /** performance.now() at the last frame, so we can tick particles
    *  with a real dt regardless of frame cadence. */
   const lastDrawAtRef = useRef<number>(0);
+  /** Eased copy of `you.length` for viewport sizing. Lerps toward the
+   *  real length so eating a pellet zooms out a hair instead of
+   *  snapping. Snaps on big jumps (respawn, reconnect) where lerping
+   *  would feel like the camera "remembers" a dead snake. */
+  const viewLengthRef = useRef<number>(INITIAL_LENGTH);
 
   /* -------------------- connect / disconnect -------------------- */
 
@@ -386,6 +399,7 @@ export default function NoodleClient() {
     particlesRef.current = [];
     otherHeadRef.current.clear();
     lastMyLengthRef.current = INITIAL_LENGTH;
+    viewLengthRef.current = INITIAL_LENGTH;
   }, []);
 
   // Cleanup on unmount.
@@ -486,6 +500,20 @@ export default function NoodleClient() {
       if (dt > 0 && particlesRef.current.length > 0) {
         tickParticles(particlesRef.current, dt);
       }
+      // Smooth the zoom — ease viewLengthRef toward the snake's true
+      // length so a single pellet doesn't yank the world. Big deltas
+      // (respawn, kill) snap.
+      const cur = curSnapRef.current;
+      if (cur) {
+        const target = Math.max(INITIAL_LENGTH, cur.you.length);
+        const diff = target - viewLengthRef.current;
+        if (Math.abs(diff) > ZOOM_SNAP_DELTA) {
+          viewLengthRef.current = target;
+        } else if (dt > 0) {
+          const blend = 1 - Math.pow(0.5, dt / ZOOM_HALF_LIFE);
+          viewLengthRef.current += diff * blend;
+        }
+      }
       if (canvas) {
         drawScene(
           canvas,
@@ -496,6 +524,7 @@ export default function NoodleClient() {
           particlesRef.current,
           eatAtRef.current,
           deathAtRef.current,
+          viewLengthRef.current,
         );
       }
       rafRef.current = requestAnimationFrame(draw);
@@ -950,6 +979,7 @@ function drawScene(
   particles: Particle[],
   eatAt: number,
   deathAt: number,
+  viewLength: number,
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -978,10 +1008,11 @@ function drawScene(
   const myCx = myHead.x;
   const myCy = myHead.y;
 
-  // Viewport. Death zoom shrinks the effective half-extents (zoom
-  // in) for a brief moment after own death.
+  // Viewport. Sized from the eased viewLength so per-pellet growth
+  // doesn't jolt the camera. Death zoom shrinks the effective half-
+  // extents (zoom in) for a brief moment after own death.
   const aspect = w > 0 && h > 0 ? w / h : undefined;
-  const { hx, hy } = viewportHalfFor(Math.max(8, cur.you.length), aspect);
+  const { hx, hy } = viewportHalfFor(viewLength, aspect);
   const deathZoom = computeDeathZoom(deathAt, now);
   const ehx = hx / deathZoom;
   const ehy = hy / deathZoom;
