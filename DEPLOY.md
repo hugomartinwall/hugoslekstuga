@@ -1,19 +1,30 @@
 # Deployment runbook
 
-The site went live on 2026-05-09. This file captures *where* things run,
-*how* to update them, and what's still outstanding. Read AGENTS.md for
-the development conventions; this file is strictly the operational view.
+The site went live on 2026-05-09 at `hugoslekstuga.vercel.app` and was
+moved behind the custom domain `hugoslekstuga.com` on 2026-05-10. This
+file captures *where* things run, *how* to update them, and what's still
+outstanding. Read AGENTS.md for the development conventions; this file
+is strictly the operational view.
 
 ## Where things live
 
 | Surface | Host | URL |
 |---|---|---|
-| Static site (43 tools + lobby) | Vercel | https://hugoslekstuga.vercel.app |
+| Static site (43 tools + lobby) | Vercel | https://hugoslekstuga.com |
 | Munch WebSocket server | Fly.io (Stockholm `arn`) | https://hugoslekstuga-munch.fly.dev |
 | Source | GitHub (public) | https://github.com/hugomartinwall/hugoslekstuga |
 
-Domain **hugoslekstuga.com** is bought at Loopia. **Not yet pointing at
-Vercel** — DNS is still on Loopia's parking page. See "Outstanding" below.
+`hugoslekstuga.vercel.app` still works as a fallback (Vercel keeps the
+auto-generated subdomain alive forever) but the canonical URL is the
+apex `.com`. The codebase advertises that everywhere — `metadataBase`,
+`sitemap.xml`, `robots.txt`, and the munch share text all use it.
+
+DNS is hosted at Loopia (registrar: Ascio backend). Apex points to
+Vercel via a single A record (`@ → 216.198.79.1`). `www` resolves to
+the same IP via Loopia's "synkronisera" option and is configured in
+Vercel as a 308 permanent redirect to the apex. To change DNS, log
+into customerzone.loopia.com → DNS-redigerare. To change the redirect
+or add subdomains, use Vercel's Domains panel.
 
 ## Deploys, in two flavours
 
@@ -72,7 +83,7 @@ Fly dashboard: https://fly.io/apps/hugoslekstuga-munch
 
 ```sh
 # Static site
-curl -fsS https://hugoslekstuga.vercel.app/sitemap.xml >/dev/null && echo OK
+curl -fsS https://hugoslekstuga.com/sitemap.xml >/dev/null && echo OK
 
 # Munch HTTP /health (live JSON with player + socket count)
 curl -s https://hugoslekstuga-munch.fly.dev/health
@@ -84,19 +95,15 @@ won't wake, `flyctl machine restart <id>` per machine.
 
 ## Outstanding
 
-These were flagged during launch but not done:
-
-1. **Point hugoslekstuga.com at Vercel.** Loopia → DNS → A record on
-   apex to Vercel's IP, CNAME on `www.` to `cname.vercel-dns.com`.
-   Then add the domain in Vercel Settings → Domains. Vercel will
-   verify and issue a TLS cert in a few minutes.
-2. **Set a Fly.io spend cap.** https://fly.io/dashboard/personal/billing
-   → Spending alerts. Recommend $5/month. Cost at idle is ~$0.40/mo
-   but a runaway loop or someone keeping the game open 24/7 would push
-   it up; the cap is the safety belt.
-3. **Final pre-domain QA pass.**
-   - Visit `/opengraph-image.png` in production — confirm 44 chips
-     fit cleanly in 1200×630 (this hasn't been verified visually yet).
+1. **Set a Fly.io spend cap** *(if/when Fly exposes the UI for it on
+   this account — currently not available)*. Practically: bookmark
+   https://fly.io/dashboard/hugo-oogywawa-se/billing/cost-explorer and
+   glance at it weekly for the first month. Realistic monthly spend at
+   1–10 active players/week is $0.10–$0.50; nothing in the current
+   `fly.toml` (1× shared-cpu-1x@256MB, no volumes, auto-stop on idle)
+   has a path to a scary invoice. The Fly invoice email at
+   `hugo@oogywawa.se` is the actual safety net.
+2. **Final QA pass.**
    - Walk every cluster on the homepage map at 375px viewport
      (iPhone SE size) and ~5 popular tools. Mobile inputs (sift CSV
      drop, sketch drawing, etc.) need a real-touch sanity check.
