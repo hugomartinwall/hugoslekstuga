@@ -78,21 +78,35 @@ type Ripple = {
 
 const NODE_R = 26;
 const SHADOW_DY = 4;
-// Physics tuned for the 16-node graph after a deep polish pass:
-// - DAMPING raised (less drag) so motion lingers — the "glide" feel,
-//   nodes don't snap to a stop when forces relax.
-// - REPEL raised slightly so nodes have breathing room without
-//   needing extra centre pull.
-// - CENTER_PULL nudged up to give a clearer "weight toward the
-//   middle" — the gravity feel.
-// - WOBBLE_FORCE halved so idle motion is alive, not jittery.
-// - MAX_V lowered so nothing whips across the canvas at once.
-const TARGET_DIST = 170;
-const SPRING_K = 0.028;
-const REPEL = 2800;
-const CENTER_PULL = 0.0055;
-const DAMPING = 0.94;
-const WOBBLE_FORCE = 0.025;
+// Physics for the 16-node graph after a second polish pass — looser
+// and smoother than the first pass, addressing "still jumpy + too
+// tight" feedback.
+//
+// Looseness (more breathing room):
+// - TARGET_DIST way up (170 → 230). Linked nodes settle further apart.
+// - REPEL up (2800 → 3600). Stronger push so unconnected pairs spread.
+// - CENTER_PULL DOWN (0.0055 → 0.003). Weaker gravity = more spread.
+//   Nodes still stay on canvas via the wall clamp; they just don't
+//   get yanked toward the middle.
+// - SPRING_K down (0.028 → 0.018). Softer edge springs. Linked nodes
+//   bob toward each other rather than snap.
+//
+// Smoothness (less jumpy):
+// - DAMPING up (0.94 → 0.96). Even more glide.
+// - WOBBLE_FORCE halved (0.025 → 0.012) and timing slowed (the
+//   `now * 0.0008` inline below → `now * 0.0005`). Idle motion is now
+//   long-period drift, not visible jitter.
+// - TILT_VELOCITY_GAIN down (1.0 → 0.7), TILT_MAX_DEG down (12 → 8).
+//   Smaller lean per unit of velocity = less twitch on every nudge.
+// - CURSOR_MAGNET_FORCE down (0.13 → 0.08). Gentler tug toward cursor.
+// - MAX_V down (11 → 9). Slower velocity cap caps the residual glide.
+const TARGET_DIST = 230;
+const SPRING_K = 0.018;
+const REPEL = 3600;
+const CENTER_PULL = 0.003;
+const DAMPING = 0.96;
+const WOBBLE_FORCE = 0.012;
+const WOBBLE_RATE = 0.0005;
 const ENTRANCE_DURATION = 480;
 const ENTRANCE_STAGGER = 40;
 const CLICK_BOUNCE_MS = 240;
@@ -105,18 +119,16 @@ const PARTICLE_FRICTION = 0.93;
 const SPARKLE_LIFE_DECAY = 0.045;
 const SPARKLE_FRICTION = 0.9;
 const CURSOR_MAGNET_RADIUS = 140;
-const CURSOR_MAGNET_FORCE = 0.13;
+const CURSOR_MAGNET_FORCE = 0.08;
 const RECLUSTER_BURST_SPEED = 9;
-// Lean (tilt) follows velocity, smoothed. Lower gain + lower max +
-// longer lerp = calmer, more deliberate body language as nodes move.
-const TILT_VELOCITY_GAIN = 1.0;
-const TILT_MAX_DEG = 12;
+// Lean (tilt) follows velocity, smoothed.
+const TILT_VELOCITY_GAIN = 0.7;
+const TILT_MAX_DEG = 8;
 const TILT_LERP = 0.15;
 /** How aggressively the dragged node chases the cursor each frame. */
 const DRAG_LERP = 0.5;
-/** Hard cap on per-frame velocity. Lowered with the new lower damping
- *  so glide doesn't compound into a slingshot when forces stack. */
-const MAX_V = 11;
+/** Hard cap on per-frame velocity. */
+const MAX_V = 9;
 const MIN_W = 320;
 const MIN_H = 480;
 
@@ -859,7 +871,7 @@ function step(
 
   const cx = width / 2;
   const cy = height / 2;
-  const wobbleT = now * 0.0008;
+  const wobbleT = now * WOBBLE_RATE;
   let totalMotion = 0;
   for (const n of nodes) {
     if (n.pinned) continue;
