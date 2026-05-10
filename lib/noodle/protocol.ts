@@ -15,9 +15,12 @@ export const WORLD_SIZE = 4000; // square map, units = pixels.
 export const MAX_PLAYERS = 80;
 export const BOT_FLOOR = 8;
 
-/** Server tick + snapshot rates. */
+/** Server tick + snapshot rates. Snapshot rate matches the tick rate
+ *  so each tick emits a state — minimises perceived lag for snake
+ *  motion (compared to munch's 20Hz, which felt fine for blobs but
+ *  stuttery for fluid worm bodies). */
 export const TICK_HZ = 30;
-export const SNAPSHOT_HZ = 20;
+export const SNAPSHOT_HZ = 30;
 
 /** AFK kick: no input received for this long → drop the player. */
 export const AFK_TIMEOUT_MS = 60_000;
@@ -184,6 +187,9 @@ export type ServerMsg =
       tick: number;
       you: {
         head: { x: number; y: number } | null;
+        /** Full self body (head first). The server doesn't viewport-cull
+         *  the player's own body — you always see your whole snake. */
+        segments: { x: number; y: number }[];
         length: number;
         alive: boolean;
         boosting: boolean;

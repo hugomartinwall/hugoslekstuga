@@ -27,6 +27,7 @@ type Snapshot = {
   receivedAt: number;
   you: {
     head: { x: number; y: number } | null;
+    segments: { x: number; y: number }[];
     length: number;
     alive: boolean;
     boosting: boolean;
@@ -42,9 +43,11 @@ type Self = { id: string; color: string; name: string };
 const WS_BASE = process.env.NEXT_PUBLIC_MUNCH_WS_URL ?? "ws://localhost:8080";
 const WS_URL = `${WS_BASE.replace(/\/+$/, "")}/noodle`;
 const NAME_KEY = "hugoslekstuga:noodle:name";
-/** ms to lerp between two snapshots — matches the server's ~50ms snapshot
- *  cadence, so playback is one snapshot behind realtime but smooth. */
-const SNAP_GAP = 50;
+/** ms to lerp between two snapshots — matches the server's ~33ms snapshot
+ *  cadence (SNAPSHOT_HZ = 30), so playback is one snapshot behind
+ *  realtime but smooth. Smaller than munch's because snake motion is
+ *  less forgiving of stutter. */
+const SNAP_GAP = 33;
 
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
@@ -743,122 +746,173 @@ function drawScene(
     sy: (wy - myCy) * scale + h / 2,
   });
 
-  // World grid.
-  ctx.strokeStyle = "#1a181210";
-  ctx.lineWidth = 1;
-  const gridStep = 100;
-  const left = myCx - w / 2 / scale;
-  const right = myCx + w / 2 / scale;
-  const top = myCy - h / 2 / scale;
-  const bottom = myCy + h / 2 / scale;
-  const gx0 = Math.floor(left / gridStep) * gridStep;
-  const gy0 = Math.floor(top / gridStep) * gridStep;
-  for (let gx = gx0; gx < right; gx += gridStep) {
-    const { sx } = toScreen(gx, 0);
-    ctx.beginPath();
-    ctx.moveTo(sx, 0);
-    ctx.lineTo(sx, h);
-    ctx.stroke();
-  }
-  for (let gy = gy0; gy < bottom; gy += gridStep) {
-    const { sy } = toScreen(0, gy);
-    ctx.beginPath();
-    ctx.moveTo(0, sy);
-    ctx.lineTo(w, sy);
-    ctx.stroke();
-  }
+  // World — dotted "garden" texture. Distinct from munch's plain
+  // line grid so noodle reads as a different sandbox at a glance.
+  drawDottedBackground(ctx, w, h, myCx, myCy, scale, toScreen);
 
-  // World bounds.
+  // World bounds — bold ink rectangle. Walls kill, so the boundary
+  // earns a heavy stroke.
   ctx.strokeStyle = "#1a1812";
   ctx.lineWidth = 4;
   const tl = toScreen(0, 0);
   const br = toScreen(WORLD_SIZE, WORLD_SIZE);
   ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
 
-  // Food.
+  // Food. Two visual languages: regular pellets are colored circles
+  // (same as munch), death-drop food is a colored rounded square so
+  // a "feast" reads as something different from natural pellets.
   for (const f of cur.food) {
     const { sx, sy } = toScreen(f.x, f.y);
     if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
-    ctx.fillStyle = f.color;
-    ctx.beginPath();
-    ctx.arc(sx, sy, Math.max(2, f.r * scale), 0, Math.PI * 2);
-    ctx.fill();
+    const r = Math.max(2, f.r * scale);
+    if (f.r > 7) {
+      // Death-drop food — rounded square, slight outline.
+      drawRoundedSquare(ctx, sx, sy, r * 1.7, r * 0.4, f.color);
+    } else {
+      ctx.fillStyle = f.color;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // Build prev-snake map for interpolation.
   const prevSnakeMap = new Map<string, SnakeView>();
   if (prev) for (const s of prev.snakes) prevSnakeMap.set(s.id, s);
 
-  // Other snakes.
+  // Other snakes (under self so own body draws on top of overlapping
+  // strangers — useful for legibility during close encounters).
   for (const s of cur.snakes) {
     const prevS = prevSnakeMap.get(s.id);
-    drawSnake(ctx, s, prevS, t, toScreen, scale);
+    drawSnake(
+      ctx,
+      s.segments,
+      prevS?.segments,
+      t,
+      toScreen,
+      scale,
+      s.color,
+      s.prot,
+      s.boosting,
+      s.name,
+    );
   }
 
-  // Self snake — synthesize a SnakeView from cur.you for the self
-  // segments. The server only sends `head` for self in `you`, not the
-  // body — clients can't know their own body until the server sends
-  // it. To paint the self snake, reuse the prev/cur head positions
-  // and length, drawing the head + a colored trail behind it that
-  // interpolates from the previous snapshot.
-  // For simplicity in v1, draw a single big head circle for self.
-  if (cur.you.head && self) {
-    const { sx, sy } = toScreen(myCx, myCy);
-    drawSelfHead(ctx, sx, sy, scale, self.color, cur.you.protUntil > Date.now(), cur.you.boosting);
+  // Self snake — drawn from server-sent body segments. No name label
+  // (it's you), no other-player decorations. Interpolated against the
+  // previous snapshot's self segments same as other snakes.
+  if (self && cur.you.segments.length > 0) {
+    const prevSelf = prev?.you.segments;
+    drawSnake(
+      ctx,
+      cur.you.segments,
+      prevSelf,
+      t,
+      toScreen,
+      scale,
+      self.color,
+      cur.you.protUntil > Date.now(),
+      cur.you.boosting,
+      null, // no label for self
+    );
   }
 }
+
+/* ---- snake rendering ---- */
 
 function drawSnake(
   ctx: CanvasRenderingContext2D,
-  snake: SnakeView,
-  prev: SnakeView | undefined,
+  segments: { x: number; y: number }[],
+  prevSegments: { x: number; y: number }[] | undefined,
   t: number,
   toScreen: (wx: number, wy: number) => { sx: number; sy: number },
-  scale: number,
-): void {
-  const segs = snake.segments;
-  if (segs.length === 0) return;
-  const lerp = (a: number, b: number) => a + (b - a) * t;
-  const interp = (i: number) => {
-    const cur = segs[i];
-    if (!prev || !prev.segments[i]) return cur;
-    const p = prev.segments[i];
-    return { x: lerp(p.x, cur.x), y: lerp(p.y, cur.y) };
-  };
-
-  // Body as a thick stroked path with chunky outline.
-  // Walk tail → head so the head is drawn last (on top).
-  ctx.beginPath();
-  for (let i = segs.length - 1; i >= 0; i--) {
-    const { sx, sy } = toScreen(...interpToTuple(interp(i)));
-    if (i === segs.length - 1) ctx.moveTo(sx, sy);
-    else ctx.lineTo(sx, sy);
-  }
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.lineWidth = (SEGMENT_RADIUS + 2) * 2 * scale;
-  ctx.strokeStyle = "#1a1812";
-  ctx.stroke();
-  ctx.lineWidth = SEGMENT_RADIUS * 2 * scale;
-  ctx.strokeStyle = snake.color;
-  ctx.stroke();
-
-  // Head circle, slightly bigger.
-  const head = interp(0);
-  const { sx, sy } = toScreen(head.x, head.y);
-  drawHead(ctx, sx, sy, scale, snake.color, snake.prot, snake.boosting, snake.name);
-}
-
-function drawSelfHead(
-  ctx: CanvasRenderingContext2D,
-  sx: number,
-  sy: number,
   scale: number,
   color: string,
   prot: boolean,
   boosting: boolean,
+  label: string | null,
 ): void {
-  drawHead(ctx, sx, sy, scale, color, prot, boosting, null);
+  if (segments.length === 0) return;
+  const lerp = (a: number, b: number) => a + (b - a) * t;
+  const interp = (i: number) => {
+    const c = segments[i];
+    if (!prevSegments || !prevSegments[i]) return c;
+    const p = prevSegments[i];
+    return { x: lerp(p.x, c.x), y: lerp(p.y, c.y) };
+  };
+
+  // Build the screen-space points list, head first.
+  const points: { sx: number; sy: number }[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const w = interp(i);
+    const { sx, sy } = toScreen(w.x, w.y);
+    points.push({ sx, sy });
+  }
+
+  // Body — a smooth quadratic-Bezier path, drawn tail → head so the
+  // head sits visually on top. The smoothing is what gives the
+  // worm its fluid look (vs the stiff polyline of v1).
+  const tailFirst: { sx: number; sy: number }[] = [];
+  for (let i = points.length - 1; i >= 0; i--) tailFirst.push(points[i]);
+
+  // Outer ink outline.
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  pathThroughPoints(ctx, tailFirst);
+  ctx.lineWidth = (SEGMENT_RADIUS + 2) * 2 * scale;
+  ctx.strokeStyle = "#1a1812";
+  ctx.stroke();
+  // Coloured fill.
+  ctx.lineWidth = SEGMENT_RADIUS * 2 * scale;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+
+  // Boost stripe along the body — a thin lighter line down the middle
+  // while sprinting. Subtle, signals "this snake is moving fast."
+  if (boosting) {
+    ctx.beginPath();
+    pathThroughPoints(ctx, tailFirst);
+    ctx.lineWidth = Math.max(1.5, SEGMENT_RADIUS * 0.6 * scale);
+    ctx.strokeStyle = withAlpha("#fbf6ee", 0.55);
+    ctx.stroke();
+  }
+
+  // Head — bigger circle, eyes facing the heading direction.
+  // Heading derived from segment 0 (head) → segment 1 (next body).
+  const head = points[0];
+  const next = points[1] ?? head;
+  const dx = head.sx - next.sx;
+  const dy = head.sy - next.sy;
+  const heading = Math.atan2(dy, dx) || 0;
+  drawHead(ctx, head.sx, head.sy, scale, color, prot, boosting, heading, label);
+}
+
+/** Draws a smooth quadratic-Bezier path through the points. The
+ *  curve passes through the midpoints of each consecutive pair and
+ *  uses each point as a control point — classic "smooth a polyline"
+ *  trick. Looks fluid; cheaper than Catmull-Rom for our needs. */
+function pathThroughPoints(
+  ctx: CanvasRenderingContext2D,
+  pts: { sx: number; sy: number }[],
+): void {
+  if (pts.length === 0) return;
+  if (pts.length === 1) {
+    ctx.moveTo(pts[0].sx, pts[0].sy);
+    return;
+  }
+  ctx.moveTo(pts[0].sx, pts[0].sy);
+  if (pts.length === 2) {
+    ctx.lineTo(pts[1].sx, pts[1].sy);
+    return;
+  }
+  for (let i = 1; i < pts.length - 1; i++) {
+    const xm = (pts[i].sx + pts[i + 1].sx) / 2;
+    const ym = (pts[i].sy + pts[i + 1].sy) / 2;
+    ctx.quadraticCurveTo(pts[i].sx, pts[i].sy, xm, ym);
+  }
+  // Last segment to the final point.
+  ctx.lineTo(pts[pts.length - 1].sx, pts[pts.length - 1].sy);
 }
 
 function drawHead(
@@ -869,6 +923,7 @@ function drawHead(
   color: string,
   prot: boolean,
   boosting: boolean,
+  heading: number,
   label: string | null,
 ): void {
   const r = HEAD_RADIUS * scale;
@@ -882,11 +937,11 @@ function drawHead(
     ctx.strokeStyle = `rgba(255, 255, 255, ${pulse.toFixed(3)})`;
     ctx.stroke();
   }
-  // Boost glow — soft outer ring while sprinting.
+  // Boost glow.
   if (boosting && r > 4) {
     ctx.beginPath();
-    ctx.arc(sx, sy, r * 1.3, 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.arc(sx, sy, r * 1.35, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, r * 0.14);
     ctx.strokeStyle = withAlpha(color, 0.55);
     ctx.stroke();
   }
@@ -898,6 +953,11 @@ function drawHead(
   ctx.lineWidth = 2;
   ctx.strokeStyle = "#1a1812";
   ctx.stroke();
+
+  // Eyes — only big enough to read at scale.
+  if (r >= 6) {
+    drawEyes(ctx, sx, sy, r, heading);
+  }
 
   if (label && r >= 6) {
     let font = clamp(r * 0.7, 10, 24);
@@ -912,13 +972,120 @@ function drawHead(
     ctx.lineWidth = Math.max(2, font * 0.18);
     ctx.strokeStyle = "#1a1812";
     ctx.fillStyle = "#fbf6ee";
-    ctx.strokeText(label, sx, sy - r - 4);
-    ctx.fillText(label, sx, sy - r - 4);
+    ctx.strokeText(label, sx, sy - r - 6);
+    ctx.fillText(label, sx, sy - r - 6);
   }
 }
 
-function interpToTuple(p: { x: number; y: number }): [number, number] {
-  return [p.x, p.y];
+/** Two beady eyes, oriented along the heading. White whites with
+ *  ink pupils. Pupils sit slightly forward of the centre so the
+ *  snake looks like it's looking where it's going. */
+function drawEyes(
+  ctx: CanvasRenderingContext2D,
+  hx: number,
+  hy: number,
+  headR: number,
+  heading: number,
+): void {
+  const eyeR = Math.max(1.6, headR * 0.32);
+  const pupilR = Math.max(0.9, eyeR * 0.55);
+  const offset = headR * 0.42;
+  const fwd = headR * 0.28;
+  // Heading basis vectors.
+  const fx = Math.cos(heading);
+  const fy = Math.sin(heading);
+  const px = -Math.sin(heading);
+  const py = Math.cos(heading);
+  // Eye centres.
+  const lx = hx + fx * fwd + px * offset;
+  const ly = hy + fy * fwd + py * offset;
+  const rx = hx + fx * fwd - px * offset;
+  const ry = hy + fy * fwd - py * offset;
+  // Whites with thin outline.
+  ctx.fillStyle = "#fbf6ee";
+  ctx.strokeStyle = "#1a1812";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(lx, ly, eyeR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(rx, ry, eyeR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Pupils — pushed forward in the heading direction so the gaze
+  // tracks where the snake is going.
+  const pFwd = eyeR * 0.4;
+  ctx.fillStyle = "#1a1812";
+  ctx.beginPath();
+  ctx.arc(lx + fx * pFwd, ly + fy * pFwd, pupilR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(rx + fx * pFwd, ry + fy * pFwd, pupilR, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Subtle dotted "garden" texture, world-anchored so the dots scroll
+ *  with the camera. Distinct visual identity from munch's line grid
+ *  without being noisy. */
+function drawDottedBackground(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  cx: number,
+  cy: number,
+  scale: number,
+  toScreen: (wx: number, wy: number) => { sx: number; sy: number },
+): void {
+  const step = 60; // world units between dots
+  const left = cx - w / 2 / scale;
+  const right = cx + w / 2 / scale;
+  const top = cy - h / 2 / scale;
+  const bottom = cy + h / 2 / scale;
+  const gx0 = Math.floor(left / step) * step;
+  const gy0 = Math.floor(top / step) * step;
+  ctx.fillStyle = "rgba(26, 24, 18, 0.10)";
+  const dotR = Math.max(1, scale * 1.6);
+  for (let gx = gx0; gx < right + step; gx += step) {
+    for (let gy = gy0; gy < bottom + step; gy += step) {
+      const { sx, sy } = toScreen(gx, gy);
+      if (sx < -dotR || sx > w + dotR || sy < -dotR || sy > h + dotR) continue;
+      ctx.beginPath();
+      ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/** A solid rounded-square food pellet for death-drop food. Visually
+ *  distinguishes a "feast" from natural pellets. */
+function drawRoundedSquare(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  radius: number,
+  color: string,
+): void {
+  const x = cx - size / 2;
+  const y = cy - size / 2;
+  const r = Math.min(radius, size / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + size - r, y);
+  ctx.quadraticCurveTo(x + size, y, x + size, y + r);
+  ctx.lineTo(x + size, y + size - r);
+  ctx.quadraticCurveTo(x + size, y + size, x + size - r, y + size);
+  ctx.lineTo(x + r, y + size);
+  ctx.quadraticCurveTo(x, y + size, x, y + size - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#1a1812";
+  ctx.stroke();
 }
 
 function withAlpha(color: string, alpha: number): string {

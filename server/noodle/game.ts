@@ -394,6 +394,7 @@ export class Game {
   snapshotFor(playerId: string, viewHx: number, viewHy: number): {
     you: {
       head: { x: number; y: number } | null;
+      segments: { x: number; y: number }[];
       length: number;
       alive: boolean;
       boosting: boolean;
@@ -407,7 +408,7 @@ export class Game {
     const now = Date.now();
     if (!me) {
       return {
-        you: { head: null, length: 0, alive: false, boosting: false, protUntil: 0 },
+        you: { head: null, segments: [], length: 0, alive: false, boosting: false, protUntil: 0 },
         snakes: [],
         food: [],
         leaderboard: this.leaderboard(),
@@ -450,9 +451,15 @@ export class Game {
       food.push({ id: f.id, x: f.x, y: f.y, color: f.color, r: f.r });
     }
 
+    // Self body — full, no viewport cull. The player always sees
+    // their own whole snake, which is what makes turning around a
+    // long body legible.
+    const myBody = me.alive ? computeBody(me) : [];
+
     return {
       you: {
         head: { x: me.head.x, y: me.head.y },
+        segments: myBody,
         length: me.length,
         alive: me.alive,
         boosting: me.boost,
