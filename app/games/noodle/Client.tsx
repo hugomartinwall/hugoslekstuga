@@ -6,8 +6,12 @@ import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { clamp } from "@/lib/math";
 import {
+  BOOST_SPEED,
   HEAD_RADIUS,
+  HEAD_SPEED,
+  SEGMENT_GAP,
   SEGMENT_RADIUS,
+  TURN_RATE,
   WORLD_SIZE,
   viewportHalfFor,
   type ClientMsg,
@@ -40,14 +44,51 @@ type Snapshot = {
 
 type Self = { id: string; color: string; name: string };
 
+/** Locally-predicted state of the player's own snake. Updated every
+ *  render frame from the same physics rules the server uses, so input
+ *  feels zero-latency. The server is still authoritative for length,
+ *  alive, and reconciling drift — corrections are blended in over a
+ *  few snapshots so the player never sees a snap. */
+type LocalSelf = {
+  head: { x: number; y: number };
+  /** Heading angle (radians, atan2 convention). */
+  heading: number;
+  length: number;
+  /** Recent head positions, head first — same shape as the server's
+   *  trail buffer. The body is sampled at SEGMENT_GAP intervals along
+   *  this when rendering. */
+  trail: { x: number; y: number }[];
+  alive: boolean;
+  boosting: boolean;
+  /** Last frame's wall-clock timestamp; per-frame dt comes from
+   *  performance.now() - lastFrameAt. */
+  lastFrameAt: number;
+};
+
 const WS_BASE = process.env.NEXT_PUBLIC_MUNCH_WS_URL ?? "ws://localhost:8080";
 const WS_URL = `${WS_BASE.replace(/\/+$/, "")}/noodle`;
 const NAME_KEY = "hugoslekstuga:noodle:name";
 /** ms to lerp between two snapshots — matches the server's ~33ms snapshot
- *  cadence (SNAPSHOT_HZ = 30), so playback is one snapshot behind
- *  realtime but smooth. Smaller than munch's because snake motion is
- *  less forgiving of stutter. */
+ *  cadence (SNAPSHOT_HZ = 30). Other snakes are interpolated. We allow
+ *  extrapolation slightly past 1.0 so a late snapshot doesn't freeze
+ *  the world — see EXTRAP_LIMIT below. */
 const SNAP_GAP = 33;
+/** Maximum extrapolation factor for OTHER snakes' interpolation. Past
+ *  this, motion clamps. 1.0 = no extrapolation (freeze on cur), 1.5 =
+ *  extrapolate up to 50% of a snap gap forward. Keeps motion smooth
+ *  through small network jitter. */
+const EXTRAP_LIMIT = 1.5;
+/** Trail buffer cap for the local self. Long enough for any plausible
+ *  snake length at boost speed. Same value the server uses. */
+const LOCAL_TRAIL_MAX = 1200;
+/** Per-snapshot drift below which we blend the local head toward the
+ *  server head (smooth correction). Above this, we snap (means the
+ *  server killed/teleported us — no point pretending). */
+const RECONCILE_SNAP_DIST = 120;
+/** How much of the server-vs-local drift we close per snapshot. 0.08
+ *  = 8% per snapshot ≈ converges over ~10 snapshots (~330ms). Smooth
+ *  enough that a player never sees a correction. */
+const RECONCILE_BLEND = 0.08;
 
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
@@ -68,8 +109,13 @@ export default function NoodleClient() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const prevSnapRef = useRef<Snapshot | null>(null);
   const curSnapRef = useRef<Snapshot | null>(null);
-  /** Aim direction in canvas-relative pixels (mouse → head vector).
-   *  The server normalises so this can be raw delta. */
+  /** Locally-predicted own snake — initialised on first state with
+   *  head data, advanced every render frame, reconciled on each
+   *  state message. The render uses this for self instead of the
+   *  server-sent segments so input is zero-latency. */
+  const localSelfRef = useRef<LocalSelf | null>(null);
+  /** Aim direction (unit vector). Mouse → head vector. The server
+   *  normalises so raw delta also works. */
   const aimRef = useRef<{ x: number; y: number }>({ x: 0, y: -1 });
   const boostRef = useRef(false);
   const rafRef = useRef<number | null>(null);
@@ -133,6 +179,59 @@ export default function NoodleClient() {
         };
         setLeaderboard(msg.leaderboard);
         setMyLength(Math.floor(msg.you.length));
+        // ---- reconcile local self with server truth ----
+        if (msg.you.head && msg.you.alive) {
+          const local = localSelfRef.current;
+          if (!local) {
+            // First state with a head — initialise local prediction.
+            // Heading derived from the first two segments if available;
+            // otherwise default to "up" (server will reconcile).
+            const initHeading = headingFromSegments(msg.you.segments) ?? -Math.PI / 2;
+            localSelfRef.current = {
+              head: { ...msg.you.head },
+              heading: initHeading,
+              length: msg.you.length,
+              trail: msg.you.segments.length > 0
+                ? msg.you.segments.map((s) => ({ ...s }))
+                : [{ ...msg.you.head }],
+              alive: true,
+              boosting: msg.you.boosting,
+              lastFrameAt: performance.now(),
+            };
+          } else {
+            // Server is authoritative for length + alive.
+            local.length = msg.you.length;
+            if (!local.alive) {
+              // Just respawned — snap to server.
+              local.alive = true;
+              local.head = { ...msg.you.head };
+              local.heading = headingFromSegments(msg.you.segments) ?? local.heading;
+              local.trail = msg.you.segments.length > 0
+                ? msg.you.segments.map((s) => ({ ...s }))
+                : [{ ...msg.you.head }];
+            } else {
+              // Drift reconciliation. Big drift = snap (server killed,
+              // teleported, or we got way out of sync). Small drift =
+              // blend, invisible to the player.
+              const dx = msg.you.head.x - local.head.x;
+              const dy = msg.you.head.y - local.head.y;
+              const drift = Math.hypot(dx, dy);
+              if (drift > RECONCILE_SNAP_DIST) {
+                local.head = { ...msg.you.head };
+                local.heading = headingFromSegments(msg.you.segments) ?? local.heading;
+                local.trail = msg.you.segments.length > 0
+                  ? msg.you.segments.map((s) => ({ ...s }))
+                  : [{ ...msg.you.head }];
+              } else {
+                local.head.x += dx * RECONCILE_BLEND;
+                local.head.y += dy * RECONCILE_BLEND;
+              }
+            }
+          }
+        } else if (!msg.you.alive && localSelfRef.current) {
+          // Server says dead.
+          localSelfRef.current.alive = false;
+        }
         if (msg.you.alive) {
           setPhase((prev) => (prev === "dead" ? "playing" : prev));
         }
@@ -187,6 +286,7 @@ export default function NoodleClient() {
     setDeadInfo(null);
     prevSnapRef.current = null;
     curSnapRef.current = null;
+    localSelfRef.current = null;
     retriedRef.current = false;
   }, []);
 
@@ -273,8 +373,19 @@ export default function NoodleClient() {
     if (phase !== "playing" && phase !== "dead") return;
     const draw = () => {
       const canvas = canvasRef.current;
+      // Advance the locally-predicted self snake before drawing so
+      // the rendered head reflects the player's most recent input.
+      if (localSelfRef.current) {
+        advanceLocalSelf(localSelfRef.current, aimRef.current, boostRef.current);
+      }
       if (canvas) {
-        drawScene(canvas, prevSnapRef.current, curSnapRef.current, selfRef.current);
+        drawScene(
+          canvas,
+          prevSnapRef.current,
+          curSnapRef.current,
+          selfRef.current,
+          localSelfRef.current,
+        );
       }
       rafRef.current = requestAnimationFrame(draw);
     };
@@ -713,6 +824,7 @@ function drawScene(
   prev: Snapshot | null,
   cur: Snapshot | null,
   self: Self | null,
+  localSelf: LocalSelf | null,
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -726,16 +838,20 @@ function drawScene(
 
   if (!cur) return;
 
-  // Snapshot interpolation factor.
+  // Snapshot interpolation factor for OTHER snakes. Allowed to go past
+  // 1.0 up to EXTRAP_LIMIT so a late snapshot doesn't freeze the world.
   const now = performance.now();
-  const t = prev ? Math.min(1, (now - cur.receivedAt) / SNAP_GAP) : 1;
-  const lerp = (a: number, b: number) => a + (b - a) * t;
+  const tOther = prev
+    ? Math.max(0, Math.min(EXTRAP_LIMIT, (now - cur.receivedAt) / SNAP_GAP))
+    : 1;
 
-  // Camera centred on own head. Interpolate position.
-  const myHead = cur.you.head ?? { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
-  const prevHead = prev?.you.head ?? myHead;
-  const myCx = lerp(prevHead.x, myHead.x);
-  const myCy = lerp(prevHead.y, myHead.y);
+  // Camera centred on own head. With local prediction, the camera
+  // tracks the locally-simulated head — feels zero-latency.
+  const myHead = localSelf?.alive
+    ? localSelf.head
+    : cur.you.head ?? { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
+  const myCx = myHead.x;
+  const myCy = myHead.y;
 
   const aspect = w > 0 && h > 0 ? w / h : undefined;
   const { hx, hy } = viewportHalfFor(Math.max(8, cur.you.length), aspect);
@@ -788,7 +904,7 @@ function drawScene(
       ctx,
       s.segments,
       prevS?.segments,
-      t,
+      tOther,
       toScreen,
       scale,
       s.color,
@@ -798,21 +914,22 @@ function drawScene(
     );
   }
 
-  // Self snake — drawn from server-sent body segments. No name label
-  // (it's you), no other-player decorations. Interpolated against the
-  // previous snapshot's self segments same as other snakes.
-  if (self && cur.you.segments.length > 0) {
-    const prevSelf = prev?.you.segments;
+  // Self snake — drawn from LOCAL state. The local trail is updated
+  // every frame, so the rendered worm tracks the player's input with
+  // no perceived latency. The body is sampled from the local trail
+  // at SEGMENT_GAP intervals (same algorithm as the server).
+  if (self && localSelf && localSelf.alive) {
+    const segments = sampleBodyFromTrail(localSelf.trail, localSelf.length);
     drawSnake(
       ctx,
-      cur.you.segments,
-      prevSelf,
-      t,
+      segments,
+      undefined, // no interpolation needed; local is already smooth
+      1,
       toScreen,
       scale,
       self.color,
       cur.you.protUntil > Date.now(),
-      cur.you.boosting,
+      localSelf.boosting,
       null, // no label for self
     );
   }
@@ -1096,4 +1213,111 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
   }
   return color;
+}
+
+/* ------------------------------------------------------------------ */
+/* Client-side prediction                                               */
+/* ------------------------------------------------------------------ */
+
+/** Advance the local-self state by one render frame using the same
+ *  physics rules the server runs at TICK_HZ. Frame dt is per-frame
+ *  so motion is consistent regardless of frame rate. */
+function advanceLocalSelf(
+  local: LocalSelf,
+  aim: { x: number; y: number },
+  boost: boolean,
+): void {
+  if (!local.alive) {
+    local.lastFrameAt = performance.now();
+    return;
+  }
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - local.lastFrameAt) / 1000); // cap dt at 50ms
+  local.lastFrameAt = now;
+  if (dt <= 0) return;
+
+  // Steer heading toward aim (capped at TURN_RATE).
+  const aimMag = Math.hypot(aim.x, aim.y);
+  if (aimMag > 0.001) {
+    const targetAngle = Math.atan2(aim.y, aim.x);
+    let diff = targetAngle - local.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    const maxTurn = TURN_RATE * dt;
+    if (diff > maxTurn) diff = maxTurn;
+    else if (diff < -maxTurn) diff = -maxTurn;
+    local.heading += diff;
+  }
+
+  // Boost only when the snake has length to spare.
+  local.boosting = boost && local.length > 4;
+
+  // Move head forward.
+  const speed = local.boosting ? BOOST_SPEED : HEAD_SPEED;
+  local.head.x += Math.cos(local.heading) * speed * dt;
+  local.head.y += Math.sin(local.heading) * speed * dt;
+
+  // Soft wall — clamp so the predicted head doesn't skate off-screen
+  // visually if the server lags behind on death detection.
+  if (local.head.x < HEAD_RADIUS) local.head.x = HEAD_RADIUS;
+  else if (local.head.x > WORLD_SIZE - HEAD_RADIUS) local.head.x = WORLD_SIZE - HEAD_RADIUS;
+  if (local.head.y < HEAD_RADIUS) local.head.y = HEAD_RADIUS;
+  else if (local.head.y > WORLD_SIZE - HEAD_RADIUS) local.head.y = WORLD_SIZE - HEAD_RADIUS;
+
+  // Push to trail.
+  local.trail.unshift({ x: local.head.x, y: local.head.y });
+  if (local.trail.length > LOCAL_TRAIL_MAX) local.trail.length = LOCAL_TRAIL_MAX;
+}
+
+/** Sample body segments at SEGMENT_GAP distance intervals along the
+ *  trail polyline. Same algorithm as the server's computeBody —
+ *  duplicated here for client-side prediction. */
+function sampleBodyFromTrail(
+  trail: { x: number; y: number }[],
+  length: number,
+): { x: number; y: number }[] {
+  if (trail.length === 0) return [];
+  const segments: { x: number; y: number }[] = [];
+  segments.push({ x: trail[0].x, y: trail[0].y });
+  if (length <= 1) return segments;
+
+  let cumDist = 0;
+  let trailIdx = 0;
+  for (let k = 1; k < length; k++) {
+    const targetDist = k * SEGMENT_GAP;
+    while (trailIdx + 1 < trail.length) {
+      const a = trail[trailIdx];
+      const b = trail[trailIdx + 1];
+      const segLen = Math.hypot(a.x - b.x, a.y - b.y);
+      if (cumDist + segLen >= targetDist) break;
+      cumDist += segLen;
+      trailIdx++;
+    }
+    if (trailIdx + 1 >= trail.length) {
+      const last = trail[trail.length - 1];
+      segments.push({ x: last.x, y: last.y });
+      continue;
+    }
+    const a = trail[trailIdx];
+    const b = trail[trailIdx + 1];
+    const segLen = Math.hypot(a.x - b.x, a.y - b.y);
+    const tt = segLen > 0 ? (targetDist - cumDist) / segLen : 0;
+    segments.push({
+      x: a.x + (b.x - a.x) * tt,
+      y: a.y + (b.y - a.y) * tt,
+    });
+  }
+  return segments;
+}
+
+/** Derive a heading angle from the first two segments. Returns null
+ *  if the snake is too short or segments are coincident. */
+function headingFromSegments(
+  segments: { x: number; y: number }[],
+): number | null {
+  if (segments.length < 2) return null;
+  const dx = segments[0].x - segments[1].x;
+  const dy = segments[0].y - segments[1].y;
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return null;
+  return Math.atan2(dy, dx);
 }
