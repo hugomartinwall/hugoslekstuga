@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 type Level = "L" | "M" | "Q" | "H";
 type Size = 256 | 512 | 1024;
@@ -20,6 +21,22 @@ type ModeData =
       hidden: boolean;
     };
 
+type Style = { fg: string; print: boolean };
+const STYLE_KEY = "hugoslekstuga:qr:style";
+const STYLE_DEFAULT: Style = { fg: "#1a1812", print: false };
+
+const FG_PRESETS: { name: string; hex: string }[] = [
+  { name: "ink", hex: "#1a1812" },
+  { name: "tomato", hex: "#ff5a3c" },
+  { name: "blue", hex: "#4f66f2" },
+  { name: "yellow", hex: "#ffc233" },
+  { name: "pink", hex: "#ff7ab2" },
+  { name: "green", hex: "#3fa66e" },
+  { name: "purple", hex: "#9333ea" },
+  { name: "orange", hex: "#f97316" },
+  { name: "teal", hex: "#0d9488" },
+];
+
 export default function QrPage() {
   const tool = findTool("qr")!;
   const [mode, setMode] = useState<Mode>("text");
@@ -33,6 +50,7 @@ export default function QrPage() {
   });
   const [level, setLevel] = useState<Level>("M");
   const [size, setSize] = useState<Size>(512);
+  const [style, setStyle] = useLocalStorageState<Style>(STYLE_KEY, STYLE_DEFAULT);
   const [pngUrl, setPngUrl] = useState<string | null>(null);
   const [svgString, setSvgString] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +63,12 @@ export default function QrPage() {
   }, [mode, text, url, wifi]);
 
   const encoded = useMemo(() => encode(data), [data]);
+  const scanLine = useMemo(() => describeScan(data), [data]);
+
+  // Effective colours: Print mode overrides to pure black/white for max
+  // contrast and printer-safety; otherwise use the chosen fg on cream.
+  const effectiveDark = style.print ? "#000000" : style.fg;
+  const effectiveLight = style.print ? "#ffffff" : "#fbf6ee";
 
   // Render the QR via the qrcode library — async, dynamic import, draws
   // to a ref'd canvas. Multiple cleanly-related setStates fall out of one
@@ -67,7 +91,7 @@ export default function QrPage() {
             errorCorrectionLevel: level,
             width: size,
             margin: 2,
-            color: { dark: "#1a1812", light: "#fbf6ee" },
+            color: { dark: effectiveDark, light: effectiveLight },
           });
           if (!cancelled) setPngUrl(canvas.toDataURL("image/png"));
         }
@@ -75,7 +99,7 @@ export default function QrPage() {
           type: "svg",
           errorCorrectionLevel: level,
           margin: 2,
-          color: { dark: "#1a1812", light: "#fbf6ee" },
+          color: { dark: effectiveDark, light: effectiveLight },
         });
         if (!cancelled) {
           setSvgString(svg);
@@ -96,7 +120,7 @@ export default function QrPage() {
     return () => {
       cancelled = true;
     };
-  }, [encoded, level, size]);
+  }, [encoded, level, size, effectiveDark, effectiveLight]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const downloadPng = () => {
@@ -128,49 +152,14 @@ export default function QrPage() {
               <WifiInputs value={wifi} onChange={setWifi} />
             )}
 
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                Error correction
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {(["L", "M", "Q", "H"] as Level[]).map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    onClick={() => setLevel(l)}
-                    className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-                      level === l
-                        ? "bg-tomato text-cream"
-                        : "bg-cream hover:bg-tomato-soft"
-                    }`}
-                  >
-                    {labelForLevel(l)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                Image size (PNG export)
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {([256, 512, 1024] as Size[]).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSize(s)}
-                    className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-                      size === s
-                        ? "bg-tomato text-cream"
-                        : "bg-cream hover:bg-tomato-soft"
-                    }`}
-                  >
-                    {s}px
-                  </button>
-                ))}
-              </div>
-            </div>
+            <StylePanel
+              level={level}
+              setLevel={setLevel}
+              size={size}
+              setSize={setSize}
+              style={style}
+              setStyle={setStyle}
+            />
 
             {error && (
               <p className="rounded-[var(--radius-card)] border-2 border-tomato bg-tomato-soft p-3 text-sm font-medium">
@@ -181,9 +170,14 @@ export default function QrPage() {
 
           <div className="flex flex-col items-center gap-4 self-start">
             <div
-              className={`card-chunk flex aspect-square w-full max-w-xs items-center justify-center rounded-[var(--radius-card)] bg-cream p-3 ${
-                !encoded ? "border-dashed" : ""
+              className={`card-chunk flex aspect-square w-full max-w-xs items-center justify-center rounded-[var(--radius-card)] p-3 ${
+                !encoded ? "border-dashed bg-cream" : ""
               }`}
+              style={
+                encoded
+                  ? { background: effectiveLight }
+                  : undefined
+              }
             >
               {encoded ? (
                 <canvas
@@ -201,6 +195,13 @@ export default function QrPage() {
                 </p>
               )}
             </div>
+
+            {scanLine && (
+              <p className="max-w-xs break-words text-center text-xs text-ink-muted">
+                Scans to:{" "}
+                <span className="font-mono text-ink-soft">{scanLine}</span>
+              </p>
+            )}
 
             {encoded && pngUrl && svgString && (
               <div className="flex w-full max-w-xs flex-col gap-2">
@@ -273,6 +274,141 @@ function ModeTabs({
           </span>
         </button>
       ))}
+    </div>
+  );
+}
+
+function StylePanel({
+  level,
+  setLevel,
+  size,
+  setSize,
+  style,
+  setStyle,
+}: {
+  level: Level;
+  setLevel: (l: Level) => void;
+  size: Size;
+  setSize: (s: Size) => void;
+  style: Style;
+  setStyle: (s: Style | ((prev: Style) => Style)) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Background
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setStyle((s) => ({ ...s, print: false }))}
+            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
+              !style.print
+                ? "bg-tomato text-cream"
+                : "bg-cream hover:bg-tomato-soft"
+            }`}
+          >
+            Cream
+          </button>
+          <button
+            type="button"
+            onClick={() => setStyle((s) => ({ ...s, print: true }))}
+            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
+              style.print
+                ? "bg-tomato text-cream"
+                : "bg-cream hover:bg-tomato-soft"
+            }`}
+          >
+            Print · B&amp;W
+          </button>
+        </div>
+        {style.print && (
+          <p className="text-xs text-ink-muted">
+            Pure black on white — best contrast for printers and coloured paper.
+          </p>
+        )}
+      </div>
+
+      {!style.print && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Foreground colour
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {FG_PRESETS.map((p) => (
+              <button
+                key={p.hex}
+                type="button"
+                onClick={() => setStyle((s) => ({ ...s, fg: p.hex }))}
+                aria-label={`${p.name} (${p.hex})`}
+                title={`${p.name}`}
+                className={`h-7 w-7 rounded-full border-2 border-ink transition-transform ${
+                  style.fg.toLowerCase() === p.hex.toLowerCase()
+                    ? "ring-2 ring-ink ring-offset-2 ring-offset-cream"
+                    : "hover:scale-110"
+                }`}
+                style={{ background: p.hex }}
+              />
+            ))}
+            <input
+              type="color"
+              value={style.fg}
+              onChange={(e) => setStyle((s) => ({ ...s, fg: e.target.value }))}
+              className="ml-1 h-7 w-7 cursor-pointer rounded-full border-2 border-ink p-0.5"
+              aria-label="Custom colour"
+            />
+          </div>
+          <p className="text-xs text-ink-muted">
+            Pale colours scan less reliably — test with your phone before
+            printing a thousand of them.
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Error correction
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {(["L", "M", "Q", "H"] as Level[]).map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => setLevel(l)}
+              className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
+                level === l
+                  ? "bg-tomato text-cream"
+                  : "bg-cream hover:bg-tomato-soft"
+              }`}
+            >
+              {labelForLevel(l)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Image size (PNG export)
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {([256, 512, 1024] as Size[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSize(s)}
+              className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
+                size === s
+                  ? "bg-tomato text-cream"
+                  : "bg-cream hover:bg-tomato-soft"
+              }`}
+            >
+              {s}px
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -447,6 +583,32 @@ function encode(data: ModeData): string {
   if (security !== "nopass") parts.push(`P:${escapeWifi(password)}`);
   if (hidden) parts.push("H:true");
   return `WIFI:${parts.join(";")};;`;
+}
+
+/**
+ * Human-readable description of what a phone will do when it scans the QR.
+ * Helps the user verify the payload before exporting.
+ */
+function describeScan(data: ModeData): string | null {
+  if (data.mode === "text") {
+    const t = data.text.trim();
+    if (!t) return null;
+    const preview = t.length > 60 ? `${t.slice(0, 59)}…` : t;
+    return `Display: ${preview}`;
+  }
+  if (data.mode === "url") {
+    const u = data.url.trim();
+    if (!u) return null;
+    const full =
+      /^https?:\/\//i.test(u) || /^[a-z]+:\/\//i.test(u) ? u : `https://${u}`;
+    return `Open ${full}`;
+  }
+  // wifi
+  if (!data.ssid.trim()) return null;
+  if (data.security === "nopass") {
+    return `Connect to ${data.ssid} (open network)`;
+  }
+  return `Connect to ${data.ssid} (${data.security})`;
 }
 
 function escapeWifi(s: string): string {
