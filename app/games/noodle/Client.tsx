@@ -739,11 +739,10 @@ function Lobby({
     >
       <p className="font-display text-2xl font-extrabold">Eat dots. Don&rsquo;t get bumped.</p>
       <p className="text-sm text-ink-soft">
-        You&rsquo;re a snake. You move forward at all times — aim with the
-        mouse (or drag a finger). Eat dots to grow longer. If your head
-        touches another snake&rsquo;s body, you die. Hold{" "}
-        <Kbd>Space</Kbd> (or the Boost button on phones) to sprint —
-        costs length. Hit a wall and you die. Top the leaderboard.
+        You&rsquo;re a snake. Aim with the mouse (or drag a finger). Eat
+        dots to grow. Touch another snake&rsquo;s body — or a wall —
+        and you&rsquo;re done. Hold <Kbd>Space</Kbd> (or the Boost
+        button on phones) to sprint at the cost of length.
       </p>
       <label className="flex flex-col gap-1 text-xs">
         <span className="font-semibold uppercase tracking-wide text-ink-muted">
@@ -911,7 +910,7 @@ function DeadOverlay({
             onClick={onShare}
             className="rounded-full border-2 border-ink bg-cream px-4 py-2 text-sm font-bold transition-colors hover:bg-green-soft"
           >
-            {copied ? "Copied!" : "Share score"}
+            {copied ? "Copied" : "Share score"}
           </button>
           <button
             type="button"
