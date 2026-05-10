@@ -9,6 +9,7 @@ import {
   BOOST_SPEED,
   HEAD_RADIUS,
   HEAD_SPEED,
+  INITIAL_LENGTH,
   SEGMENT_GAP,
   SEGMENT_RADIUS,
   TURN_RATE,
@@ -43,6 +44,23 @@ type Snapshot = {
 };
 
 type Self = { id: string; color: string; name: string };
+
+/** A short-lived spark in world coordinates. Used for eat anims and
+ *  other-snake death bursts. Ticked from drawScene with the same dt
+ *  as the local self prediction. */
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  color: string;
+  /** Total lifespan, ms. */
+  max: number;
+  /** Remaining lifespan, ms. */
+  life: number;
+  /** Visual radius in world units. */
+  r: number;
+};
 
 /** Locally-predicted state of the player's own snake. Updated every
  *  render frame from the same physics rules the server uses, so input
@@ -89,6 +107,21 @@ const RECONCILE_SNAP_DIST = 120;
  *  = 8% per snapshot ≈ converges over ~10 snapshots (~330ms). Smooth
  *  enough that a player never sees a correction. */
 const RECONCILE_BLEND = 0.08;
+/** Eat-pulse: own head briefly scales up on growing. ms is the total
+ *  window; PEAK is the multiplier at the apex (half-window). */
+const HEAD_PULSE_MS = 130;
+const HEAD_PULSE_PEAK = 1.18;
+/** Own-death camera + flash window — quick zoom-in + fade. */
+const DEATH_FLASH_MS = 380;
+const DEATH_ZOOM_MAX = 1.4;
+/** Fixed-size pool for particle bursts. Plenty for the busiest
+ *  brawl; old particles age out in ~700 ms. */
+const PARTICLE_BUDGET = 240;
+/** A disappeared snake's last head must sit within this fraction of
+ *  the local viewport half-extent for us to treat it as a death
+ *  (vs walked off the side). 0.78 catches deep kills, ignores
+ *  edge-walkers. */
+const DEATH_VIEW_INSET = 0.78;
 
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
@@ -128,6 +161,25 @@ export default function NoodleClient() {
    *  disconnected screen. */
   const retriedRef = useRef(false);
   const connectRef = useRef<((name: string) => void) | null>(null);
+  /** Wall-clock of the last eat — drives the head pulse. 0 = no
+   *  pulse active. */
+  const eatAtRef = useRef<number>(0);
+  /** Wall-clock of own death — drives the zoom + flash overlay. */
+  const deathAtRef = useRef<number>(0);
+  /** Live particles, ticked + rendered per frame. */
+  const particlesRef = useRef<Particle[]>([]);
+  /** Last-seen head position per other-snake id. Used to spawn a
+   *  burst when a snake disappears from snapshots while still inside
+   *  the viewport. */
+  const otherHeadRef = useRef<Map<string, { x: number; y: number; color: string }>>(
+    new Map(),
+  );
+  /** Last `myLength` so we can detect growth (eat) without depending
+   *  on the throttled myLength state update. */
+  const lastMyLengthRef = useRef<number>(INITIAL_LENGTH);
+  /** performance.now() at the last frame, so we can tick particles
+   *  with a real dt regardless of frame cadence. */
+  const lastDrawAtRef = useRef<number>(0);
 
   /* -------------------- connect / disconnect -------------------- */
 
@@ -178,7 +230,47 @@ export default function NoodleClient() {
           leaderboard: msg.leaderboard,
         };
         setLeaderboard(msg.leaderboard);
-        setMyLength(Math.floor(msg.you.length));
+        // ---- eat detection (own length grew) ----
+        const newLen = Math.floor(msg.you.length);
+        if (msg.you.alive && newLen > lastMyLengthRef.current) {
+          eatAtRef.current = performance.now();
+        }
+        lastMyLengthRef.current = newLen;
+        setMyLength(newLen);
+        // ---- other-snake death detection ----
+        // A snake that was visible last frame and isn't this frame
+        // either died or walked off-screen. Cull edge-walkers by
+        // requiring the last head to sit comfortably inside our own
+        // viewport. The rest get a burst at the last seen position.
+        if (msg.you.head && msg.you.alive) {
+          const aspect =
+            canvasRef.current && canvasRef.current.clientHeight > 0
+              ? canvasRef.current.clientWidth / canvasRef.current.clientHeight
+              : undefined;
+          const { hx, hy } = viewportHalfFor(Math.max(8, msg.you.length), aspect);
+          const camX = msg.you.head.x;
+          const camY = msg.you.head.y;
+          const seen = otherHeadRef.current;
+          const nextSeen = new Map<string, { x: number; y: number; color: string }>();
+          for (const s of msg.snakes) {
+            if (s.segments.length === 0) continue;
+            nextSeen.set(s.id, {
+              x: s.segments[0].x,
+              y: s.segments[0].y,
+              color: s.color,
+            });
+          }
+          for (const [id, last] of seen) {
+            if (nextSeen.has(id)) continue;
+            // Disappeared this snapshot.
+            const dx = last.x - camX;
+            const dy = last.y - camY;
+            if (Math.abs(dx) < hx * DEATH_VIEW_INSET && Math.abs(dy) < hy * DEATH_VIEW_INSET) {
+              spawnBurst(particlesRef.current, last.x, last.y, last.color);
+            }
+          }
+          otherHeadRef.current = nextSeen;
+        }
         // ---- reconcile local self with server truth ----
         if (msg.you.head && msg.you.alive) {
           const local = localSelfRef.current;
@@ -236,6 +328,7 @@ export default function NoodleClient() {
           setPhase((prev) => (prev === "dead" ? "playing" : prev));
         }
       } else if (msg.type === "dead") {
+        deathAtRef.current = performance.now();
         setDeadInfo({ length: msg.finalLength, killer: msg.killer });
         setPhase("dead");
       } else if (msg.type === "error") {
@@ -288,6 +381,11 @@ export default function NoodleClient() {
     curSnapRef.current = null;
     localSelfRef.current = null;
     retriedRef.current = false;
+    eatAtRef.current = 0;
+    deathAtRef.current = 0;
+    particlesRef.current = [];
+    otherHeadRef.current.clear();
+    lastMyLengthRef.current = INITIAL_LENGTH;
   }, []);
 
   // Cleanup on unmount.
@@ -373,10 +471,20 @@ export default function NoodleClient() {
     if (phase !== "playing" && phase !== "dead") return;
     const draw = () => {
       const canvas = canvasRef.current;
+      const now = performance.now();
       // Advance the locally-predicted self snake before drawing so
       // the rendered head reflects the player's most recent input.
       if (localSelfRef.current) {
         advanceLocalSelf(localSelfRef.current, aimRef.current, boostRef.current);
+      }
+      // Tick particles (eat anims, death bursts) with real dt.
+      const dt =
+        lastDrawAtRef.current === 0
+          ? 0
+          : Math.min(0.05, (now - lastDrawAtRef.current) / 1000);
+      lastDrawAtRef.current = now;
+      if (dt > 0 && particlesRef.current.length > 0) {
+        tickParticles(particlesRef.current, dt);
       }
       if (canvas) {
         drawScene(
@@ -385,6 +493,9 @@ export default function NoodleClient() {
           curSnapRef.current,
           selfRef.current,
           localSelfRef.current,
+          particlesRef.current,
+          eatAtRef.current,
+          deathAtRef.current,
         );
       }
       rafRef.current = requestAnimationFrame(draw);
@@ -392,6 +503,7 @@ export default function NoodleClient() {
     rafRef.current = requestAnimationFrame(draw);
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      lastDrawAtRef.current = 0;
     };
   }, [phase]);
 
@@ -502,6 +614,9 @@ export default function NoodleClient() {
     ws.send(JSON.stringify({ type: "respawn" } satisfies ClientMsg));
     setPhase("playing");
     setDeadInfo(null);
+    deathAtRef.current = 0;
+    eatAtRef.current = 0;
+    lastMyLengthRef.current = INITIAL_LENGTH;
   }, [connect, name]);
 
   const shareScore = useCallback(async () => {
@@ -825,6 +940,9 @@ function drawScene(
   cur: Snapshot | null,
   self: Self | null,
   localSelf: LocalSelf | null,
+  particles: Particle[],
+  eatAt: number,
+  deathAt: number,
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -853,9 +971,14 @@ function drawScene(
   const myCx = myHead.x;
   const myCy = myHead.y;
 
+  // Viewport. Death zoom shrinks the effective half-extents (zoom
+  // in) for a brief moment after own death.
   const aspect = w > 0 && h > 0 ? w / h : undefined;
   const { hx, hy } = viewportHalfFor(Math.max(8, cur.you.length), aspect);
-  const scale = Math.min(w / (2 * hx), h / (2 * hy));
+  const deathZoom = computeDeathZoom(deathAt, now);
+  const ehx = hx / deathZoom;
+  const ehy = hy / deathZoom;
+  const scale = Math.min(w / (2 * ehx), h / (2 * ehy));
 
   const toScreen = (wx: number, wy: number) => ({
     sx: (wx - myCx) * scale + w / 2,
@@ -912,6 +1035,7 @@ function drawScene(
       s.boosting,
       s.name,
       s.id,
+      1, // no eat-pulse for others
     );
   }
 
@@ -921,6 +1045,7 @@ function drawScene(
   // at SEGMENT_GAP intervals (same algorithm as the server).
   if (self && localSelf && localSelf.alive) {
     const segments = sampleBodyFromTrail(localSelf.trail, localSelf.length);
+    const pulse = computeHeadPulse(eatAt, now);
     drawSnake(
       ctx,
       segments,
@@ -933,7 +1058,22 @@ function drawScene(
       localSelf.boosting,
       null, // no label for self
       self.id,
+      pulse,
     );
+  }
+
+  // Particles — eat anims + other-snake death bursts. World-anchored
+  // so they scroll with the camera.
+  if (particles.length > 0) {
+    drawParticles(ctx, particles, toScreen, scale);
+  }
+
+  // Own-death white flash — drawn in screen space last so it covers
+  // everything except the dead UI (which overlays the canvas).
+  const flash = computeDeathFlash(deathAt, now);
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(251, 246, 238, ${flash.toFixed(3)})`;
+    ctx.fillRect(0, 0, w, h);
   }
 }
 
@@ -951,6 +1091,7 @@ function drawSnake(
   boosting: boolean,
   label: string | null,
   seed: string,
+  headPulseScale: number,
 ): void {
   if (segments.length === 0) return;
   const lerp = (a: number, b: number) => a + (b - a) * t;
@@ -982,9 +1123,10 @@ function drawSnake(
   const headR = HEAD_RADIUS * scale;
   const tailR = SEGMENT_RADIUS * 0.6 * scale;
   const radiusAt = (i: number): number => {
-    if (N <= 1) return headR;
-    const t01 = i / (N - 1);
-    return headR + (tailR - headR) * t01;
+    const base = N <= 1 ? headR : headR + (tailR - headR) * (i / (N - 1));
+    // Only segment 0 (the head) pulses on eat — the rest of the body
+    // would jitter visibly if every segment scaled.
+    return i === 0 ? base * headPulseScale : base;
   };
   const dark = darkenHex(color, 0.13);
   const shell = Math.max(2, scale * 2);
@@ -1026,7 +1168,7 @@ function drawSnake(
   const dx = head.sx - next.sx;
   const dy = head.sy - next.sy;
   const heading = Math.atan2(dy, dx) || 0;
-  drawHead(ctx, head.sx, head.sy, scale, color, prot, boosting, heading, label, seed);
+  drawHead(ctx, head.sx, head.sy, scale, color, prot, boosting, heading, label, seed, headPulseScale);
 }
 
 /** Draws a smooth quadratic-Bezier path through the points. The
@@ -1067,8 +1209,9 @@ function drawHead(
   heading: number,
   label: string | null,
   seed: string,
+  pulse: number,
 ): void {
-  const r = HEAD_RADIUS * scale;
+  const r = HEAD_RADIUS * scale * pulse;
   // Spawn-protection halo.
   if (prot && r > 4) {
     const phase = (performance.now() / 1000) % 1;
@@ -1302,6 +1445,100 @@ function eyeOpenness(seed: string): number {
   if (t < closeStart) return 1;
   if (t < closeEnd) return (closeEnd - t) / BLINK_EASE_MS;
   return 0;
+}
+
+/* ---- particles + animation pulses ---- */
+
+/** Push a small fan of particles outward from (x, y) in `color`. The
+ *  array mutates in place. Drops the oldest if the budget is hit so a
+ *  busy moment doesn't leak particles into eternity. */
+function spawnBurst(particles: Particle[], x: number, y: number, color: string): void {
+  if (particles.length > PARTICLE_BUDGET - 16) {
+    particles.splice(0, particles.length - (PARTICLE_BUDGET - 16));
+  }
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 90 + Math.random() * 180;
+    const life = 480 + Math.random() * 220;
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      color,
+      life,
+      max: life,
+      r: 3 + Math.random() * 2,
+    });
+  }
+}
+
+/** Advance every particle by `dt` seconds. Integrates velocity, applies
+ *  exponential drag, drops dead particles. */
+function tickParticles(particles: Particle[], dt: number): void {
+  // dragPerSec ≈ 0.6 — fast initial spread, then drift to a halt.
+  const drag = Math.pow(0.6, dt);
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt * 1000;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= drag;
+    p.vy *= drag;
+  }
+}
+
+/** Render every particle as a colored disc, alpha-faded with remaining
+ *  life. */
+function drawParticles(
+  ctx: CanvasRenderingContext2D,
+  particles: Particle[],
+  toScreen: (wx: number, wy: number) => { sx: number; sy: number },
+  scale: number,
+): void {
+  for (const p of particles) {
+    const a = Math.max(0, Math.min(1, p.life / p.max));
+    if (a <= 0) continue;
+    const { sx, sy } = toScreen(p.x, p.y);
+    ctx.fillStyle = withAlpha(p.color, a);
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(1.2, p.r * scale), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** Eat-pulse: 1 → PEAK → 1 over HEAD_PULSE_MS using a half-sine so the
+ *  rise and fall are smooth. Returns 1 when no pulse is active. */
+function computeHeadPulse(eatAt: number, now: number): number {
+  if (eatAt === 0) return 1;
+  const t = now - eatAt;
+  if (t < 0 || t > HEAD_PULSE_MS) return 1;
+  const u = t / HEAD_PULSE_MS;
+  return 1 + (HEAD_PULSE_PEAK - 1) * Math.sin(u * Math.PI);
+}
+
+/** Death zoom: ramps 1 → MAX over 100 ms, holds until the dead UI
+ *  overlays the canvas. */
+function computeDeathZoom(deathAt: number, now: number): number {
+  if (deathAt === 0) return 1;
+  const t = now - deathAt;
+  if (t < 0) return 1;
+  if (t < 100) return 1 + (DEATH_ZOOM_MAX - 1) * (t / 100);
+  if (t < DEATH_FLASH_MS) return DEATH_ZOOM_MAX;
+  return 1;
+}
+
+/** Death flash: peaks instantly, fades to 0 over DEATH_FLASH_MS. */
+function computeDeathFlash(deathAt: number, now: number): number {
+  if (deathAt === 0) return 0;
+  const t = now - deathAt;
+  if (t < 0 || t >= DEATH_FLASH_MS) return 0;
+  return 0.78 * (1 - t / DEATH_FLASH_MS);
 }
 
 /* ------------------------------------------------------------------ */
