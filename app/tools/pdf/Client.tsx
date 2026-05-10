@@ -5,7 +5,7 @@ import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { formatBytes } from "@/lib/format";
 
-type Mode = "merge" | "extract";
+type Mode = "merge" | "extract" | "split";
 
 type LoadedPdf = {
   id: string;
@@ -23,7 +23,8 @@ export default function PdfPage() {
         <div className="flex flex-wrap gap-2">
           {([
             { id: "merge", label: "Merge", sub: "combine PDFs" },
-            { id: "extract", label: "Extract", sub: "pull pages out" },
+            { id: "extract", label: "Extract", sub: "keep / drop pages" },
+            { id: "split", label: "Split", sub: "one PDF per page" },
           ] as { id: Mode; label: string; sub: string }[]).map((m) => (
             <button
               key={m.id}
@@ -47,7 +48,9 @@ export default function PdfPage() {
           ))}
         </div>
 
-        {mode === "merge" ? <MergePane /> : <ExtractPane />}
+        {mode === "merge" && <MergePane />}
+        {mode === "extract" && <ExtractPane />}
+        {mode === "split" && <SplitPane />}
 
         <p className="text-xs text-ink-muted">
           Everything happens in your browser — your files never leave this
@@ -58,22 +61,32 @@ export default function PdfPage() {
   );
 }
 
+/* -------------------------------------------------------------------------
+ * Merge — many PDFs in, one PDF out. Reorder via drag (desktop) or ↑/↓
+ * buttons (mobile). The ↑/↓ buttons stay because HTML5 drag-and-drop
+ * doesn't work on touch screens.
+ * -----------------------------------------------------------------------*/
+
 function MergePane() {
   const [pdfs, setPdfs] = useState<LoadedPdf[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<{ url: string; size: number } | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     return () => {
-      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      if (result) URL.revokeObjectURL(result.url);
     };
-  }, [resultUrl]);
+  }, [result]);
 
   const addFiles = useCallback(async (files: FileList | File[]) => {
     setError(null);
-    const list = Array.from(files).filter((f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
+    const list = Array.from(files).filter(
+      (f) =>
+        f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"),
+    );
     if (list.length === 0) {
       setError("Drop a PDF, please.");
       return;
@@ -108,6 +121,18 @@ function MergePane() {
     });
   }, []);
 
+  const reorder = useCallback((from: number, to: number) => {
+    if (from === to) return;
+    setPdfs((prev) => {
+      if (from < 0 || from >= prev.length) return prev;
+      if (to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
+
   const remove = useCallback((id: string) => {
     setPdfs((prev) => prev.filter((p) => p.id !== id));
   }, []);
@@ -127,15 +152,23 @@ function MergePane() {
       }
       const bytes = await out.save();
       // pdf-lib returns Uint8Array; convert via slicing the underlying buffer.
-      const blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type: "application/pdf" });
-      if (resultUrl) URL.revokeObjectURL(resultUrl);
-      setResultUrl(URL.createObjectURL(blob));
+      const blob = new Blob(
+        [
+          bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ) as ArrayBuffer,
+        ],
+        { type: "application/pdf" },
+      );
+      if (result) URL.revokeObjectURL(result.url);
+      setResult({ url: URL.createObjectURL(blob), size: blob.size });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Merge failed.");
     } finally {
       setBusy(false);
     }
-  }, [pdfs, resultUrl]);
+  }, [pdfs, result]);
 
   const totalPages = pdfs.reduce((a, p) => a + p.pageCount, 0);
 
@@ -182,7 +215,35 @@ function MergePane() {
         <ol className="flex flex-col gap-2">
           {pdfs.map((p, i) => (
             <li key={p.id}>
-              <div className="card-chunk flex items-center gap-3 rounded-[var(--radius-card)] bg-cream p-3">
+              <div
+                draggable
+                onDragStart={(e) => {
+                  setDragIdx(i);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", String(i));
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const from = Number(e.dataTransfer.getData("text/plain"));
+                  if (Number.isInteger(from)) reorder(from, i);
+                  setDragIdx(null);
+                }}
+                onDragEnd={() => setDragIdx(null)}
+                className={`card-chunk flex cursor-grab items-center gap-3 rounded-[var(--radius-card)] bg-cream p-3 active:cursor-grabbing ${
+                  dragIdx === i ? "opacity-40" : ""
+                }`}
+              >
+                <span
+                  className="select-none text-ink-muted"
+                  aria-hidden
+                  title="Drag to reorder"
+                >
+                  ⋮⋮
+                </span>
                 <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink bg-teal-soft font-display text-xs font-extrabold">
                   {i + 1}
                 </span>
@@ -244,12 +305,14 @@ function MergePane() {
         </div>
       )}
 
-      {resultUrl && (
+      {result && (
         <div className="card-chunk flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] bg-teal-soft p-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">✓</div>
-          <p className="flex-1 font-bold">Ready.</p>
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">
+            ✓
+          </div>
+          <p className="flex-1 font-bold">Ready · {formatBytes(result.size)}</p>
           <a
-            href={resultUrl}
+            href={result.url}
             download="merged.pdf"
             className="btn-chunk rounded-[var(--radius-button)] bg-teal px-5 py-2 font-display text-sm font-extrabold text-cream"
           >
@@ -261,73 +324,116 @@ function MergePane() {
   );
 }
 
+/* -------------------------------------------------------------------------
+ * Extract — pick one PDF, type a page range, get a slimmer PDF back.
+ * "Keep" outputs only the listed pages; "Remove" outputs everything except
+ * the listed pages. Same parser, inverted.
+ * -----------------------------------------------------------------------*/
+
+type ExtractAction = "keep" | "remove";
+
 function ExtractPane() {
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer | null>(null);
   const [pageRange, setPageRange] = useState<string>("");
+  const [action, setAction] = useState<ExtractAction>("keep");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<{ url: string; size: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     return () => {
-      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      if (result) URL.revokeObjectURL(result.url);
     };
-  }, [resultUrl]);
+  }, [result]);
 
-  const acceptFile = useCallback(async (f: File) => {
-    setError(null);
-    if (resultUrl) URL.revokeObjectURL(resultUrl);
-    setResultUrl(null);
-    if (!(f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))) {
-      setError("That doesn't look like a PDF.");
-      return;
-    }
-    try {
-      const { PDFDocument } = await import("pdf-lib");
-      const buf = await f.arrayBuffer();
-      const doc = await PDFDocument.load(buf);
-      setArrayBuffer(buf);
-      setPdf({
-        id: `${f.name}-${Date.now()}`,
-        file: f,
-        pageCount: doc.getPageCount(),
-      });
-      setPageRange(`1-${doc.getPageCount()}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't read that PDF.");
-    }
-  }, [resultUrl]);
+  const acceptFile = useCallback(
+    async (f: File) => {
+      setError(null);
+      if (result) URL.revokeObjectURL(result.url);
+      setResult(null);
+      if (
+        !(
+          f.type === "application/pdf" ||
+          f.name.toLowerCase().endsWith(".pdf")
+        )
+      ) {
+        setError("That doesn't look like a PDF.");
+        return;
+      }
+      try {
+        const { PDFDocument } = await import("pdf-lib");
+        const buf = await f.arrayBuffer();
+        const doc = await PDFDocument.load(buf);
+        setArrayBuffer(buf);
+        setPdf({
+          id: `${f.name}-${Date.now()}`,
+          file: f,
+          pageCount: doc.getPageCount(),
+        });
+        setPageRange(`1-${doc.getPageCount()}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't read that PDF.");
+      }
+    },
+    [result],
+  );
 
   const parsedPages = useMemo(() => {
     if (!pdf) return null;
     return parsePageRange(pageRange, pdf.pageCount);
   }, [pageRange, pdf]);
 
+  // Final pages after the keep/remove inversion.
+  const finalPages = useMemo(() => {
+    if (!pdf || !parsedPages || parsedPages.error) return [];
+    if (action === "keep") return parsedPages.pages;
+    const set = new Set(parsedPages.pages);
+    const inverted: number[] = [];
+    for (let i = 1; i <= pdf.pageCount; i++) {
+      if (!set.has(i)) inverted.push(i);
+    }
+    return inverted;
+  }, [pdf, parsedPages, action]);
+
   const extract = useCallback(async () => {
-    if (!pdf || !arrayBuffer || !parsedPages || parsedPages.error || parsedPages.pages.length === 0) return;
+    if (
+      !pdf ||
+      !arrayBuffer ||
+      !parsedPages ||
+      parsedPages.error ||
+      finalPages.length === 0
+    ) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const { PDFDocument } = await import("pdf-lib");
       const src = await PDFDocument.load(arrayBuffer);
       const out = await PDFDocument.create();
-      const indices = parsedPages.pages.map((p) => p - 1);
+      const indices = finalPages.map((p) => p - 1);
       const copied = await out.copyPages(src, indices);
       for (const c of copied) out.addPage(c);
       const bytes = await out.save();
-      const blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], {
-        type: "application/pdf",
-      });
-      if (resultUrl) URL.revokeObjectURL(resultUrl);
-      setResultUrl(URL.createObjectURL(blob));
+      const blob = new Blob(
+        [
+          bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ) as ArrayBuffer,
+        ],
+        { type: "application/pdf" },
+      );
+      if (result) URL.revokeObjectURL(result.url);
+      setResult({ url: URL.createObjectURL(blob), size: blob.size });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Extract failed.");
     } finally {
       setBusy(false);
     }
-  }, [pdf, arrayBuffer, parsedPages, resultUrl]);
+  }, [pdf, arrayBuffer, parsedPages, finalPages, result]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -366,7 +472,9 @@ function ExtractPane() {
       ) : (
         <>
           <div className="card-chunk flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] bg-cream p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">▤</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">
+              ▤
+            </div>
             <div className="min-w-0 flex-1">
               <p className="truncate font-display text-base font-bold">
                 {pdf.file.name}
@@ -381,8 +489,8 @@ function ExtractPane() {
                 setPdf(null);
                 setArrayBuffer(null);
                 setPageRange("");
-                if (resultUrl) URL.revokeObjectURL(resultUrl);
-                setResultUrl(null);
+                if (result) URL.revokeObjectURL(result.url);
+                setResult(null);
               }}
               className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-sm font-semibold transition-colors hover:bg-cream-deep"
             >
@@ -391,11 +499,41 @@ function ExtractPane() {
           </div>
 
           <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Action
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setAction("keep")}
+                className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
+                  action === "keep"
+                    ? "bg-teal text-cream"
+                    : "bg-cream hover:bg-teal-soft"
+                }`}
+              >
+                Keep these pages
+              </button>
+              <button
+                type="button"
+                onClick={() => setAction("remove")}
+                className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
+                  action === "remove"
+                    ? "bg-teal text-cream"
+                    : "bg-cream hover:bg-teal-soft"
+                }`}
+              >
+                Remove these pages
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
             <label
               htmlFor="page-range"
               className="text-xs font-semibold uppercase tracking-wide text-ink-muted"
             >
-              Pages to keep
+              Pages
             </label>
             <input
               id="page-range"
@@ -406,10 +544,17 @@ function ExtractPane() {
               className="card-chunk rounded-[var(--radius-card)] bg-cream px-4 py-2 font-mono text-base focus:outline-none"
             />
             {parsedPages && parsedPages.error ? (
-              <p className="text-xs font-semibold text-tomato">{parsedPages.error}</p>
+              <p className="text-xs font-semibold text-tomato">
+                {parsedPages.error}
+              </p>
             ) : parsedPages ? (
               <p className="text-xs text-ink-muted">
-                {parsedPages.pages.length} page{parsedPages.pages.length === 1 ? "" : "s"}: {summariseRange(parsedPages.pages)}
+                {action === "keep" ? "Keeping " : "Removing "}
+                {parsedPages.pages.length} page
+                {parsedPages.pages.length === 1 ? "" : "s"}:{" "}
+                {summariseRange(parsedPages.pages)} · output:{" "}
+                {finalPages.length} page
+                {finalPages.length === 1 ? "" : "s"}
               </p>
             ) : null}
           </div>
@@ -423,19 +568,31 @@ function ExtractPane() {
           <button
             type="button"
             onClick={extract}
-            disabled={busy || !parsedPages || !!parsedPages.error || parsedPages.pages.length === 0}
+            disabled={
+              busy ||
+              !parsedPages ||
+              !!parsedPages.error ||
+              finalPages.length === 0
+            }
             className="btn-chunk self-start rounded-[var(--radius-button)] bg-teal px-6 py-3 font-display text-base font-extrabold text-cream disabled:opacity-60"
           >
-            {busy ? "Extracting…" : "Extract pages"}
+            {busy ? "Working…" : action === "keep" ? "Extract pages" : "Remove pages"}
           </button>
 
-          {resultUrl && (
+          {result && (
             <div className="card-chunk flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] bg-teal-soft p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">✓</div>
-              <p className="flex-1 font-bold">Ready.</p>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">
+                ✓
+              </div>
+              <p className="flex-1 font-bold">
+                Ready · {finalPages.length} page
+                {finalPages.length === 1 ? "" : "s"} · {formatBytes(result.size)}
+              </p>
               <a
-                href={resultUrl}
-                download={`${pdf.file.name.replace(/\.pdf$/i, "")}-extract.pdf`}
+                href={result.url}
+                download={`${pdf.file.name.replace(/\.pdf$/i, "")}-${
+                  action === "keep" ? "extract" : "trimmed"
+                }.pdf`}
                 className="btn-chunk rounded-[var(--radius-button)] bg-teal px-5 py-2 font-display text-sm font-extrabold text-cream"
               >
                 Download
@@ -447,6 +604,245 @@ function ExtractPane() {
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------
+ * Split — one PDF in, many PDFs out (one per page or per chunk),
+ * delivered as a zip.
+ * -----------------------------------------------------------------------*/
+
+const CHUNK_PRESETS = [1, 2, 5, 10];
+
+function SplitPane() {
+  const [pdf, setPdf] = useState<LoadedPdf | null>(null);
+  const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer | null>(null);
+  const [chunkSize, setChunkSize] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ url: string; size: number; count: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (result) URL.revokeObjectURL(result.url);
+    };
+  }, [result]);
+
+  const acceptFile = useCallback(
+    async (f: File) => {
+      setError(null);
+      if (result) URL.revokeObjectURL(result.url);
+      setResult(null);
+      if (
+        !(
+          f.type === "application/pdf" ||
+          f.name.toLowerCase().endsWith(".pdf")
+        )
+      ) {
+        setError("That doesn't look like a PDF.");
+        return;
+      }
+      try {
+        const { PDFDocument } = await import("pdf-lib");
+        const buf = await f.arrayBuffer();
+        const doc = await PDFDocument.load(buf);
+        setArrayBuffer(buf);
+        setPdf({
+          id: `${f.name}-${Date.now()}`,
+          file: f,
+          pageCount: doc.getPageCount(),
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't read that PDF.");
+      }
+    },
+    [result],
+  );
+
+  const outputCount = pdf ? Math.ceil(pdf.pageCount / chunkSize) : 0;
+
+  const split = useCallback(async () => {
+    if (!pdf || !arrayBuffer) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const [{ PDFDocument }, JSZipMod] = await Promise.all([
+        import("pdf-lib"),
+        import("jszip"),
+      ]);
+      const JSZip = JSZipMod.default;
+      const src = await PDFDocument.load(arrayBuffer);
+      const total = src.getPageCount();
+      const zip = new JSZip();
+      const baseName = pdf.file.name.replace(/\.pdf$/i, "");
+      const padWidth = String(total).length;
+      let chunkIdx = 0;
+      for (let start = 0; start < total; start += chunkSize) {
+        chunkIdx++;
+        const end = Math.min(start + chunkSize, total);
+        const out = await PDFDocument.create();
+        const indices: number[] = [];
+        for (let p = start; p < end; p++) indices.push(p);
+        const pages = await out.copyPages(src, indices);
+        for (const pg of pages) out.addPage(pg);
+        const bytes = await out.save();
+        const buf = bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer;
+        const filename =
+          chunkSize === 1
+            ? `${baseName}-page-${String(start + 1).padStart(padWidth, "0")}.pdf`
+            : `${baseName}-${String(start + 1).padStart(padWidth, "0")}-to-${String(end).padStart(padWidth, "0")}.pdf`;
+        zip.file(filename, buf);
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      if (result) URL.revokeObjectURL(result.url);
+      setResult({
+        url: URL.createObjectURL(zipBlob),
+        size: zipBlob.size,
+        count: chunkIdx,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Split failed.");
+    } finally {
+      setBusy(false);
+    }
+  }, [pdf, arrayBuffer, chunkSize, result]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {!pdf ? (
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f) acceptFile(f);
+          }}
+          className="card-chunk flex flex-col items-center gap-3 rounded-[var(--radius-card)] bg-cream p-8 text-center"
+        >
+          <p className="font-display text-xl font-extrabold tracking-tight sm:text-2xl">
+            Drop a PDF to split
+          </p>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="btn-chunk rounded-[var(--radius-button)] bg-teal px-5 py-2 font-display text-sm font-extrabold text-cream"
+          >
+            Choose a file
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) acceptFile(f);
+              e.currentTarget.value = "";
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="card-chunk flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] bg-cream p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">
+              ▤
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-base font-bold">
+                {pdf.file.name}
+              </p>
+              <p className="text-sm text-ink-soft">
+                {pdf.pageCount} pages · {formatBytes(pdf.file.size)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPdf(null);
+                setArrayBuffer(null);
+                if (result) URL.revokeObjectURL(result.url);
+                setResult(null);
+              }}
+              className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-sm font-semibold transition-colors hover:bg-cream-deep"
+            >
+              Pick another
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Pages per file
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {CHUNK_PRESETS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setChunkSize(n)}
+                  className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
+                    chunkSize === n
+                      ? "bg-teal text-cream"
+                      : "bg-cream hover:bg-teal-soft"
+                  }`}
+                >
+                  {n === 1 ? "1 (per page)" : `${n}`}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-ink-muted">
+              Output: {outputCount} PDF{outputCount === 1 ? "" : "s"}, delivered
+              as a single zip.
+            </p>
+          </div>
+
+          {error && (
+            <p className="rounded-[var(--radius-card)] border-2 border-tomato bg-tomato-soft p-3 text-sm font-medium">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={split}
+            disabled={busy || outputCount === 0}
+            className="btn-chunk self-start rounded-[var(--radius-button)] bg-teal px-6 py-3 font-display text-base font-extrabold text-cream disabled:opacity-60"
+          >
+            {busy
+              ? "Splitting…"
+              : `Split into ${outputCount} PDF${outputCount === 1 ? "" : "s"}`}
+          </button>
+
+          {result && (
+            <div className="card-chunk flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] bg-teal-soft p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-teal text-lg text-cream">
+                ✓
+              </div>
+              <p className="flex-1 font-bold">
+                Ready · {result.count} PDFs · {formatBytes(result.size)} (zip)
+              </p>
+              <a
+                href={result.url}
+                download={`${pdf.file.name.replace(/\.pdf$/i, "")}-split.zip`}
+                className="btn-chunk rounded-[var(--radius-button)] bg-teal px-5 py-2 font-display text-sm font-extrabold text-cream"
+              >
+                Download
+              </a>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Page-range parser. Accepts comma-separated tokens, each either a single
+ * page (`5`) or an inclusive range (`8-10`). Validates against the source
+ * total. Returns a sorted, deduped list of 1-based page numbers, or an
+ * error string ready to surface to the user.
+ * -----------------------------------------------------------------------*/
 
 function parsePageRange(
   input: string,
