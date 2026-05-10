@@ -24,7 +24,7 @@ export default function Footer() {
 
         <div className="flex flex-col-reverse items-start justify-between gap-3 border-t border-ink/15 pt-5 text-xs text-ink-muted sm:flex-row sm:items-center">
           <p>© {year}</p>
-          <p>potentially useful · all running locally in your browser</p>
+          <p>potentially useful</p>
         </div>
       </div>
     </footer>
