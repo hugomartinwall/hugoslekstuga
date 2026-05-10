@@ -69,6 +69,10 @@ export type BotState = {
   hasTarget: boolean;
   /** Wander heading (radians) when nothing of interest is in range. */
   wanderAngle: number;
+  /** True when actively hunting a smaller snake. Foraging is paused. */
+  hunting: boolean;
+  /** id of the prey snake while hunting. Empty string otherwise. */
+  huntTargetId: string;
 };
 
 export type Snake = {
@@ -186,6 +190,8 @@ export class Game {
       targetY: 0,
       hasTarget: false,
       wanderAngle: Math.random() * Math.PI * 2,
+      hunting: false,
+      huntTargetId: "",
     };
     return snake;
   }
