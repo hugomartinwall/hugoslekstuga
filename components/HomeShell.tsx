@@ -9,9 +9,9 @@ const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
 /**
  * The homepage IS the map.
  *
- * Map fills the viewport (minus nav). Hero floats top-left as a solid-ish
- * card. Two small icon balls float top-right: re-cluster (pink ⥁) and
- * Surprise (yellow ?). The cluster legend keeps the bottom-center.
+ * Map fills the viewport (minus nav). Two small icon balls float
+ * top-right: re-cluster (pink ⥁) and Surprise (yellow ?). The cluster
+ * legend keeps the bottom-center.
  *
  * No grid/map toggle: the search palette (⌘K) covers the linear-list use
  * case, so committing fully to the map keeps the page playful.
@@ -26,22 +26,8 @@ export default function HomeShell() {
         <ToolMap fullBleed resetTrigger={resetTrigger} />
       </div>
 
-      {/* Top zone: hero on the left, the two icon balls on the right. */}
-      <div className="pointer-events-none absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3 sm:left-6 sm:right-6 sm:top-6">
-        <div className="card-chunk pointer-events-auto max-w-md rounded-[var(--radius-card)] bg-cream/95 p-4 backdrop-blur sm:p-6">
-          <h1 className="font-display text-3xl font-extrabold leading-[0.95] tracking-tight text-ink sm:text-5xl lg:text-6xl">
-            Pick a{" "}
-            <span className="text-tomato">dot</span>.{" "}
-            <span className="block sm:inline">
-              Any{" "}
-              <span className="text-blue">dot</span>.
-            </span>
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-ink-soft sm:mt-3 sm:text-base">
-            Each one is a tiny browser tool that does one thing well.
-          </p>
-        </div>
-
+      {/* Top-right: re-cluster + surprise balls. */}
+      <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-start gap-2 sm:right-6 sm:top-6">
         <div className="pointer-events-auto flex items-center gap-2">
           <ReclusterButton onClick={() => setResetTrigger((t) => t + 1)} />
           <SurpriseButton />
