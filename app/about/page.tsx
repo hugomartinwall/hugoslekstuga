@@ -20,14 +20,22 @@ export default function AboutPage() {
     <div className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
       {/* Hero */}
       <header>
-        <h1 className="font-display text-3xl font-extrabold leading-[1.05] tracking-tight sm:text-4xl lg:text-5xl">
-          You&rsquo;ve found a small corner of the internet for things I made
-          for <span className="text-tomato">fun</span>.
+        <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
+          Made for <span className="text-tomato">fun</span>.
         </h1>
       </header>
 
+      {/* Hugo, in passing */}
+      <section className="mt-10 max-w-xl">
+        <p className="text-base leading-relaxed text-ink-soft sm:text-lg">
+          Hugo, by the way. A designer working out of Stockholm. Spends the
+          off-hours on fonts, colours, and weekend experiments that
+          occasionally turn into something worth shipping.
+        </p>
+      </section>
+
       {/* Things you won't find here */}
-      <section className="mt-10 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-6 sm:p-8">
+      <section className="mt-12 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-6 sm:p-8">
         <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
           Things you won&rsquo;t find here
         </h2>
