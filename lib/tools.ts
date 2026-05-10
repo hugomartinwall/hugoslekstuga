@@ -165,6 +165,15 @@ export const tools: Tool[] = [
     color: "purple",
     emoji: "◉",
   },
+  {
+    slug: "noodle",
+    title: "Noodle",
+    tagline: "Eat dots. Don't get bumped.",
+    description:
+      "Real-time multiplayer snake. You move forward at all times — aim with the mouse or your finger, eat dots to grow, hit another snake's body and you die. Hold space to boost (costs length). One shared room, pasta-named bots fill it when you're alone.",
+    color: "green",
+    emoji: "~",
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

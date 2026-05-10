@@ -495,13 +495,13 @@ export default function ToolMap({
             const hoverScale = isHovered ? 1.08 : 1;
             const bounceScale = isBouncing ? 1.3 : 1;
             const scale = baseScale * hoverScale * bounceScale;
-            // Munch is a game, not a tool — render it bigger with a
-            // pulsing outer ring so it reads as a different category
-            // of thing on the map without needing a label or legend.
-            const isMunch = n.tool.slug === "munch";
-            const r = isMunch ? NODE_R * 1.5 : NODE_R;
-            const labelY = isMunch ? r + 18 : LABEL_OFFSET;
-            const emojiSize = isMunch ? 28 : 20;
+            // Games (munch, noodle) are a different category of thing
+            // — render them bigger with a pulsing outer ring so they
+            // read as games at a glance without needing a legend.
+            const isGame = n.tool.slug === "munch" || n.tool.slug === "noodle";
+            const r = isGame ? NODE_R * 1.5 : NODE_R;
+            const labelY = isGame ? r + 18 : LABEL_OFFSET;
+            const emojiSize = isGame ? 28 : 20;
             const color = COLOR_HEX[n.tool.color];
 
             return (
@@ -532,7 +532,7 @@ export default function ToolMap({
               >
                 {/* Munch's pulsing live-multiplayer ring (under the
                     shadow so it radiates outward without lifting). */}
-                {isMunch && (
+                {isGame && (
                   <circle
                     cx={0}
                     cy={0}
@@ -562,7 +562,7 @@ export default function ToolMap({
                   r={r}
                   fill={color}
                   stroke="#1a1812"
-                  strokeWidth={isHovered ? 3 : isMunch ? 3 : 2}
+                  strokeWidth={isHovered ? 3 : isGame ? 3 : 2}
                 />
                 <text
                   textAnchor="middle"
@@ -578,14 +578,14 @@ export default function ToolMap({
                 <text
                   y={labelY}
                   textAnchor="middle"
-                  fontSize={isMunch ? 14 : 13}
+                  fontSize={isGame ? 14 : 13}
                   fill="#1a1812"
                   pointerEvents="none"
                   style={{
                     fontFamily: "var(--font-display)",
                     fontWeight: 800,
-                    letterSpacing: isMunch ? "0.04em" : "-0.01em",
-                    textTransform: isMunch ? "uppercase" : undefined,
+                    letterSpacing: isGame ? "0.04em" : "-0.01em",
+                    textTransform: isGame ? "uppercase" : undefined,
                   }}
                 >
                   {n.tool.title}
