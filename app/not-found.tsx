@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { tools } from "@/lib/tools";
-import { CLUSTER_ORDER, CLUSTERS, pathFor } from "@/lib/clusters";
+import { pathFor } from "@/lib/clusters";
 import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
 
 export const metadata: Metadata = {
@@ -87,24 +87,6 @@ export default function NotFound() {
         </ul>
       </section>
 
-      <section className="mt-12 rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-5 text-sm text-ink-soft">
-        <p>
-          The {CLUSTER_ORDER.length} themes:{" "}
-          {CLUSTER_ORDER.map((id, i) => {
-            const c = CLUSTERS[id];
-            return (
-              <span key={id}>
-                <span
-                  className="mr-0.5 inline-block h-2 w-2 rounded-full align-middle"
-                  style={{ background: c.color, border: "1px solid #1a1812" }}
-                />{" "}
-                <span className="font-semibold text-ink">{c.label}</span>
-                {i < CLUSTER_ORDER.length - 1 ? " · " : "."}
-              </span>
-            );
-          })}
-        </p>
-      </section>
     </div>
   );
 }

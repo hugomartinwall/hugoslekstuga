@@ -39,16 +39,22 @@ same way as the rules: don't quietly reword without asking.
 ## Source-of-truth files
 
 - `lib/tools.ts` — tool registry (slug, title, tagline, description, color, emoji)
-- `lib/clusters.ts` — cluster id per slug + `pathFor()` for /tools vs /games routing
-- `lib/links.ts` — force-graph edges between tools
+- `lib/clusters.ts` — `pathFor()` resolver for /tools vs /games routing.
+  The file is named after the old cluster system — visible categories
+  on the homepage map were retired. Only the path helper remains.
 - `lib/colors.ts` — single source for the 8 accent colours
 - `lib/use-local-storage-state.ts` — canonical persistence hook
 - `lib/format.ts`, `lib/dates.ts`, `lib/math.ts` — shared helpers
   (`formatBytes`, `localISODate`, `clamp`)
 
-Adding a tool means editing the registry, the cluster map, and at least one
-link edge. Use the helpers in `lib/colors.ts` — never hand-roll a
+Adding a tool means: register in `lib/tools.ts`, decide if it's a game
+(then add its slug to the `GAME_SLUGS` set in `lib/clusters.ts`), and
+ship its page. Use the helpers in `lib/colors.ts` — never hand-roll a
 `Record<ToolColor, string>` again.
+
+The homepage map (components/ToolMap.tsx) is a free-floating swarm:
+no clusters, no edges between dots, names visible under each. Physics
+is centre pull + cursor pull (interactive gravity) + mutual repel.
 
 ## Colour rule
 

@@ -4,23 +4,30 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
-import { LINKS, neighboursOf } from "@/lib/links";
-import {
-  CLUSTERS,
-  CLUSTER_ORDER,
-  TOOL_CLUSTER,
-  pathFor,
-  preferredTextOnCluster,
-  type ClusterId,
-} from "@/lib/clusters";
+import { pathFor } from "@/lib/clusters";
 import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
 import { clamp } from "@/lib/math";
+
+/**
+ * Free-floating swarm of tool dots.
+ *
+ * No edges, no clusters, no legend. Each dot shows its name underneath
+ * so you don't have to hover to read it. Physics is just three forces:
+ *
+ *   1. centre pull   — gentle gravity toward the canvas centre
+ *   2. cursor pull   — when your cursor is on the canvas, dots are
+ *                      drawn toward it as well (the "interactive
+ *                      gravity"). Move your mouse, the swarm leans;
+ *                      move it off, the swarm drifts back to centre.
+ *   3. mutual repel  — dots push apart so labels don't overlap.
+ *
+ * Plus drag-to-fling, click-to-open, idle wobble.
+ */
 
 type Node = {
   tool: Tool;
@@ -32,8 +39,6 @@ type Node = {
   phase: number;
   entranceStart: number;
   hasSparkled: boolean;
-  /** Smoothed display lean angle, in degrees. */
-  lean: number;
   dragVx: number;
   dragVy: number;
   dragLastT: number;
@@ -78,32 +83,17 @@ type Ripple = {
 
 const NODE_R = 26;
 const SHADOW_DY = 4;
-// Physics for the 16-node graph after a second polish pass — looser
-// and smoother than the first pass, addressing "still jumpy + too
-// tight" feedback.
+const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
+// Physics — looser, calmer pass without spring/edge forces.
 //
-// Looseness (more breathing room):
-// - TARGET_DIST way up (170 → 230). Linked nodes settle further apart.
-// - REPEL up (2800 → 3600). Stronger push so unconnected pairs spread.
-// - CENTER_PULL DOWN (0.0055 → 0.003). Weaker gravity = more spread.
-//   Nodes still stay on canvas via the wall clamp; they just don't
-//   get yanked toward the middle.
-// - SPRING_K down (0.028 → 0.018). Softer edge springs. Linked nodes
-//   bob toward each other rather than snap.
-//
-// Smoothness (less jumpy):
-// - DAMPING up (0.94 → 0.96). Even more glide.
-// - WOBBLE_FORCE halved (0.025 → 0.012) and timing slowed (the
-//   `now * 0.0008` inline below → `now * 0.0005`). Idle motion is now
-//   long-period drift, not visible jitter.
-// - TILT_VELOCITY_GAIN down (1.0 → 0.7), TILT_MAX_DEG down (12 → 8).
-//   Smaller lean per unit of velocity = less twitch on every nudge.
-// - CURSOR_MAGNET_FORCE down (0.13 → 0.08). Gentler tug toward cursor.
-// - MAX_V down (11 → 9). Slower velocity cap caps the residual glide.
-const TARGET_DIST = 230;
-const SPRING_K = 0.018;
-const REPEL = 3600;
-const CENTER_PULL = 0.003;
+// CENTER_PULL is the always-on gravity toward the canvas centre.
+// CURSOR_PULL adds a secondary pull toward the cursor (the
+// "interactive gravity"). The two compose: with cursor on canvas,
+// equilibrium is roughly the midpoint of cursor and centre. With
+// cursor off, equilibrium is the centre.
+const CENTER_PULL = 0.0025;
+const CURSOR_PULL = 0.0035;
+const REPEL = 4800;
 const DAMPING = 0.96;
 const WOBBLE_FORCE = 0.012;
 const WOBBLE_RATE = 0.0005;
@@ -118,13 +108,7 @@ const PARTICLE_GRAVITY = 0.06;
 const PARTICLE_FRICTION = 0.93;
 const SPARKLE_LIFE_DECAY = 0.045;
 const SPARKLE_FRICTION = 0.9;
-const CURSOR_MAGNET_RADIUS = 140;
-const CURSOR_MAGNET_FORCE = 0.08;
 const RECLUSTER_BURST_SPEED = 9;
-// Lean (tilt) follows velocity, smoothed.
-const TILT_VELOCITY_GAIN = 0.7;
-const TILT_MAX_DEG = 8;
-const TILT_LERP = 0.15;
 /** How aggressively the dragged node chases the cursor each frame. */
 const DRAG_LERP = 0.5;
 /** Hard cap on per-frame velocity. */
@@ -156,7 +140,6 @@ export default function ToolMap({
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
   const [, tick] = useState(0);
   const [hovered, setHovered] = useState<string | null>(null);
-  const [activeCluster, setActiveCluster] = useState<ClusterId | null>(null);
   const [bouncingSlug, setBouncingSlug] = useState<string | null>(null);
   const nodesRef = useRef<Node[]>([]);
   const particlesRef = useRef<Particle[]>([]);
@@ -168,12 +151,6 @@ export default function ToolMap({
   const reduceMotionRef = useRef(false);
 
   const nodeBySlug = useRef<Map<string, Node>>(new Map());
-
-  const neighbourMap = useMemo(() => {
-    const m = new Map<string, Set<string>>();
-    for (const t of tools) m.set(t.slug, neighboursOf(t.slug));
-    return m;
-  }, []);
 
   useLayoutEffect(() => {
     if (!containerRef.current) return;
@@ -224,7 +201,6 @@ export default function ToolMap({
         phase: Math.random() * Math.PI * 2,
         entranceStart: now + i * ENTRANCE_STAGGER,
         hasSparkled: false,
-        lean: 0,
         dragVx: 0,
         dragVy: 0,
         dragLastT: 0,
@@ -259,14 +235,10 @@ export default function ToolMap({
       const wobbleAmplitude = reduceMotionRef.current ? 0 : WOBBLE_FORCE;
       step(
         nodesRef.current,
-        nodeBySlug.current,
-        LINKS,
         size.w,
         size.h,
         wobbleAmplitude,
-        dragRef.current === null,
         cursorRef.current,
-        dragRef.current?.slug,
       );
 
       // Particles.
@@ -347,10 +319,6 @@ export default function ToolMap({
       node.dragLastX = newX;
       node.dragLastY = newY;
 
-      // Don't snap the node's position here — that produces jitter when
-      // pointer events fire irregularly between animation frames. Just
-      // store the target; the raf loop will lerp the node toward it at
-      // a fixed cadence.
       drag.targetX = newX;
       drag.targetY = newY;
     },
@@ -461,9 +429,7 @@ export default function ToolMap({
     initNodes(size.w, size.h, true);
   }, [size.w, size.h]);
 
-  // External re-cluster trigger — page increments resetTrigger and the map
-  // shakes itself out. Skip the very first run (resetTrigger starts at 0
-  // and we don't want to re-cluster on mount).
+  // External re-cluster trigger.
   const lastResetRef = useRef(resetTrigger);
   useEffect(() => {
     if (resetTrigger !== lastResetRef.current && initializedRef.current) {
@@ -472,7 +438,6 @@ export default function ToolMap({
     }
   }, [resetTrigger, reset]);
 
-  const hoveredNeighbours = hovered ? (neighbourMap.get(hovered) ?? new Set()) : null;
   const now = performance.now();
 
   return (
@@ -496,74 +461,6 @@ export default function ToolMap({
         onPointerCancel={onSvgPointerUp}
         style={{ touchAction: "none", userSelect: "none" }}
       >
-        {/* Edges */}
-        <g>
-          {LINKS.map(([from, to]) => {
-            const a = nodeBySlug.current.get(from);
-            const b = nodeBySlug.current.get(to);
-            if (!a || !b) return null;
-            const ent = Math.min(getEntrance(a, now), getEntrance(b, now));
-            if (ent <= 0) return null;
-            const isHi =
-              hovered !== null && (hovered === from || hovered === to);
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const d = Math.sqrt(dx * dx + dy * dy);
-            const stretch = Math.max(0, (d - TARGET_DIST) / TARGET_DIST);
-            const tension = Math.min(1, stretch * 1.6);
-            const cFrom = TOOL_CLUSTER[from];
-            const cTo = TOOL_CLUSTER[to];
-            const sameTheme = cFrom !== undefined && cFrom === cTo;
-            const tintHex = sameTheme && cFrom ? CLUSTERS[cFrom].color : null;
-
-            const clusterMatchA = activeCluster === null || cFrom === activeCluster;
-            const clusterMatchB = activeCluster === null || cTo === activeCluster;
-            const clusterMatchBoth = clusterMatchA && clusterMatchB;
-            const clusterMatchEither = clusterMatchA || clusterMatchB;
-            const clusterDim =
-              activeCluster !== null
-                ? clusterMatchBoth
-                  ? 1
-                  : clusterMatchEither
-                    ? 0.18
-                    : 0.05
-                : 1;
-
-            let stroke: string;
-            let width: number;
-            let baseOpacity: number;
-            if (isHi) {
-              stroke = "#1a1812";
-              width = 2;
-              baseOpacity = 1;
-            } else if (tintHex) {
-              const op = 0.32 + tension * 0.45;
-              stroke = tintHex;
-              width = 1.6 + tension * 2.2;
-              baseOpacity = op;
-            } else {
-              const op = 0.14 + tension * 0.55;
-              stroke = `rgba(26, 24, 18, 1)`;
-              width = 1.2 + tension * 2.2;
-              baseOpacity = op;
-            }
-            return (
-              <line
-                key={`${from}-${to}`}
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                stroke={stroke}
-                strokeWidth={width}
-                strokeLinecap="round"
-                pointerEvents="none"
-                opacity={ent * baseOpacity * clusterDim}
-              />
-            );
-          })}
-        </g>
-
         {/* Click ripples */}
         <g pointerEvents="none">
           {ripplesRef.current.map((r, i) => {
@@ -591,33 +488,19 @@ export default function ToolMap({
         <g>
           {nodesRef.current.map((n) => {
             const isHovered = hovered === n.tool.slug;
-            const isNeighbour = hoveredNeighbours?.has(n.tool.slug);
-            const cluster = TOOL_CLUSTER[n.tool.slug];
-            const dimByHover = hovered !== null && !isHovered && !isNeighbour;
-            const dimByCluster =
-              activeCluster !== null && cluster !== activeCluster;
-            const opacity = dimByCluster ? 0.28 : dimByHover ? 0.45 : 1;
+            const dim = hovered !== null && !isHovered;
+            const opacity = dim ? 0.55 : 1;
             const entrance = getEntrance(n, now);
             const isBouncing = bouncingSlug === n.tool.slug;
-            const isDragging = dragRef.current?.slug === n.tool.slug;
             const baseScale = entrance;
-            const hoverScale = isHovered ? 1.12 : 1;
+            const hoverScale = isHovered ? 1.08 : 1;
             const bounceScale = isBouncing ? 1.3 : 1;
             const scale = baseScale * hoverScale * bounceScale;
-
-            // Velocity-driven lean: smoothly approach the target tilt.
-            const sourceVx = isDragging ? n.dragVx : n.vx;
-            const targetLean = clamp(
-              sourceVx * TILT_VELOCITY_GAIN,
-              -TILT_MAX_DEG,
-              TILT_MAX_DEG,
-            );
-            n.lean = n.lean + (targetLean - n.lean) * TILT_LERP;
 
             return (
               <g
                 key={n.tool.slug}
-                transform={`translate(${n.x}, ${n.y}) rotate(${n.lean.toFixed(2)}) scale(${scale})`}
+                transform={`translate(${n.x}, ${n.y}) scale(${scale})`}
                 onPointerDown={(e) => onSvgPointerDown(e, n.tool.slug)}
                 onPointerEnter={() => setHovered(n.tool.slug)}
                 onPointerLeave={() => setHovered((h) => (h === n.tool.slug ? null : h))}
@@ -658,41 +541,21 @@ export default function ToolMap({
                 >
                   {n.tool.emoji}
                 </text>
-                {isHovered && entrance >= 1 && (
-                  <g pointerEvents="none">
-                    {/* Counter-rotate so the tooltip stays upright. */}
-                    <g transform={`rotate(${(-n.lean).toFixed(2)})`}>
-                      <rect
-                        x={-90}
-                        y={NODE_R + 14}
-                        width={180}
-                        height={48}
-                        rx={10}
-                        fill="#1a1812"
-                      />
-                      <text
-                        x={0}
-                        y={NODE_R + 32}
-                        textAnchor="middle"
-                        fill="#fbf6ee"
-                        fontSize={13}
-                        fontWeight={800}
-                        style={{ fontFamily: "var(--font-display)" }}
-                      >
-                        {n.tool.title}
-                      </text>
-                      <text
-                        x={0}
-                        y={NODE_R + 50}
-                        textAnchor="middle"
-                        fill="rgba(251, 246, 238, 0.75)"
-                        fontSize={11}
-                      >
-                        {truncate(n.tool.tagline, 30)}
-                      </text>
-                    </g>
-                  </g>
-                )}
+                {/* Always-visible name label below the dot */}
+                <text
+                  y={LABEL_OFFSET}
+                  textAnchor="middle"
+                  fontSize={13}
+                  fill="#1a1812"
+                  pointerEvents="none"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 800,
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  {n.tool.title}
+                </text>
               </g>
             );
           })}
@@ -731,40 +594,6 @@ export default function ToolMap({
           </button>
         </div>
       )}
-
-      {/* In fullBleed mode the page renders its own re-cluster button next
-          to the Surprise ball, so we don't need an in-map control. */}
-
-      {/* Cluster legend */}
-      <div className="absolute inset-x-0 bottom-3 flex flex-wrap justify-center gap-1.5 px-3">
-        {CLUSTER_ORDER.map((id) => {
-          const c = CLUSTERS[id];
-          const active = activeCluster === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={active}
-              onClick={() =>
-                setActiveCluster((cur) => (cur === id ? null : id))
-              }
-              className="rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-all"
-              style={{
-                background: active ? c.color : "rgba(251,246,238,0.92)",
-                color: active ? preferredTextOnCluster(id) : "#1a1812",
-                boxShadow: active ? "0 3px 0 0 #1a1812" : "none",
-                transform: active ? "translateY(-1px)" : "none",
-              }}
-            >
-              <span
-                className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
-                style={{ background: c.color, border: "1px solid #1a1812" }}
-              />
-              {c.label}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -796,19 +625,15 @@ function emitSparkle(particles: Particle[], x: number, y: number) {
 
 function step(
   nodes: Node[],
-  byId: Map<string, Node>,
-  links: typeof LINKS,
   width: number,
   height: number,
   wobbleAmp: number,
-  applyWobble: boolean,
   cursor: { x: number; y: number } | null,
-  draggedSlug: string | undefined,
 ): number {
   if (nodes.length === 0) return 0;
   const now = performance.now();
 
-  // Repulsion (O(n²)).
+  // Mutual repulsion (O(n²)) — keeps labels from overlapping.
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
       const a = nodes[i];
@@ -831,61 +656,30 @@ function step(
     }
   }
 
-  // Springs.
-  for (const [from, to] of links) {
-    const a = byId.get(from);
-    const b = byId.get(to);
-    if (!a || !b) continue;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
-    const f = (d - TARGET_DIST) * SPRING_K;
-    const fx = (dx / d) * f;
-    const fy = (dy / d) * f;
-    if (!a.pinned) {
-      a.vx += fx;
-      a.vy += fy;
-    }
-    if (!b.pinned) {
-      b.vx -= fx;
-      b.vy -= fy;
-    }
-  }
-
-  // Cursor magnet — gentle attraction toward cursor for nearby unpinned nodes.
-  // Only when no drag is active (avoids fighting the user).
-  if (cursor !== null && draggedSlug === undefined) {
-    for (const n of nodes) {
-      if (n.pinned) continue;
-      const dx = cursor.x - n.x;
-      const dy = cursor.y - n.y;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      if (d > 8 && d < CURSOR_MAGNET_RADIUS) {
-        const t = 1 - d / CURSOR_MAGNET_RADIUS;
-        const f = CURSOR_MAGNET_FORCE * t * t;
-        n.vx += (dx / d) * f;
-        n.vy += (dy / d) * f;
-      }
-    }
-  }
-
   const cx = width / 2;
   const cy = height / 2;
   const wobbleT = now * WOBBLE_RATE;
-  let totalMotion = 0;
+
   for (const n of nodes) {
     if (n.pinned) continue;
+    // Centre pull — always on, gentle gravity to the canvas centre.
     n.vx += (cx - n.x) * CENTER_PULL;
     n.vy += (cy - n.y) * CENTER_PULL;
-    if (applyWobble && wobbleAmp > 0) {
+    // Cursor pull — when the cursor is on the canvas, dots lean toward
+    // it. The result: with the cursor at the centre of the canvas the
+    // pulls compose with no offset; move the cursor and the swarm
+    // tilts that way; move it off and the swarm drifts back.
+    if (cursor !== null) {
+      n.vx += (cursor.x - n.x) * CURSOR_PULL;
+      n.vy += (cursor.y - n.y) * CURSOR_PULL;
+    }
+    // Idle wobble — long-period drift so the swarm feels alive at rest.
+    if (wobbleAmp > 0) {
       n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
       n.vy += Math.cos(wobbleT * 1.3 + n.phase * 1.7) * wobbleAmp;
     }
     n.vx *= DAMPING;
     n.vy *= DAMPING;
-    // Clamp velocity so a sudden force spike (e.g. a dragged node landing
-    // right next to a stationary one) can't fling neighbours across the
-    // canvas in a single frame.
     if (n.vx > MAX_V) n.vx = MAX_V;
     else if (n.vx < -MAX_V) n.vx = -MAX_V;
     if (n.vy > MAX_V) n.vy = MAX_V;
@@ -893,12 +687,8 @@ function step(
     n.x += n.vx;
     n.y += n.vy;
     n.x = clamp(n.x, NODE_R + 4, width - NODE_R - 4);
-    n.y = clamp(n.y, NODE_R + 4, height - NODE_R - 4);
-    totalMotion += Math.abs(n.vx) + Math.abs(n.vy);
+    // Extra room at the bottom so labels aren't clipped.
+    n.y = clamp(n.y, NODE_R + 4, height - LABEL_OFFSET - 12);
   }
-  return totalMotion;
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+  return 0;
 }
