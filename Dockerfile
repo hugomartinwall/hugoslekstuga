@@ -18,6 +18,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY tsconfig.json ./
 COPY server ./server
 COPY lib/munch ./lib/munch
+COPY lib/noodle ./lib/noodle
 
 # Default port. Fly maps :443 → :8080 via fly.toml's internal_port.
 EXPOSE 8080

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "munch": "tsx server/munch/index.ts"
+    "munch": "tsx server/index.ts"
   },
   "dependencies": {
     "@types/dompurify": "^3.0.5",
