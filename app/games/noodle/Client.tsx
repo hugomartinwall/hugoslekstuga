@@ -911,6 +911,7 @@ function drawScene(
       s.prot,
       s.boosting,
       s.name,
+      s.id,
     );
   }
 
@@ -931,6 +932,7 @@ function drawScene(
       cur.you.protUntil > Date.now(),
       localSelf.boosting,
       null, // no label for self
+      self.id,
     );
   }
 }
@@ -948,6 +950,7 @@ function drawSnake(
   prot: boolean,
   boosting: boolean,
   label: string | null,
+  seed: string,
 ): void {
   if (segments.length === 0) return;
   const lerp = (a: number, b: number) => a + (b - a) * t;
@@ -959,50 +962,71 @@ function drawSnake(
   };
 
   // Build the screen-space points list, head first.
-  const points: { sx: number; sy: number }[] = [];
-  for (let i = 0; i < segments.length; i++) {
+  const N = segments.length;
+  const points: { sx: number; sy: number }[] = new Array(N);
+  for (let i = 0; i < N; i++) {
     const w = interp(i);
     const { sx, sy } = toScreen(w.x, w.y);
-    points.push({ sx, sy });
+    points[i] = { sx, sy };
   }
 
-  // Body — a smooth quadratic-Bezier path, drawn tail → head so the
-  // head sits visually on top. The smoothing is what gives the
-  // worm its fluid look (vs the stiff polyline of v1).
-  const tailFirst: { sx: number; sy: number }[] = [];
-  for (let i = points.length - 1; i >= 0; i--) tailFirst.push(points[i]);
+  // Tapered body — each segment is a circle whose radius linearly
+  // decreases from HEAD_RADIUS at the head to SEGMENT_RADIUS × 0.6 at
+  // the tail. The 0.6 floor (rather than 0.5) keeps adjacent circles
+  // overlapping at SEGMENT_GAP=12 so the silhouette never pinches.
+  // Walking tail → head and drawing ink shell + colored fill per
+  // segment yields a continuous ink outline (the union of shells) and
+  // a continuous coloured silhouette (the union of fills). Every third
+  // segment fills slightly darker — only the tail-side crescent shows
+  // through, reading as subtle scale banding.
+  const headR = HEAD_RADIUS * scale;
+  const tailR = SEGMENT_RADIUS * 0.6 * scale;
+  const radiusAt = (i: number): number => {
+    if (N <= 1) return headR;
+    const t01 = i / (N - 1);
+    return headR + (tailR - headR) * t01;
+  };
+  const dark = darkenHex(color, 0.13);
+  const shell = Math.max(2, scale * 2);
 
-  // Outer ink outline.
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.beginPath();
-  pathThroughPoints(ctx, tailFirst);
-  ctx.lineWidth = (SEGMENT_RADIUS + 2) * 2 * scale;
-  ctx.strokeStyle = "#1a1812";
-  ctx.stroke();
-  // Coloured fill.
-  ctx.lineWidth = SEGMENT_RADIUS * 2 * scale;
-  ctx.strokeStyle = color;
-  ctx.stroke();
+  for (let i = N - 1; i >= 0; i--) {
+    const p = points[i];
+    const r = radiusAt(i);
+    if (r < 0.5) continue;
+    // Ink shell.
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, r + shell, 0, Math.PI * 2);
+    ctx.fillStyle = "#1a1812";
+    ctx.fill();
+    // Coloured fill — every third segment slightly darker.
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
+    ctx.fillStyle = i % 3 === 0 ? dark : color;
+    ctx.fill();
+  }
 
-  // Boost stripe along the body — a thin lighter line down the middle
-  // while sprinting. Subtle, signals "this snake is moving fast."
-  if (boosting) {
+  // Boost stripe — a thin cream highlight running along the spine.
+  // Subtle signal that this snake is sprinting.
+  if (boosting && N >= 2) {
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const tailFirst: { sx: number; sy: number }[] = new Array(N);
+    for (let i = 0; i < N; i++) tailFirst[i] = points[N - 1 - i];
     ctx.beginPath();
     pathThroughPoints(ctx, tailFirst);
-    ctx.lineWidth = Math.max(1.5, SEGMENT_RADIUS * 0.6 * scale);
+    ctx.lineWidth = Math.max(1.5, SEGMENT_RADIUS * 0.45 * scale);
     ctx.strokeStyle = withAlpha("#fbf6ee", 0.55);
     ctx.stroke();
   }
 
-  // Head — bigger circle, eyes facing the heading direction.
-  // Heading derived from segment 0 (head) → segment 1 (next body).
+  // Head — halo, boost glow, eyes (with occasional blink), name label.
+  // The head circle itself was drawn by the body loop (segment 0).
   const head = points[0];
   const next = points[1] ?? head;
   const dx = head.sx - next.sx;
   const dy = head.sy - next.sy;
   const heading = Math.atan2(dy, dx) || 0;
-  drawHead(ctx, head.sx, head.sy, scale, color, prot, boosting, heading, label);
+  drawHead(ctx, head.sx, head.sy, scale, color, prot, boosting, heading, label, seed);
 }
 
 /** Draws a smooth quadratic-Bezier path through the points. The
@@ -1042,6 +1066,7 @@ function drawHead(
   boosting: boolean,
   heading: number,
   label: string | null,
+  seed: string,
 ): void {
   const r = HEAD_RADIUS * scale;
   // Spawn-protection halo.
@@ -1062,18 +1087,12 @@ function drawHead(
     ctx.strokeStyle = withAlpha(color, 0.55);
     ctx.stroke();
   }
-  // Head circle.
-  ctx.beginPath();
-  ctx.arc(sx, sy, r, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "#1a1812";
-  ctx.stroke();
+  // The head circle itself was drawn by the body loop (segment 0).
+  // This function only adds halo, glow, eyes, and the name label.
 
   // Eyes — only big enough to read at scale.
   if (r >= 6) {
-    drawEyes(ctx, sx, sy, r, heading);
+    drawEyes(ctx, sx, sy, r, heading, eyeOpenness(seed));
   }
 
   if (label && r >= 6) {
@@ -1096,16 +1115,21 @@ function drawHead(
 
 /** Two beady eyes, oriented along the heading. White whites with
  *  ink pupils. Pupils sit slightly forward of the centre so the
- *  snake looks like it's looking where it's going. */
+ *  snake looks like it's looking where it's going. The whole eye
+ *  squishes vertically (perpendicular to the heading) for blinks —
+ *  openness ∈ [0, 1] where 0 is fully closed and 1 fully open. */
 function drawEyes(
   ctx: CanvasRenderingContext2D,
   hx: number,
   hy: number,
   headR: number,
   heading: number,
+  openness: number,
 ): void {
   const eyeR = Math.max(1.6, headR * 0.32);
-  const pupilR = Math.max(0.9, eyeR * 0.55);
+  // Smaller pupils relative to whites — reads more "snake-like" than
+  // the previous 0.55, less googly-eyed.
+  const pupilR = Math.max(0.8, eyeR * 0.45);
   const offset = headR * 0.42;
   const fwd = headR * 0.28;
   // Heading basis vectors.
@@ -1118,27 +1142,48 @@ function drawEyes(
   const ly = hy + fy * fwd + py * offset;
   const rx = hx + fx * fwd - px * offset;
   const ry = hy + fy * fwd - py * offset;
-  // Whites with thin outline.
+
+  if (openness <= 0.04) {
+    // Fully closed — short ink slit perpendicular to the heading.
+    ctx.strokeStyle = "#1a1812";
+    ctx.lineWidth = Math.max(1, eyeR * 0.45);
+    ctx.lineCap = "round";
+    const slitLen = eyeR * 0.85;
+    ctx.beginPath();
+    ctx.moveTo(lx - px * slitLen, ly - py * slitLen);
+    ctx.lineTo(lx + px * slitLen, ly + py * slitLen);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(rx - px * slitLen, ry - py * slitLen);
+    ctx.lineTo(rx + px * slitLen, ry + py * slitLen);
+    ctx.stroke();
+    return;
+  }
+
+  // Whites — ellipse whose perpendicular-to-heading radius scales
+  // with openness. Major axis (eyeR) lies along the heading.
   ctx.fillStyle = "#fbf6ee";
   ctx.strokeStyle = "#1a1812";
   ctx.lineWidth = 1;
+  const eyeRy = eyeR * openness;
   ctx.beginPath();
-  ctx.arc(lx, ly, eyeR, 0, Math.PI * 2);
+  ctx.ellipse(lx, ly, eyeR, eyeRy, heading, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(rx, ry, eyeR, 0, Math.PI * 2);
+  ctx.ellipse(rx, ry, eyeR, eyeRy, heading, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   // Pupils — pushed forward in the heading direction so the gaze
-  // tracks where the snake is going.
+  // tracks where the snake is going. Squish with the lid.
   const pFwd = eyeR * 0.4;
+  const pupilRy = pupilR * openness;
   ctx.fillStyle = "#1a1812";
   ctx.beginPath();
-  ctx.arc(lx + fx * pFwd, ly + fy * pFwd, pupilR, 0, Math.PI * 2);
+  ctx.ellipse(lx + fx * pFwd, ly + fy * pFwd, pupilR, pupilRy, heading, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(rx + fx * pFwd, ry + fy * pFwd, pupilR, 0, Math.PI * 2);
+  ctx.ellipse(rx + fx * pFwd, ry + fy * pFwd, pupilR, pupilRy, heading, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -1213,6 +1258,50 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
   }
   return color;
+}
+
+/** Multiply each RGB channel by (1 - amount). amount=0.13 ≈ 13% darker.
+ *  Used for the every-third-segment scale banding on the body. */
+function darkenHex(hex: string, amount: number): string {
+  if (!hex.startsWith("#") || hex.length !== 7) return hex;
+  const k = 1 - amount;
+  const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * k));
+  const g = Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * k));
+  const b = Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * k));
+  const hh = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${hh(r)}${hh(g)}${hh(b)}`;
+}
+
+/* ---- blink scheduling ---- */
+
+const BLINK_PERIOD_MS = 5000;
+const BLINK_CLOSED_MS = 80;
+const BLINK_EASE_MS = 60;
+
+/** Stable hash → [0, 1). Used to offset each snake's blink phase so
+ *  the whole board doesn't blink in unison. */
+function hashSeed(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+/** Eye openness ∈ [0, 1] for the given seed at the current wall-clock
+ *  moment. Each cycle eases open (BLINK_EASE_MS), stays wide, eases
+ *  closed (BLINK_EASE_MS), then fully shuts for BLINK_CLOSED_MS. The
+ *  per-snake phase offset means blinks scatter across the lobby. */
+function eyeOpenness(seed: string): number {
+  const phaseOffset = (hashSeed(seed) % 1000) / 1000;
+  const period = BLINK_PERIOD_MS;
+  const closeStart = period - BLINK_CLOSED_MS - BLINK_EASE_MS;
+  const closeEnd = period - BLINK_CLOSED_MS;
+  const t = (performance.now() + phaseOffset * period) % period;
+  if (t < BLINK_EASE_MS) return t / BLINK_EASE_MS;
+  if (t < closeStart) return 1;
+  if (t < closeEnd) return (closeEnd - t) / BLINK_EASE_MS;
+  return 0;
 }
 
 /* ------------------------------------------------------------------ */
