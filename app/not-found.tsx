@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 // A small selection of tools to suggest as starting points.
-const SUGGESTED = ["advice", "feeling", "convert", "qr", "focus", "palette"];
+const SUGGESTED = ["advice", "convert", "qr", "focus", "breathe", "roll"];
 
 export default function NotFound() {
   const suggested = SUGGESTED.map((slug) =>
@@ -30,8 +30,8 @@ export default function NotFound() {
           in the playhouse.
         </h1>
         <p className="max-w-lg text-lg leading-relaxed text-ink-soft sm:text-xl">
-          Either you followed a link to nothing, or a tool moved on without
-          telling us. Try something else?
+          Either the link is wrong, or the tool you&rsquo;re after moved on.
+          The playhouse keeps a smaller, sharper set now — try something else.
         </p>
       </header>
 

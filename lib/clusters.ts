@@ -78,53 +78,25 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   // Files
   convert: "files",
   pdf: "files",
-  squeeze: "files",
   qr: "files",
   strip: "files",
-  trace: "files",
-  ascii: "files",
-  base64: "files",
-  favicon: "files",
-  sift: "files",
   // Writing
   read: "writing",
-  markdown: "writing",
   diff: "writing",
-  slug: "writing",
   case: "writing",
   cleantext: "writing",
   lorem: "writing",
-  sum: "writing",
   // Time
   focus: "time",
-  talk: "time",
-  until: "time",
-  zones: "time",
   // Wellness
-  feeling: "wellness",
-  three: "wellness",
   breathe: "wellness",
-  sleep: "wellness",
   stretch: "wellness",
   advice: "wellness",
-  tally: "wellness",
-  noise: "wellness",
   typing: "wellness",
   // Creative
-  palette: "creative",
-  sketch: "creative",
-  idea: "creative",
   roll: "creative",
-  tip: "creative",
-  mash: "creative",
-  // Code (new)
-  gradient: "code",
-  contrast: "code",
-  shadow: "code",
-  easing: "code",
-  regex: "code",
-  shot: "code",
-  // Games (new)
+  // Code — empty after Phase 1 cuts; cluster def stays till Phase 3
+  // Games
   munch: "games",
 };
 

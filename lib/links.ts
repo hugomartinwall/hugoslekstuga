@@ -7,129 +7,39 @@
 //   time      — pacing & coordination
 //   wellness  — body & mind
 //   creative  — visual & generative
-//   code      — pixels, CSS, patterns
+//   games     — quick play, sharable scores
 
 export type Link = [from: string, to: string];
 
 export const LINKS: Link[] = [
   // ---------- Files ----------
   ["convert", "pdf"],
-  ["convert", "squeeze"],
-  ["pdf", "squeeze"],
   ["convert", "qr"],
   ["pdf", "qr"],
-  ["strip", "squeeze"],
   ["strip", "pdf"],
-  ["trace", "ascii"],
-  ["trace", "favicon"],
-  ["ascii", "favicon"],
-  ["base64", "qr"],
-  ["base64", "favicon"],
-  ["base64", "convert"],
-  ["favicon", "squeeze"],
 
   // ---------- Writing ----------
-  ["read", "markdown"],
-  ["markdown", "diff"],
   ["read", "diff"],
-  ["markdown", "slug"],
-  ["read", "slug"],
-  ["case", "slug"],
-  ["case", "markdown"],
-  ["cleantext", "slug"],
-  ["cleantext", "markdown"],
   ["cleantext", "diff"],
-  ["lorem", "markdown"],
-  ["lorem", "idea"],
 
-  // ---------- Time ----------
-  ["focus", "talk"],
+  // ---------- Time + Wellness ----------
   ["focus", "stretch"],
   ["focus", "breathe"],
-  ["focus", "until"],
-  ["talk", "until"],
-  ["talk", "stretch"],
-  ["until", "zones"],
-  ["until", "sleep"],
-  ["zones", "talk"],
-
-  // ---------- Wellness ----------
-  ["feeling", "breathe"],
-  ["feeling", "three"],
-  ["feeling", "advice"],
-  ["breathe", "three"],
   ["breathe", "stretch"],
-  ["breathe", "sleep"],
-  ["three", "sleep"],
-  ["sleep", "stretch"],
-  ["tally", "focus"],
-  ["tally", "tip"],
-  ["noise", "focus"],
-  ["noise", "breathe"],
-  ["noise", "sleep"],
+
+  // ---------- Cross-cluster bridges ----------
   ["typing", "read"],
   ["typing", "focus"],
   ["typing", "stretch"],
-
-  // ---------- Creative ----------
-  ["palette", "sketch"],
-  ["sketch", "idea"],
-  ["idea", "roll"],
-  ["idea", "advice"],
   ["roll", "advice"],
-  ["roll", "tip"],
-  ["mash", "idea"],
-  ["mash", "slug"],
 
-  // ---------- Code ----------
-  ["gradient", "shadow"],
-  ["gradient", "contrast"],
-  ["gradient", "palette"],
-  ["shadow", "easing"],
-  ["contrast", "palette"],
-  ["easing", "shadow"],
-  ["regex", "slug"],
-  ["regex", "diff"],
-  ["regex", "cleantext"],
-
-  // ---------- Cross-cluster bridges ----------
-  ["tip", "roll"],
-  ["palette", "qr"],
-  ["sketch", "markdown"],
-  ["ascii", "sketch"],
-  ["trace", "palette"],
-  ["typing", "talk"],
-
-  // sum (writing) bridges out — it's a math notepad, so it sits next to
-  // its cluster neighbours and the other calc-shaped tools across the map.
-  ["sum", "read"],
-  ["sum", "markdown"],
-  ["sum", "tip"],
-
-  // sift (files) — a data explorer, neighbouring the converter and the
-  // other "look inside a file" tools, plus a math/data bridge to sum.
-  ["sift", "convert"],
-  ["sift", "base64"],
-  ["sift", "read"],
-  ["sift", "sum"],
-  ["sift", "diff"],
-
-  // shot (code) — a screenshot/code beautifier; sits next to the visual
-  // styling tools and bridges over to the image cluster.
-  ["shot", "gradient"],
-  ["shot", "shadow"],
-  ["shot", "palette"],
-  ["shot", "favicon"],
-  ["shot", "squeeze"],
-  ["shot", "markdown"],
-
-  // munch (games) — first game on the map. Bridges to the playful
-  // single-purpose tools that share its energy.
-  ["munch", "tally"],
-  ["munch", "noise"],
+  // ---------- Games ----------
   ["munch", "typing"],
   ["munch", "roll"],
-  ["munch", "idea"],
+
+  // NOTE: `lorem` and `case` are currently orphans on the map (no edges
+  // survived the Phase 1 cuts). Phase 3 will hand-curate the full edge
+  // graph for the smaller toolset and reconnect them.
 ];
 
 // Quick lookup: how many neighbours does each tool have?
