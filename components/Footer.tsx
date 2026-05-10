@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BrandDot from "@/components/BrandDot";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -7,7 +8,7 @@ export default function Footer() {
       <div className="mx-auto flex max-w-5xl flex-col gap-8 px-5 py-10 sm:px-8 sm:py-12">
         <div className="flex flex-col gap-2">
           <p className="font-display text-2xl font-extrabold tracking-tight">
-            hugoslekstuga<span className="text-tomato">.</span>
+            hugoslekstuga<BrandDot />
           </p>
           <p className="text-sm leading-relaxed text-ink-soft">
             Swedish for hugos playground
