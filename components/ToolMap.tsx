@@ -84,14 +84,18 @@ type Ripple = {
 const NODE_R = 26;
 const SHADOW_DY = 4;
 const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
-// Physics — looser, calmer pass without spring/edge forces.
+// Physics — playful and bouncy.
 //
-// CENTER_PULL is the only attractor. The canvas centre is always the
-// gravity well. The interactivity is drag — fling a dot, it travels,
-// then gravity pulls it home. The cursor doesn't tilt the field.
-const CENTER_PULL = 0.0035;
+// CENTER_PULL is the only attractor and it's deliberately weak — you
+// can fling a dot all the way across the canvas and it'll travel
+// before gravity reels it back. Walls bounce (BOUNCE_DAMPING below)
+// so a strong throw ricochets a few times before settling.
+const CENTER_PULL = 0.0008;
 const REPEL = 4800;
 const DAMPING = 0.96;
+/** Velocity retained after bouncing off a wall. 0.6 = 60% kept,
+ *  40% lost to the impact. Lower = more squishy, higher = more rubber. */
+const BOUNCE_DAMPING = 0.6;
 const WOBBLE_FORCE = 0.012;
 const WOBBLE_RATE = 0.0005;
 const ENTRANCE_DURATION = 480;
@@ -108,8 +112,8 @@ const SPARKLE_FRICTION = 0.9;
 const RECLUSTER_BURST_SPEED = 9;
 /** How aggressively the dragged node chases the cursor each frame. */
 const DRAG_LERP = 0.5;
-/** Hard cap on per-frame velocity. */
-const MAX_V = 9;
+/** Hard cap on per-frame velocity — high enough that a fling carries. */
+const MAX_V = 30;
 const MIN_W = 320;
 const MIN_H = 480;
 
@@ -487,6 +491,14 @@ export default function ToolMap({
             const hoverScale = isHovered ? 1.08 : 1;
             const bounceScale = isBouncing ? 1.3 : 1;
             const scale = baseScale * hoverScale * bounceScale;
+            // Munch is a game, not a tool — render it bigger with a
+            // pulsing outer ring so it reads as a different category
+            // of thing on the map without needing a label or legend.
+            const isMunch = n.tool.slug === "munch";
+            const r = isMunch ? NODE_R * 1.5 : NODE_R;
+            const labelY = isMunch ? r + 18 : LABEL_OFFSET;
+            const emojiSize = isMunch ? 28 : 20;
+            const color = COLOR_HEX[n.tool.color];
 
             return (
               <g
@@ -514,18 +526,44 @@ export default function ToolMap({
                   }
                 }}
               >
+                {/* Munch's pulsing live-multiplayer ring (under the
+                    shadow so it radiates outward without lifting). */}
+                {isMunch && (
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={r}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={2}
+                    opacity={0.55}
+                  >
+                    <animate
+                      attributeName="r"
+                      values={`${r};${r * 1.55}`}
+                      dur="1.8s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="opacity"
+                      values="0.55;0"
+                      dur="1.8s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                )}
                 {/* Solid drop shadow */}
-                <circle cx={0} cy={SHADOW_DY} r={NODE_R} fill="#1a1812" opacity={0.85} />
+                <circle cx={0} cy={SHADOW_DY} r={r} fill="#1a1812" opacity={0.85} />
                 <circle
-                  r={NODE_R}
-                  fill={COLOR_HEX[n.tool.color]}
+                  r={r}
+                  fill={color}
                   stroke="#1a1812"
-                  strokeWidth={isHovered ? 3 : 2}
+                  strokeWidth={isHovered ? 3 : isMunch ? 3 : 2}
                 />
                 <text
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fontSize={20}
+                  fontSize={emojiSize}
                   fill={preferredTextHex(n.tool.color)}
                   pointerEvents="none"
                   style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}
@@ -534,15 +572,16 @@ export default function ToolMap({
                 </text>
                 {/* Always-visible name label below the dot */}
                 <text
-                  y={LABEL_OFFSET}
+                  y={labelY}
                   textAnchor="middle"
-                  fontSize={13}
+                  fontSize={isMunch ? 14 : 13}
                   fill="#1a1812"
                   pointerEvents="none"
                   style={{
                     fontFamily: "var(--font-display)",
                     fontWeight: 800,
-                    letterSpacing: "-0.01em",
+                    letterSpacing: isMunch ? "0.04em" : "-0.01em",
+                    textTransform: isMunch ? "uppercase" : undefined,
                   }}
                 >
                   {n.tool.title}
@@ -669,9 +708,29 @@ function step(
     else if (n.vy < -MAX_V) n.vy = -MAX_V;
     n.x += n.vx;
     n.y += n.vy;
-    n.x = clamp(n.x, NODE_R + 4, width - NODE_R - 4);
-    // Extra room at the bottom so labels aren't clipped.
-    n.y = clamp(n.y, NODE_R + 4, height - LABEL_OFFSET - 12);
+    // Wall bounce — hit a side, velocity reflects with energy loss.
+    // The `vx < 0` checks make sure we only invert on impact, never
+    // re-bounce a node that gravity is already pulling away from
+    // the wall.
+    const left = NODE_R + 4;
+    const right = width - NODE_R - 4;
+    const top = NODE_R + 4;
+    // Extra bottom room so labels aren't clipped.
+    const bottom = height - LABEL_OFFSET - 12;
+    if (n.x < left) {
+      n.x = left;
+      if (n.vx < 0) n.vx = -n.vx * BOUNCE_DAMPING;
+    } else if (n.x > right) {
+      n.x = right;
+      if (n.vx > 0) n.vx = -n.vx * BOUNCE_DAMPING;
+    }
+    if (n.y < top) {
+      n.y = top;
+      if (n.vy < 0) n.vy = -n.vy * BOUNCE_DAMPING;
+    } else if (n.y > bottom) {
+      n.y = bottom;
+      if (n.vy > 0) n.vy = -n.vy * BOUNCE_DAMPING;
+    }
   }
   return 0;
 }

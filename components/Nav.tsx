@@ -26,7 +26,7 @@ export default function Nav() {
                 href="/"
                 className="rounded-full px-2 py-1.5 transition-colors hover:bg-cream-deep sm:px-3 sm:py-2"
               >
-                Home
+                Map
               </Link>
             </li>
             <li>
