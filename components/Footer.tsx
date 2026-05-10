@@ -1,4 +1,3 @@
-import Link from "next/link";
 import BrandDot from "@/components/BrandDot";
 
 export default function Footer() {
@@ -12,14 +11,6 @@ export default function Footer() {
           </p>
           <p className="text-sm leading-relaxed text-ink-soft">
             Swedish for hugos playground
-          </p>
-          <p className="mt-1 text-sm">
-            <Link
-              href="/promise"
-              className="font-bold text-ink underline-offset-4 hover:underline"
-            >
-              Read the full promise →
-            </Link>
           </p>
         </div>
 

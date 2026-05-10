@@ -19,12 +19,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.6,
     },
-    {
-      url: `${BASE}/promise`,
-      lastModified: now,
-      changeFrequency: "yearly",
-      priority: 0.5,
-    },
   ];
   const toolRoutes = tools.map((t) => ({
     url: `${BASE}${pathFor(t.slug)}`,

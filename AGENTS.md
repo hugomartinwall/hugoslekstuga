@@ -26,10 +26,10 @@ the working constraints when you build:
 3. **Open a tab, use it, close it** — no onboarding, no settings buried
    in menus.
 
-The one exception to (2) is Munch, which uses a small WebSocket server
-for multiplayer state. The server keeps no logs, no DB, no third-party
-connections. That's the only network round-trip in the whole site, and
-it's documented honestly on `/promise`.
+The one exception to (2) is the multiplayer games (Munch, Noodle), which
+share a small WebSocket server for game state. The server keeps no logs,
+no DB, no third-party connections. That's the only network round-trip in
+the whole site.
 
 The on-`/about` brand voice now lives in two pieces: the hero sentence
 ("…where I release things I made for fun.") and the *Things you won't
