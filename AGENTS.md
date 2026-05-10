@@ -14,9 +14,11 @@ this repo.
 
 Next 16 (Turbopack) + React 19 + Tailwind v4 + TypeScript.
 
-## The three house rules (load-bearing — don't reword)
+## The three house rules (internal — not displayed, still load-bearing)
 
-From `app/about/page.tsx`:
+These aren't shown on `/about` anymore (Hugo trimmed it to a hero +
+"things you won't find here" — sparse on purpose). They still hold as
+the working constraints when you build:
 
 1. **One thing, sharply** — if a tool grows past one thing, it splits.
 2. **Quiet by default** — no analytics, no accounts, no third-party
@@ -29,11 +31,10 @@ for multiplayer state. The server keeps no logs, no DB, no third-party
 connections. That's the only network round-trip in the whole site, and
 it's documented honestly on `/promise`.
 
-There's also a fourth thing on `/about` — *Things you won't find here*
-(newsletters, venture capital, chat bubble, "subscribe to our blog"
-popup, an algorithm that learns about you, your data anywhere it
-shouldn't be). It's part of the brand voice, treat it the same way as
-the rules: don't quietly reword without asking.
+The on-`/about` brand voice now lives in two pieces: the hero sentence
+("…where I release things I made for fun.") and the *Things you won't
+find here* strikethrough list. Both carry the wink — treat them the
+same way as the rules: don't quietly reword without asking.
 
 ## Source-of-truth files
 
@@ -88,7 +89,9 @@ export `metadata`.
 4. **Don't fetch live data at runtime.** Currency rates in Sum are a
    deliberate static snapshot. If a feature needs live data, the feature
    doesn't ship.
-5. **Don't reword the three house rules** on `/about` without asking.
+5. **Don't quietly reword the brand voice on `/about`** — the hero
+   sentence and the "things you won't find here" list. Change either
+   only when explicitly asked.
 6. **Don't introduce another CSS framework.** Tailwind + the `card-chunk` /
    `btn-chunk` shadow language is the system.
 7. **Don't add new server features.** Munch is the one server-backed tool —
