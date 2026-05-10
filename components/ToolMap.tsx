@@ -84,14 +84,16 @@ type Ripple = {
 const NODE_R = 26;
 const SHADOW_DY = 4;
 const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
-// Physics — playful and bouncy.
+// Physics — playful and bouncy, but resting state stays compact.
 //
-// CENTER_PULL is the only attractor and it's deliberately weak — you
-// can fling a dot all the way across the canvas and it'll travel
-// before gravity reels it back. Walls bounce (BOUNCE_DAMPING below)
-// so a strong throw ricochets a few times before settling.
-const CENTER_PULL = 0.0008;
-const REPEL = 4800;
+// CENTER_PULL is weak enough that a fling carries across the canvas
+// before gravity reels it home — but firm enough that the resting
+// arrangement clusters near the centre instead of spreading edge-
+// to-edge. REPEL gives dots just enough room that labels don't
+// overlap; nothing more. Walls bounce (BOUNCE_DAMPING) so a strong
+// throw ricochets a few times before settling.
+const CENTER_PULL = 0.0018;
+const REPEL = 2800;
 const DAMPING = 0.96;
 /** Velocity retained after bouncing off a wall. 0.6 = 60% kept,
  *  40% lost to the impact. Lower = more squishy, higher = more rubber. */
