@@ -1,85 +1,144 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Promise",
   description:
-    "What hugoslekstuga does and doesn't do with your data. The honest version.",
+    "How hugoslekstuga handles your data. The honest version — in five-second-readable form.",
 };
+
+const RULE_BULLETS = [
+  "static site bundle, no backend",
+  "saved state lives in your browser’s localStorage",
+  "no network calls after the page loads",
+  "files dropped into a tool never leave the browser",
+];
+
+const MUNCH_BULLETS = [
+  "only on /games/munch — nowhere else",
+  "server keeps no logs and no database",
+  "no third-party connections",
+  "sleeps when the room is empty",
+];
+
+const NOT_HERE = [
+  "analytics",
+  "tracking pixels",
+  "third-party scripts",
+  "ad networks",
+  "account systems",
+  "cloud sync",
+  "a cookie banner",
+  "newsletter signup forms",
+];
 
 export default function PromisePage() {
   return (
-    <article className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
-      <header className="flex flex-col gap-4">
-        <span className="inline-flex w-fit items-center gap-2 rounded-full border-2 border-ink bg-yellow px-3 py-1 text-xs font-bold uppercase tracking-wide">
+    <article className="mx-auto w-full max-w-4xl px-5 py-14 sm:px-8 sm:py-20">
+      {/* Hero */}
+      <header>
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           The promise
-        </span>
-        <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl">
-          What we do, and don&rsquo;t,
-          <br className="hidden sm:block" /> with your data.
+        </p>
+        <h1 className="mt-3 font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
+          What goes <span className="text-tomato">where</span>.
         </h1>
-        <p className="max-w-xl text-lg leading-relaxed text-ink-soft sm:text-xl">
-          Most of the &ldquo;your privacy matters to us&rdquo; pages on the
-          internet are wallpaper. This one tries to be a useful read.
+        <p className="mt-4 max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">
+          Most &ldquo;your privacy matters&rdquo; pages are wallpaper. This
+          one names the parts.
         </p>
       </header>
 
-      <Section title="The 43 tools">
-        <p>
-          Files, text, images, code — everything you drop into the toolbox is
-          read, processed, and rendered by JavaScript running on this device.
-          Nothing gets uploaded. The downloads come from your own browser.
-        </p>
-        <p>
-          Tools persist in-progress work to <code>localStorage</code> when it
-          makes sense — a session in Sum, a tally count, your wind-down
-          minutes in Sleep. Storage keys are namespaced{" "}
-          <code>hugoslekstuga:*</code> and stay on this device. Clearing your
-          site data wipes them.
-        </p>
-      </Section>
+      {/* Two-pane: rule + exception */}
+      <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
+        {/* Rule */}
+        <section className="card-chunk rounded-[var(--radius-card)] bg-cream p-6 sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Your device
+          </p>
+          <h2 className="mt-2 font-display text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">
+            Stays in your browser.
+          </h2>
+          <p className="mt-3 text-base leading-relaxed text-ink-soft">
+            Anything you drop into a tool — files, text, settings — is read and
+            processed by JavaScript running on your device. Downloads come from
+            your own browser. Nothing is uploaded.
+          </p>
+          <ul className="mt-5 flex flex-col gap-2 text-sm text-ink-soft">
+            {RULE_BULLETS.map((b) => (
+              <li key={b} className="flex items-start gap-3">
+                <span
+                  aria-hidden
+                  className="mt-2 h-2 w-2 shrink-0 rounded-full border-2 border-ink bg-green"
+                />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-      <Section title="Munch">
-        <p>
-          Munch is the one tool that needs a server. It&rsquo;s a real-time
-          multiplayer game; for other players to see your blob, your name and
-          your moves have to be sent somewhere. That somewhere is a small
-          Node process intended for a Stockholm region.
-        </p>
-        <p>
-          The server keeps no logs, no database, no third-party connections.
-          When the last player disconnects, it idles. We don&rsquo;t track
-          who plays. The room is shared globally; the only persistent state
-          is what&rsquo;s currently on screen.
-        </p>
-      </Section>
+        {/* Exception */}
+        <section className="card-chunk rounded-[var(--radius-card)] bg-cream-deep p-6 sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Except munch
+          </p>
+          <h2 className="mt-2 font-display text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">
+            One small server.
+          </h2>
+          <p className="mt-3 text-base leading-relaxed text-ink-soft">
+            Munch is a real-time multiplayer game. For other players to see
+            your blob, your name and position have to go somewhere — a small
+            Node process in Stockholm. It does as little as it can get away
+            with.
+          </p>
+          <ul className="mt-5 flex flex-col gap-2 text-sm text-ink-soft">
+            {MUNCH_BULLETS.map((b) => (
+              <li key={b} className="flex items-start gap-3">
+                <span
+                  aria-hidden
+                  className="mt-2 h-2 w-2 shrink-0 rounded-full border-2 border-ink bg-yellow"
+                />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
 
-      <Section title="Fonts and assets">
-        <p>
-          Geist and Bricolage Grotesque are downloaded from Google Fonts at{" "}
-          <em>build time</em> and bundled with the site. After your page
-          loads, no requests go to Google. The pdf.js worker that powers the
-          PDF tool is vendored at <code>/vendor/pdf.worker.min.mjs</code> for
-          the same reason.
+      {/* Things you'll never see here — × prefix list */}
+      <section className="mt-10 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-6 sm:p-8">
+        <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
+          Things you&rsquo;ll never see here.
+        </h2>
+        <p className="mt-2 text-sm text-ink-soft">
+          The audit version of the list on{" "}
+          <Link href="/about" className="font-bold text-ink underline-offset-4 hover:underline">
+            about
+          </Link>
+          .
         </p>
-      </Section>
+        <ul className="mt-5 grid grid-cols-1 gap-x-6 gap-y-2.5 text-base sm:grid-cols-2">
+          {NOT_HERE.map((item) => (
+            <li key={item} className="flex items-baseline gap-3">
+              <span
+                aria-hidden
+                className="font-display text-xl font-extrabold leading-none text-tomato"
+              >
+                ×
+              </span>
+              <span className="text-ink-soft">{item}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-      <Section title="What we&rsquo;d need to add to break this">
-        <p>
-          Analytics. Ad networks. Live currency rates. A cloud sync. A login.
-          None of those are here, and none of them are coming. If a feature
-          can&rsquo;t be built without one of them, we don&rsquo;t ship the
-          feature.
-        </p>
-      </Section>
-
+      {/* Closing nav */}
       <div className="mt-12 flex flex-wrap gap-3">
         <Link
           href="/"
           className="btn-chunk rounded-[var(--radius-button)] bg-tomato px-5 py-2 font-display text-sm font-extrabold text-cream"
         >
-          Back to the tools
+          Back to the dots
         </Link>
         <Link
           href="/about"
@@ -89,18 +148,5 @@ export default function PromisePage() {
         </Link>
       </div>
     </article>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="mt-12 flex flex-col gap-3">
-      <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
-        {title}
-      </h2>
-      <div className="flex flex-col gap-3 text-base leading-relaxed text-ink-soft sm:text-lg">
-        {children}
-      </div>
-    </section>
   );
 }
