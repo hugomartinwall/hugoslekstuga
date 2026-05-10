@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const STORAGE_KEY = "hugoslekstuga:roll:options";
-const WITHOUT_REPLACEMENT_KEY = "hugoslekstuga:roll:without-replacement";
+const RECENT_KEY = "hugoslekstuga:roll:recent";
 
 const SLICE_COLORS = [
   { fill: "#ff5a3c", text: "#fbf6ee" }, // tomato
@@ -25,17 +25,53 @@ Sushi
 Tacos
 Cook at home`;
 
+const EMPTY_RECENT: string[] = [];
+
+/* -------------------------------------------------------------------------
+ * Confetti — lightweight RAF-driven particles rendered inside the wheel SVG.
+ * Emitted from just below the pointer when the wheel lands; gravity pulls
+ * them down and they fade out. Honours prefers-reduced-motion (skipped).
+ * -----------------------------------------------------------------------*/
+
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  color: string;
+  size: number;
+};
+
+const PARTICLE_COUNT = 18;
+const PARTICLE_FRICTION = 0.93;
+const PARTICLE_GRAVITY = 0.18;
+const PARTICLE_LIFE_DECAY = 0.022;
+
 export default function RollPage() {
   const tool = findTool("roll")!;
   const [raw, setRaw] = useLocalStorageState<string>(STORAGE_KEY, "");
-  const [withoutReplacement, setWithoutReplacement] =
-    useLocalStorageState<boolean>(WITHOUT_REPLACEMENT_KEY, false);
+  const [recent, setRecent] = useLocalStorageState<string[]>(RECENT_KEY, EMPTY_RECENT);
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
-  /** Indices of slices already won in without-replacement mode. */
-  const [removed, setRemoved] = useState<Set<number>>(new Set());
   const wheelRef = useRef<SVGGElement>(null);
+  const particlesRef = useRef<Particle[]>([]);
+  const rafRef = useRef<number | null>(null);
+  const [, tickParticles] = useState(0);
+  const reduceMotionRef = useRef(false);
+
+  // Detect prefers-reduced-motion once and on changes — skip confetti when set.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reduceMotionRef.current = mq.matches;
+    const listener = (e: MediaQueryListEvent) => {
+      reduceMotionRef.current = e.matches;
+    };
+    mq.addEventListener("change", listener);
+    return () => mq.removeEventListener("change", listener);
+  }, []);
 
   const options = useMemo(
     () =>
@@ -46,26 +82,70 @@ export default function RollPage() {
     [raw],
   );
 
-  const eligibleIdxs = useMemo(
-    () =>
-      withoutReplacement
-        ? options.map((_, i) => i).filter((i) => !removed.has(i))
-        : options.map((_, i) => i),
-    [options, removed, withoutReplacement],
+  const canSpin = options.length >= 2;
+
+  const startConfettiLoop = useCallback(() => {
+    if (rafRef.current !== null) return;
+    const loop = () => {
+      const ps = particlesRef.current;
+      for (let i = ps.length - 1; i >= 0; i--) {
+        const p = ps[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= PARTICLE_FRICTION;
+        p.vy = p.vy * PARTICLE_FRICTION + PARTICLE_GRAVITY;
+        p.life -= PARTICLE_LIFE_DECAY;
+        if (p.life <= 0) ps.splice(i, 1);
+      }
+      tickParticles((c) => c + 1);
+      if (ps.length > 0) {
+        rafRef.current = requestAnimationFrame(loop);
+      } else {
+        rafRef.current = null;
+      }
+    };
+    rafRef.current = requestAnimationFrame(loop);
+  }, []);
+
+  const burstConfetti = useCallback(
+    (color: string) => {
+      if (reduceMotionRef.current) return;
+      // Origin: just below the pointer (200, 8) where the winner sits.
+      const ox = 200;
+      const oy = 36;
+      const ps = particlesRef.current;
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const angle =
+          (i / PARTICLE_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+        const speed = 2.5 + Math.random() * 4;
+        ps.push({
+          x: ox,
+          y: oy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 2.4,
+          life: 1,
+          color,
+          size: 3 + Math.random() * 4,
+        });
+      }
+      startConfettiLoop();
+    },
+    [startConfettiLoop],
   );
 
-  const canSpin = eligibleIdxs.length >= 1 && options.length >= 2;
+  // Cleanup the RAF on unmount.
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   const spin = useCallback(() => {
     if (!canSpin || spinning) return;
     const n = options.length;
     const step = 360 / n;
-    // Pick from the eligible pool (i.e. respecting without-replacement) but
-    // rotate to that absolute slice index so the visual is honest.
-    const eligible = eligibleIdxs;
-    const idx = eligible[Math.floor(Math.random() * eligible.length)];
+    const idx = Math.floor(Math.random() * n);
     const winnerCenter = (idx + 0.5) * step;
-    // Rotate so winnerCenter ends at 0 (top, where the pointer sits).
     const targetMod = ((360 - winnerCenter) % 360 + 360) % 360;
     const currentMod = ((rotation % 360) + 360) % 360;
     let delta = targetMod - currentMod;
@@ -74,24 +154,35 @@ export default function RollPage() {
     setRotation(finalRotation);
     setSpinning(true);
     setWinner(null);
-    // Reveal winner once the transition completes.
     window.setTimeout(() => {
       setWinner(idx);
       setSpinning(false);
-      if (withoutReplacement) {
-        setRemoved((prev) => {
-          const next = new Set(prev);
-          next.add(idx);
-          return next;
-        });
-      }
+      const winningOption = options[idx];
+      const winningColor = SLICE_COLORS[idx % SLICE_COLORS.length].fill;
+      burstConfetti(winningColor);
+      setRecent((prev) => [winningOption, ...prev].slice(0, 5));
     }, 4100);
-  }, [canSpin, spinning, options.length, rotation, eligibleIdxs, withoutReplacement]);
+  }, [canSpin, spinning, options, rotation, burstConfetti, setRecent]);
 
-  const resetRemoved = useCallback(() => {
-    setRemoved(new Set());
-    setWinner(null);
-  }, []);
+  // Spacebar to spin (when not focused on the textarea).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      spin();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [spin]);
 
   return (
     <ToolFrame tool={tool}>
@@ -125,33 +216,8 @@ export default function RollPage() {
               ? "Add at least two options to spin."
               : options.length === 1
                 ? "Add one more option to spin."
-                : withoutReplacement
-                  ? `${eligibleIdxs.length} of ${options.length} left.`
-                  : `${options.length} option${options.length === 1 ? "" : "s"} ready.`}
+                : `${options.length} option${options.length === 1 ? "" : "s"} ready.`}
           </p>
-
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={withoutReplacement}
-              onChange={(e) => {
-                setWithoutReplacement(e.target.checked);
-                if (!e.target.checked) resetRemoved();
-              }}
-              className="h-4 w-4 accent-orange"
-            />
-            <span className="font-semibold">Remove winners as they spin</span>
-          </label>
-
-          {withoutReplacement && removed.size > 0 && (
-            <button
-              type="button"
-              onClick={resetRemoved}
-              className="self-start text-xs font-semibold text-ink-muted underline-offset-2 hover:text-ink hover:underline"
-            >
-              Put everyone back ({removed.size} removed)
-            </button>
-          )}
         </div>
 
         <div className="flex flex-col items-center gap-5">
@@ -193,7 +259,6 @@ export default function RollPage() {
                     index={i}
                     label={opt}
                     color={SLICE_COLORS[i % SLICE_COLORS.length]}
-                    dimmed={removed.has(i)}
                   />
                 ))}
               </g>
@@ -214,19 +279,48 @@ export default function RollPage() {
                 stroke="#1a1812"
                 strokeWidth="4"
               />
+              {/* Confetti — drawn over everything except the cap. The
+                  ref holds an animation buffer that mutates each RAF tick;
+                  re-renders are gated by tickParticles. Reading the ref in
+                  render is intentional and matches the project's particle
+                  pattern (see eslint.config.mjs comment on react-hooks/refs). */}
+              {/* eslint-disable react-hooks/refs */}
+              <g pointerEvents="none">
+                {particlesRef.current.map((p, i) => (
+                  <circle
+                    key={i}
+                    cx={p.x}
+                    cy={p.y}
+                    r={p.size * Math.max(0, p.life)}
+                    fill={p.color}
+                    stroke="#1a1812"
+                    strokeWidth={1}
+                    opacity={Math.max(0, p.life)}
+                  />
+                ))}
+              </g>
+              {/* eslint-enable react-hooks/refs */}
             </svg>
           </div>
 
-          <button
-            type="button"
-            onClick={spin}
-            disabled={!canSpin || spinning}
-            className="btn-chunk rounded-[var(--radius-button)] bg-orange px-7 py-3 font-display text-lg font-extrabold text-cream disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {spinning ? "Spinning…" : "Spin!"}
-          </button>
+          <div className="flex flex-col items-center gap-2">
+            <button
+              type="button"
+              onClick={spin}
+              disabled={!canSpin || spinning}
+              className="btn-chunk rounded-[var(--radius-button)] bg-orange px-7 py-3 font-display text-lg font-extrabold text-cream disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {spinning ? "Spinning…" : "Spin!"}
+            </button>
+            <span className="hidden items-center gap-1 text-xs text-ink-muted sm:inline-flex">
+              or press
+              <kbd className="rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
+                Space
+              </kbd>
+            </span>
+          </div>
 
-          <div className="flex min-h-[3rem] items-center justify-center text-center">
+          <div className="flex min-h-[3rem] flex-col items-center gap-3 text-center">
             {winner !== null && !spinning && (
               <div className="fade-rise rounded-[var(--radius-card)] border-2 border-ink bg-orange-soft px-4 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
@@ -241,6 +335,30 @@ export default function RollPage() {
               <p className="text-sm text-ink-muted">
                 The wheel awaits options.
               </p>
+            )}
+            {recent.length > 1 && (
+              <div className="flex flex-col items-center gap-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Recent
+                </p>
+                <ol className="flex flex-wrap justify-center gap-1.5">
+                  {recent.slice(1).map((w, i) => (
+                    <li
+                      key={`${w}-${i}`}
+                      className="rounded-full border-2 border-ink bg-cream px-2 py-0.5 text-xs font-semibold"
+                    >
+                      {w}
+                    </li>
+                  ))}
+                </ol>
+                <button
+                  type="button"
+                  onClick={() => setRecent(EMPTY_RECENT)}
+                  className="text-[11px] font-semibold text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+                >
+                  clear
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -257,7 +375,6 @@ function Slice({
   index,
   label,
   color,
-  dimmed = false,
 }: {
   cx: number;
   cy: number;
@@ -266,12 +383,10 @@ function Slice({
   index: number;
   label: string;
   color: { fill: string; text: string };
-  dimmed?: boolean;
 }) {
-  const groupOpacity = dimmed ? 0.32 : 1;
   if (total === 1) {
     return (
-      <g opacity={groupOpacity}>
+      <g>
         <circle cx={cx} cy={cy} r={r} fill={color.fill} />
         <text
           x={cx}
@@ -281,7 +396,6 @@ function Slice({
           fontSize="22"
           fill={color.text}
           textAnchor="middle"
-          textDecoration={dimmed ? "line-through" : undefined}
         >
           {truncate(label, 18)}
         </text>
@@ -297,8 +411,8 @@ function Slice({
   const largeArc = step > 180 ? 1 : 0;
   const path = `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
 
-  // Label sits along the slice radius, rotated to read outward (along the bisector).
-  // For slices on the bottom half, flip 180° so the text stays right-side up.
+  // Label sits along the slice radius, rotated to read outward.
+  // Slices on the bottom half flip 180° so the text stays right-side up.
   const midAngle = startAngle + step / 2;
   const flip = midAngle > 90 && midAngle < 270;
   const textRotation = flip ? midAngle + 180 : midAngle;
@@ -308,7 +422,7 @@ function Slice({
   const maxChars = total <= 4 ? 14 : total <= 6 ? 12 : total <= 9 ? 10 : 8;
 
   return (
-    <g opacity={groupOpacity}>
+    <g>
       <path d={path} fill={color.fill} stroke="#1a1812" strokeWidth="2" />
       <text
         x={labelPos.x}
@@ -320,7 +434,6 @@ function Slice({
         textAnchor="middle"
         dominantBaseline="middle"
         transform={`rotate(${textRotation} ${labelPos.x} ${labelPos.y})`}
-        textDecoration={dimmed ? "line-through" : undefined}
       >
         {truncate(label, maxChars)}
       </text>
