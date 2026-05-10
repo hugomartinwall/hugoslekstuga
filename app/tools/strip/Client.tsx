@@ -1,14 +1,33 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
+import Slider from "@/components/Slider";
 import { findTool } from "@/lib/tools";
+import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 type Finding = {
   category: "gps" | "camera" | "time" | "software" | "other";
   label: string;
   value: string;
 };
+
+type OutFormat = "auto" | "jpeg" | "png" | "webp";
+
+type StripSettings = {
+  format: OutFormat;
+  quality: number; // 60..100, only meaningful for jpeg / webp output
+};
+
+const SETTINGS_KEY = "hugoslekstuga:strip:settings";
+const DEFAULT_SETTINGS: StripSettings = { format: "auto", quality: 92 };
+
+const FORMAT_OPTIONS: { value: OutFormat; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "jpeg", label: "JPEG" },
+  { value: "png", label: "PNG" },
+  { value: "webp", label: "WebP" },
+];
 
 const CATEGORY_TINT: Record<Finding["category"], string> = {
   gps: "bg-tomato-soft",
@@ -92,6 +111,23 @@ function findingsFromExif(exif: Record<string, unknown>): Finding[] {
   return out;
 }
 
+function resolveOutType(
+  format: OutFormat,
+  originalType: string,
+): "image/png" | "image/jpeg" | "image/webp" {
+  if (format === "png") return "image/png";
+  if (format === "jpeg") return "image/jpeg";
+  if (format === "webp") return "image/webp";
+  // auto: keep PNG lossless; otherwise re-encode to JPEG.
+  return originalType === "image/png" ? "image/png" : "image/jpeg";
+}
+
+function extForType(type: string): "png" | "jpg" | "webp" {
+  if (type === "image/png") return "png";
+  if (type === "image/webp") return "webp";
+  return "jpg";
+}
+
 export default function StripPage() {
   const tool = findTool("strip")!;
   const [filename, setFilename] = useState<string>("");
@@ -104,38 +140,53 @@ export default function StripPage() {
   const [error, setError] = useState<string>("");
   const [hasParsed, setHasParsed] = useState(false);
 
-  const handleFile = useCallback(async (file: File) => {
-    setError("");
-    // Free the previous stripped result before we forget about it.
+  const [settings, setSettings] = useLocalStorageState<StripSettings>(
+    SETTINGS_KEY,
+    DEFAULT_SETTINGS,
+  );
+
+  // Defensive reads — older persisted shapes might be missing fields.
+  const format: OutFormat = settings.format ?? "auto";
+  const quality: number = settings.quality ?? 92;
+
+  const resolvedOutType = resolveOutType(format, originalType);
+  const showQualitySlider = resolvedOutType !== "image/png";
+
+  const clearStripped = useCallback(() => {
     setStripped((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return null;
     });
-    setHasParsed(false);
-    setFilename(file.name);
-    setOriginalSize(file.size);
-    setOriginalType(file.type);
-    // Free the previous source preview too.
-    setImageUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      const next = URL.createObjectURL(file);
-      return next;
-    });
-
-    try {
-      // Dynamically import exifr — only loaded when needed
-      const exifr = await import("exifr");
-      const exif = (await exifr.parse(file, true)) ?? {};
-      const found = findingsFromExif(exif as Record<string, unknown>);
-      setFindings(found);
-      setHasParsed(true);
-    } catch (e) {
-      setFindings([]);
-      setHasParsed(true);
-      // Not an error per se — file just had no EXIF
-      console.warn("EXIF parse:", e);
-    }
   }, []);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      setError("");
+      clearStripped();
+      setHasParsed(false);
+      setFilename(file.name);
+      setOriginalSize(file.size);
+      setOriginalType(file.type);
+      setImageUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
+
+      try {
+        const exifr = await import("exifr");
+        const exif = (await exifr.parse(file, true)) ?? {};
+        const found = findingsFromExif(exif as Record<string, unknown>);
+        setFindings(found);
+        setHasParsed(true);
+      } catch (e) {
+        setFindings([]);
+        setHasParsed(true);
+        // Not an error — file just had no EXIF.
+        console.warn("EXIF parse:", e);
+      }
+    },
+    [clearStripped],
+  );
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -143,14 +194,44 @@ export default function StripPage() {
     if (f && f.type.startsWith("image/")) handleFile(f);
   };
 
+  // Paste-from-clipboard. Screenshots are the natural feed for strip —
+  // most macOS users have an image in the clipboard half the time, and
+  // a fresh screenshot still carries Software / HostComputer / timestamp.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable)
+      ) {
+        return;
+      }
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) {
+            e.preventDefault();
+            handleFile(f);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [handleFile]);
+
   const stripAndDownload = useCallback(async () => {
     if (!imageUrl || stripping) return;
     setStripping(true);
     try {
       // Use createImageBitmap with imageOrientation: "from-image" so EXIF
       // orientation flags are baked into the pixel data and the canvas
-      // dimensions reflect the *visual* width/height (rather than the
-      // raw bitmap orientation, which can be transposed for portraits).
+      // dimensions reflect the *visual* width/height.
       const fileForBitmap = await fetch(imageUrl).then((r) => r.blob());
       const bitmap = await createImageBitmap(fileForBitmap, {
         imageOrientation: "from-image",
@@ -164,11 +245,9 @@ export default function StripPage() {
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close();
 
-      // Preserve PNG when input is PNG — re-encoding a screenshot as JPEG
-      // throws away accuracy and fonts get blurry.
-      const isPng = originalType === "image/png";
-      const outType = isPng ? "image/png" : "image/jpeg";
-      const outQuality = isPng ? undefined : 0.92;
+      const outType = resolveOutType(format, originalType);
+      const isLossy = outType !== "image/png";
+      const outQuality = isLossy ? quality / 100 : undefined;
 
       const blob: Blob = await new Promise((res, rej) => {
         canvas.toBlob(
@@ -187,15 +266,28 @@ export default function StripPage() {
     } finally {
       setStripping(false);
     }
-  }, [imageUrl, stripping, originalType]);
+  }, [imageUrl, stripping, format, quality, originalType]);
 
   const downloadStripped = () => {
     if (!stripped) return;
     const a = document.createElement("a");
     a.href = stripped.url;
-    const ext = stripped.type === "image/png" ? "png" : "jpg";
-    a.download = filename.replace(/\.[^.]+$/, "") + `-clean.${ext}`;
+    a.download =
+      filename.replace(/\.[^.]+$/, "") + `-clean.${extForType(stripped.type)}`;
     a.click();
+  };
+
+  // Changing format or quality invalidates the prepared blob — otherwise
+  // the user could click Download and get a stale file from the old
+  // settings. Clearing forces a fresh Strip click.
+  const setFormat = (next: OutFormat) => {
+    setSettings((s) => ({ ...s, format: next }));
+    clearStripped();
+  };
+
+  const setQuality = (next: number) => {
+    setSettings((s) => ({ ...s, quality: next }));
+    clearStripped();
   };
 
   return (
@@ -207,10 +299,16 @@ export default function StripPage() {
           className="card-chunk flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border-dashed bg-cream p-6 text-center transition-colors hover:bg-tomato-soft"
         >
           <span className="font-display text-base font-extrabold">
-            Drop an image
+            Drop or paste an image
           </span>
           <span className="text-xs text-ink-muted">
             JPEG, PNG, HEIC · stays in your browser
+          </span>
+          <span className="text-[10px] text-ink-muted">
+            <kbd className="rounded border border-ink-soft bg-cream-deep px-1.5 py-0.5 font-mono">
+              ⌘V
+            </kbd>{" "}
+            also works
           </span>
           <input
             type="file"
@@ -284,6 +382,51 @@ export default function StripPage() {
         )}
 
         {imageUrl && (
+          <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                Format
+              </span>
+              {FORMAT_OPTIONS.map((opt) => {
+                const active = format === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setFormat(opt.value)}
+                    className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
+                      active
+                        ? "bg-tomato text-cream"
+                        : "bg-cream hover:bg-tomato-soft"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+              <span className="text-[10px] text-ink-muted">
+                {format === "auto"
+                  ? `→ ${extForType(resolvedOutType).toUpperCase()} (matches input)`
+                  : `→ ${extForType(resolvedOutType).toUpperCase()}`}
+              </span>
+            </div>
+            {showQualitySlider && (
+              <Slider
+                label="Quality"
+                value={quality}
+                min={60}
+                max={100}
+                step={1}
+                unit="%"
+                onChange={setQuality}
+                color="tomato"
+                hint="Higher = bigger file, closer to source. PNG is lossless and ignores this."
+              />
+            )}
+          </div>
+        )}
+
+        {imageUrl && (
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -305,10 +448,49 @@ export default function StripPage() {
           </div>
         )}
 
+        {stripped && (
+          <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-cream-deep p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <figure className="flex flex-col gap-1">
+                <figcaption className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Before
+                </figcaption>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imageUrl}
+                  alt="before"
+                  className="max-h-40 w-full rounded-md border-2 border-ink object-contain"
+                />
+                <span className="text-[10px] text-ink-muted">
+                  {Math.ceil(originalSize / 1024).toLocaleString()} KB ·{" "}
+                  {findings.length} bit{findings.length === 1 ? "" : "s"} of metadata
+                </span>
+              </figure>
+              <figure className="flex flex-col gap-1">
+                <figcaption className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                  After
+                </figcaption>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={stripped.url}
+                  alt="after"
+                  className="max-h-40 w-full rounded-md border-2 border-ink object-contain"
+                />
+                <span className="text-[10px] text-ink-muted">
+                  {Math.ceil(stripped.size / 1024).toLocaleString()} KB ·{" "}
+                  <span className="font-semibold text-green">clean</span>
+                </span>
+              </figure>
+            </div>
+            <p className="text-[10px] text-ink-muted">
+              Pixels intact, metadata gone.
+            </p>
+          </div>
+        )}
+
         <p className="text-xs text-ink-muted">
-          Strips EXIF (GPS, camera, timestamps), XMP, and any embedded
-          thumbnails by re-encoding through a canvas. Output is JPEG.
-          Everything happens locally — no upload.
+          Re-encoding through a canvas physically erases EXIF, XMP, and any
+          embedded thumbnails. The file never leaves the browser.
         </p>
       </div>
     </ToolFrame>
