@@ -11,7 +11,12 @@ export const FOOD_TARGET = 1400; // server keeps this many food pellets alive
 export const FOOD_MASS = 1;
 export const START_MASS = 20;
 export const MIN_MASS = 20;
-export const MAX_PLAYERS = 50;
+/** Hard cap on total population (humans + bots). Guardrail, not a target —
+ *  in practice population settles at max(BOT_FLOOR, humanCount). */
+export const MAX_PLAYERS = 100;
+/** Minimum population the room maintains. When humans < BOT_FLOOR, bots
+ *  fill the gap; when humans >= BOT_FLOOR, bots are absent. */
+export const BOT_FLOOR = 10;
 
 // Speed falls off with mass: at START_MASS you go BASE_SPEED, then a
 // gentle power curve (see speedForMass). The exponent tunes how punishing
@@ -34,7 +39,10 @@ export const EAT_RATIO = 1.25;
  */
 export const SPLIT_MIN_MASS = 40;
 export const SPLIT_EJECT_SPEED = 1400; // initial forward velocity (px/s)
-export const SPLIT_VELOCITY_DAMP = 0.95; // multiplicative per tick (5% loss)
+// Per-tick momentum decay. Tuned so 1-second decay matches the previous
+// 30 Hz value (0.95^30 ≈ 0.21 → 0.975^60 ≈ 0.22). If you change TICK_HZ,
+// recompute this so the eject feel stays consistent.
+export const SPLIT_VELOCITY_DAMP = 0.975;
 export const SPLIT_PULL_DELAY_MS = 500; // free flight before gravity engages
 export const SPLIT_PULL_RAMP_MS = 500; // ramp pull from 0 to 1 over this window
 export const SPLIT_REJOIN_MS = 30_000; // 30s before two own cells may merge
@@ -51,8 +59,12 @@ export const MAX_CELLS_PER_PLAYER = 8; // hard cap so people don't spam space
  */
 export const TRAIL_EXPONENT = 0.55;
 
-// Server tick rate; client interpolates between snapshots.
-export const TICK_HZ = 30;
+// Server tick rate; client interpolates between snapshots. 60 Hz makes
+// physics integration smoother (smaller dt = less compounding error) and
+// makes the world feel less stale. Snapshot rate stays at 20 Hz — bumping
+// it would double network traffic for marginal gain since the client
+// already lerps between snapshots.
+export const TICK_HZ = 60;
 export const SNAPSHOT_HZ = 20;
 
 // AFK kick: no input received for this long → drop the player.
@@ -110,7 +122,15 @@ export type LeaderboardEntry = {
 /* ------------------------------------------------------------------ */
 
 export type ClientMsg =
-  | { type: "join"; name: string }
+  | {
+      type: "join";
+      name: string;
+      /** Solo-testing hint: while at least one connected human has this
+       *  flag set, the server pauses the bot floor (existing bots evict,
+       *  no new ones spawn). Resumes when that human leaves. Used by the
+       *  ?nobots URL flag on the client. */
+      nobots?: boolean;
+    }
   | {
       type: "input";
       dir: { x: number; y: number };
@@ -169,9 +189,10 @@ export function speedForMass(mass: number): number {
 
 /** Per-tick smoothing factor for input velocity. 0..1 — the cell's
  *  effective velocity each tick moves this fraction of the way toward
- *  the target velocity. 0.6 ≈ 100ms to reach 90% of target, which
- *  gives weight without making controls feel mushy. */
-export const INPUT_SMOOTH = 0.6;
+ *  the target velocity. At 60 Hz, 0.15 ≈ 280ms to reach 90% of target —
+ *  clear ice-skater glide on direction changes without feeling
+ *  unresponsive. Lower = more glide; higher = snappier. */
+export const INPUT_SMOOTH = 0.15;
 
 /** Viewport half-extents for a given total-mass — bigger = see further.
  *

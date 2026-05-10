@@ -22,6 +22,7 @@ import {
   type ServerMsg,
 } from "../../lib/munch/protocol.js";
 import { Game } from "./game.js";
+import { BotManager } from "./bots.js";
 
 const PORT = Number(process.env.MUNCH_PORT ?? 8080);
 
@@ -49,6 +50,7 @@ const httpServer = createServer((req, res) => {
 });
 
 const game = new Game();
+const bots = new BotManager(game);
 const sockets = new Map<string, WebSocket>();
 let nextPlayerId = 1;
 
@@ -112,10 +114,11 @@ wss.on("connection", (ws, req) => {
       return;
     }
 
-    if (sockets.size >= MAX_PLAYERS) {
+    // Cap covers humans AND bots — population can't exceed MAX_PLAYERS.
+    if (game.players.size >= MAX_PLAYERS) {
       send(ws, {
         type: "error",
-        reason: "Server is full — try again in a minute.",
+        reason: "Room is full — try again in a minute.",
       });
       ws.close();
       return;
@@ -138,6 +141,9 @@ wss.on("connection", (ws, req) => {
           playerId = id;
           sockets.set(id, ws);
           const player = game.addPlayer(id, name);
+          // Solo-testing flag: pause the bot floor while this human is
+          // connected. Resumes when they leave.
+          if (msg.nobots === true) bots.setNobots(id, true);
           send(ws, {
             type: "welcome",
             playerId: id,
@@ -171,6 +177,7 @@ wss.on("connection", (ws, req) => {
       if (playerId) {
         game.removePlayer(playerId);
         sockets.delete(playerId);
+        bots.setNobots(playerId, false);
       }
     });
 
@@ -179,6 +186,7 @@ wss.on("connection", (ws, req) => {
       if (playerId) {
         game.removePlayer(playerId);
         sockets.delete(playerId);
+        bots.setNobots(playerId, false);
       }
     });
   } catch (err) {
@@ -202,11 +210,17 @@ const lastDeadEmitTick = new Map<string, number>(); // remember which players we
 
 const tickTimer = setInterval(() => {
   try {
+    // Bots first so the AI's input is consumed by this tick's physics —
+    // a one-tick lag would be invisible at 60Hz but the right-causation
+    // ordering is cheap.
+    bots.tick();
     game.tick();
     const now = Date.now();
 
-    // AFK kick
+    // AFK kick — humans only. Bots have no socket and the bot manager
+    // keeps their lastInputAt fresh anyway.
     for (const [id, p] of game.players.entries()) {
+      if (p.isBot) continue;
       if (now - p.lastInputAt > AFK_TIMEOUT_MS) {
         const ws = sockets.get(id);
         if (ws) {
@@ -215,6 +229,7 @@ const tickTimer = setInterval(() => {
         }
         game.removePlayer(id);
         sockets.delete(id);
+        bots.setNobots(id, false);
       }
     }
 

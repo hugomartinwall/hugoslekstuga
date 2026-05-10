@@ -69,6 +69,30 @@ export type Cell = {
   splitAt: number;
 };
 
+/** Per-bot AI state. Lives on the Player so the bot tick loop can read
+ *  and mutate without juggling parallel maps. Null on humans. The shape
+ *  is server-only — clients can't tell bots from humans on the wire. */
+export type BotState = {
+  /** Epoch ms the bot was spawned. Used by the eviction queue: when a
+   *  human takes a bot's slot, the oldest bot leaves first. */
+  spawnedAtMs: number;
+  /** Epoch ms the bot died. 0 while alive. After RESPAWN_COOLDOWN_MS
+   *  elapses the bot manager respawns it. */
+  diedAt: number;
+  /** Cached chase / flee target world position. */
+  targetX: number;
+  targetY: number;
+  /** False when wandering. */
+  hasTarget: boolean;
+  /** When true, the bot moves AWAY from targetX/Y (a fleeing motion). */
+  fleeing: boolean;
+  /** Heading in radians while wandering. Drifts each tick with mild
+   *  noise so movement looks alive, not Brownian. */
+  wanderAngle: number;
+  /** Throttles re-evaluation of who to chase / flee. */
+  lastDecisionAt: number;
+};
+
 export type Player = {
   id: string;
   name: string;
@@ -93,6 +117,11 @@ export type Player = {
    *  shape — phones get a tall slice, desktops a wide one — while
    *  keeping the total visible area identical for fairness. */
   aspect: number | null;
+  /** True for server-controlled bots. Bots look identical to humans on
+   *  the wire — this flag never leaves the server. */
+  isBot: boolean;
+  /** AI state for bots; null on humans. */
+  bot: BotState | null;
 };
 
 export type Food = {
@@ -142,8 +171,29 @@ export class Game {
       lastAim: { x: 0, y: -1 },
       spawnedAt: Date.now(),
       aspect: null,
+      isBot: false,
+      bot: null,
     };
     this.players.set(id, player);
+    return player;
+  }
+
+  /** Spawn a server-controlled bot. Same physics as a human player but
+   *  flagged with isBot + initial bot AI state. The wire format is
+   *  identical — clients can't distinguish. */
+  addBot(id: string, name: string): Player {
+    const player = this.addPlayer(id, name);
+    player.isBot = true;
+    player.bot = {
+      spawnedAtMs: Date.now(),
+      diedAt: 0,
+      targetX: 0,
+      targetY: 0,
+      hasTarget: false,
+      fleeing: false,
+      wanderAngle: Math.random() * Math.PI * 2,
+      lastDecisionAt: 0,
+    };
     return player;
   }
 

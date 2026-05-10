@@ -104,9 +104,20 @@ export default function MunchPage() {
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
 
+    // Solo-testing flag: ?nobots in the URL pauses the server's bot
+    // floor while this human is connected. Used to test the room
+    // without bot company.
+    const nobots =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("nobots");
+
     ws.onopen = () => {
       ws.send(
-        JSON.stringify({ type: "join", name: chosenName } satisfies ClientMsg),
+        JSON.stringify({
+          type: "join",
+          name: chosenName,
+          ...(nobots ? { nobots: true } : {}),
+        } satisfies ClientMsg),
       );
     };
     ws.onmessage = (e) => {
