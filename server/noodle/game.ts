@@ -50,6 +50,27 @@ const MIN_LENGTH = 4;
  *  ~250-segment snake at boost speed; longer than the body needs. */
 const MAX_TRAIL_LEN = 1200;
 
+/** Per-bot AI state. Lives on the Snake so the bot tick loop reads
+ *  and mutates without juggling parallel maps. Null on humans. */
+export type BotState = {
+  spawnedAtMs: number;
+  diedAt: number;
+  /** Personality: scales the bot's foraging sight radius. ~0.7-1.3. */
+  sightFactor: number;
+  /** Personality: per-bot decision interval (ms). ~150-280. */
+  decisionMs: number;
+  /** Personality: aim noise magnitude (rad). ~0-0.25 — wobbly heads. */
+  jitterAmp: number;
+  /** Throttles foraging re-evaluation. */
+  lastDecisionAt: number;
+  /** Cached current chase target (food id or coordinates). */
+  targetX: number;
+  targetY: number;
+  hasTarget: boolean;
+  /** Wander heading (radians) when nothing of interest is in range. */
+  wanderAngle: number;
+};
+
 export type Snake = {
   id: string;
   name: string;
@@ -80,6 +101,10 @@ export type Snake = {
   killedBy: string | null;
   /** Length at death — final score. */
   finalLength: number;
+  /** True for server-controlled bots. Server-only; identical on wire. */
+  isBot: boolean;
+  /** AI state for bots; null on humans. */
+  bot: BotState | null;
 };
 
 export type Food = {
@@ -96,6 +121,16 @@ export type Food = {
 export class Game {
   players = new Map<string, Snake>();
   food = new Map<number, Food>();
+  /** Body-segment spatial grid built each tick during collision
+   *  resolution. Re-used by the bot manager to query for nearby
+   *  bodies when deciding whether to swerve. Stays valid until the
+   *  next tick. */
+  bodyGrid = new SpatialGrid<{
+    id: number;
+    x: number;
+    y: number;
+    ownerId: string;
+  }>(WORLD_SIZE, 150);
 
   private nextFoodId = 1;
 
@@ -127,8 +162,31 @@ export class Game {
       lastInputAt: Date.now(),
       killedBy: null,
       finalLength: 0,
+      isBot: false,
+      bot: null,
     };
     this.players.set(id, snake);
+    return snake;
+  }
+
+  /** Spawn a server-controlled bot. Same shape as a human snake plus
+   *  the bot AI fields. The wire format is identical — clients can't
+   *  tell humans from bots. */
+  addBot(id: string, name: string, x?: number, y?: number): Snake {
+    const snake = this.addPlayer(id, name, x, y);
+    snake.isBot = true;
+    snake.bot = {
+      spawnedAtMs: Date.now(),
+      diedAt: 0,
+      sightFactor: 0.7 + Math.random() * 0.6,   // 0.7 - 1.3
+      decisionMs: 150 + Math.random() * 130,    // 150 - 280
+      jitterAmp: Math.random() * 0.15,          // 0 - 0.15
+      lastDecisionAt: 0,
+      targetX: 0,
+      targetY: 0,
+      hasTarget: false,
+      wanderAngle: Math.random() * Math.PI * 2,
+    };
     return snake;
   }
 
@@ -272,12 +330,9 @@ export class Game {
     // Build a spatial grid of all body segments (skipping each snake's
     // own head and own segments — choice 3A: self-collision allowed).
     // Then for each alive snake's head, check nearby segments.
-    const bodyGrid = new SpatialGrid<{
-      id: number;
-      x: number;
-      y: number;
-      ownerId: string;
-    }>(WORLD_SIZE, 150);
+    // The grid stays exposed on `this.bodyGrid` so the bot manager
+    // can query it for swerve decisions next tick.
+    const bodyGrid = this.bodyGrid;
     bodyGrid.clear();
     let segIdCounter = 1;
     // Cache body computations so we don't recompute for collision +

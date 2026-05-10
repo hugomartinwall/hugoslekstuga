@@ -16,10 +16,12 @@ import {
   type ServerMsg,
 } from "../../lib/noodle/protocol.js";
 import { Game } from "./game.js";
+import { BotManager } from "./bots.js";
 
 /* -------------------------- module state ---------------------------- */
 
 const game = new Game();
+const bots = new BotManager(game);
 const sockets = new Map<string, WebSocket>();
 let nextPlayerId = 1;
 const lastDeadEmitTick = new Map<string, number>();
@@ -32,11 +34,16 @@ let lastSnapshotAt = 0;
 
 const tickTimer = setInterval(() => {
   try {
+    // Game tick first (moves snakes, builds body grid). Bots tick after,
+    // reading the fresh body grid for swerve decisions and queuing aim
+    // for the NEXT game tick — one-tick lag is invisible at 30Hz.
     game.tick();
+    bots.tick();
     const now = Date.now();
 
-    // AFK kick — humans only (no bots in noodle yet).
+    // AFK kick — humans only.
     for (const [id, s] of game.players.entries()) {
+      if (s.isBot) continue;
       if (now - s.lastInputAt > AFK_TIMEOUT_MS) {
         const ws = sockets.get(id);
         if (ws) {
@@ -45,6 +52,7 @@ const tickTimer = setInterval(() => {
         }
         game.removePlayer(id);
         sockets.delete(id);
+        bots.setNobots(id, false);
       }
     }
 
@@ -121,6 +129,7 @@ export function mountNoodle(ws: WebSocket): void {
           playerId = id;
           sockets.set(id, ws);
           const player = game.addPlayer(id, name);
+          if (msg.nobots === true) bots.setNobots(id, true);
           send(ws, {
             type: "welcome",
             playerId: id,
@@ -154,6 +163,7 @@ export function mountNoodle(ws: WebSocket): void {
       if (playerId) {
         game.removePlayer(playerId);
         sockets.delete(playerId);
+        bots.setNobots(playerId, false);
       }
     });
 
@@ -162,6 +172,7 @@ export function mountNoodle(ws: WebSocket): void {
       if (playerId) {
         game.removePlayer(playerId);
         sockets.delete(playerId);
+        bots.setNobots(playerId, false);
       }
     });
   } catch (err) {
