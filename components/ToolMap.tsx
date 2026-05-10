@@ -86,13 +86,10 @@ const SHADOW_DY = 4;
 const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
 // Physics — looser, calmer pass without spring/edge forces.
 //
-// CENTER_PULL is the always-on gravity toward the canvas centre.
-// CURSOR_PULL adds a secondary pull toward the cursor (the
-// "interactive gravity"). The two compose: with cursor on canvas,
-// equilibrium is roughly the midpoint of cursor and centre. With
-// cursor off, equilibrium is the centre.
-const CENTER_PULL = 0.0025;
-const CURSOR_PULL = 0.0035;
+// CENTER_PULL is the only attractor. The canvas centre is always the
+// gravity well. The interactivity is drag — fling a dot, it travels,
+// then gravity pulls it home. The cursor doesn't tilt the field.
+const CENTER_PULL = 0.0035;
 const REPEL = 4800;
 const DAMPING = 0.96;
 const WOBBLE_FORCE = 0.012;
@@ -233,13 +230,7 @@ export default function ToolMap({
       }
 
       const wobbleAmplitude = reduceMotionRef.current ? 0 : WOBBLE_FORCE;
-      step(
-        nodesRef.current,
-        size.w,
-        size.h,
-        wobbleAmplitude,
-        cursorRef.current,
-      );
+      step(nodesRef.current, size.w, size.h, wobbleAmplitude);
 
       // Particles.
       const ps = particlesRef.current;
@@ -628,7 +619,6 @@ function step(
   width: number,
   height: number,
   wobbleAmp: number,
-  cursor: { x: number; y: number } | null,
 ): number {
   if (nodes.length === 0) return 0;
   const now = performance.now();
@@ -662,17 +652,10 @@ function step(
 
   for (const n of nodes) {
     if (n.pinned) continue;
-    // Centre pull — always on, gentle gravity to the canvas centre.
+    // Gravity — pulls every dot toward the canvas centre. The only
+    // attractor in the system; cursor doesn't influence it.
     n.vx += (cx - n.x) * CENTER_PULL;
     n.vy += (cy - n.y) * CENTER_PULL;
-    // Cursor pull — when the cursor is on the canvas, dots lean toward
-    // it. The result: with the cursor at the centre of the canvas the
-    // pulls compose with no offset; move the cursor and the swarm
-    // tilts that way; move it off and the swarm drifts back.
-    if (cursor !== null) {
-      n.vx += (cursor.x - n.x) * CURSOR_PULL;
-      n.vy += (cursor.y - n.y) * CURSOR_PULL;
-    }
     // Idle wobble — long-period drift so the swarm feels alive at rest.
     if (wobbleAmp > 0) {
       n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
