@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import { localISODate } from "@/lib/dates";
 import CustomMinutes from "@/components/CustomMinutes";
 
 type Phase = "setup" | "running" | "paused" | "done";
@@ -11,22 +12,165 @@ type Phase = "setup" | "running" | "paused" | "done";
 const PRESETS_MIN = [15, 25, 45];
 const STORAGE_KEY_INTENTION = "hugoslekstuga:focus:intention";
 const STORAGE_KEY_DURATION = "hugoslekstuga:focus:duration";
+const STORAGE_KEY_AMBIENT = "hugoslekstuga:focus:ambient";
+const STORAGE_KEY_SESSIONS = "hugoslekstuga:focus:sessions";
+
+type SessionState = { date: string; count: number };
+const SESSIONS_DEFAULT: SessionState = { date: "", count: 0 };
 
 // Minimal subset of the WakeLock API to avoid relying on lib.dom typings that
 // aren't always present in build environments.
 type WakeLockSentinelLike = { release: () => Promise<void> };
 
+/** Brown noise: integrated white, normalised. The most universally
+ *  non-distracting ambient — pleasant for long sittings, easy on the
+ *  ears. Generated live so we never download an audio file. */
+function makeBrownBuffer(ctx: AudioContext): AudioBuffer {
+  const seconds = 6;
+  const buffer = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < data.length; i++) {
+    const white = Math.random() * 2 - 1;
+    last = (last + 0.02 * white) / 1.02;
+    data[i] = last * 3.5;
+  }
+  return buffer;
+}
+
+const AMBIENT_VOLUME = 0.4;
+const AMBIENT_FADE_IN = 1.5;
+const AMBIENT_FADE_OUT = 1.0;
+const AMBIENT_MUTE_RAMP = 0.3;
+
 export default function FocusPage() {
   const tool = findTool("focus")!;
   const [intention, setIntention] = useLocalStorageState<string>(STORAGE_KEY_INTENTION, "");
   const [durationSec, setDurationSec] = useLocalStorageState<number>(STORAGE_KEY_DURATION, 25 * 60);
+  const [ambient, setAmbient] = useLocalStorageState<boolean>(STORAGE_KEY_AMBIENT, false);
+  const [sessions, setSessions] = useLocalStorageState<SessionState>(STORAGE_KEY_SESSIONS, SESSIONS_DEFAULT);
   const [remainingSec, setRemainingSec] = useState(durationSec);
   const [phase, setPhase] = useState<Phase>("setup");
   const startedAtRef = useRef<number | null>(null);
   const baseRemainingRef = useRef<number>(durationSec);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
 
-  // Page title reflects countdown so it's visible in the tab.
+  const today = useMemo(() => localISODate(new Date()), []);
+  const todayCount = sessions.date === today ? sessions.count : 0;
+
+  // ---------- ambient audio orchestration ----------
+  // The session's ambient AudioContext lives across pause/resume so we
+  // don't pay a startup click each time. It tears down only when the
+  // session actually ends (done or stop).
+  const ambientCtxRef = useRef<AudioContext | null>(null);
+  const ambientGainRef = useRef<GainNode | null>(null);
+  const ambientSrcRef = useRef<AudioBufferSourceNode | null>(null);
+
+  const startAmbient = useCallback(() => {
+    if (ambientCtxRef.current) return; // already running
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const buf = makeBrownBuffer(ctx);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001;
+      src.connect(gain).connect(ctx.destination);
+      src.start();
+      gain.gain.exponentialRampToValueAtTime(
+        AMBIENT_VOLUME,
+        ctx.currentTime + AMBIENT_FADE_IN,
+      );
+      ambientCtxRef.current = ctx;
+      ambientGainRef.current = gain;
+      ambientSrcRef.current = src;
+    } catch {
+      // Audio unsupported / blocked — silently skip.
+    }
+  }, []);
+
+  const stopAmbient = useCallback(() => {
+    const ctx = ambientCtxRef.current;
+    const gain = ambientGainRef.current;
+    const src = ambientSrcRef.current;
+    if (!ctx) return;
+    if (gain) {
+      try {
+        gain.gain.cancelScheduledValues(ctx.currentTime);
+        gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(
+          0.0001,
+          ctx.currentTime + AMBIENT_FADE_OUT,
+        );
+      } catch {}
+    }
+    window.setTimeout(
+      () => {
+        try {
+          src?.stop();
+        } catch {}
+        try {
+          ctx.close();
+        } catch {}
+        ambientCtxRef.current = null;
+        ambientGainRef.current = null;
+        ambientSrcRef.current = null;
+      },
+      AMBIENT_FADE_OUT * 1000 + 80,
+    );
+  }, []);
+
+  const muteAmbient = useCallback(() => {
+    const ctx = ambientCtxRef.current;
+    const gain = ambientGainRef.current;
+    if (!ctx || !gain) return;
+    try {
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        ctx.currentTime + AMBIENT_MUTE_RAMP,
+      );
+    } catch {}
+  }, []);
+
+  const unmuteAmbient = useCallback(() => {
+    const ctx = ambientCtxRef.current;
+    const gain = ambientGainRef.current;
+    if (!ctx || !gain) return;
+    try {
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(
+        AMBIENT_VOLUME,
+        ctx.currentTime + AMBIENT_MUTE_RAMP,
+      );
+    } catch {}
+  }, []);
+
+  const inSession = phase === "running" || phase === "paused";
+
+  // Spin up / tear down the ambient audio graph on session boundaries.
+  useEffect(() => {
+    if (!inSession || !ambient) return;
+    startAmbient();
+    return () => stopAmbient();
+  }, [inSession, ambient, startAmbient, stopAmbient]);
+
+  // Mute / unmute on pause-resume (without rebuilding the graph).
+  useEffect(() => {
+    if (!ambient) return;
+    if (phase === "paused") muteAmbient();
+    else if (phase === "running") unmuteAmbient();
+  }, [phase, ambient, muteAmbient, unmuteAmbient]);
+
+  // ---------- title sync ----------
   useEffect(() => {
     if (phase === "running" || phase === "paused") {
       document.title = `${formatClock(remainingSec)} — Focus`;
@@ -37,7 +181,7 @@ export default function FocusPage() {
     }
   }, [phase, remainingSec]);
 
-  // Countdown loop while running.
+  // ---------- countdown ----------
   useEffect(() => {
     if (phase !== "running") return;
     const id = window.setInterval(() => {
@@ -50,12 +194,18 @@ export default function FocusPage() {
         setPhase("done");
         playChime();
         notifyDone(intention);
+        // Increment session count only on natural completion (not on Stop).
+        setSessions((prev) =>
+          prev.date === today
+            ? { date: today, count: prev.count + 1 }
+            : { date: today, count: 1 },
+        );
       }
     }, 200);
     return () => window.clearInterval(id);
-  }, [phase, intention]);
+  }, [phase, intention, today, setSessions]);
 
-  // Wake lock while running.
+  // ---------- wake lock ----------
   useEffect(() => {
     if (phase !== "running") return;
     let cancelled = false;
@@ -127,6 +277,8 @@ export default function FocusPage() {
           setIntention={setIntention}
           durationSec={durationSec}
           setDurationSec={setDurationSec}
+          ambient={ambient}
+          setAmbient={setAmbient}
           onStart={start}
         />
       )}
@@ -144,7 +296,7 @@ export default function FocusPage() {
       )}
 
       {phase === "done" && (
-        <Done intention={intention} onReset={reset} />
+        <Done intention={intention} todayCount={todayCount} onReset={reset} />
       )}
     </ToolFrame>
   );
@@ -155,12 +307,16 @@ function Setup({
   setIntention,
   durationSec,
   setDurationSec,
+  ambient,
+  setAmbient,
   onStart,
 }: {
   intention: string;
   setIntention: (s: string) => void;
   durationSec: number;
   setDurationSec: (n: number) => void;
+  ambient: boolean;
+  setAmbient: (b: boolean) => void;
   onStart: () => void;
 }) {
   return (
@@ -208,6 +364,37 @@ function Setup({
             color="green"
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Ambient sound
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setAmbient(false)}
+            className={`rounded-full border-2 border-ink px-4 py-2 text-sm font-bold transition-colors ${
+              !ambient ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
+            }`}
+          >
+            Silent
+          </button>
+          <button
+            type="button"
+            onClick={() => setAmbient(true)}
+            className={`rounded-full border-2 border-ink px-4 py-2 text-sm font-bold transition-colors ${
+              ambient ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
+            }`}
+          >
+            Brown noise
+          </button>
+        </div>
+        <p className="text-xs text-ink-muted">
+          {ambient
+            ? "Soft brown noise during the session. Like ocean far away — non-distracting, pleasant for long sittings."
+            : "No background sound."}
+        </p>
       </div>
 
       <button
@@ -266,12 +453,12 @@ function Running({
         </p>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap justify-center gap-3">
         {paused ? (
           <button
             type="button"
             onClick={onResume}
-            className="btn-chunk rounded-[var(--radius-button)] bg-green px-6 py-3 font-display text-base font-extrabold text-cream"
+            className="btn-chunk rounded-[var(--radius-button)] bg-green px-7 py-4 font-display text-base font-extrabold text-cream sm:px-6 sm:py-3"
           >
             Resume
           </button>
@@ -279,7 +466,7 @@ function Running({
           <button
             type="button"
             onClick={onPause}
-            className="btn-chunk rounded-[var(--radius-button)] bg-cream px-6 py-3 font-display text-base font-extrabold"
+            className="btn-chunk rounded-[var(--radius-button)] bg-cream px-7 py-4 font-display text-base font-extrabold sm:px-6 sm:py-3"
           >
             Pause
           </button>
@@ -287,9 +474,9 @@ function Running({
         <button
           type="button"
           onClick={onReset}
-          className="rounded-full border-2 border-ink bg-cream px-4 py-3 text-sm font-semibold transition-colors hover:bg-cream-deep"
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-7 py-4 font-display text-base font-extrabold sm:px-6 sm:py-3"
         >
-          End early
+          Stop
         </button>
       </div>
     </div>
@@ -298,11 +485,17 @@ function Running({
 
 function Done({
   intention,
+  todayCount,
   onReset,
 }: {
   intention: string;
+  todayCount: number;
   onReset: () => void;
 }) {
+  const countLine =
+    todayCount === 1
+      ? "First session today."
+      : `${todayCount} sessions today.`;
   return (
     <div className="card-chunk flex flex-col gap-5 rounded-[var(--radius-card)] bg-green-soft p-8 text-center">
       <p className="font-display text-5xl font-extrabold tracking-tight sm:text-6xl">
@@ -312,6 +505,11 @@ function Done({
         <p className="text-base text-ink-soft">
           Nice work on{" "}
           <span className="font-bold text-ink">{intention}</span>.
+        </p>
+      )}
+      {todayCount > 0 && (
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          {countLine}
         </p>
       )}
       <button
