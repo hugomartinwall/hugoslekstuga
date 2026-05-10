@@ -17,10 +17,10 @@ export const COLOR_HEX: Record<ToolColor, string> = {
   blue: "#4f66f2",
   yellow: "#ffc233",
   pink: "#ff7ab2",
-  green: "#3fa66e",
+  green: "#2bb37c",
   purple: "#9333ea",
-  orange: "#f97316",
-  teal: "#0d9488",
+  orange: "#fb923c",
+  teal: "#14b8a6",
 };
 
 /** Soft variants. Mirrors --color-{name}-soft tokens. */
@@ -29,10 +29,10 @@ export const COLOR_HEX_SOFT: Record<ToolColor, string> = {
   blue: "#d6dcfc",
   yellow: "#ffeec2",
   pink: "#ffd6e7",
-  green: "#cce8d8",
+  green: "#c8eedc",
   purple: "#ead8fc",
-  orange: "#fed7aa",
-  teal: "#b8f0e7",
+  orange: "#fee0c2",
+  teal: "#c2f0e9",
 };
 
 /** Yellow and pink want ink text on top of them; the other six want cream. */

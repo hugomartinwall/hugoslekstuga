@@ -13,10 +13,10 @@ const SLICE_COLORS = [
   { fill: "#ffc233", text: "#1a1812" }, // yellow
   { fill: "#4f66f2", text: "#fbf6ee" }, // blue
   { fill: "#ff7ab2", text: "#1a1812" }, // pink
-  { fill: "#3fa66e", text: "#fbf6ee" }, // green
+  { fill: "#2bb37c", text: "#fbf6ee" }, // green
   { fill: "#9333ea", text: "#fbf6ee" }, // purple
-  { fill: "#f97316", text: "#fbf6ee" }, // orange
-  { fill: "#0d9488", text: "#fbf6ee" }, // teal
+  { fill: "#fb923c", text: "#fbf6ee" }, // orange
+  { fill: "#14b8a6", text: "#fbf6ee" }, // teal
 ];
 
 const SAMPLE_OPTIONS = `Indian

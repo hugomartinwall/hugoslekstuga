@@ -42,10 +42,10 @@ const PALETTE = [
   "#4f66f2",
   "#ffc233",
   "#ff7ab2",
-  "#3fa66e",
+  "#2bb37c",
   "#9333ea",
-  "#f97316",
-  "#0d9488",
+  "#fb923c",
+  "#14b8a6",
 ];
 
 export type Cell = {

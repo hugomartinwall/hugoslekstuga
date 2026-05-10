@@ -22,7 +22,7 @@ export const CLUSTERS: Record<ClusterId, Cluster> = {
   files: {
     id: "files",
     label: "Files",
-    color: "#f97316",
+    color: "#fb923c",
     description: "Sharing & shaping documents",
   },
   writing: {
@@ -40,7 +40,7 @@ export const CLUSTERS: Record<ClusterId, Cluster> = {
   wellness: {
     id: "wellness",
     label: "Wellness",
-    color: "#3fa66e",
+    color: "#2bb37c",
     description: "Body & mind",
   },
   creative: {

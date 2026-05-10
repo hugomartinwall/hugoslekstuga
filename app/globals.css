@@ -19,14 +19,14 @@
   --color-yellow-soft: #ffeec2;
   --color-pink: #ff7ab2;
   --color-pink-soft: #ffd6e7;
-  --color-green: #3fa66e;
-  --color-green-soft: #cce8d8;
+  --color-green: #2bb37c;
+  --color-green-soft: #c8eedc;
   --color-purple: #9333ea;
   --color-purple-soft: #ead8fc;
-  --color-orange: #f97316;
-  --color-orange-soft: #fed7aa;
-  --color-teal: #0d9488;
-  --color-teal-soft: #b8f0e7;
+  --color-orange: #fb923c;
+  --color-orange-soft: #fee0c2;
+  --color-teal: #14b8a6;
+  --color-teal-soft: #c2f0e9;
 
   --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
@@ -108,6 +108,14 @@ body {
   animation: pulse-dot 2.2s ease-in-out infinite;
 }
 
+/* Subtle "breathing" for the interactive brand period. Slower and
+   gentler than .pulse-dot — meant to read as ambient life, not a
+   call-to-action. Used by components/BrandDot.tsx. */
+@keyframes brand-dot-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+}
+
 /* Cross-fade for the cycling featured tool. */
 @keyframes featured-in {
   from { opacity: 0; transform: translateY(6px) scale(0.985); }
@@ -132,6 +140,11 @@ body {
   .fade-rise,
   .featured-in,
   .pulse-dot {
+    animation: none !important;
+  }
+  /* Breathing brand dot also stops on reduced-motion. The animation is
+     an inline style on a span inside <BrandDot>; this rule reaches it. */
+  *[style*="brand-dot-breathe"] {
     animation: none !important;
   }
   .btn-chunk,

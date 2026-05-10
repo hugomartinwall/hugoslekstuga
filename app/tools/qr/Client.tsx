@@ -31,10 +31,10 @@ const FG_PRESETS: { name: string; hex: string }[] = [
   { name: "blue", hex: "#4f66f2" },
   { name: "yellow", hex: "#ffc233" },
   { name: "pink", hex: "#ff7ab2" },
-  { name: "green", hex: "#3fa66e" },
+  { name: "green", hex: "#2bb37c" },
   { name: "purple", hex: "#9333ea" },
-  { name: "orange", hex: "#f97316" },
-  { name: "teal", hex: "#0d9488" },
+  { name: "orange", hex: "#fb923c" },
+  { name: "teal", hex: "#14b8a6" },
 ];
 
 export default function QrPage() {
