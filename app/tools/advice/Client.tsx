@@ -81,32 +81,31 @@ export default function AdvicePage() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={draw}
-          className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-8 py-4 font-display text-lg font-extrabold tracking-tight sm:text-xl"
-        >
-          {current === null ? "Give me one good advice" : "Give me another"}
-        </button>
+        <div className="flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={draw}
+            className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-8 py-4 font-display text-lg font-extrabold tracking-tight sm:text-xl"
+          >
+            {current === null ? "Give me one good advice" : "Give me another"}
+          </button>
+          <span className="hidden items-center gap-1 text-xs text-ink-muted sm:inline-flex">
+            or press
+            <kbd className="rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
+              Space
+            </kbd>
+          </span>
+        </div>
 
         {current !== null && (
           <div className="flex flex-col items-center gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={copy}
-                className="rounded-full border-2 border-ink bg-cream px-4 py-1.5 text-sm font-bold transition-colors hover:bg-yellow-soft"
-              >
-                {copied ? "Copied!" : "Copy"}
-              </button>
-              <span className="hidden items-center gap-1 text-xs text-ink-muted sm:inline-flex">
-                or press
-                <kbd className="rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
-                  Space
-                </kbd>
-                for another
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={copy}
+              className="rounded-full border-2 border-ink bg-cream px-4 py-1.5 text-sm font-bold transition-colors hover:bg-yellow-soft"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
             <p className="text-sm text-ink-muted">
               Sometimes the smallest useful thing is enough.
             </p>
