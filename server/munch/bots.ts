@@ -45,11 +45,6 @@ import type { Game, Player } from "./game.js";
 const SIGHT_RADIUS_BASE = 700;
 const SIGHT_MASS_EXPONENT = 0.35;
 
-/** Min ms between bot AI decisions. Between decisions the bot keeps
- *  moving toward its cached target — looks goal-directed without
- *  burning CPU re-scanning every tick. */
-const DECISION_INTERVAL_MS = 270;
-
 /** Probability per decision tick that a bot fires a split when a viable
  *  chase target is within projected eject range. Roughly once per second
  *  when a target persists. */
@@ -65,6 +60,17 @@ const SPAWN_RATE_MS = 200;
 /** Max wander-angle drift per tick (radians). Keeps motion alive without
  *  looking jittery. */
 const WANDER_NOISE = 0.08;
+
+/** Probability that a bot picks a *random* in-sight prey instead of the
+ *  closest one. Adds unpredictability so a player can't reliably bait
+ *  the same bot the same way twice. */
+const RANDOM_PREY_PROBABILITY = 0.3;
+
+/** Margin from the world edge where bots start to feel the wall.
+ *  Inside this distance, the wall-ward component of their input
+ *  direction is dampened so they don't run head-first into a wall.
+ *  Without this, a player can herd bots into corners and trap them. */
+const WALL_AVOID_MARGIN = 500;
 
 /* ------------------------------------------------------------------ */
 /* Friendly bot names — mushrooms                                       */
@@ -323,12 +329,15 @@ export class BotManager {
   private runAI(p: Player, now: number): void {
     const bot = p.bot!;
 
-    // Throttle decisions — between them, just keep walking toward target.
-    if (now - bot.lastDecisionAt > DECISION_INTERVAL_MS) {
+    // Per-bot decision interval — staggers AI thinking across the
+    // population so they don't all turn on the same beat.
+    if (now - bot.lastDecisionAt > bot.decisionMs) {
       bot.lastDecisionAt = now;
       this.decide(p);
     }
 
+    let ux = 0;
+    let uy = 0;
     if (bot.hasTarget) {
       const cx = centroidX(p);
       const cy = centroidY(p);
@@ -337,18 +346,71 @@ export class BotManager {
       const len = Math.hypot(dx, dy);
       if (len > 0.01) {
         const sign = bot.fleeing ? -1 : 1;
-        const ux = (sign * dx) / len;
-        const uy = (sign * dy) / len;
-        p.inputDir = { x: ux, y: uy };
-        p.lastAim = { x: ux, y: uy };
+        ux = (sign * dx) / len;
+        uy = (sign * dy) / len;
       }
     } else {
       // Wander: drift the heading by a small random amount each tick.
       bot.wanderAngle += (Math.random() - 0.5) * WANDER_NOISE;
-      const ux = Math.cos(bot.wanderAngle);
-      const uy = Math.sin(bot.wanderAngle);
-      p.inputDir = { x: ux, y: uy };
-      p.lastAim = { x: ux, y: uy };
+      ux = Math.cos(bot.wanderAngle);
+      uy = Math.sin(bot.wanderAngle);
+    }
+
+    // Per-bot path jitter — each tick perturb the heading by a small
+    // random angle. Higher jitterAmp = curvier paths. Without this
+    // bots travel in dead-straight lines, which is easy to predict
+    // and exploit.
+    if (bot.jitterAmp > 0 && (ux !== 0 || uy !== 0)) {
+      const jitter = (Math.random() - 0.5) * bot.jitterAmp;
+      const cosJ = Math.cos(jitter);
+      const sinJ = Math.sin(jitter);
+      const rx = ux * cosJ - uy * sinJ;
+      const ry = ux * sinJ + uy * cosJ;
+      ux = rx;
+      uy = ry;
+    }
+
+    // Wall awareness — if our heading would push us into a wall we're
+    // already close to, zero that component out. Slides the bot along
+    // the wall instead of running into it. Closes the player exploit
+    // of herding bots into corners.
+    const myCx = centroidX(p);
+    const myCy = centroidY(p);
+    if (myCx < WALL_AVOID_MARGIN && ux < 0) {
+      const t = myCx / WALL_AVOID_MARGIN;
+      ux *= t;
+    } else if (myCx > WORLD_SIZE - WALL_AVOID_MARGIN && ux > 0) {
+      const t = (WORLD_SIZE - myCx) / WALL_AVOID_MARGIN;
+      ux *= t;
+    }
+    if (myCy < WALL_AVOID_MARGIN && uy < 0) {
+      const t = myCy / WALL_AVOID_MARGIN;
+      uy *= t;
+    } else if (myCy > WORLD_SIZE - WALL_AVOID_MARGIN && uy > 0) {
+      const t = (WORLD_SIZE - myCy) / WALL_AVOID_MARGIN;
+      uy *= t;
+    }
+
+    // Renormalise after jitter + wall avoidance so dampened components
+    // don't make the bot move slower than its full speed.
+    const finalLen = Math.hypot(ux, uy);
+    if (finalLen > 0.01) {
+      p.inputDir = { x: ux / finalLen, y: uy / finalLen };
+      p.lastAim = { x: ux / finalLen, y: uy / finalLen };
+    } else {
+      // Fully cornered — pick perpendicular escape so the bot doesn't
+      // freeze. Bias whichever axis has more room.
+      const escapeX = myCx < WORLD_SIZE / 2 ? 1 : -1;
+      const escapeY = myCy < WORLD_SIZE / 2 ? 1 : -1;
+      // Pick the axis the bot is further from a wall on.
+      const xRoom = Math.min(myCx, WORLD_SIZE - myCx);
+      const yRoom = Math.min(myCy, WORLD_SIZE - myCy);
+      if (xRoom > yRoom) {
+        p.inputDir = { x: escapeX, y: 0 };
+      } else {
+        p.inputDir = { x: 0, y: escapeY };
+      }
+      p.lastAim = { ...p.inputDir };
     }
 
     // Bots aren't subject to AFK kick — keep their lastInputAt fresh
@@ -364,16 +426,20 @@ export class BotManager {
     const myMass = totalMass(p);
 
     // Sight scales with mass^0.35, mirroring the per-player viewport.
-    // Bigger bots see further. This is what lets a mass-400 bot notice
-    // a fresh human at mass 20 from across half the map.
+    // Bigger bots see further. Then multiplied by the bot's personal
+    // sightFactor — sharper-eyed bots see further than fuzzier ones.
     const sight =
       SIGHT_RADIUS_BASE *
+      bot.sightFactor *
       Math.pow(Math.max(1, myMass / START_MASS), SIGHT_MASS_EXPONENT);
 
     let closestThreat: Player | null = null;
     let closestThreatDist = Infinity;
     let closestPrey: Player | null = null;
     let closestPreyDist = Infinity;
+    // Track all in-sight prey so the bot can occasionally pick a
+    // non-closest one — keeps players from baiting bots predictably.
+    const allPrey: { player: Player; dist: number }[] = [];
 
     // Long-range wander attractor: the closest HUMAN who isn't a
     // meaningful threat. Used only when nothing in close sight — so
@@ -411,6 +477,7 @@ export class BotManager {
           closestThreatDist = dist;
         }
       } else if (myMass > otherMass * EAT_RATIO) {
+        allPrey.push({ player: other, dist });
         if (dist < closestPreyDist) {
           closestPrey = other;
           closestPreyDist = dist;
@@ -429,8 +496,19 @@ export class BotManager {
 
     // 2) Chase + maybe split-fire.
     if (closestPrey) {
-      bot.targetX = centroidX(closestPrey);
-      bot.targetY = centroidY(closestPrey);
+      // Most of the time, chase the closest prey. Some of the time,
+      // pick a random in-sight prey instead — this is what makes
+      // bots stop being trivially predictable. A player can't bait
+      // the same bot the same way twice with confidence.
+      let prey = closestPrey;
+      let preyDist = closestPreyDist;
+      if (allPrey.length > 1 && Math.random() < RANDOM_PREY_PROBABILITY) {
+        const random = allPrey[Math.floor(Math.random() * allPrey.length)];
+        prey = random.player;
+        preyDist = random.dist;
+      }
+      bot.targetX = centroidX(prey);
+      bot.targetY = centroidY(prey);
       bot.hasTarget = true;
       bot.fleeing = false;
 
@@ -439,9 +517,9 @@ export class BotManager {
       // momentum decays — but the initial reach is the dominant term.
       const splitReach = (SPLIT_EJECT_SPEED * SPLIT_PULL_DELAY_MS) / 1000;
       const projectedHalf = myMass / 2;
-      const preyMass = totalMass(closestPrey);
+      const preyMass = totalMass(prey);
       if (
-        closestPreyDist < splitReach &&
+        preyDist < splitReach &&
         projectedHalf > preyMass * EAT_RATIO &&
         Math.random() < SPLIT_FIRE_PROBABILITY
       ) {

@@ -71,7 +71,12 @@ export type Cell = {
 
 /** Per-bot AI state. Lives on the Player so the bot tick loop can read
  *  and mutate without juggling parallel maps. Null on humans. The shape
- *  is server-only — clients can't tell bots from humans on the wire. */
+ *  is server-only — clients can't tell bots from humans on the wire.
+ *
+ *  Personality fields (sightFactor, decisionMs, jitterAmp) are set
+ *  once at spawn with per-bot randomness so the population isn't a
+ *  uniform hive mind — some bots are quick and twitchy, some slow
+ *  and meandering. */
 export type BotState = {
   /** Epoch ms the bot was spawned. Used by the eviction queue: when a
    *  human takes a bot's slot, the oldest bot leaves first. */
@@ -91,6 +96,14 @@ export type BotState = {
   wanderAngle: number;
   /** Throttles re-evaluation of who to chase / flee. */
   lastDecisionAt: number;
+  /** Personality: scales the bot's sight radius. ~0.7-1.3. */
+  sightFactor: number;
+  /** Personality: per-bot decision interval (ms). ~220-380 so bots
+   *  don't all think on the same beat. */
+  decisionMs: number;
+  /** Personality: how wobbly the bot's path is. 0 = straight lines,
+   *  0.4 = noticeable curves. */
+  jitterAmp: number;
 };
 
 export type Player = {
@@ -202,6 +215,10 @@ export class Game {
       fleeing: false,
       wanderAngle: Math.random() * Math.PI * 2,
       lastDecisionAt: 0,
+      // Personality — randomised per spawn so the population varies.
+      sightFactor: 0.7 + Math.random() * 0.6, // 0.7 - 1.3
+      decisionMs: 220 + Math.random() * 160,  // 220 - 380
+      jitterAmp: 0.1 + Math.random() * 0.3,   // 0.1 - 0.4
     };
     return player;
   }
