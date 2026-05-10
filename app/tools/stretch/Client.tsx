@@ -199,6 +199,10 @@ type StretchState = {
   todayCount: number;
   /** All-time completions. */
   totalCount: number;
+  /** Subtle chime on each step boundary so eyes-closed routines work. */
+  chime: boolean;
+  /** Speak step name + cue via the browser's SpeechSynthesis API. */
+  voice: boolean;
 };
 
 const DEFAULT_STATE: StretchState = {
@@ -206,6 +210,8 @@ const DEFAULT_STATE: StretchState = {
   lastDate: "",
   todayCount: 0,
   totalCount: 0,
+  chime: true,
+  voice: false,
 };
 
 function todayIso(): string {
@@ -232,6 +238,10 @@ export default function StretchPage() {
   const stepStartRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
+  // Defensive defaults — older localStorage values won't have chime/voice.
+  const chimeOn = state.chime ?? true;
+  const voiceOn = state.voice ?? false;
+
   const totalSec = routine.steps.reduce((a, s) => a + s.seconds, 0);
 
   // Animation loop drives remaining + step advancement. setState-in-effect
@@ -255,12 +265,16 @@ export default function StretchPage() {
       setRemaining(Math.max(0, left));
       if (left <= 0) {
         if (stepIdx < routine.steps.length - 1) {
+          const nextStep = routine.steps[stepIdx + 1];
           setStepIdx((i) => i + 1);
           stepStartRef.current = performance.now();
+          if (chimeOn) stepChime();
+          if (voiceOn) speak(`${nextStep.name}. ${nextStep.cue}`);
         } else {
           setRunning(false);
           setDone(true);
-          chime();
+          endChime();
+          cancelSpeech();
           // Increment counters. Reset today's count if the date changed.
           setState((s) => {
             const today = todayIso();
@@ -281,7 +295,7 @@ export default function StretchPage() {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [running, stepIdx, routine.steps, setState]);
+  }, [running, stepIdx, routine.steps, setState, chimeOn, voiceOn]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const start = () => {
@@ -289,22 +303,32 @@ export default function StretchPage() {
     setRemaining(routine.steps[0].seconds);
     setDone(false);
     setRunning(true);
+    if (voiceOn) {
+      const first = routine.steps[0];
+      speak(`${first.name}. ${first.cue}`);
+    }
   };
 
   const stop = () => {
     setRunning(false);
     setStepIdx(0);
     setDone(false);
+    cancelSpeech();
   };
 
   const skip = () => {
     if (!running) return;
     if (stepIdx < routine.steps.length - 1) {
+      const nextStep = routine.steps[stepIdx + 1];
       setStepIdx((i) => i + 1);
       stepStartRef.current = performance.now();
+      if (chimeOn) stepChime();
+      if (voiceOn) speak(`${nextStep.name}. ${nextStep.cue}`);
     } else {
       setRunning(false);
       setDone(true);
+      endChime();
+      cancelSpeech();
     }
   };
 
@@ -333,6 +357,10 @@ export default function StretchPage() {
             onPickRoutine={pickRoutine}
             todayCount={todayCount}
             totalCount={state.totalCount}
+            chime={chimeOn}
+            voice={voiceOn}
+            onChangeChime={(v) => setState((s) => ({ ...s, chime: v }))}
+            onChangeVoice={(v) => setState((s) => ({ ...s, voice: v }))}
           />
         )}
 
@@ -397,6 +425,10 @@ function Idle({
   onPickRoutine,
   todayCount,
   totalCount,
+  chime,
+  voice,
+  onChangeChime,
+  onChangeVoice,
 }: {
   routine: Routine;
   totalSec: number;
@@ -404,6 +436,10 @@ function Idle({
   onPickRoutine: (slug: string) => void;
   todayCount: number;
   totalCount: number;
+  chime: boolean;
+  voice: boolean;
+  onChangeChime: (v: boolean) => void;
+  onChangeVoice: (v: boolean) => void;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -446,6 +482,62 @@ function Idle({
             );
           })}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          Audio
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-ink-muted">Step chime</span>
+          <button
+            type="button"
+            onClick={() => onChangeChime(false)}
+            className={`rounded-full border-2 border-ink px-2.5 py-0.5 text-xs font-bold transition-colors ${
+              !chime ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
+            }`}
+          >
+            Silent
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeChime(true)}
+            className={`rounded-full border-2 border-ink px-2.5 py-0.5 text-xs font-bold transition-colors ${
+              chime ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
+            }`}
+          >
+            On
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-ink-muted">Voice prompts</span>
+          <button
+            type="button"
+            onClick={() => onChangeVoice(false)}
+            className={`rounded-full border-2 border-ink px-2.5 py-0.5 text-xs font-bold transition-colors ${
+              !voice ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
+            }`}
+          >
+            Off
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeVoice(true)}
+            className={`rounded-full border-2 border-ink px-2.5 py-0.5 text-xs font-bold transition-colors ${
+              voice ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
+            }`}
+          >
+            On
+          </button>
+        </div>
+        <p className="text-[11px] text-ink-muted">
+          {chime
+            ? "A soft tone marks each step boundary so eyes-closed routines work. "
+            : "No step chime. "}
+          {voice
+            ? "Your browser will speak the next step as it begins."
+            : "Voice prompts off."}
+        </p>
       </div>
 
       <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-green-soft p-6 text-center sm:p-8">
@@ -512,20 +604,20 @@ function Active({
         <p className="font-display text-5xl font-extrabold tabular-nums sm:text-6xl">
           {Math.ceil(remaining)}s
         </p>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
             onClick={onSkip}
-            className="rounded-full border-2 border-ink bg-cream px-4 py-2 text-sm font-semibold transition-colors hover:bg-cream-deep"
+            className="btn-chunk rounded-[var(--radius-button)] bg-green px-6 py-3 font-display text-base font-extrabold text-cream"
           >
-            Skip ahead
+            Next
           </button>
           <button
             type="button"
             onClick={onStop}
-            className="rounded-full border-2 border-ink bg-cream px-4 py-2 text-sm font-semibold transition-colors hover:bg-tomato-soft"
+            className="btn-chunk rounded-[var(--radius-button)] bg-cream px-6 py-3 font-display text-base font-extrabold"
           >
-            End early
+            Stop
           </button>
         </div>
       </div>
@@ -577,7 +669,8 @@ function Done({
   );
 }
 
-function chime() {
+/** End-of-routine chime — two-tone celebration. */
+function endChime() {
   try {
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
@@ -596,5 +689,54 @@ function chime() {
       o.stop(now + i * 0.18 + 0.55);
     });
     setTimeout(() => ctx.close(), 1200);
+  } catch {}
+}
+
+/** Step-boundary chime — single short tone. Subtle enough to not break
+ *  the calm; audible enough to mark "the next step has begun" with
+ *  eyes closed. Frequency in the warm-mid range so it doesn't startle. */
+function stepChime() {
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 528;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.1, now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+    o.connect(g).connect(ctx.destination);
+    o.start(now);
+    o.stop(now + 0.45);
+    setTimeout(() => ctx.close(), 600);
+  } catch {}
+}
+
+/** Speak text via the browser's SpeechSynthesis. Cancels any in-flight
+ *  utterance first so step changes don't queue up overlapping voices. */
+function speak(text: string) {
+  try {
+    if (typeof window === "undefined") return;
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.95;
+    u.pitch = 1.0;
+    u.volume = 0.9;
+    window.speechSynthesis.speak(u);
+  } catch {}
+}
+
+function cancelSpeech() {
+  try {
+    if (typeof window === "undefined") return;
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
   } catch {}
 }
