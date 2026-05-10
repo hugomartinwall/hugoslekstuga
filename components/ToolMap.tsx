@@ -78,18 +78,23 @@ type Ripple = {
 
 const NODE_R = 26;
 const SHADOW_DY = 4;
-// Edges are tuned for "loose & elastic". Tuned for ~16 nodes — looser than
-// the previous ~45-node values: more space between linked nodes, less
-// repulsion (fewer neighbours need less push to spread), slightly stronger
-// centre pull to keep the smaller cluster from drifting apart at the edges.
+// Physics tuned for the 16-node graph after a deep polish pass:
+// - DAMPING raised (less drag) so motion lingers — the "glide" feel,
+//   nodes don't snap to a stop when forces relax.
+// - REPEL raised slightly so nodes have breathing room without
+//   needing extra centre pull.
+// - CENTER_PULL nudged up to give a clearer "weight toward the
+//   middle" — the gravity feel.
+// - WOBBLE_FORCE halved so idle motion is alive, not jittery.
+// - MAX_V lowered so nothing whips across the canvas at once.
 const TARGET_DIST = 170;
-const SPRING_K = 0.032;
-const REPEL = 2400;
-const CENTER_PULL = 0.0045;
-const DAMPING = 0.88;
-const WOBBLE_FORCE = 0.05;
-const ENTRANCE_DURATION = 420;
-const ENTRANCE_STAGGER = 30;
+const SPRING_K = 0.028;
+const REPEL = 2800;
+const CENTER_PULL = 0.0055;
+const DAMPING = 0.94;
+const WOBBLE_FORCE = 0.025;
+const ENTRANCE_DURATION = 480;
+const ENTRANCE_STAGGER = 40;
 const CLICK_BOUNCE_MS = 240;
 const RIPPLE_DURATION = 700;
 const RIPPLE_COUNT = 3;
@@ -99,20 +104,19 @@ const PARTICLE_GRAVITY = 0.06;
 const PARTICLE_FRICTION = 0.93;
 const SPARKLE_LIFE_DECAY = 0.045;
 const SPARKLE_FRICTION = 0.9;
-const CURSOR_MAGNET_RADIUS = 150;
-const CURSOR_MAGNET_FORCE = 0.18;
+const CURSOR_MAGNET_RADIUS = 140;
+const CURSOR_MAGNET_FORCE = 0.13;
 const RECLUSTER_BURST_SPEED = 9;
-const TILT_VELOCITY_GAIN = 1.4;
-const TILT_MAX_DEG = 16;
-const TILT_LERP = 0.22;
-/** How aggressively the dragged node chases the cursor each frame. Higher
- * = snappier; lower = smoother. 0.55 is the sweet spot for steady motion
- * without feeling laggy. */
-const DRAG_LERP = 0.55;
-/** Hard cap on per-frame velocity, applied after force accumulation.
- * Prevents surrounding nodes from teleporting when the dragged node
- * suddenly arrives next to them. */
-const MAX_V = 14;
+// Lean (tilt) follows velocity, smoothed. Lower gain + lower max +
+// longer lerp = calmer, more deliberate body language as nodes move.
+const TILT_VELOCITY_GAIN = 1.0;
+const TILT_MAX_DEG = 12;
+const TILT_LERP = 0.15;
+/** How aggressively the dragged node chases the cursor each frame. */
+const DRAG_LERP = 0.5;
+/** Hard cap on per-frame velocity. Lowered with the new lower damping
+ *  so glide doesn't compound into a slingshot when forces stack. */
+const MAX_V = 11;
 const MIN_W = 320;
 const MIN_H = 480;
 
