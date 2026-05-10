@@ -18,30 +18,21 @@ const NOT_HERE = [
 export default function AboutPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
-      {/* Hero */}
+      {/* Hero — the long sentence is the title */}
       <header>
-        <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
-          Made for <span className="text-tomato">fun</span>.
+        <h1 className="max-w-3xl font-display text-3xl font-extrabold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl">
+          Hugo spends the off-hours on experiments that occasionally turn into
+          something worth{" "}
+          <span className="text-tomato">sharing</span>.
         </h1>
       </header>
-
-      {/* Hugo, in passing */}
-      <section className="mt-10 max-w-xl">
-        <p className="text-base leading-relaxed text-ink-soft sm:text-lg">
-          Hugo spends the off-hours on experiments that occasionally turn into
-          something worth sharing.
-        </p>
-      </section>
 
       {/* Things you won't find here */}
       <section className="mt-12 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-6 sm:p-8">
         <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
           Things you won&rsquo;t find here
         </h2>
-        <p className="mt-2 text-sm text-ink-soft">
-          A non-exhaustive list, with a smile.
-        </p>
-        <ul className="mt-4 flex flex-wrap gap-2">
+        <ul className="mt-5 flex flex-wrap gap-2">
           {NOT_HERE.map((item) => (
             <li
               key={item}
