@@ -1,26 +1,169 @@
-// Noodle — connection handler.
+// Noodle — connection handler + game tick loop.
 //
-// Step-2 stub: connections are accepted, immediately answered with a
-// "still cooking" error, and closed. The path routing in
-// server/index.ts uses this to validate that /noodle WebSocket
-// connections reach the right module. Step 3 fills in the actual
-// snake game.
+// Same shape as server/munch/handler.ts. Module-scope singletons own
+// the game and tick loop; the shared shell calls mountNoodle(ws) for
+// each new noodle WebSocket.
 
 import type { WebSocket } from "ws";
+import {
+  AFK_TIMEOUT_MS,
+  MAX_PLAYERS,
+  SNAPSHOT_HZ,
+  TICK_HZ,
+  WORLD_SIZE,
+  viewportHalfFor,
+  type ClientMsg,
+  type ServerMsg,
+} from "../../lib/noodle/protocol.js";
+import { Game } from "./game.js";
 
-/** Mount a new noodle connection. The shared shell calls this after
- *  it routes the WS upgrade by URL path. */
+/* -------------------------- module state ---------------------------- */
+
+const game = new Game();
+const sockets = new Map<string, WebSocket>();
+let nextPlayerId = 1;
+const lastDeadEmitTick = new Map<string, number>();
+
+/* -------------------------- tick loop ------------------------------- */
+
+const tickIntervalMs = 1000 / TICK_HZ;
+const snapshotIntervalMs = 1000 / SNAPSHOT_HZ;
+let lastSnapshotAt = 0;
+
+const tickTimer = setInterval(() => {
+  try {
+    game.tick();
+    const now = Date.now();
+
+    // AFK kick — humans only (no bots in noodle yet).
+    for (const [id, s] of game.players.entries()) {
+      if (now - s.lastInputAt > AFK_TIMEOUT_MS) {
+        const ws = sockets.get(id);
+        if (ws) {
+          send(ws, { type: "error", reason: "kicked for inactivity" });
+          ws.close();
+        }
+        game.removePlayer(id);
+        sockets.delete(id);
+      }
+    }
+
+    // Send "dead" message ONCE per death.
+    for (const [id, s] of game.players.entries()) {
+      if (s.alive) {
+        lastDeadEmitTick.delete(id);
+        continue;
+      }
+      if (lastDeadEmitTick.has(id)) continue;
+      const ws = sockets.get(id);
+      if (ws) {
+        send(ws, {
+          type: "dead",
+          finalLength: s.finalLength,
+          killer: s.killedBy,
+        });
+      }
+      lastDeadEmitTick.set(id, 1);
+    }
+
+    if (now - lastSnapshotAt < snapshotIntervalMs) return;
+    lastSnapshotAt = now;
+
+    for (const [id, ws] of sockets.entries()) {
+      const me = game.players.get(id);
+      if (!me) continue;
+      const { hx, hy } = viewportHalfFor(
+        Math.max(8, me.length),
+        me.aspect ?? undefined,
+      );
+      const snap = game.snapshotFor(id, hx, hy);
+      send(ws, {
+        type: "state",
+        tick: 0,
+        you: snap.you,
+        snakes: snap.snakes,
+        food: snap.food,
+        leaderboard: snap.leaderboard,
+      });
+    }
+  } catch (err) {
+    console.error("noodle: error in tick", err);
+  }
+}, tickIntervalMs);
+
+/* -------------------------- public API ------------------------------ */
+
 export function mountNoodle(ws: WebSocket): void {
   try {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "error",
-          reason: "Noodle is still cooking — try again soon.",
-        }),
-      );
+    if (game.players.size >= MAX_PLAYERS) {
+      send(ws, {
+        type: "error",
+        reason: "Room is full — try again in a minute.",
+      });
+      ws.close();
+      return;
     }
-    ws.close();
+
+    let playerId: string | null = null;
+
+    ws.on("message", (raw) => {
+      try {
+        let msg: ClientMsg;
+        try {
+          msg = JSON.parse(raw.toString());
+        } catch {
+          return;
+        }
+        if (msg.type === "join") {
+          if (playerId !== null) return;
+          const name = sanitiseName(msg.name);
+          const id = `n${nextPlayerId++}`;
+          playerId = id;
+          sockets.set(id, ws);
+          const player = game.addPlayer(id, name);
+          send(ws, {
+            type: "welcome",
+            playerId: id,
+            worldSize: WORLD_SIZE,
+            color: player.color,
+            name: player.name,
+          });
+          return;
+        }
+        if (!playerId) return;
+        if (msg.type === "input") {
+          const me = game.players.get(playerId);
+          if (!me) return;
+          if (!me.alive) return;
+          game.setInput(playerId, msg.aim, msg.boost, msg.aspect);
+          return;
+        }
+        if (msg.type === "respawn") {
+          const me = game.players.get(playerId);
+          if (!me) return;
+          if (me.alive) return;
+          game.respawn(playerId);
+          return;
+        }
+      } catch (err) {
+        console.error("noodle: error handling message", err);
+      }
+    });
+
+    ws.on("close", () => {
+      if (playerId) {
+        game.removePlayer(playerId);
+        sockets.delete(playerId);
+      }
+    });
+
+    ws.on("error", (err) => {
+      console.error("noodle: socket error", err);
+      if (playerId) {
+        game.removePlayer(playerId);
+        sockets.delete(playerId);
+      }
+    });
   } catch (err) {
     console.error("noodle: error in connection handler", err);
     try {
@@ -29,13 +172,57 @@ export function mountNoodle(ws: WebSocket): void {
   }
 }
 
-/** Health snapshot for the shared /health endpoint. */
 export function getNoodleHealth(): { players: number; sockets: number } {
-  // Step-2 stub: nothing to report yet.
-  return { players: 0, sockets: 0 };
+  return { players: game.players.size, sockets: sockets.size };
 }
 
-/** Called by the shared shell during graceful shutdown. */
 export function shutdownNoodle(): void {
-  // Step-2 stub: nothing to clean up.
+  clearInterval(tickTimer);
+  for (const ws of sockets.values()) {
+    try {
+      send(ws, {
+        type: "error",
+        reason: "Server is restarting — reconnect in a moment.",
+      });
+      ws.close(1001, "server going down");
+    } catch {}
+  }
+}
+
+/* -------------------------- helpers --------------------------------- */
+
+function send(ws: WebSocket, msg: ServerMsg): void {
+  if (ws.readyState !== ws.OPEN) return;
+  try {
+    ws.send(JSON.stringify(msg));
+  } catch {
+    // socket died mid-send; cleanup happens on close
+  }
+}
+
+const BLOCKED = [
+  "n1gger",
+  "nigger",
+  "f4ggot",
+  "faggot",
+  "retard",
+  "kike",
+  "tranny",
+];
+
+function sanitiseName(raw: unknown): string {
+  let n = String(raw ?? "")
+    // Strip controls and newlines
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .trim()
+    .slice(0, 16);
+  if (n === "") n = `anon-${Math.floor(Math.random() * 9999)}`;
+  const lower = n.toLowerCase();
+  for (const bad of BLOCKED) {
+    if (lower.includes(bad)) {
+      n = `anon-${Math.floor(Math.random() * 9999)}`;
+      break;
+    }
+  }
+  return n;
 }
