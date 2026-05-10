@@ -28,9 +28,8 @@ export default function AboutPage() {
       {/* Hugo, in passing */}
       <section className="mt-10 max-w-xl">
         <p className="text-base leading-relaxed text-ink-soft sm:text-lg">
-          Hugo, by the way. A designer working out of Stockholm. Spends the
-          off-hours on fonts, colours, and weekend experiments that
-          occasionally turn into something worth shipping.
+          Hugo spends the off-hours on experiments that occasionally turn into
+          something worth sharing.
         </p>
       </section>
 
