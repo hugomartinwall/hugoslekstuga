@@ -91,11 +91,18 @@ const NAME_KEY = "hugoslekstuga:noodle:name";
  *  extrapolation slightly past 1.0 so a late snapshot doesn't freeze
  *  the world — see EXTRAP_LIMIT below. */
 const SNAP_GAP = 33;
-/** Maximum extrapolation factor for OTHER snakes' interpolation. Past
- *  this, motion clamps. 1.0 = no extrapolation (freeze on cur), 1.5 =
- *  extrapolate up to 50% of a snap gap forward. Keeps motion smooth
- *  through small network jitter. */
-const EXTRAP_LIMIT = 1.5;
+/** How many snapshots we shift the rendering forward for non-self
+ *  snakes. Default Valve-style interp would render at "1 snap behind"
+ *  for smoothness — fine on a wide camera, but with the close camera
+ *  introduced in phase 7 that ~33 ms lag was visible. Adding 1 snap
+ *  to the t base means we render at cur (no built-in lag) and
+ *  extrapolate forward when the next snap is late. */
+const INTERP_LEAD = 1;
+/** Maximum t value when interpolating + extrapolating. With INTERP_LEAD
+ *  = 1 and this = 2.2, we render between cur (t=1) and ~1.2 snaps past
+ *  cur (t=2.2). Linear extrapolation, so a sharp turn pays a one-snap
+ *  overshoot — fair price for snappier-feeling bots. */
+const EXTRAP_LIMIT = 2.2;
 /** Trail buffer cap for the local self. Long enough for any plausible
  *  snake length at boost speed. Same value the server uses. */
 const LOCAL_TRAIL_MAX = 1200;
@@ -1039,11 +1046,17 @@ function drawScene(
 
   if (!cur) return;
 
-  // Snapshot interpolation factor for OTHER snakes. Allowed to go past
-  // 1.0 up to EXTRAP_LIMIT so a late snapshot doesn't freeze the world.
+  // Snapshot interpolation factor for OTHER snakes. Shifted by
+  // INTERP_LEAD so we render at cur (not at the lagged prev) and
+  // extrapolate forward up to EXTRAP_LIMIT when snaps are late.
+  // Reduces the visible "bot is slow to respond" delay introduced
+  // by the closer camera.
   const now = performance.now();
   const tOther = prev
-    ? Math.max(0, Math.min(EXTRAP_LIMIT, (now - cur.receivedAt) / SNAP_GAP))
+    ? Math.max(
+        0,
+        Math.min(EXTRAP_LIMIT, (now - cur.receivedAt) / SNAP_GAP + INTERP_LEAD),
+      )
     : 1;
 
   // Camera centred on own head. With local prediction, the camera

@@ -28,11 +28,16 @@ export const AFK_TIMEOUT_MS = 60_000;
 
 /* ----- Snake physics ----- */
 
-/** Forward speed of a non-boosting head, in world units per second. */
-export const HEAD_SPEED = 280;
+/** Forward speed of a non-boosting head, in world units per second.
+ *  Slower than it sounds — the closer camera (post phase 7) means
+ *  these world-units cover more screen-space per second. 200 reads
+ *  as "moving with purpose," not "racing." */
+export const HEAD_SPEED = 200;
 
-/** Forward speed when boosting. */
-export const BOOST_SPEED = 540;
+/** Forward speed when boosting. ~1.6× the cruise — enough to close
+ *  on slower prey or escape pressure, but not so much that the
+ *  base game feels like a slow walk in comparison. */
+export const BOOST_SPEED = 320;
 
 /** Length lost per second of boost. Costs ~16 segments over a 16-second
  *  sprint at 1/sec drain. Strategic: catch slower prey, escape danger,
