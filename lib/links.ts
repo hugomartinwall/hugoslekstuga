@@ -17,15 +17,21 @@ export const LINKS: Link[] = [
   ["convert", "qr"],
   ["pdf", "qr"],
   ["strip", "pdf"],
+  ["strip", "convert"],
 
   // ---------- Writing ----------
   ["read", "diff"],
   ["cleantext", "diff"],
+  ["case", "cleantext"],
+  ["cleantext", "read"],
+  ["lorem", "read"],
+  ["lorem", "case"],
 
   // ---------- Time + Wellness ----------
   ["focus", "stretch"],
   ["focus", "breathe"],
   ["breathe", "stretch"],
+  ["advice", "breathe"],
 
   // ---------- Cross-cluster bridges ----------
   ["typing", "read"],
@@ -36,10 +42,6 @@ export const LINKS: Link[] = [
   // ---------- Games ----------
   ["munch", "typing"],
   ["munch", "roll"],
-
-  // NOTE: `lorem` and `case` are currently orphans on the map (no edges
-  // survived the Phase 1 cuts). Phase 3 will hand-curate the full edge
-  // graph for the smaller toolset and reconnect them.
 ];
 
 // Quick lookup: how many neighbours does each tool have?

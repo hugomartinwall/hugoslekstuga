@@ -8,7 +8,6 @@ export type ClusterId =
   | "time"
   | "wellness"
   | "creative"
-  | "code"
   | "games";
 
 export type Cluster = {
@@ -50,12 +49,6 @@ export const CLUSTERS: Record<ClusterId, Cluster> = {
     color: "#ff7ab2",
     description: "Visual & generative",
   },
-  code: {
-    id: "code",
-    label: "Code",
-    color: "#0d9488",
-    description: "Pixels, CSS, patterns",
-  },
   games: {
     id: "games",
     label: "Games",
@@ -70,7 +63,6 @@ export const CLUSTER_ORDER: ClusterId[] = [
   "time",
   "wellness",
   "creative",
-  "code",
   "games",
 ];
 
@@ -95,7 +87,6 @@ export const TOOL_CLUSTER: Record<string, ClusterId> = {
   typing: "wellness",
   // Creative
   roll: "creative",
-  // Code — empty after Phase 1 cuts; cluster def stays till Phase 3
   // Games
   munch: "games",
 };
