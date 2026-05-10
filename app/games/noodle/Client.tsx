@@ -635,11 +635,15 @@ export default function NoodleClient() {
 
   if (phase === "playing" || phase === "dead") {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-cream-deep">
+      <div className="fixed inset-0 z-50 flex select-none flex-col bg-cream-deep">
         <canvas
           ref={canvasRef}
           className="block h-full w-full bg-cream"
-          style={{ touchAction: "none" }}
+          style={{
+            touchAction: "none",
+            WebkitUserSelect: "none",
+            WebkitTouchCallout: "none",
+          }}
           tabIndex={0}
           onPointerDown={onCanvasPointerDown}
           onPointerMove={onCanvasPointerMove}
@@ -853,8 +857,12 @@ function BoostButton({
       onPointerUp={onRelease}
       onPointerCancel={onRelease}
       onPointerLeave={onRelease}
-      style={{ touchAction: "none" }}
-      className="btn-chunk absolute bottom-6 right-6 flex h-20 w-20 items-center justify-center rounded-full bg-green font-display text-base font-extrabold uppercase tracking-wide text-cream sm:bottom-8 sm:right-8"
+      style={{
+        touchAction: "none",
+        WebkitUserSelect: "none",
+        WebkitTouchCallout: "none",
+      }}
+      className="btn-chunk absolute bottom-6 right-6 flex h-20 w-20 select-none items-center justify-center rounded-full bg-green font-display text-base font-extrabold uppercase tracking-wide text-cream sm:bottom-8 sm:right-8"
     >
       Boost
     </button>
@@ -1000,19 +1008,32 @@ function drawScene(
   // Food. Two visual languages: regular pellets are colored circles
   // (same as munch), death-drop food is a colored rounded square so
   // a "feast" reads as something different from natural pellets.
+  // Regular pellets are batched by colour into one path per group so
+  // the canvas pipeline sees ~6 fills per frame instead of ~50.
+  const pelletGroups = new Map<string, { sx: number; sy: number; r: number }[]>();
   for (const f of cur.food) {
     const { sx, sy } = toScreen(f.x, f.y);
     if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
     const r = Math.max(2, f.r * scale);
     if (f.r > 7) {
-      // Death-drop food — rounded square, slight outline.
       drawRoundedSquare(ctx, sx, sy, r * 1.7, r * 0.4, f.color);
     } else {
-      ctx.fillStyle = f.color;
-      ctx.beginPath();
-      ctx.arc(sx, sy, r, 0, Math.PI * 2);
-      ctx.fill();
+      let arr = pelletGroups.get(f.color);
+      if (!arr) {
+        arr = [];
+        pelletGroups.set(f.color, arr);
+      }
+      arr.push({ sx, sy, r });
     }
+  }
+  for (const [color, arr] of pelletGroups) {
+    ctx.beginPath();
+    for (const p of arr) {
+      ctx.moveTo(p.sx + p.r, p.sy);
+      ctx.arc(p.sx, p.sy, p.r, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = color;
+    ctx.fill();
   }
 
   // Build prev-snake map for interpolation.
@@ -1131,16 +1152,27 @@ function drawSnake(
   const dark = darkenHex(color, 0.13);
   const shell = Math.max(2, scale * 2);
 
+  // Pass 1 — all ink shells in a single batched path. Same colour for
+  // every shell, so order doesn't matter; this is 1 fill per snake
+  // instead of N.
+  ctx.beginPath();
   for (let i = N - 1; i >= 0; i--) {
     const p = points[i];
     const r = radiusAt(i);
     if (r < 0.5) continue;
-    // Ink shell.
-    ctx.beginPath();
-    ctx.arc(p.sx, p.sy, r + shell, 0, Math.PI * 2);
-    ctx.fillStyle = "#1a1812";
-    ctx.fill();
-    // Coloured fill — every third segment slightly darker.
+    const R = r + shell;
+    ctx.moveTo(p.sx + R, p.sy);
+    ctx.arc(p.sx, p.sy, R, 0, Math.PI * 2);
+  }
+  ctx.fillStyle = "#1a1812";
+  ctx.fill();
+  // Pass 2 — coloured fills, walked tail → head so each segment's
+  // exposed crescent gets the right shade. Banding lives here; this
+  // pass must stay per-segment to preserve the scale look.
+  for (let i = N - 1; i >= 0; i--) {
+    const p = points[i];
+    const r = radiusAt(i);
+    if (r < 0.5) continue;
     ctx.beginPath();
     ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
     ctx.fillStyle = i % 3 === 0 ? dark : color;
@@ -1332,7 +1364,8 @@ function drawEyes(
 
 /** Subtle dotted "garden" texture, world-anchored so the dots scroll
  *  with the camera. Distinct visual identity from munch's line grid
- *  without being noisy. */
+ *  without being noisy. All dots batched into one path so we pay one
+ *  fill per frame, not one per dot. */
 function drawDottedBackground(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -1349,17 +1382,18 @@ function drawDottedBackground(
   const bottom = cy + h / 2 / scale;
   const gx0 = Math.floor(left / step) * step;
   const gy0 = Math.floor(top / step) * step;
-  ctx.fillStyle = "rgba(26, 24, 18, 0.10)";
   const dotR = Math.max(1, scale * 1.6);
+  ctx.beginPath();
   for (let gx = gx0; gx < right + step; gx += step) {
     for (let gy = gy0; gy < bottom + step; gy += step) {
       const { sx, sy } = toScreen(gx, gy);
       if (sx < -dotR || sx > w + dotR || sy < -dotR || sy > h + dotR) continue;
-      ctx.beginPath();
+      ctx.moveTo(sx + dotR, sy);
       ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
-      ctx.fill();
     }
   }
+  ctx.fillStyle = "rgba(26, 24, 18, 0.10)";
+  ctx.fill();
 }
 
 /** A solid rounded-square food pellet for death-drop food. Visually
