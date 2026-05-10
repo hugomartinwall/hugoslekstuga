@@ -3,6 +3,11 @@ import { stripExt } from "./types";
 
 type AOA = unknown[][];
 
+/**
+ * Tabular conversions: CSV / TSV / JSON / XLSX. CSV and TSV differ only
+ * in the field separator; everything else flows through the same
+ * SheetJS-backed pipeline.
+ */
 export async function convertTabular(
   file: File,
   from: Format,
@@ -13,9 +18,12 @@ export async function convertTabular(
   let aoa: AOA;
   let sheetName = "Sheet1";
 
-  if (from === "csv") {
+  if (from === "csv" || from === "tsv") {
     const text = await file.text();
-    const wb = XLSX.read(text, { type: "string" });
+    const wb = XLSX.read(text, {
+      type: "string",
+      ...(from === "tsv" ? { FS: "\t" } : {}),
+    });
     sheetName = wb.SheetNames[0] ?? "Sheet1";
     aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
       header: 1,
@@ -37,12 +45,17 @@ export async function convertTabular(
 
   const base = stripExt(file.name);
 
-  if (to === "csv") {
+  if (to === "csv" || to === "tsv") {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const csv = XLSX.utils.sheet_to_csv(ws);
+    const text = XLSX.utils.sheet_to_csv(ws, {
+      ...(to === "tsv" ? { FS: "\t" } : {}),
+    });
+    const mime = to === "tsv"
+      ? "text/tab-separated-values;charset=utf-8"
+      : "text/csv;charset=utf-8";
     return {
-      blob: new Blob([csv], { type: "text/csv;charset=utf-8" }),
-      filename: `${base}.csv`,
+      blob: new Blob([text], { type: mime }),
+      filename: `${base}.${to}`,
     };
   }
 

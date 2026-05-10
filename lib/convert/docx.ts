@@ -1,6 +1,10 @@
 import type { ConversionResult, Format } from "./types";
 import { stripExt } from "./types";
 
+type TurndownService = {
+  turndown: (html: string) => string;
+};
+
 export async function convertDocx(
   file: File,
   to: Format,
@@ -27,6 +31,26 @@ export async function convertDocx(
     return {
       blob: new Blob([result.value], { type: "text/plain;charset=utf-8" }),
       filename: `${base}.txt`,
+    };
+  }
+
+  if (to === "md") {
+    // DOCX → HTML via mammoth, then HTML → Markdown via turndown. Two
+    // hops in one tool, but both libraries are already deps and the
+    // alternative is server-side pandoc which the privacy promise blocks.
+    const result = await mammoth.convertToHtml({ arrayBuffer });
+    const TurndownMod = (await import("turndown")) as unknown as {
+      default: new (opts?: Record<string, unknown>) => TurndownService;
+    };
+    const td = new TurndownMod.default({
+      headingStyle: "atx",
+      codeBlockStyle: "fenced",
+      bulletListMarker: "-",
+    });
+    const md = td.turndown(result.value);
+    return {
+      blob: new Blob([md], { type: "text/markdown;charset=utf-8" }),
+      filename: `${base}.md`,
     };
   }
 

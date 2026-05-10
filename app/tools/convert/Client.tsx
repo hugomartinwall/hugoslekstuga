@@ -6,12 +6,24 @@ import { findTool } from "@/lib/tools";
 import {
   detectFormat,
   formatLabel,
+  type ConversionOptions,
   type Format,
 } from "@/lib/convert/types";
-import { runConversion, targetsFor } from "@/lib/convert/registry";
+import {
+  QUALITY_TARGETS,
+  RESIZE_TARGETS,
+  runConversion,
+  targetsFor,
+} from "@/lib/convert/registry";
 import { formatBytes } from "@/lib/format";
 
 const IMAGE_FORMATS: Format[] = ["png", "jpg", "webp", "gif"];
+const SIZE_CAP_PRESETS: { label: string; value: number | null }[] = [
+  { label: "Original", value: null },
+  { label: "1280", value: 1280 },
+  { label: "1920", value: 1920 },
+  { label: "2560", value: 2560 },
+];
 
 type Stage =
   | { name: "idle" }
@@ -24,6 +36,8 @@ export default function ConvertPage() {
   const tool = findTool("convert")!;
   const [stage, setStage] = useState<Stage>({ name: "idle" });
   const [dragActive, setDragActive] = useState(false);
+  const [quality, setQuality] = useState<number>(85);
+  const [maxLongEdge, setMaxLongEdge] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Revoke any object URLs when stage changes/unmounts.
@@ -38,7 +52,7 @@ export default function ConvertPage() {
     if (!from) {
       setStage({
         name: "error",
-        message: `Sorry — ${file.name} is a format I don't recognize yet.`,
+        message: `Sorry — ${file.name || "that file"} is a format I don't recognize yet.`,
       });
       return;
     }
@@ -63,7 +77,11 @@ export default function ConvertPage() {
     const { file, from, to } = stage;
     setStage({ name: "working", file, from, to });
     try {
-      const result = await runConversion(file, from, to);
+      const options: ConversionOptions = {
+        quality,
+        maxLongEdge,
+      };
+      const result = await runConversion(file, from, to, options);
       const url = URL.createObjectURL(result.blob);
       setStage({ name: "done", file, url, filename: result.filename });
     } catch (err) {
@@ -71,7 +89,7 @@ export default function ConvertPage() {
         err instanceof Error ? err.message : "Something went wrong.";
       setStage({ name: "error", message });
     }
-  }, [stage]);
+  }, [stage, quality, maxLongEdge]);
 
   const onDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -90,6 +108,40 @@ export default function ConvertPage() {
 
   const onDragLeave = useCallback(() => setDragActive(false), []);
 
+  // Paste-from-clipboard. Especially valuable for screenshots — most macOS
+  // users have an image in their clipboard half the time. The handler is
+  // active in idle and error states so a paste re-engages the tool, and
+  // also in ready/done so a quick "actually, this image instead" works.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      // Don't hijack pastes inside form controls (none on this page yet,
+      // but cheap insurance for future).
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable)
+      ) {
+        return;
+      }
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            acceptFile(file);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [acceptFile]);
+
   return (
     <ToolFrame tool={tool}>
       <div className="flex flex-col gap-6">
@@ -106,6 +158,10 @@ export default function ConvertPage() {
         {stage.name === "ready" && (
           <ReadyPanel
             stage={stage}
+            quality={quality}
+            setQuality={setQuality}
+            maxLongEdge={maxLongEdge}
+            setMaxLongEdge={setMaxLongEdge}
             onConvert={onConvert}
             onReset={reset}
             onChangeTarget={(to) =>
@@ -186,14 +242,23 @@ function DropZone({
       <p className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
         Drop a file here
       </p>
-      <p className="text-sm text-ink-soft">or</p>
-      <button
-        type="button"
-        onClick={onPick}
-        className="btn-chunk rounded-[var(--radius-button)] bg-blue px-6 py-3 font-display text-base font-extrabold text-cream"
-      >
-        Choose a file
-      </button>
+      <p className="text-sm text-ink-soft">or paste, or pick</p>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onPick}
+          className="btn-chunk rounded-[var(--radius-button)] bg-blue px-6 py-3 font-display text-base font-extrabold text-cream"
+        >
+          Choose a file
+        </button>
+        <span className="hidden items-center gap-1 text-xs text-ink-muted sm:inline-flex">
+          or
+          <kbd className="rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
+            ⌘V
+          </kbd>
+          a screenshot
+        </span>
+      </div>
       <p className="mt-2 text-xs text-ink-muted">
         Files never leave your browser.
       </p>
@@ -203,22 +268,33 @@ function DropZone({
 
 function ReadyPanel({
   stage,
+  quality,
+  setQuality,
+  maxLongEdge,
+  setMaxLongEdge,
   onConvert,
   onReset,
   onChangeTarget,
 }: {
   stage: { name: "ready"; file: File; from: Format; to: Format };
+  quality: number;
+  setQuality: (n: number) => void;
+  maxLongEdge: number | null;
+  setMaxLongEdge: (n: number | null) => void;
   onConvert: () => void;
   onReset: () => void;
   onChangeTarget: (t: Format) => void;
 }) {
   const targets = targetsFor(stage.from);
-  const isImage = IMAGE_FORMATS.includes(stage.from);
+  const isImageInput =
+    IMAGE_FORMATS.includes(stage.from) || stage.from === "heic";
+  const showQuality = QUALITY_TARGETS.includes(stage.to);
+  const showResize = RESIZE_TARGETS.includes(stage.to);
   return (
     <div className="card-chunk flex flex-col gap-5 rounded-[var(--radius-card)] bg-cream p-6 sm:p-7">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-4">
-          {isImage && <ImageThumb file={stage.file} />}
+          {isImageInput && stage.from !== "heic" && <ImageThumb file={stage.file} />}
           <div className="flex flex-col">
             <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
               File
@@ -265,6 +341,17 @@ function ReadyPanel({
         </div>
       </div>
 
+      {(showQuality || showResize) && (
+        <ImageOptions
+          showQuality={showQuality}
+          quality={quality}
+          setQuality={setQuality}
+          showResize={showResize}
+          maxLongEdge={maxLongEdge}
+          setMaxLongEdge={setMaxLongEdge}
+        />
+      )}
+
       <button
         type="button"
         onClick={onConvert}
@@ -272,6 +359,86 @@ function ReadyPanel({
       >
         Convert →
       </button>
+    </div>
+  );
+}
+
+function ImageOptions({
+  showQuality,
+  quality,
+  setQuality,
+  showResize,
+  maxLongEdge,
+  setMaxLongEdge,
+}: {
+  showQuality: boolean;
+  quality: number;
+  setQuality: (n: number) => void;
+  showResize: boolean;
+  maxLongEdge: number | null;
+  setMaxLongEdge: (n: number | null) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        Image options
+      </p>
+      {showQuality && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs font-semibold text-ink">Quality</span>
+            <span className="font-mono text-xs tabular-nums text-ink">
+              {quality}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={50}
+            max={100}
+            step={1}
+            value={quality}
+            onChange={(e) => setQuality(Number(e.target.value))}
+            className="w-full accent-blue"
+            aria-label="Output quality"
+          />
+          <p className="text-[11px] text-ink-muted">
+            Lower means smaller file size, more visible compression. 85 is a
+            sensible default.
+          </p>
+        </div>
+      )}
+      {showResize && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs font-semibold text-ink">
+              Cap long edge
+            </span>
+            <span className="font-mono text-xs tabular-nums text-ink-muted">
+              {maxLongEdge ? `${maxLongEdge}px` : "off"}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {SIZE_CAP_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => setMaxLongEdge(p.value)}
+                className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
+                  maxLongEdge === p.value
+                    ? "bg-blue text-cream"
+                    : "bg-cream hover:bg-blue-soft"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-ink-muted">
+            Shrinks oversized images. Smaller sources are left at their
+            original size.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -349,24 +516,32 @@ function SupportInfo() {
       </summary>
       <ul className="mt-3 flex flex-col gap-1 pl-4 text-ink-soft">
         <li>
-          <strong>Images:</strong> PNG ↔ JPG ↔ WebP ↔ GIF
+          <strong>Images:</strong> PNG ↔ JPG ↔ WebP ↔ GIF · plus quality and
+          size controls
         </li>
         <li>
-          <strong>Tabular:</strong> CSV ↔ JSON ↔ Excel (.xlsx)
+          <strong>HEIC →</strong> JPG / PNG / WebP (the iPhone format)
+        </li>
+        <li>
+          <strong>Tabular:</strong> CSV ↔ TSV ↔ JSON ↔ Excel (.xlsx)
+        </li>
+        <li>
+          <strong>YAML ↔ JSON</strong> (for configs, k8s, GitHub Actions)
         </li>
         <li>
           <strong>Markdown ↔ HTML</strong>
         </li>
         <li>
-          <strong>PDF →</strong> plain text
+          <strong>PDF →</strong> plain text, or first page as PNG
         </li>
         <li>
-          <strong>Word (.docx) →</strong> HTML or plain text
+          <strong>Word (.docx) →</strong> HTML, Markdown, or plain text
         </li>
       </ul>
       <p className="mt-3 text-xs text-ink-muted">
-        Conversions out of PDF/DOCX into other office formats need server-side
-        tools and aren&rsquo;t in this version.
+        Conversions out of PDF or DOCX into other office formats need
+        server-side tools and aren&rsquo;t in this version. Everything you
+        see here runs locally — no upload.
       </p>
     </details>
   );
