@@ -84,20 +84,19 @@ type Ripple = {
 const NODE_R = 26;
 const SHADOW_DY = 4;
 const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
-// Physics — playful and bouncy, but resting state stays compact.
+// Physics — like dropping things into water.
 //
-// CENTER_PULL is weak enough that a fling carries across the canvas
-// before gravity reels it home — but firm enough that the resting
-// arrangement clusters near the centre instead of spreading edge-
-// to-edge. REPEL gives dots just enough room that labels don't
-// overlap; nothing more. Walls bounce (BOUNCE_DAMPING) so a strong
-// throw ricochets a few times before settling.
-const CENTER_PULL = 0.0018;
-const REPEL = 2800;
-const DAMPING = 0.96;
-/** Velocity retained after bouncing off a wall. 0.6 = 60% kept,
- *  40% lost to the impact. Lower = more squishy, higher = more rubber. */
-const BOUNCE_DAMPING = 0.6;
+// Heavy drag, slow throws, weak push between dots, very gentle
+// gravity. Movement feels viscous: a fling slides a short distance
+// and decelerates, dots can rest cheek-to-cheek, gravity drifts
+// them home over seconds rather than instants. The wall bounce is
+// softened so a thrown dot kisses the wall instead of springing off.
+const CENTER_PULL = 0.0004;
+const REPEL = 1000;
+const DAMPING = 0.92;
+/** Velocity retained after bouncing off a wall. 0.45 = 45% kept —
+ *  enough to register as a bounce, soft enough not to feel rubbery. */
+const BOUNCE_DAMPING = 0.45;
 const WOBBLE_FORCE = 0.012;
 const WOBBLE_RATE = 0.0005;
 const ENTRANCE_DURATION = 480;
@@ -114,8 +113,10 @@ const SPARKLE_FRICTION = 0.9;
 const RECLUSTER_BURST_SPEED = 9;
 /** How aggressively the dragged node chases the cursor each frame. */
 const DRAG_LERP = 0.5;
-/** Hard cap on per-frame velocity — high enough that a fling carries. */
-const MAX_V = 30;
+/** Hard cap on per-frame velocity. Lowered for the water feel — a
+ *  fling slides a short distance instead of whipping across the
+ *  canvas. */
+const MAX_V = 18;
 const MIN_W = 320;
 const MIN_H = 480;
 
