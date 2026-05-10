@@ -86,13 +86,14 @@ const SHADOW_DY = 4;
 const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
 // Physics — like dropping things into water.
 //
-// Heavy drag, slow throws, weak push between dots, very gentle
+// Heavy drag, slow throws, very weak push between dots, very gentle
 // gravity. Movement feels viscous: a fling slides a short distance
-// and decelerates, dots can rest cheek-to-cheek, gravity drifts
-// them home over seconds rather than instants. The wall bounce is
-// softened so a thrown dot kisses the wall instead of springing off.
-const CENTER_PULL = 0.0004;
-const REPEL = 1000;
+// and decelerates, dots can rest right next to each other, gravity
+// takes 5-10 seconds to drift a dragged dot back to centre.
+// The wall bounce is softened so a thrown dot kisses the wall
+// instead of springing off.
+const CENTER_PULL = 0.0003;
+const REPEL = 100;
 const DAMPING = 0.92;
 /** Velocity retained after bouncing off a wall. 0.45 = 45% kept —
  *  enough to register as a bounce, soft enough not to feel rubbery. */
