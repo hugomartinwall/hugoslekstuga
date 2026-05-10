@@ -19,16 +19,15 @@ export default function AboutPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
       {/* Hero */}
-      <header className="flex flex-col gap-5">
-        <h1 className="font-display text-3xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl">
-          You&rsquo;ve found the small corner of the internet where I release
-          things I made for{" "}
-          <span className="text-tomato">fun</span>.
+      <header>
+        <h1 className="font-display text-3xl font-extrabold leading-[1.05] tracking-tight sm:text-4xl lg:text-5xl">
+          You&rsquo;ve found a small corner of the internet for things I made
+          for <span className="text-tomato">fun</span>.
         </h1>
       </header>
 
       {/* Things you won't find here */}
-      <section className="mt-12 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-6 sm:p-8">
+      <section className="mt-10 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-6 sm:p-8">
         <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
           Things you won&rsquo;t find here
         </h2>
