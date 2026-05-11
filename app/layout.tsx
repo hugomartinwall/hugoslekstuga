@@ -16,6 +16,13 @@ const display = Bricolage_Grotesque({
   weight: ["500", "700", "800"],
 });
 
+/** Tagline reused across all description fields and the JSON-LD —
+ *  the same sentence the /about hero leads with, so the brand voice
+ *  matches whether you arrive via search, share preview, or the
+ *  about page itself. */
+const TAGLINE =
+  "Hugo spends the off-hours on experiments that occasionally turn into something worth sharing.";
+
 export const metadata: Metadata = {
   // Brand visual is the unspaced wordmark "hugoslekstuga"; the
   // searchable name is the spaced form "Hugos Lekstuga". Both
@@ -24,8 +31,7 @@ export const metadata: Metadata = {
     default: "Hugos Lekstuga — a small playhouse of browser tools",
     template: "%s — Hugos Lekstuga",
   },
-  description:
-    "Hugos Lekstuga (Swedish for Hugo's playground) — a small playhouse of useful, playful browser tools by Hugo Martin Wall. Everything runs in your tab; no accounts, no uploads, no analytics.",
+  description: TAGLINE,
   metadataBase: new URL("https://hugoslekstuga.com"),
   alternates: {
     canonical: "https://hugoslekstuga.com",
@@ -35,20 +41,18 @@ export const metadata: Metadata = {
     "hugoslekstuga",
     "hugo lekstuga",
     "hugo's playground",
-    "Hugo Martin Wall",
     "browser tools",
     "free online tools",
     "no upload tools",
     "privacy-friendly tools",
     "playhouse",
   ],
-  authors: [{ name: "Hugo Martin Wall", url: "https://oogywawa.se" }],
-  creator: "Hugo Martin Wall",
-  publisher: "Hugo Martin Wall",
+  authors: [{ name: "Hugo", url: "https://oogywawa.se" }],
+  creator: "Hugo",
+  publisher: "Hugo",
   openGraph: {
     title: "Hugos Lekstuga — a small playhouse of browser tools",
-    description:
-      "Hugos Lekstuga — a small playhouse of useful, playful browser tools by Hugo Martin Wall. Runs in your tab, leaves no trace.",
+    description: TAGLINE,
     url: "https://hugoslekstuga.com",
     siteName: "Hugos Lekstuga",
     locale: "en_US",
@@ -57,8 +61,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Hugos Lekstuga",
-    description:
-      "A small playhouse of useful browser tools. No accounts, no uploads, no analytics.",
+    description: TAGLINE,
   },
 };
 
@@ -85,7 +88,7 @@ const SITE_JSON_LD = {
     {
       "@type": "Person",
       "@id": "https://hugoslekstuga.com/#person",
-      name: "Hugo Martin Wall",
+      name: "Hugo",
       url: "https://oogywawa.se",
       sameAs: ["https://oogywawa.se", "https://hugoslekstuga.com"],
     },

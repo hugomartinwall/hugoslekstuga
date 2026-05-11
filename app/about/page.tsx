@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Hugos Lekstuga (Swedish for Hugo's playground) is Hugo Martin Wall's playhouse — a place where things he made for fun end up.",
+    "Hugo spends the off-hours on experiments that occasionally turn into something worth sharing.",
 };
 
 const NOT_HERE = [

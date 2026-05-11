@@ -30,11 +30,11 @@ export default function HomeShell() {
         Hugos Lekstuga — a small playhouse of browser tools
       </h1>
       <p className="sr-only">
-        Hugos Lekstuga (Swedish for Hugo&rsquo;s playground) is a small
-        playhouse of useful, playful browser tools built by Hugo Martin
-        Wall. Everything runs in your tab — no accounts, no uploads, no
-        analytics. Tools cover writing, files, code, time, audio and a
-        couple of multiplayer games.
+        Hugo spends the off-hours on experiments that occasionally turn
+        into something worth sharing. Hugos Lekstuga (Swedish for
+        Hugo&rsquo;s playground) is where they land — small, playful
+        browser tools that run in your tab. No accounts, no uploads, no
+        analytics.
       </p>
       {/* Map fills the layer below all overlays. */}
       <div className="absolute inset-0">
