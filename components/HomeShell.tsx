@@ -22,6 +22,20 @@ export default function HomeShell() {
 
   return (
     <div className="relative h-[calc(100dvh-72px)] w-full overflow-hidden">
+      {/* Visually-hidden page heading + intro. The homepage UI is
+          almost entirely an SVG map, so the crawler and screen
+          readers would otherwise see an empty page. This is the
+          actual page identity for them. */}
+      <h1 className="sr-only">
+        Hugos Lekstuga — a small playhouse of browser tools
+      </h1>
+      <p className="sr-only">
+        Hugos Lekstuga (Swedish for Hugo&rsquo;s playground) is a small
+        playhouse of useful, playful browser tools built by Hugo Martin
+        Wall. Everything runs in your tab — no accounts, no uploads, no
+        analytics. Tools cover writing, files, code, time, audio and a
+        couple of multiplayer games.
+      </p>
       {/* Map fills the layer below all overlays. */}
       <div className="absolute inset-0">
         <ToolMap fullBleed explodeTrigger={explodeTrigger} />

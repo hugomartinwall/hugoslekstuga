@@ -5,7 +5,7 @@ import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
 export const runtime = "nodejs";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "hugoslekstuga — a small playhouse for tools";
+export const alt = "Hugos Lekstuga — a small playhouse of browser tools";
 
 export default async function OGImage() {
   return new ImageResponse(

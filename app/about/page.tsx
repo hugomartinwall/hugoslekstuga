@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "About",
   description:
-    "hugoslekstuga is Hugo's playhouse — a place where things he made for fun end up.",
+    "Hugos Lekstuga (Swedish for Hugo's playground) is Hugo Martin Wall's playhouse — a place where things he made for fun end up.",
 };
 
 const NOT_HERE = [
