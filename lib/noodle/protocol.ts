@@ -40,10 +40,12 @@ export const HEAD_SPEED = 170;
  *  that the base game doesn't feel sluggish next to it. */
 export const BOOST_SPEED = 280;
 
-/** Length lost per second of boost. Costs ~16 segments over a 16-second
- *  sprint at 1/sec drain. Strategic: catch slower prey, escape danger,
- *  but pay in size. */
-export const BOOST_LENGTH_DRAIN_PER_SEC = 1;
+/** Length lost per second of boost. Each drained segment becomes a
+ *  food pellet behind the snake — at 3/sec that reads as a real
+ *  trail of edible crumbs, not the occasional stray pellet. Boost is
+ *  now meaningfully expensive: ~5 seconds of sprint costs 15 length,
+ *  which is the right level of "think before you press it." */
+export const BOOST_LENGTH_DRAIN_PER_SEC = 3;
 
 /** Maximum head turn rate, radians per second. Slower = more committed
  *  turns, harder to dodge. */
