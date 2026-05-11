@@ -47,17 +47,45 @@ export const BOOST_SPEED = 280;
  *  which is the right level of "think before you press it." */
 export const BOOST_LENGTH_DRAIN_PER_SEC = 3;
 
-/** Maximum head turn rate, radians per second. Slower = more committed
- *  turns, harder to dodge. */
+/** Base head turn rate at INITIAL_LENGTH, radians per second. The
+ *  actual per-snake turn rate is read through turnRateFor(length),
+ *  which slows turning down as snakes grow — small noodles are
+ *  agile (their USP), big noodles are committed. */
 export const TURN_RATE = 5;
+
+/** Per-snake turn-rate envelope. At INITIAL_LENGTH this is exactly
+ *  TURN_RATE. As length grows the rate drops on a gentle curve and
+ *  floors at MIN to keep giants steerable. Used by both server
+ *  motion integration and client-side prediction so the snake feels
+ *  the same in both. */
+export const TURN_RATE_EXPONENT = 0.12;
+export const MIN_TURN_RATE = 1.5;
+export function turnRateFor(length: number): number {
+  const l = Math.max(INITIAL_LENGTH, length);
+  const factor = Math.pow(INITIAL_LENGTH / l, TURN_RATE_EXPONENT);
+  return Math.max(MIN_TURN_RATE, TURN_RATE * factor);
+}
 
 /** Distance between consecutive body segments along the head's path. */
 export const SEGMENT_GAP = 12;
 
-/** Visual radii. Head a touch bigger than segments so the snake reads
- *  as having a head, not just being a uniform tube. */
+/** Base visual radii at INITIAL_LENGTH. Head a touch bigger than
+ *  segments so the snake reads as having a head, not just being a
+ *  uniform tube. Per-snake radii are read through radiusMultiplierFor
+ *  so they scale up with length — a long snake is also a thick one. */
 export const HEAD_RADIUS = 14;
 export const SEGMENT_RADIUS = 12;
+
+/** Body width grows with length on a gentle curve. Exponent set so
+ *  the snake gets visibly chunkier at 1k+ length without becoming
+ *  unrecognisable at 10k+. At length 8 this is 1.0; at 1000 ≈ 2.89;
+ *  at 5000 ≈ 4.12; at 10000 ≈ 4.80. Combined with the slower
+ *  viewport-zoom exponent below, on-screen thickness grows ~15-35%
+ *  from initial to giant snakes. */
+export const RADIUS_LENGTH_EXPONENT = 0.22;
+export function radiusMultiplierFor(length: number): number {
+  return Math.pow(Math.max(1, length / INITIAL_LENGTH), RADIUS_LENGTH_EXPONENT);
+}
 
 /** Length on spawn. Long enough to read as a snake, short enough to
  *  feel humble. */
@@ -98,8 +126,11 @@ export const SPAWN_PROTECT_MS = 2200;
 const VIEW_BASE_AREA = 800 * 540;
 const VIEW_DEFAULT_ASPECT = 800 / 540;
 
-/** Bigger snakes see further. Same exponent as munch's viewport. */
-export const VIEW_LENGTH_EXPONENT = 0.25;
+/** Bigger snakes see further. Dialled back from 0.25 so the camera
+ *  doesn't outpace the body's actual growth — combined with the
+ *  RADIUS_LENGTH_EXPONENT above, a length-5000 snake now looks chunky
+ *  on screen instead of "long thin worm in a vast empty room". */
+export const VIEW_LENGTH_EXPONENT = 0.18;
 
 /**
  * Visible half-extents for a given length. Bigger snakes see further

@@ -24,8 +24,9 @@ import {
   SEGMENT_RADIUS,
   SPAWN_PROTECT_MS,
   TICK_HZ,
-  TURN_RATE,
   WORLD_SIZE,
+  radiusMultiplierFor,
+  turnRateFor,
   type FoodView,
   type LeaderboardEntry,
   type SnakeView,
@@ -267,13 +268,14 @@ export class Game {
     for (const s of this.players.values()) {
       if (!s.alive) continue;
 
-      // Steer heading toward aim, capped at TURN_RATE per second.
+      // Steer heading toward aim, capped per-snake — bigger snakes
+      // turn less sharply than small ones (small-noodle USP).
       const targetAngle = Math.atan2(s.aim.y, s.aim.x);
       let diff = targetAngle - s.heading;
       // Wrap diff into [-π, π].
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
-      const maxTurn = TURN_RATE * dt;
+      const maxTurn = turnRateFor(s.length) * dt;
       if (diff > maxTurn) diff = maxTurn;
       else if (diff < -maxTurn) diff = -maxTurn;
       s.heading += diff;
@@ -311,12 +313,15 @@ export class Game {
       s.trail.unshift({ x: s.head.x, y: s.head.y });
       if (s.trail.length > MAX_TRAIL_LEN) s.trail.length = MAX_TRAIL_LEN;
 
-      // Wall — kill on contact (choice 1A: classic-slither).
+      // Wall — kill on contact (choice 1A: classic-slither). The
+      // head radius scales with length, so a giant snake hits the
+      // wall further out than a fresh one.
+      const myHeadR = HEAD_RADIUS * radiusMultiplierFor(s.length);
       if (
-        s.head.x < HEAD_RADIUS ||
-        s.head.x > WORLD_SIZE - HEAD_RADIUS ||
-        s.head.y < HEAD_RADIUS ||
-        s.head.y > WORLD_SIZE - HEAD_RADIUS
+        s.head.x < myHeadR ||
+        s.head.x > WORLD_SIZE - myHeadR ||
+        s.head.y < myHeadR ||
+        s.head.y > WORLD_SIZE - myHeadR
       ) {
         this.killSnake(s, null);
       }
@@ -334,7 +339,8 @@ export class Game {
 
     for (const s of this.players.values()) {
       if (!s.alive) continue;
-      const reach = HEAD_RADIUS + DEATH_FOOD_RADIUS + 4;
+      const myHeadR = HEAD_RADIUS * radiusMultiplierFor(s.length);
+      const reach = myHeadR + DEATH_FOOD_RADIUS + 4;
       const nearby = foodGrid.nearby(s.head.x, s.head.y, reach);
       for (const cand of nearby) {
         const f = this.food.get(cand.id);
@@ -342,7 +348,7 @@ export class Game {
         const dx = f.x - s.head.x;
         const dy = f.y - s.head.y;
         const d2 = dx * dx + dy * dy;
-        const r2 = (HEAD_RADIUS + f.r) * (HEAD_RADIUS + f.r);
+        const r2 = (myHeadR + f.r) * (myHeadR + f.r);
         if (d2 < r2) {
           s.length += f.fromDeath ? GROW_PER_DEATH_FOOD : GROW_PER_FOOD;
           this.food.delete(f.id);
@@ -380,20 +386,34 @@ export class Game {
 
     type Kill = { victim: Snake; killer: Snake | null };
     const kills: Kill[] = [];
+    // Pre-compute owner-side segment radii once per snake — cheaper
+    // than recomputing inside the inner loop.
+    const ownerSegR = new Map<string, number>();
+    for (const s of this.players.values()) {
+      if (!s.alive) continue;
+      ownerSegR.set(s.id, SEGMENT_RADIUS * radiusMultiplierFor(s.length));
+    }
     for (const s of this.players.values()) {
       if (!s.alive) continue;
       if (isProtected(s, now)) continue;
-      const reach = HEAD_RADIUS + SEGMENT_RADIUS + 4;
+      const myHeadR = HEAD_RADIUS * radiusMultiplierFor(s.length);
+      // Conservative reach — grid query needs to catch any segment
+      // whose radius might cover our head. Use the largest segment
+      // radius in the room.
+      let maxSegR = SEGMENT_RADIUS;
+      for (const r of ownerSegR.values()) if (r > maxSegR) maxSegR = r;
+      const reach = myHeadR + maxSegR + 4;
       const nearby = bodyGrid.nearby(s.head.x, s.head.y, reach);
       for (const seg of nearby) {
         if (seg.ownerId === s.id) continue; // self-collision allowed
         const owner = this.players.get(seg.ownerId);
         if (!owner) continue;
         if (isProtected(owner, now)) continue;
+        const segR = ownerSegR.get(owner.id) ?? SEGMENT_RADIUS;
         const dx = seg.x - s.head.x;
         const dy = seg.y - s.head.y;
         const d2 = dx * dx + dy * dy;
-        const r2 = (HEAD_RADIUS + SEGMENT_RADIUS) * (HEAD_RADIUS + SEGMENT_RADIUS);
+        const r2 = (myHeadR + segR) * (myHeadR + segR);
         if (d2 < r2) {
           kills.push({ victim: s, killer: owner });
           break;

@@ -12,8 +12,9 @@ import {
   INITIAL_LENGTH,
   SEGMENT_GAP,
   SEGMENT_RADIUS,
-  TURN_RATE,
   WORLD_SIZE,
+  radiusMultiplierFor,
+  turnRateFor,
   viewportHalfFor,
   type ClientMsg,
   type FoodView,
@@ -1213,6 +1214,7 @@ function drawScene(
       s.name,
       s.id,
       1, // no eat-pulse for others
+      s.totalLength,
     );
   }
 
@@ -1236,6 +1238,7 @@ function drawScene(
       null, // no label for self
       self.id,
       pulse,
+      localSelf.length,
     );
   }
 
@@ -1275,6 +1278,10 @@ function drawSnake(
   label: string | null,
   seed: string,
   headPulseScale: number,
+  /** Total length of the snake. Drives the per-snake width
+   *  multiplier (radiusMultiplierFor) so longer snakes render
+   *  thicker. */
+  totalLength: number,
 ): void {
   if (segments.length === 0) return;
   const lerp = (a: number, b: number) => a + (b - a) * t;
@@ -1302,9 +1309,12 @@ function drawSnake(
   // segment yields a continuous ink outline (the union of shells) and
   // a continuous coloured silhouette (the union of fills). Every third
   // segment fills slightly darker — only the tail-side crescent shows
-  // through, reading as subtle scale banding.
-  const headR = HEAD_RADIUS * scale;
-  const tailR = SEGMENT_RADIUS * 0.6 * scale;
+  // through, reading as subtle scale banding. Both head + tail radius
+  // are scaled by the per-length width multiplier so longer snakes
+  // look noticeably thicker.
+  const widthScale = radiusMultiplierFor(totalLength);
+  const headR = HEAD_RADIUS * widthScale * scale;
+  const tailR = SEGMENT_RADIUS * 0.6 * widthScale * scale;
   const radiusAt = (i: number): number => {
     const base = N <= 1 ? headR : headR + (tailR - headR) * (i / (N - 1));
     // Only segment 0 (the head) pulses on eat — the rest of the body
@@ -1364,7 +1374,20 @@ function drawSnake(
   const dx = head.sx - next.sx;
   const dy = head.sy - next.sy;
   const heading = Math.atan2(dy, dx) || 0;
-  drawHead(ctx, head.sx, head.sy, scale, color, prot, boosting, heading, label, seed, headPulseScale);
+  drawHead(
+    ctx,
+    head.sx,
+    head.sy,
+    scale,
+    color,
+    prot,
+    boosting,
+    heading,
+    label,
+    seed,
+    headPulseScale,
+    widthScale,
+  );
 }
 
 /** Draws a smooth quadratic-Bezier path through the points. The
@@ -1406,8 +1429,9 @@ function drawHead(
   label: string | null,
   seed: string,
   pulse: number,
+  widthScale: number,
 ): void {
-  const r = HEAD_RADIUS * scale * pulse;
+  const r = HEAD_RADIUS * scale * pulse * widthScale;
   // Spawn-protection halo.
   if (prot && r > 4) {
     const phase = (performance.now() / 1000) % 1;
@@ -1913,14 +1937,16 @@ function advanceLocalSelf(
   local.lastFrameAt = now;
   if (dt <= 0) return;
 
-  // Steer heading toward aim (capped at TURN_RATE).
+  // Steer heading toward aim. The cap scales down with length so
+  // big snakes commit to turns and small ones can dart — matches the
+  // server's turnRateFor.
   const aimMag = Math.hypot(aim.x, aim.y);
   if (aimMag > 0.001) {
     const targetAngle = Math.atan2(aim.y, aim.x);
     let diff = targetAngle - local.heading;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    const maxTurn = TURN_RATE * dt;
+    const maxTurn = turnRateFor(local.length) * dt;
     if (diff > maxTurn) diff = maxTurn;
     else if (diff < -maxTurn) diff = -maxTurn;
     local.heading += diff;
@@ -1934,12 +1960,14 @@ function advanceLocalSelf(
   local.head.x += Math.cos(local.heading) * speed * dt;
   local.head.y += Math.sin(local.heading) * speed * dt;
 
-  // Soft wall — clamp so the predicted head doesn't skate off-screen
-  // visually if the server lags behind on death detection.
-  if (local.head.x < HEAD_RADIUS) local.head.x = HEAD_RADIUS;
-  else if (local.head.x > WORLD_SIZE - HEAD_RADIUS) local.head.x = WORLD_SIZE - HEAD_RADIUS;
-  if (local.head.y < HEAD_RADIUS) local.head.y = HEAD_RADIUS;
-  else if (local.head.y > WORLD_SIZE - HEAD_RADIUS) local.head.y = WORLD_SIZE - HEAD_RADIUS;
+  // Soft wall — clamp using the per-length head radius so the
+  // predicted head doesn't skate off-screen visually if the server
+  // lags behind on death detection.
+  const myHeadR = HEAD_RADIUS * radiusMultiplierFor(local.length);
+  if (local.head.x < myHeadR) local.head.x = myHeadR;
+  else if (local.head.x > WORLD_SIZE - myHeadR) local.head.x = WORLD_SIZE - myHeadR;
+  if (local.head.y < myHeadR) local.head.y = myHeadR;
+  else if (local.head.y > WORLD_SIZE - myHeadR) local.head.y = WORLD_SIZE - myHeadR;
 
   // Push to trail.
   local.trail.unshift({ x: local.head.x, y: local.head.y });
