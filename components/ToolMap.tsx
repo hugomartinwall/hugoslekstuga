@@ -111,13 +111,21 @@ const PARTICLE_GRAVITY = 0.06;
 const PARTICLE_FRICTION = 0.93;
 const SPARKLE_LIFE_DECAY = 0.045;
 const SPARKLE_FRICTION = 0.9;
-const RECLUSTER_BURST_SPEED = 9;
 /** How aggressively the dragged node chases the cursor each frame. */
 const DRAG_LERP = 0.5;
 /** Hard cap on per-frame velocity. Lowered for the water feel — a
  *  fling slides a short distance instead of whipping across the
  *  canvas. */
 const MAX_V = 18;
+/** Velocity cap during an explosion burst — lets the initial fling
+ *  read as snappy before damping pulls it back under MAX_V. */
+const EXPLODE_MAX_V = 80;
+/** How long the cap is raised after an explode (ms). Damping does the
+ *  rest of the work once we drop back to MAX_V. */
+const EXPLODE_WINDOW_MS = 380;
+/** Outward velocity range applied to every dot on explode. */
+const EXPLODE_SPEED_MIN = 48;
+const EXPLODE_SPEED_MAX = 78;
 const MIN_W = 320;
 const MIN_H = 480;
 
@@ -129,21 +137,29 @@ type ToolMapProps = {
    */
   fullBleed?: boolean;
   /**
-   * Increment to trigger a re-cluster from the parent. The page renders
-   * its own re-cluster button positioned alongside the Surprise ball;
-   * it pokes this counter to ask the map to scatter and re-form.
+   * Increment to trigger an explosion from the parent. The page
+   * renders its own explode button positioned alongside the Surprise
+   * ball; it pokes this counter and every dot is flung outward from
+   * the centre, confetti scatters, gravity pulls everything home.
    */
-  resetTrigger?: number;
+  explodeTrigger?: number;
 };
 
 export default function ToolMap({
   fullBleed = false,
-  resetTrigger = 0,
+  explodeTrigger = 0,
 }: ToolMapProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
-  const [, tick] = useState(0);
+  // `now` is the wall-clock fed to the JSX (ripple progress, entrance
+  // scale). The rAF loop pushes a fresh performance.now() into this
+  // state each frame — keeps render impure-free for the react-hooks
+  // purity rule and doubles as the per-frame re-render trigger so we
+  // no longer need a separate `tick` counter.
+  const [now, setNow] = useState<number>(() =>
+    typeof performance !== "undefined" ? performance.now() : 0,
+  );
   const [hovered, setHovered] = useState<string | null>(null);
   const [bouncingSlug, setBouncingSlug] = useState<string | null>(null);
   const nodesRef = useRef<Node[]>([]);
@@ -154,6 +170,10 @@ export default function ToolMap({
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const initializedRef = useRef(false);
   const reduceMotionRef = useRef(false);
+  /** performance.now() of the last explode trigger. Raises the
+   *  velocity cap for EXPLODE_WINDOW_MS so the initial fling reads
+   *  as a real burst before damping pulls everything back together. */
+  const explodeAtRef = useRef(0);
 
   const nodeBySlug = useRef<Map<string, Node>>(new Map());
 
@@ -171,40 +191,23 @@ export default function ToolMap({
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (initializedRef.current) return;
-    if (size.w <= MIN_W && size.h <= MIN_H) return;
-    initNodes(size.w, size.h, false);
-  }, [size]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    reduceMotionRef.current = mq.matches;
-    const listener = (e: MediaQueryListEvent) => {
-      reduceMotionRef.current = e.matches;
-    };
-    mq.addEventListener("change", listener);
-    return () => mq.removeEventListener("change", listener);
-  }, []);
-
-  function initNodes(w: number, h: number, burst: boolean) {
+  // Declared above its first caller so the react-hooks compiler-aware
+  // lint rule (variable-accessed-before-declared) is happy.
+  function initNodes(w: number, h: number) {
     const cx = w / 2;
     const cy = h / 2;
-    const burstSpeed = burst ? RECLUSTER_BURST_SPEED : 1.5;
-    const innerJitter = burst ? 8 : 20;
-    const now = performance.now();
+    const t0 = performance.now();
     nodesRef.current = tools.map((t, i) => {
       const angle = (i / tools.length) * Math.PI * 2;
       return {
         tool: t,
-        x: cx + (Math.random() - 0.5) * innerJitter,
-        y: cy + (Math.random() - 0.5) * innerJitter,
-        vx: Math.cos(angle) * burstSpeed,
-        vy: Math.sin(angle) * burstSpeed,
+        x: cx + (Math.random() - 0.5) * 20,
+        y: cy + (Math.random() - 0.5) * 20,
+        vx: Math.cos(angle) * 1.5,
+        vy: Math.sin(angle) * 1.5,
         pinned: false,
         phase: Math.random() * Math.PI * 2,
-        entranceStart: now + i * ENTRANCE_STAGGER,
+        entranceStart: t0 + i * ENTRANCE_STAGGER,
         hasSparkled: false,
         dragVx: 0,
         dragVy: 0,
@@ -217,8 +220,25 @@ export default function ToolMap({
     particlesRef.current = [];
     ripplesRef.current = [];
     initializedRef.current = true;
-    tick((c) => c + 1);
+    setNow(t0);
   }
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    if (size.w <= MIN_W && size.h <= MIN_H) return;
+    initNodes(size.w, size.h);
+  }, [size]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reduceMotionRef.current = mq.matches;
+    const listener = (e: MediaQueryListEvent) => {
+      reduceMotionRef.current = e.matches;
+    };
+    mq.addEventListener("change", listener);
+    return () => mq.removeEventListener("change", listener);
+  }, []);
 
   // Simulation loop.
   useEffect(() => {
@@ -238,7 +258,11 @@ export default function ToolMap({
       }
 
       const wobbleAmplitude = reduceMotionRef.current ? 0 : WOBBLE_FORCE;
-      step(nodesRef.current, size.w, size.h, wobbleAmplitude);
+      const inExplode =
+        explodeAtRef.current > 0 &&
+        performance.now() - explodeAtRef.current < EXPLODE_WINDOW_MS;
+      const vCap = inExplode ? EXPLODE_MAX_V : MAX_V;
+      step(nodesRef.current, size.w, size.h, wobbleAmplitude, vCap);
 
       // Particles.
       const ps = particlesRef.current;
@@ -275,7 +299,7 @@ export default function ToolMap({
         }
       }
 
-      tick((c) => c + 1);
+      setNow(performance.now());
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -423,21 +447,24 @@ export default function ToolMap({
     [router, triggerClickFx],
   );
 
-  const reset = useCallback(() => {
-    initializedRef.current = false;
-    initNodes(size.w, size.h, true);
+  const explode = useCallback(() => {
+    explodeAtRef.current = performance.now();
+    detonate(
+      nodesRef.current,
+      particlesRef.current,
+      size.w / 2,
+      size.h / 2,
+    );
   }, [size.w, size.h]);
 
-  // External re-cluster trigger.
-  const lastResetRef = useRef(resetTrigger);
+  // External explode trigger.
+  const lastExplodeRef = useRef(explodeTrigger);
   useEffect(() => {
-    if (resetTrigger !== lastResetRef.current && initializedRef.current) {
-      lastResetRef.current = resetTrigger;
-      reset();
+    if (explodeTrigger !== lastExplodeRef.current && initializedRef.current) {
+      lastExplodeRef.current = explodeTrigger;
+      explode();
     }
-  }, [resetTrigger, reset]);
-
-  const now = performance.now();
+  }, [explodeTrigger, explode]);
 
   return (
     <div
@@ -621,10 +648,10 @@ export default function ToolMap({
           </p>
           <button
             type="button"
-            onClick={reset}
+            onClick={explode}
             className="pointer-events-auto rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold transition-colors hover:bg-cream-deep"
           >
-            ↻ Re-cluster
+            ✸ Explode
           </button>
         </div>
       )}
@@ -657,11 +684,74 @@ function emitSparkle(particles: Particle[], x: number, y: number) {
   }
 }
 
+/** Throw every dot outward from (cx, cy) at high velocity, then spit
+ *  confetti — a per-dot puff in its own colour plus a big central
+ *  burst pulling from the full palette. Mutates `nodes` and pushes to
+ *  `particles` in place; lives at module scope so the react-hooks
+ *  linter doesn't flag the property writes (same pattern as step). */
+function detonate(
+  nodes: Node[],
+  particles: Particle[],
+  cx: number,
+  cy: number,
+): void {
+  for (const n of nodes) {
+    if (n.pinned) continue;
+    let dx = n.x - cx;
+    let dy = n.y - cy;
+    let d = Math.hypot(dx, dy);
+    if (d < 4) {
+      const a = Math.random() * Math.PI * 2;
+      dx = Math.cos(a);
+      dy = Math.sin(a);
+      d = 1;
+    }
+    const speed =
+      EXPLODE_SPEED_MIN +
+      Math.random() * (EXPLODE_SPEED_MAX - EXPLODE_SPEED_MIN);
+    n.vx = (dx / d) * speed;
+    n.vy = (dy / d) * speed;
+    // Small confetti puff in the dot's own colour.
+    const nodeColor = COLOR_HEX[n.tool.color];
+    for (let i = 0; i < 5; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 2 + Math.random() * 3;
+      particles.push({
+        x: n.x,
+        y: n.y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s - 0.6,
+        life: 1,
+        color: nodeColor,
+        size: 2 + Math.random() * 2,
+        kind: "click",
+      });
+    }
+  }
+  // Big central confetti — random colours from the whole palette.
+  const allColors = tools.map((t) => COLOR_HEX[t.color]);
+  for (let i = 0; i < 70; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 4 + Math.random() * 7;
+    particles.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 1.5,
+      life: 1,
+      color: allColors[Math.floor(Math.random() * allColors.length)],
+      size: 3 + Math.random() * 4,
+      kind: "click",
+    });
+  }
+}
+
 function step(
   nodes: Node[],
   width: number,
   height: number,
   wobbleAmp: number,
+  vCap: number,
 ): number {
   if (nodes.length === 0) return 0;
   const now = performance.now();
@@ -706,10 +796,10 @@ function step(
     }
     n.vx *= DAMPING;
     n.vy *= DAMPING;
-    if (n.vx > MAX_V) n.vx = MAX_V;
-    else if (n.vx < -MAX_V) n.vx = -MAX_V;
-    if (n.vy > MAX_V) n.vy = MAX_V;
-    else if (n.vy < -MAX_V) n.vy = -MAX_V;
+    if (n.vx > vCap) n.vx = vCap;
+    else if (n.vx < -vCap) n.vx = -vCap;
+    if (n.vy > vCap) n.vy = vCap;
+    else if (n.vy < -vCap) n.vy = -vCap;
     n.x += n.vx;
     n.y += n.vy;
     // Wall bounce — hit a side, velocity reflects with energy loss.
