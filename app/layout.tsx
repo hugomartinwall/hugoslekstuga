@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   // searchable name is the spaced form "Hugos Lekstuga". Both
   // appear in titles/descriptions so Google matches either query.
   title: {
-    default: "Hugos Lekstuga — a small playhouse of browser tools",
+    default: "Hugos Lekstuga (Hugos Playhouse)",
     template: "%s — Hugos Lekstuga",
   },
   description: TAGLINE,
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
   creator: "Hugo",
   publisher: "Hugo",
   openGraph: {
-    title: "Hugos Lekstuga — a small playhouse of browser tools",
+    title: "Hugos Lekstuga (Hugos Playhouse)",
     description: TAGLINE,
     url: "https://hugoslekstuga.com",
     siteName: "Hugos Lekstuga",
