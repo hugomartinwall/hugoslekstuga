@@ -121,9 +121,14 @@ const HEAD_PULSE_PEAK = 1.18;
 /** Own-death camera + flash window — quick zoom-in + fade. */
 const DEATH_FLASH_MS = 380;
 const DEATH_ZOOM_MAX = 1.4;
-/** Fixed-size pool for particle bursts. Plenty for the busiest
- *  brawl; old particles age out in ~700 ms. */
-const PARTICLE_BUDGET = 240;
+/** Fixed-size pool for particle bursts AND boost trails. Roomy
+ *  enough that a chaotic moment (several deaths + a few boosters)
+ *  doesn't starve the trails. */
+const PARTICLE_BUDGET = 380;
+/** Per-snake-per-second boost-trail emission rate. Frame-rate
+ *  independent: at 60 fps that's ~0.7 particles per frame, so
+ *  ~half the frames spawn one. Visible without flooding. */
+const BOOST_TRAIL_RATE = 42;
 /** A disappeared snake's last head must sit within this fraction of
  *  the local viewport half-extent for us to treat it as a death
  *  (vs walked off the side). 0.78 catches deep kills, ignores
@@ -538,6 +543,17 @@ export default function NoodleClient() {
       lastDrawAtRef.current = now;
       if (dt > 0 && particlesRef.current.length > 0) {
         tickParticles(particlesRef.current, dt);
+      }
+      // Spit boost-trail particles off every boosting snake's tail.
+      // Run after the tick so this frame's particles start fresh.
+      if (dt > 0 && curSnapRef.current) {
+        spawnBoostTrails(
+          particlesRef.current,
+          curSnapRef.current,
+          selfRef.current,
+          localSelfRef.current,
+          dt,
+        );
       }
       // Smooth the zoom — ease viewLengthRef toward the snake's true
       // length so a single pellet doesn't yank the world. Big deltas
@@ -1633,6 +1649,78 @@ function eyeOpenness(seed: string): number {
 }
 
 /* ---- particles + animation pulses ---- */
+
+/** Drop boost-trail particles from the tail of every boosting snake.
+ *  Stateless and dt-aware so the rate per second stays constant
+ *  across frame rates. The tail position is derived from the local
+ *  trail for self (zero-latency) and from the snapshot for other
+ *  snakes (visible tail is the last culled segment, which is fine
+ *  for a visual effect — the trail still reads as coming off the
+ *  back of the snake). */
+function spawnBoostTrails(
+  particles: Particle[],
+  cur: Snapshot,
+  self: Self | null,
+  localSelf: LocalSelf | null,
+  dt: number,
+): void {
+  // Self.
+  if (self && localSelf && localSelf.alive && localSelf.boosting) {
+    const segs = sampleBodyFromTrail(localSelf.trail, localSelf.length);
+    if (segs.length >= 2) {
+      const tail = segs[segs.length - 1];
+      // Backward angle = opposite of heading.
+      const back = localSelf.heading + Math.PI;
+      emitBoostParticle(particles, tail.x, tail.y, back, self.color, dt);
+    }
+  }
+  // Other snakes — derive the "backward" angle from the last two
+  // visible segments (segments[N-2] → segments[N-1] is the head→tail
+  // direction = backward direction).
+  for (const s of cur.snakes) {
+    if (!s.boosting || s.segments.length < 2) continue;
+    const tail = s.segments[s.segments.length - 1];
+    const prev = s.segments[s.segments.length - 2];
+    const back = Math.atan2(tail.y - prev.y, tail.x - prev.x);
+    emitBoostParticle(particles, tail.x, tail.y, back, s.color, dt);
+  }
+}
+
+/** Maybe-spawn a single boost-trail particle. Stochastic on the dt
+ *  remainder so the rate per second stays at BOOST_TRAIL_RATE
+ *  regardless of frame rate. */
+function emitBoostParticle(
+  particles: Particle[],
+  x: number,
+  y: number,
+  back: number,
+  color: string,
+  dt: number,
+): void {
+  const expected = BOOST_TRAIL_RATE * dt;
+  let count = Math.floor(expected);
+  if (Math.random() < expected - count) count++;
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= PARTICLE_BUDGET) {
+      // Drop a handful of the oldest to make room.
+      particles.splice(0, 12);
+    }
+    const speed = 55 + Math.random() * 80;
+    const spread = (Math.random() - 0.5) * 0.85;
+    const angle = back + spread;
+    const life = 240 + Math.random() * 200;
+    particles.push({
+      x: x + (Math.random() - 0.5) * 5,
+      y: y + (Math.random() - 0.5) * 5,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      color,
+      life,
+      max: life,
+      r: 2 + Math.random() * 1.4,
+    });
+  }
+}
 
 /** Push a small fan of particles outward from (x, y) in `color`. The
  *  array mutates in place. Drops the oldest if the budget is hit so a
