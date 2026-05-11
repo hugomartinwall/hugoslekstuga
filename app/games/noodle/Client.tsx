@@ -840,7 +840,8 @@ function Lobby({
         You&rsquo;re a snake. Aim with the mouse (or drag a finger). Eat
         dots to grow. Touch another snake&rsquo;s body — or a wall —
         and you&rsquo;re done. Hold <Kbd>Space</Kbd> (or the Boost
-        button on phones) to sprint.
+        button on phones) to sprint — costs a little length, drops
+        the rest as crumbs.
       </p>
       <label className="flex flex-col gap-1 text-xs">
         <span className="font-semibold uppercase tracking-wide text-ink-muted">
