@@ -22,14 +22,13 @@ export default async function OGImage() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "ui-sans-serif, system-ui, sans-serif",
         }}
       >
         <div
           style={{
             display: "flex",
             alignItems: "flex-end",
-            fontSize: "180px",
+            fontSize: 150,
             fontWeight: 900,
             lineHeight: 1,
             letterSpacing: "-0.04em",
@@ -38,12 +37,12 @@ export default async function OGImage() {
           hugoslekstuga
           <div
             style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "9999px",
+              width: 28,
+              height: 28,
+              borderRadius: 9999,
               background: "#ff5a3c",
-              marginLeft: "14px",
-              marginBottom: "26px",
+              marginLeft: 12,
+              marginBottom: 22,
             }}
           />
         </div>
