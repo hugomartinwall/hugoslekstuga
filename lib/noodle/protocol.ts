@@ -40,13 +40,6 @@ export const HEAD_SPEED = 170;
  *  that the base game doesn't feel sluggish next to it. */
 export const BOOST_SPEED = 280;
 
-/** Length lost per second of boost. Each drained segment becomes a
- *  food pellet behind the snake — at 3/sec that reads as a real
- *  trail of edible crumbs, not the occasional stray pellet. Boost is
- *  now meaningfully expensive: ~5 seconds of sprint costs 15 length,
- *  which is the right level of "think before you press it." */
-export const BOOST_LENGTH_DRAIN_PER_SEC = 3;
-
 /** Base head turn rate at INITIAL_LENGTH, radians per second. The
  *  actual per-snake turn rate is read through turnRateFor(length),
  *  which slows turning down as snakes grow — small noodles are

@@ -840,7 +840,7 @@ function Lobby({
         You&rsquo;re a snake. Aim with the mouse (or drag a finger). Eat
         dots to grow. Touch another snake&rsquo;s body — or a wall —
         and you&rsquo;re done. Hold <Kbd>Space</Kbd> (or the Boost
-        button on phones) to sprint at the cost of length.
+        button on phones) to sprint.
       </p>
       <label className="flex flex-col gap-1 text-xs">
         <span className="font-semibold uppercase tracking-wide text-ink-muted">
@@ -878,7 +878,6 @@ function Lobby({
           sprint.
         </p>
         <p>
-          Boost burns length; longer snake survives a longer sprint.
           Spawn protection is brief; it lifts on first boost.
         </p>
       </div>
@@ -1325,6 +1324,26 @@ function drawSnake(
   const rim = darkenHex(color, OUTLINE_DARKEN);
   const shell = Math.max(2, scale * 2);
 
+  // Boost glow — drawn FIRST so the body fills on top and the glow
+  // only shows as an aura outside the silhouette. Oversized colored
+  // discs at low alpha, batched into one path so the whole worm
+  // shares one soft halo in its own colour.
+  if (boosting) {
+    ctx.globalAlpha = 0.42;
+    ctx.beginPath();
+    for (let i = N - 1; i >= 0; i--) {
+      const p = points[i];
+      const r = radiusAt(i);
+      if (r < 0.5) continue;
+      const glowR = r * 1.85 + shell;
+      ctx.moveTo(p.sx + glowR, p.sy);
+      ctx.arc(p.sx, p.sy, glowR, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
   // Pass 1 — all outline shells in a single batched path. Coloured as
   // a darker tint of the body, so on the dark world the snake reads
   // as a lit bead with a soft inset rim rather than a cartoon outline.
@@ -1353,21 +1372,9 @@ function drawSnake(
     ctx.fill();
   }
 
-  // Boost stripe — a thin cream highlight running along the spine.
-  // Subtle signal that this snake is sprinting.
-  if (boosting && N >= 2) {
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    const tailFirst: { sx: number; sy: number }[] = new Array(N);
-    for (let i = 0; i < N; i++) tailFirst[i] = points[N - 1 - i];
-    ctx.beginPath();
-    pathThroughPoints(ctx, tailFirst);
-    ctx.lineWidth = Math.max(1.5, SEGMENT_RADIUS * 0.45 * scale);
-    ctx.strokeStyle = withAlpha("#fbf6ee", 0.55);
-    ctx.stroke();
-  }
-
-  // Head — halo, boost glow, eyes (with occasional blink), name label.
+  // Head — halo (spawn-protect only), eyes, name label. Boost is
+  // signalled by the body-wide glow above, not by a head ring or
+  // cream spine.
   // The head circle itself was drawn by the body loop (segment 0).
   const head = points[0];
   const next = points[1] ?? head;
@@ -1381,40 +1388,12 @@ function drawSnake(
     scale,
     color,
     prot,
-    boosting,
     heading,
     label,
     seed,
     headPulseScale,
     widthScale,
   );
-}
-
-/** Draws a smooth quadratic-Bezier path through the points. The
- *  curve passes through the midpoints of each consecutive pair and
- *  uses each point as a control point — classic "smooth a polyline"
- *  trick. Looks fluid; cheaper than Catmull-Rom for our needs. */
-function pathThroughPoints(
-  ctx: CanvasRenderingContext2D,
-  pts: { sx: number; sy: number }[],
-): void {
-  if (pts.length === 0) return;
-  if (pts.length === 1) {
-    ctx.moveTo(pts[0].sx, pts[0].sy);
-    return;
-  }
-  ctx.moveTo(pts[0].sx, pts[0].sy);
-  if (pts.length === 2) {
-    ctx.lineTo(pts[1].sx, pts[1].sy);
-    return;
-  }
-  for (let i = 1; i < pts.length - 1; i++) {
-    const xm = (pts[i].sx + pts[i + 1].sx) / 2;
-    const ym = (pts[i].sy + pts[i + 1].sy) / 2;
-    ctx.quadraticCurveTo(pts[i].sx, pts[i].sy, xm, ym);
-  }
-  // Last segment to the final point.
-  ctx.lineTo(pts[pts.length - 1].sx, pts[pts.length - 1].sy);
 }
 
 function drawHead(
@@ -1424,7 +1403,6 @@ function drawHead(
   scale: number,
   color: string,
   prot: boolean,
-  boosting: boolean,
   heading: number,
   label: string | null,
   seed: string,
@@ -1435,23 +1413,17 @@ function drawHead(
   // Spawn-protection halo.
   if (prot && r > 4) {
     const phase = (performance.now() / 1000) % 1;
-    const pulse = 0.35 + 0.45 * Math.abs(Math.sin(phase * Math.PI * 2));
+    const pulsePhase = 0.35 + 0.45 * Math.abs(Math.sin(phase * Math.PI * 2));
     ctx.beginPath();
     ctx.arc(sx, sy, r * 1.45, 0, Math.PI * 2);
     ctx.lineWidth = Math.max(3, r * 0.18);
-    ctx.strokeStyle = `rgba(255, 255, 255, ${pulse.toFixed(3)})`;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${pulsePhase.toFixed(3)})`;
     ctx.stroke();
   }
-  // Boost glow.
-  if (boosting && r > 4) {
-    ctx.beginPath();
-    ctx.arc(sx, sy, r * 1.35, 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(2, r * 0.14);
-    ctx.strokeStyle = withAlpha(color, 0.55);
-    ctx.stroke();
-  }
-  // The head circle itself was drawn by the body loop (segment 0).
-  // This function only adds halo, glow, eyes, and the name label.
+  // Boost is signalled by the body-wide glow drawn in drawSnake,
+  // not by a head ring. The head circle itself was drawn by the
+  // body loop (segment 0). drawHead only adds the halo (spawn
+  // protection), eyes, and name label.
 
   // Eyes — only big enough to read at scale.
   if (r >= 6) {
@@ -1952,8 +1924,8 @@ function advanceLocalSelf(
     local.heading += diff;
   }
 
-  // Boost only when the snake has length to spare.
-  local.boosting = boost && local.length > 4;
+  // Boost is free — no length gate.
+  local.boosting = boost;
 
   // Move head forward.
   const speed = local.boosting ? BOOST_SPEED : HEAD_SPEED;

@@ -82,10 +82,6 @@ const BOOST_CHASE_RANGE = 220;
  *  initiative before the prey reacts. */
 const FLEE_RANGE = 500;
 
-/** Bots only boost when they have at least this much length to burn.
- *  Below this the drain risk outweighs the chance of a kill. */
-const MIN_LENGTH_FOR_BOOST = 12;
-
 /** Bot waits this long after death before respawning. */
 const RESPAWN_COOLDOWN_MS = 4000;
 
@@ -296,10 +292,7 @@ export class BotManager {
         // both sides of a hunt commit at the same distance.
         const dx = predator.head.x - p.head.x;
         const dy = predator.head.y - p.head.y;
-        if (
-          dx * dx + dy * dy < BOOST_CHASE_RANGE * BOOST_CHASE_RANGE &&
-          p.length > MIN_LENGTH_FOR_BOOST
-        ) {
+        if (dx * dx + dy * dy < BOOST_CHASE_RANGE * BOOST_CHASE_RANGE) {
           wantBoost = true;
         }
       } else {
@@ -319,10 +312,7 @@ export class BotManager {
         aimY = py - p.head.y;
         const dx = prey.head.x - p.head.x;
         const dy = prey.head.y - p.head.y;
-        if (
-          dx * dx + dy * dy < BOOST_CHASE_RANGE * BOOST_CHASE_RANGE &&
-          p.length > MIN_LENGTH_FOR_BOOST
-        ) {
+        if (dx * dx + dy * dy < BOOST_CHASE_RANGE * BOOST_CHASE_RANGE) {
           wantBoost = true;
         }
       } else {
