@@ -1,23 +1,10 @@
-import BrandDot from "@/components/BrandDot";
-
 export default function Footer() {
   const year = new Date().getFullYear();
   return (
     <footer className="mt-24 border-t-2 border-ink bg-cream-deep">
-      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-5 py-10 sm:px-8 sm:py-12">
-        <div className="flex flex-col gap-2">
-          <p className="font-display text-2xl font-extrabold tracking-tight">
-            hugoslekstuga<BrandDot />
-          </p>
-          <p className="text-sm leading-relaxed text-ink-soft">
-            Swedish for hugos playground
-          </p>
-        </div>
-
-        <div className="flex flex-col-reverse items-start justify-between gap-3 border-t border-ink/15 pt-5 text-xs text-ink-muted sm:flex-row sm:items-center">
-          <p>© {year}</p>
-          <p>potentially useful</p>
-        </div>
+      <div className="mx-auto flex max-w-5xl flex-col-reverse items-start justify-between gap-3 px-5 py-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:px-8">
+        <p>© {year}</p>
+        <p>potentially useful</p>
       </div>
     </footer>
   );
