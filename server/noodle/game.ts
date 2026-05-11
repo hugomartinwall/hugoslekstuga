@@ -481,7 +481,14 @@ export class Game {
     const out: LeaderboardEntry[] = [];
     for (const s of this.players.values()) {
       if (!s.alive) continue;
-      out.push({ id: s.id, name: s.name, length: s.length });
+      out.push({
+        id: s.id,
+        name: s.name,
+        length: s.length,
+        x: s.head.x,
+        y: s.head.y,
+        color: s.color,
+      });
     }
     return out.sort((a, b) => b.length - a.length).slice(0, 10);
   }

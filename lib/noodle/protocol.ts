@@ -155,6 +155,13 @@ export type LeaderboardEntry = {
   id: string;
   name: string;
   length: number;
+  /** Head position in world coords. Drives the minimap so players can
+   *  see roughly where each top-10 snake is even when they're outside
+   *  the viewport. */
+  x: number;
+  y: number;
+  /** Snake colour, so minimap dots can be coloured per snake. */
+  color: string;
 };
 
 /* ------------------------------------------------------------------ */

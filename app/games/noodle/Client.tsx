@@ -1245,6 +1245,12 @@ function drawScene(
     drawParticles(ctx, particles, toScreen, scale);
   }
 
+  // Minimap — screen-space overlay in the bottom-left. Shows the
+  // whole world, top-10 leaderboard positions, your position, and a
+  // rectangle for your current viewport so you can read where you
+  // are in the world.
+  drawMinimap(ctx, w, h, cur, localSelf, self, ehx, ehy);
+
   // Own-death white flash — drawn in screen space last so it covers
   // everything except the dead UI (which overlays the canvas).
   const flash = computeDeathFlash(deathAt, now);
@@ -1560,6 +1566,78 @@ function drawDottedBackground(
   }
   ctx.fillStyle = BG_DOT_COLOR;
   ctx.fill();
+}
+
+/** Top-left … erm, bottom-left minimap. Screen-space overlay drawn
+ *  after the world but before the death flash. Shows the whole 5000²
+ *  world, top-10 leaderboard snakes as small coloured dots, your own
+ *  position as a slightly larger dot in your colour, and a cream
+ *  rectangle showing what your camera currently sees. */
+function drawMinimap(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  cur: Snapshot,
+  localSelf: LocalSelf | null,
+  self: Self | null,
+  ehx: number,
+  ehy: number,
+): void {
+  // Adaptive size — 22% of the smaller canvas dimension, clamped
+  // 80-150. On a phone (~375 wide) that's about 82px; on a desktop
+  // canvas (~1200 wide on a typical viewport) it caps at 150.
+  const size = Math.min(150, Math.max(80, Math.min(w, h) * 0.22));
+  const margin = 16;
+  const left = margin;
+  const top = h - margin - size;
+  const worldScale = size / WORLD_SIZE;
+
+  ctx.save();
+  // Background panel.
+  ctx.fillStyle = "rgba(21, 19, 28, 0.85)";
+  ctx.fillRect(left, top, size, size);
+  ctx.strokeStyle = "rgba(251, 246, 238, 0.45)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left, top, size, size);
+
+  // Leaderboard dots (other snakes only — self handled below in its
+  // own colour at a larger size).
+  const selfId = self?.id ?? null;
+  for (const e of cur.leaderboard) {
+    if (e.id === selfId) continue;
+    const mx = left + e.x * worldScale;
+    const my = top + e.y * worldScale;
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(mx, my, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Viewport rectangle — what the camera currently shows.
+  const cam = localSelf?.alive
+    ? localSelf.head
+    : cur.you.head ?? { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
+  const rectX = left + (cam.x - ehx) * worldScale;
+  const rectY = top + (cam.y - ehy) * worldScale;
+  const rectW = 2 * ehx * worldScale;
+  const rectH = 2 * ehy * worldScale;
+  ctx.strokeStyle = "rgba(251, 246, 238, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(rectX, rectY, rectW, rectH);
+
+  // Self dot — bigger, in own colour, with a cream rim so it pops.
+  if (self && localSelf && localSelf.alive) {
+    const mx = left + localSelf.head.x * worldScale;
+    const my = top + localSelf.head.y * worldScale;
+    ctx.fillStyle = self.color;
+    ctx.beginPath();
+    ctx.arc(mx, my, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fbf6ee";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** A solid rounded-square food pellet for death-drop food. Visually
