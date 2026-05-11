@@ -40,6 +40,12 @@ export const HEAD_SPEED = 170;
  *  that the base game doesn't feel sluggish next to it. */
 export const BOOST_SPEED = 280;
 
+/** Length lost per second of boost. Gentle — 1/sec means a snake at
+ *  length 100 can sustain a minute-and-a-half of sprint before
+ *  bottoming out. Each drained segment drops as a food pellet at
+ *  the tail, leaving a visible trail other snakes can pick up. */
+export const BOOST_LENGTH_DRAIN_PER_SEC = 1;
+
 /** Base head turn rate at INITIAL_LENGTH, radians per second. The
  *  actual per-snake turn rate is read through turnRateFor(length),
  *  which slows turning down as snakes grow — small noodles are

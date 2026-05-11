@@ -10,6 +10,7 @@
 // layer feeds inputs in and pulls snapshots out.
 
 import {
+  BOOST_LENGTH_DRAIN_PER_SEC,
   BOOST_SPEED,
   DEATH_FOOD_RADIUS,
   FOOD_RADIUS,
@@ -42,6 +43,10 @@ const PALETTE = [
   "#fb923c",
   "#14b8a6",
 ];
+
+/** Length floor — a snake can't drain itself below this via boost.
+ *  Once a boosting snake hits this length, drain stops. */
+const MIN_LENGTH = 4;
 
 /** Cap on trail history kept per snake. Long enough to support a
  *  ~250-segment snake at boost speed; longer than the body needs. */
@@ -98,9 +103,12 @@ export type Snake = {
   aim: { x: number; y: number };
   /** Boost requested this tick. */
   boost: boolean;
-  /** Total snake length in segments (including head). Grows only via
-   *  eating food — boost is free and doesn't drain length. */
+  /** Total snake length in segments (including head). Grows from
+   *  food eaten, drains gently while boosting. */
   length: number;
+  /** Fractional length-drain accumulator. Boost adds to it each tick;
+   *  each whole unit drops a segment + spawns a pellet. */
+  boostDrainAcc: number;
   /** Trail of recent head positions, head first (index 0 = current). */
   trail: { x: number; y: number }[];
   /** Epoch ms of spawn — for spawn protection. */
@@ -167,6 +175,7 @@ export class Game {
       aim: { x: Math.cos(heading), y: Math.sin(heading) },
       boost: false,
       length: INITIAL_LENGTH,
+      boostDrainAcc: 0,
       trail: [{ x: headX, y: headY }],
       spawnedAt: Date.now(),
       aspect: null,
@@ -225,7 +234,7 @@ export class Game {
     if (len > 0.001) {
       s.aim = { x: aim.x / len, y: aim.y / len };
     }
-    s.boost = boost && s.alive;
+    s.boost = boost && s.alive && s.length > MIN_LENGTH;
     if (typeof aspect === "number" && Number.isFinite(aspect) && aspect > 0) {
       s.aspect = Math.max(0.2, Math.min(5, aspect));
     }
@@ -243,6 +252,7 @@ export class Game {
     s.aim = { x: Math.cos(heading), y: Math.sin(heading) };
     s.boost = false;
     s.length = INITIAL_LENGTH;
+    s.boostDrainAcc = 0;
     s.trail = [{ x: headX, y: headY }];
     s.alive = true;
     s.spawnedAt = Date.now();
@@ -277,11 +287,33 @@ export class Game {
       s.head.x += Math.cos(s.heading) * speed * dt;
       s.head.y += Math.sin(s.heading) * speed * dt;
 
-      // Boost is free — length comes from score alone, not from the
-      // drain. The only side-effect of pressing boost is that spawn
-      // protection lifts, so you can't sit invulnerable and harass.
-      if (s.boost) {
+      // Boost gently drains length and drops the drained segments
+      // as food pellets at the tail — every booster leaves an
+      // edible trail. Also cancels spawn protection so it can't be
+      // exploited as a free invuln.
+      if (s.boost && s.length > MIN_LENGTH) {
         s.spawnedAt = 0;
+        s.boostDrainAcc += BOOST_LENGTH_DRAIN_PER_SEC * dt;
+        while (s.boostDrainAcc >= 1 && s.length > MIN_LENGTH) {
+          s.length -= 1;
+          s.boostDrainAcc -= 1;
+          // Drop the segment as a small pellet near the current
+          // tail position with a tiny jitter so consecutive drops
+          // don't stack on the same pixel.
+          const tailIdx = Math.min(
+            s.trail.length - 1,
+            Math.floor(s.length * SEGMENT_GAP),
+          );
+          const tail = s.trail[Math.max(0, tailIdx)] ?? s.head;
+          this.spawnFoodAt(
+            tail.x + (Math.random() - 0.5) * 4,
+            tail.y + (Math.random() - 0.5) * 4,
+            s.color,
+            false,
+          );
+        }
+      } else {
+        s.boostDrainAcc = 0;
       }
 
       // Push new head position to the trail.

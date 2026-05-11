@@ -1924,8 +1924,9 @@ function advanceLocalSelf(
     local.heading += diff;
   }
 
-  // Boost is free — no length gate.
-  local.boosting = boost;
+  // Boost gated to keep the snake from boosting while at the length
+  // floor — matches the server's MIN_LENGTH check.
+  local.boosting = boost && local.length > 4;
 
   // Move head forward.
   const speed = local.boosting ? BOOST_SPEED : HEAD_SPEED;
