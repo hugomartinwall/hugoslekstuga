@@ -73,6 +73,19 @@ export type BotState = {
   hunting: boolean;
   /** id of the prey snake while hunting. Empty string otherwise. */
   huntTargetId: string;
+  /** True when a larger snake is within fleeing range. Overrides
+   *  hunting and foraging. */
+  fleeing: boolean;
+  /** id of the predator snake while fleeing. Empty otherwise. */
+  fleeFromId: string;
+  /** A world-coords destination the bot heads toward while wandering.
+   *  Replaces drift-based wander so bots commit to a path that
+   *  players can read. Re-picked when reached or expired. */
+  wanderTargetX: number;
+  wanderTargetY: number;
+  /** ms timestamp: when to give up on the current wander target. */
+  wanderUntil: number;
+  hasWanderTarget: boolean;
 };
 
 export type Snake = {
@@ -192,6 +205,12 @@ export class Game {
       wanderAngle: Math.random() * Math.PI * 2,
       hunting: false,
       huntTargetId: "",
+      fleeing: false,
+      fleeFromId: "",
+      wanderTargetX: 0,
+      wanderTargetY: 0,
+      wanderUntil: 0,
+      hasWanderTarget: false,
     };
     return snake;
   }

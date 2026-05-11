@@ -60,19 +60,27 @@ const WALL_MARGIN = 350;
  *  chase. ~10% of world width feels lethal-but-not-omniscient. */
 const HUNT_RANGE = 600;
 
-/** Bot's predicted aim-ahead time for prey. The bot aims at where the
- *  prey will be in this many seconds (assuming straight-line current
- *  heading). Gives bots a slither.io intercept feel. */
-const HUNT_PREDICT_S = 1.5;
+/** Bot's predicted aim-ahead time for prey. Dialled back from 1.5 s
+ *  so bots don't intercept on a perfect curve every time — they
+ *  miss now and then, which is what makes them catchable. */
+const HUNT_PREDICT_S = 1.0;
 
 /** Hunter must be at least this many times the prey's length to
  *  consider chasing. Discourages bots from spinning forever after
- *  prey they can barely catch. */
+ *  prey they can barely catch. Also doubles as the threshold for
+ *  fleeing — a predator must be EAT_RATIO× bigger than us. */
 const EAT_RATIO = 1.3;
 
 /** When actively hunting and within this range of the prey's head,
- *  the bot boosts to close the gap. */
-const BOOST_CHASE_RANGE = 300;
+ *  the bot boosts to close the gap. Same threshold reused for fleeing
+ *  so both sides of a chase commit at roughly the same distance. */
+const BOOST_CHASE_RANGE = 220;
+
+/** A bot detects predators (bigger snakes) within this range and
+ *  starts heading away. Shorter than HUNT_RANGE so the hunter sees
+ *  prey before the prey sees the hunter — chases have a moment of
+ *  initiative before the prey reacts. */
+const FLEE_RANGE = 500;
 
 /** Bots only boost when they have at least this much length to burn.
  *  Below this the drain risk outweighs the chance of a kill. */
@@ -85,9 +93,18 @@ const RESPAWN_COOLDOWN_MS = 4000;
  *  seconds rather than 8 bots popping in simultaneously. */
 const SPAWN_RATE_MS = 250;
 
-/** Wander-heading drift per tick (radians). Subtle — the bot's path
- *  curves rather than veering. */
+/** Wander-heading drift per tick (radians). Small noise applied on
+ *  top of the destination-aim so the path isn't a perfect straight
+ *  line. */
 const WANDER_NOISE = 0.05;
+
+/** How long (ms) a bot commits to a wander destination before
+ *  picking a new one — even if it hasn't reached the old one. */
+const WANDER_HOLD_MIN_MS = 7000;
+const WANDER_HOLD_MAX_MS = 14000;
+
+/** A wander destination is considered "reached" within this radius. */
+const WANDER_REACHED_RADIUS = 160;
 
 /* ------------------------------------------------------------------ */
 /* Pasta-themed bot names                                              */
@@ -185,6 +202,9 @@ export class BotManager {
           p.bot.hasTarget = false;
           p.bot.hunting = false;
           p.bot.huntTargetId = "";
+          p.bot.fleeing = false;
+          p.bot.fleeFromId = "";
+          p.bot.hasWanderTarget = false;
           p.bot.spawnedAtMs = Date.now();
           p.bot.wanderAngle = Math.random() * Math.PI * 2;
         }
@@ -255,18 +275,38 @@ export class BotManager {
     const bot = p.bot!;
 
     // Throttle high-level decisions per personality. Decide() picks
-    // hunting target OR food target OR neither.
+    // fleeing target > hunting target > food target > neither.
     if (now - bot.lastDecisionAt > bot.decisionMs) {
       bot.lastDecisionAt = now;
       this.decide(p);
     }
 
-    // ---- compute base aim from current mode (hunt > food > wander) ----
+    // ---- compute base aim from current mode (flee > hunt > food > wander) ----
     let aimX = 0;
     let aimY = 0;
     let wantBoost = false;
 
-    if (bot.hunting && bot.huntTargetId !== "") {
+    if (bot.fleeing && bot.fleeFromId !== "") {
+      const predator = this.game.players.get(bot.fleeFromId);
+      if (predator && predator.alive) {
+        // Aim directly away from the predator's current head.
+        aimX = p.head.x - predator.head.x;
+        aimY = p.head.y - predator.head.y;
+        // Boost-flee at the same range threshold as boost-chase so
+        // both sides of a hunt commit at the same distance.
+        const dx = predator.head.x - p.head.x;
+        const dy = predator.head.y - p.head.y;
+        if (
+          dx * dx + dy * dy < BOOST_CHASE_RANGE * BOOST_CHASE_RANGE &&
+          p.length > MIN_LENGTH_FOR_BOOST
+        ) {
+          wantBoost = true;
+        }
+      } else {
+        bot.fleeing = false;
+        bot.fleeFromId = "";
+      }
+    } else if (bot.hunting && bot.huntTargetId !== "") {
       const prey = this.game.players.get(bot.huntTargetId);
       if (prey && prey.alive) {
         // Predict where the prey will be HUNT_PREDICT_S seconds from
@@ -277,8 +317,6 @@ export class BotManager {
         const py = prey.head.y + Math.sin(prey.heading) * preySpeed * HUNT_PREDICT_S;
         aimX = px - p.head.x;
         aimY = py - p.head.y;
-        // Boost when the prey's actual head is within range — closing
-        // speed only matters in the final stretch.
         const dx = prey.head.x - p.head.x;
         const dy = prey.head.y - p.head.y;
         if (
@@ -288,21 +326,46 @@ export class BotManager {
           wantBoost = true;
         }
       } else {
-        // Prey vanished — drop hunt; next decide() will re-evaluate.
         bot.hunting = false;
         bot.huntTargetId = "";
       }
     }
 
-    if (!bot.hunting) {
+    if (!bot.fleeing && !bot.hunting) {
       if (bot.hasTarget) {
         aimX = bot.targetX - p.head.x;
         aimY = bot.targetY - p.head.y;
       } else {
-        // Wander — slowly drift the heading.
+        // Purposeful wander — pick a random destination far away and
+        // commit to it for several seconds. When reached or expired,
+        // pick another. Reads as "this bot is going somewhere"
+        // instead of "this bot is spinning in place".
+        if (
+          !bot.hasWanderTarget ||
+          now > bot.wanderUntil
+        ) {
+          this.pickWanderTarget(bot, now);
+        } else {
+          const dx = bot.wanderTargetX - p.head.x;
+          const dy = bot.wanderTargetY - p.head.y;
+          if (
+            dx * dx + dy * dy < WANDER_REACHED_RADIUS * WANDER_REACHED_RADIUS
+          ) {
+            this.pickWanderTarget(bot, now);
+          }
+        }
+        aimX = bot.wanderTargetX - p.head.x;
+        aimY = bot.wanderTargetY - p.head.y;
+        // Small noise drift so the path isn't a laser-perfect straight
+        // line — keeps motion looking organic.
         bot.wanderAngle += (Math.random() - 0.5) * WANDER_NOISE;
-        aimX = Math.cos(bot.wanderAngle);
-        aimY = Math.sin(bot.wanderAngle);
+        const noise = bot.wanderAngle;
+        const cosN = Math.cos(noise * 0.1);
+        const sinN = Math.sin(noise * 0.1);
+        const rx = aimX * cosN - aimY * sinN;
+        const ry = aimX * sinN + aimY * cosN;
+        aimX = rx;
+        aimY = ry;
       }
     }
 
@@ -391,13 +454,40 @@ export class BotManager {
     p.lastInputAt = now; // keep AFK kick happy
   }
 
-  /** Re-evaluate hunting + foraging targets. Hunting wins if a viable
-   *  smaller snake is in range; otherwise pick the nearest food. */
+  /** Re-evaluate behaviour. Flee wins over hunt wins over forage. */
   private decide(p: Snake): void {
     const bot = p.bot!;
     const now = Date.now();
 
-    // 1. Hunting — find the nearest smaller snake within HUNT_RANGE.
+    // 1. Flee — find the nearest bigger snake within FLEE_RANGE.
+    let predatorId = "";
+    let predatorDist2 = Infinity;
+    const fleeRange2 = FLEE_RANGE * FLEE_RANGE;
+    for (const other of this.game.players.values()) {
+      if (other.id === p.id || !other.alive) continue;
+      // Bigger by EAT_RATIO → a real threat.
+      if (other.length < p.length * EAT_RATIO) continue;
+      const dx = other.head.x - p.head.x;
+      const dy = other.head.y - p.head.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > fleeRange2) continue;
+      if (d2 < predatorDist2) {
+        predatorId = other.id;
+        predatorDist2 = d2;
+      }
+    }
+    if (predatorId !== "") {
+      bot.fleeing = true;
+      bot.fleeFromId = predatorId;
+      bot.hunting = false;
+      bot.huntTargetId = "";
+      bot.hasTarget = false;
+      return;
+    }
+    bot.fleeing = false;
+    bot.fleeFromId = "";
+
+    // 2. Hunt — find the nearest smaller snake within HUNT_RANGE.
     let preyId = "";
     let preyDist2 = Infinity;
     const huntRange2 = HUNT_RANGE * HUNT_RANGE;
@@ -423,7 +513,7 @@ export class BotManager {
     bot.hunting = false;
     bot.huntTargetId = "";
 
-    // 2. Foraging — nearest food in personal sight radius.
+    // 3. Foraging — nearest food in personal sight radius.
     const sight = FOOD_SIGHT * bot.sightFactor;
     const sight2 = sight * sight;
     let bestX = 0;
@@ -447,5 +537,18 @@ export class BotManager {
     } else {
       bot.hasTarget = false;
     }
+  }
+
+  /** Pick a new wander destination, far from walls and far from the
+   *  bot's current position so the journey is meaningful. Held for
+   *  WANDER_HOLD_MIN_MS..WANDER_HOLD_MAX_MS. */
+  private pickWanderTarget(bot: Snake["bot"], now: number): void {
+    if (!bot) return;
+    const margin = WALL_MARGIN + 80;
+    bot.wanderTargetX = margin + Math.random() * (WORLD_SIZE - margin * 2);
+    bot.wanderTargetY = margin + Math.random() * (WORLD_SIZE - margin * 2);
+    bot.wanderUntil =
+      now + WANDER_HOLD_MIN_MS + Math.random() * (WANDER_HOLD_MAX_MS - WANDER_HOLD_MIN_MS);
+    bot.hasWanderTarget = true;
   }
 }
