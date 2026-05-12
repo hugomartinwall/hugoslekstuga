@@ -66,8 +66,20 @@ export default function BrandDot({
   // already visible; adds a beat of life so a held-open gaze doesn't
   // feel like a statue.
   const [blinking, setBlinking] = useState(false);
+  // Gaze offset for the eyes (relative pixels). Drives the eye wrapper's
+  // transform so both eyes shift together. Set by the tool-hover handler
+  // when a swarm tool is hovered/dragged — Hugo *looks at* the tool.
+  const [eyeGazeX, setEyeGazeX] = useState(0);
+  const [eyeGazeY, setEyeGazeY] = useState(0);
   const btnRef = useRef<HTMLButtonElement>(null);
   const hideTimerRef = useRef<number | null>(null);
+  // Two independent "wants eyes open" sources combined with OR:
+  // proximity (cursor near the wordmark) and tool-hover (user is engaging
+  // with a swarm tool). Each is tracked in a ref; whenever either flips,
+  // syncEyes() recomputes the visible state.
+  const proxOpenRef = useRef(false);
+  const hoverOpenRef = useRef(false);
+  const hoverHideTimerRef = useRef<number | null>(null);
 
   const safeIdx =
     Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
@@ -138,6 +150,13 @@ export default function BrandDot({
       );
   }, []);
 
+  // Recompute eyes-visible from the OR of the two "wants open" sources.
+  // Wrapped so both effect handlers below can call it without duplicating
+  // the boolean expression.
+  const syncEyes = () => {
+    setEyesVisible(proxOpenRef.current || hoverOpenRef.current);
+  };
+
   // Proximity detection — interactive variant only. Mouse-only; touch
   // users get the eye reveal via the tap handler so they aren't excluded.
   useEffect(() => {
@@ -155,7 +174,8 @@ export default function BrandDot({
         Math.max(r.width, r.height) * PROXIMITY_RATIO,
       );
       if (d < proximityPx) {
-        setEyesVisible(true);
+        proxOpenRef.current = true;
+        syncEyes();
         if (hideTimerRef.current) {
           window.clearTimeout(hideTimerRef.current);
           hideTimerRef.current = null;
@@ -163,7 +183,8 @@ export default function BrandDot({
       } else {
         if (hideTimerRef.current) return;
         hideTimerRef.current = window.setTimeout(() => {
-          setEyesVisible(false);
+          proxOpenRef.current = false;
+          syncEyes();
           hideTimerRef.current = null;
         }, EYES_HIDE_DELAY_MS);
       }
@@ -172,6 +193,60 @@ export default function BrandDot({
     return () => {
       window.removeEventListener("mousemove", onMove);
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    };
+  }, [interactive]);
+
+  // Tool-hover handler — ToolMap dispatches `hugoslekstuga:tool-hover`
+  // each rAF frame while the user is hovering or dragging a swarm dot
+  // (detail = { x, y } in viewport coords), and once with detail = null
+  // when they let go. Hugo opens his eyes *and* offsets them toward the
+  // tool's screen position so he visibly looks at what the user is
+  // engaging with. The actual nav dot stays in place — only the gaze
+  // shifts. Reset to neutral with a small delay so brief gaps between
+  // hovering adjacent tools don't flicker the eyes shut.
+  useEffect(() => {
+    if (!interactive) return;
+    if (typeof window === "undefined") return;
+    const onHover = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{ x: number; y: number } | null>
+      ).detail;
+      const node = btnRef.current;
+      if (!node) return;
+      if (!detail) {
+        if (hoverHideTimerRef.current) return;
+        hoverHideTimerRef.current = window.setTimeout(() => {
+          hoverOpenRef.current = false;
+          setEyeGazeX(0);
+          setEyeGazeY(0);
+          syncEyes();
+          hoverHideTimerRef.current = null;
+        }, 220);
+        return;
+      }
+      if (hoverHideTimerRef.current) {
+        window.clearTimeout(hoverHideTimerRef.current);
+        hoverHideTimerRef.current = null;
+      }
+      const r = node.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dx = detail.x - cx;
+      const dy = detail.y - cy;
+      const dist = Math.hypot(dx, dy) || 1;
+      // Gaze offset: 22% of dot diameter in the tool's direction.
+      // Stays well inside the dot's bounds so the eyes never escape.
+      const offset = Math.min(r.width, r.height) * 0.22;
+      setEyeGazeX((dx / dist) * offset);
+      setEyeGazeY((dy / dist) * offset);
+      hoverOpenRef.current = true;
+      syncEyes();
+    };
+    window.addEventListener("hugoslekstuga:tool-hover", onHover);
+    return () => {
+      window.removeEventListener("hugoslekstuga:tool-hover", onHover);
+      if (hoverHideTimerRef.current)
+        window.clearTimeout(hoverHideTimerRef.current);
     };
   }, [interactive]);
 
@@ -197,9 +272,11 @@ export default function BrandDot({
 
   const cycle = () => {
     setDotIdx((i) => (i + 1) % DOT_COLORS.length);
-    // Tap-toggle eyes for touch users. Mouse users get proximity-driven
-    // reveal anyway, so the toggle is harmless on desktop.
-    setEyesVisible((v) => !v);
+    // Tap-toggle eyes for touch users. On desktop the next mousemove
+    // re-syncs from the proximity refs anyway, so this is effectively
+    // touch-only.
+    proxOpenRef.current = !proxOpenRef.current;
+    syncEyes();
     setBouncing(true);
     window.setTimeout(() => setBouncing(false), 280);
   };
@@ -244,12 +321,17 @@ export default function BrandDot({
           justifyContent: "center",
           gap: "0.12em",
           opacity: eyesVisible && !blinking ? 1 : 0,
+          // Shift the whole eye-container by the gaze offset so both
+          // eyes track together toward the hovered tool. Stays inside
+          // the dot since the offset caps at 22% of dot diameter.
+          transform: `translate(${eyeGazeX}px, ${eyeGazeY}px)`,
           // Fast close (blink starting) so it reads as a snap; slow
           // open (blink ending or proximity revealing) so the gaze
-          // re-engages gently. Mirrors a real blink's asymmetry.
+          // re-engages gently. Gaze translate eases smoothly so the
+          // eyes track a moving swarm dot fluidly rather than snap.
           transition: blinking
-            ? "opacity 60ms ease"
-            : "opacity 220ms ease",
+            ? "opacity 60ms ease, transform 200ms ease"
+            : "opacity 220ms ease, transform 200ms ease",
           pointerEvents: "none",
         }}
       >

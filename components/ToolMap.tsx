@@ -223,6 +223,13 @@ export default function ToolMap({
   const explodeAtRef = useRef(0);
 
   const nodeBySlug = useRef<Map<string, Node>>(new Map());
+  /** Mirror of `hovered` state into a ref so the rAF loop can read it
+   *  without becoming a function of state-changing closures. */
+  const hoveredRef = useRef<string | null>(null);
+  /** Tracks whether the last frame had a tool active (hovered or
+   *  dragged) so we know when to dispatch the null event signalling
+   *  end-of-hover to BrandDot. */
+  const wasToolActiveRef = useRef(false);
 
   useLayoutEffect(() => {
     if (!containerRef.current) return;
@@ -275,6 +282,12 @@ export default function ToolMap({
     if (size.w <= MIN_W && size.h <= MIN_H) return;
     initNodes(size.w, size.h);
   }, [size]);
+
+  // Mirror the React `hovered` state into a ref so the rAF loop reads
+  // the latest value without becoming a function of changing closures.
+  useEffect(() => {
+    hoveredRef.current = hovered;
+  }, [hovered]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -344,6 +357,34 @@ export default function ToolMap({
           n.hasSparkled = true;
           emitSparkle(particlesRef.current, n.x, n.y);
         }
+      }
+
+      // Tell Hugo (BrandDot in the nav) which swarm tool the user is
+      // currently engaging with so his eyes can open and track it.
+      // The "active" tool is whichever the user is hovering, falling
+      // back to whichever is being dragged. Position is dispatched in
+      // viewport coords each frame so the gaze tracks the dot as
+      // physics drifts it.
+      const activeSlug =
+        hoveredRef.current || dragRef.current?.slug || null;
+      if (activeSlug && containerRef.current && typeof window !== "undefined") {
+        const node = nodeBySlug.current.get(activeSlug);
+        if (node) {
+          const rect = containerRef.current.getBoundingClientRect();
+          window.dispatchEvent(
+            new CustomEvent("hugoslekstuga:tool-hover", {
+              detail: { x: rect.left + node.x, y: rect.top + node.y },
+            }),
+          );
+          wasToolActiveRef.current = true;
+        }
+      } else if (wasToolActiveRef.current) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("hugoslekstuga:tool-hover", { detail: null }),
+          );
+        }
+        wasToolActiveRef.current = false;
       }
 
       setNow(performance.now());
