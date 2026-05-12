@@ -28,6 +28,16 @@ const PROXIMITY_FLOOR_PX = 40;
 const EYES_HIDE_DELAY_MS = 600;
 
 /**
+ * Easter egg — spam Hugo with clicks and he plays dead. Five or more
+ * clicks within 1.5 seconds triggers it; his eyes squeeze shut into
+ * thin lines for 1.8 seconds. Dry, no fanfare, just a small visible
+ * "leave me alone".
+ */
+const SPAM_CLICK_THRESHOLD = 5;
+const SPAM_CLICK_WINDOW_MS = 1500;
+const PLAY_DEAD_DURATION_MS = 1800;
+
+/**
  * The brand dot. Internally we call him **Hugo** — a small coloured
  * disc that lives in the wordmark, in the nav corner of every tool
  * page, and (when a tool is clicked) travels up from the swarm into
@@ -80,6 +90,12 @@ export default function BrandDot({
   const proxOpenRef = useRef(false);
   const hoverOpenRef = useRef(false);
   const hoverHideTimerRef = useRef<number | null>(null);
+  // Easter egg state — Hugo plays dead when click-spammed. While
+  // playing dead, his eyes squint to thin lines and stay visible
+  // regardless of proximity/hover state.
+  const [playingDead, setPlayingDead] = useState(false);
+  const clickTimesRef = useRef<number[]>([]);
+  const playDeadTimerRef = useRef<number | null>(null);
 
   const safeIdx =
     Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
@@ -148,6 +164,16 @@ export default function BrandDot({
         "hugoslekstuga:hugo-traveling",
         onTraveling,
       );
+  }, []);
+
+  // Clear the play-dead timer on unmount so a navigation away during
+  // the easter-egg window doesn't leak a setTimeout.
+  useEffect(() => {
+    return () => {
+      if (playDeadTimerRef.current) {
+        window.clearTimeout(playDeadTimerRef.current);
+      }
+    };
   }, []);
 
   // Recompute eyes-visible from the OR of the two "wants open" sources.
@@ -279,6 +305,28 @@ export default function BrandDot({
     syncEyes();
     setBouncing(true);
     window.setTimeout(() => setBouncing(false), 280);
+
+    // Easter egg — track rapid clicks and trigger "play dead" if Hugo
+    // is being pestered. Skip the spam check while already playing dead
+    // so additional clicks in that window don't extend or re-trigger.
+    if (playingDead) return;
+    const now = Date.now();
+    const history = clickTimesRef.current;
+    history.push(now);
+    while (history.length > 0 && history[0] < now - SPAM_CLICK_WINDOW_MS) {
+      history.shift();
+    }
+    if (history.length >= SPAM_CLICK_THRESHOLD) {
+      clickTimesRef.current = [];
+      setPlayingDead(true);
+      if (playDeadTimerRef.current) {
+        window.clearTimeout(playDeadTimerRef.current);
+      }
+      playDeadTimerRef.current = window.setTimeout(() => {
+        setPlayingDead(false);
+        playDeadTimerRef.current = null;
+      }, PLAY_DEAD_DURATION_MS);
+    }
   };
 
   return (
@@ -301,6 +349,9 @@ export default function BrandDot({
         background: color,
         cursor: "pointer",
         verticalAlign: "baseline",
+        // A hair of breathing room so the dot doesn't kiss the 'a' of
+        // the wordmark. Em-based so it scales with font size.
+        marginLeft: "0.16em",
         opacity: traveling ? 0 : 1,
         transform: bouncing ? "scale(1.4)" : undefined,
         transition: bouncing
@@ -320,11 +371,14 @@ export default function BrandDot({
           alignItems: "center",
           justifyContent: "center",
           gap: "0.12em",
-          opacity: eyesVisible && !blinking ? 1 : 0,
+          opacity:
+            playingDead || (eyesVisible && !blinking) ? 1 : 0,
           // Shift the whole eye-container by the gaze offset so both
-          // eyes track together toward the hovered tool. Stays inside
-          // the dot since the offset caps at 22% of dot diameter.
-          transform: `translate(${eyeGazeX}px, ${eyeGazeY}px)`,
+          // eyes track together toward the hovered tool. Skip when
+          // playing dead — gaze is irrelevant if the eyes are shut.
+          transform: playingDead
+            ? "translate(0px, 0px)"
+            : `translate(${eyeGazeX}px, ${eyeGazeY}px)`,
           // Fast close (blink starting) so it reads as a snap; slow
           // open (blink ending or proximity revealing) so the gaze
           // re-engages gently. Gaze translate eases smoothly so the
@@ -339,18 +393,22 @@ export default function BrandDot({
           style={{
             display: "inline-block",
             width: "0.22em",
-            height: "0.22em",
+            // Eyes squeeze shut into thin horizontal lines when Hugo
+            // is playing dead — height collapses, width stays.
+            height: playingDead ? "0.04em" : "0.22em",
             borderRadius: "9999px",
             background: "var(--color-cream)",
+            transition: "height 220ms ease",
           }}
         />
         <span
           style={{
             display: "inline-block",
             width: "0.22em",
-            height: "0.22em",
+            height: playingDead ? "0.04em" : "0.22em",
             borderRadius: "9999px",
             background: "var(--color-cream)",
+            transition: "height 220ms ease",
           }}
         />
       </span>
