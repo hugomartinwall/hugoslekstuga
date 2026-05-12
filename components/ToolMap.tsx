@@ -140,6 +140,42 @@ const EXPLODE_SPEED_MAX = 78;
 const MIN_W = 320;
 const MIN_H = 480;
 
+/** The eight nav-dot colours in the same order BrandDot stores them
+ *  in. Reading the persisted index from localStorage and looking up
+ *  here gives ToolMap the user's chosen colour to pass into the
+ *  Hugo-fetches-the-tool event payload. Module-scope so it allocates
+ *  once and pairs neatly with COLOR_HEX from lib/colors.ts. */
+const NAV_DOT_HEXES: readonly string[] = [
+  COLOR_HEX.tomato,
+  COLOR_HEX.blue,
+  COLOR_HEX.yellow,
+  COLOR_HEX.pink,
+  COLOR_HEX.green,
+  COLOR_HEX.purple,
+  COLOR_HEX.orange,
+  COLOR_HEX.teal,
+];
+
+function readNavDotColor(): string {
+  if (typeof window === "undefined") return NAV_DOT_HEXES[0];
+  try {
+    const raw = window.localStorage.getItem("hugoslekstuga:dot-color");
+    if (raw === null) return NAV_DOT_HEXES[0];
+    const idx = JSON.parse(raw) as number;
+    if (
+      typeof idx === "number" &&
+      Number.isFinite(idx) &&
+      idx >= 0 &&
+      idx < NAV_DOT_HEXES.length
+    ) {
+      return NAV_DOT_HEXES[idx];
+    }
+  } catch {
+    // localStorage disabled, malformed JSON, etc — fall through to default
+  }
+  return NAV_DOT_HEXES[0];
+}
+
 type ToolMapProps = {
   /**
    * When true: drop the card styling (border, shadow, rounded corners,
@@ -432,11 +468,14 @@ export default function ToolMap({
   }, []);
 
   /**
-   * Commit a click on a tool dot — runs the click fx, fires the
-   * traveling-dot event so the dot animates up to the nav while the
-   * route changes, then pushes the new route. Used by both the
-   * pointer click and the keyboard activation paths so they stay in
-   * sync.
+   * Commit a click on a tool dot. Hugo (the brand dot) leaves his
+   * nav post, flies down to the clicked tool, briefly looks at it,
+   * carries it back. The route push fires at the *start of his
+   * return flight* (~T+400ms from click) so the new tool page is
+   * rendered behind him by the time he lands and the page's header
+   * card can expand from his landing position.
+   *
+   * Used by both the pointer click and keyboard activation paths.
    */
   const commitNavigation = useCallback(
     (slug: string) => {
@@ -445,24 +484,54 @@ export default function ToolMap({
       setBouncingSlug(slug);
       triggerClickFx(slug);
       const rect = containerRef.current?.getBoundingClientRect();
-      if (rect && typeof window !== "undefined") {
+      const navDot = document.querySelector<HTMLElement>("[data-brand-dot]");
+      if (rect && navDot && typeof window !== "undefined") {
+        // Freeze the nav position at click time. The nav doesn't move
+        // mid-flight, but reading once and reusing keeps the contract
+        // clean — TravelingDot never has to touch the DOM again.
+        const navRect = navDot.getBoundingClientRect();
+        // Mobile gets a shorter total duration (560ms vs 720ms) because
+        // the swarm-to-nav distance is much smaller on a 375px viewport
+        // and the same absolute speed would feel hurried.
+        const isMobile = window.innerWidth < 640;
+        const duration = isMobile ? 560 : 720;
         try {
           window.dispatchEvent(
             new CustomEvent("hugoslekstuga:dot-travel", {
               detail: {
+                // The tool position (where Hugo flies TO)
                 fromX: rect.left + node.x,
                 fromY: rect.top + node.y,
+                // The nav-dot position (where Hugo starts FROM and RETURNS TO)
+                toX: navRect.left + navRect.width / 2,
+                toY: navRect.top + navRect.height / 2,
+                // The tool's accent colour (Hugo tints toward this during scoop)
                 color: COLOR_HEX[node.tool.color],
+                // The user's chosen nav-dot colour (Hugo's "true" colour).
+                // Read from the same key BrandDot writes — keeps Hugo
+                // matching whatever colour the user picked.
+                navColor: readNavDotColor(),
+                duration,
               },
             }),
           );
         } catch {
           // Safari < 15 etc — fail silent; navigation continues
         }
+        // Route push at start-of-return-flight: anticipation (80ms) +
+        // outbound (260ms) + scoop (60ms) = 400ms. Or scale for mobile.
+        const pushDelay = isMobile ? (duration * 400) / 720 : 400;
+        window.setTimeout(() => {
+          router.push(pathFor(slug));
+        }, pushDelay);
+      } else {
+        // No nav dot in DOM (shouldn't happen but defensive). Skip the
+        // Hugo animation entirely and just navigate after the click
+        // bounce, like the pre-redesign behaviour.
+        window.setTimeout(() => {
+          router.push(pathFor(slug));
+        }, CLICK_BOUNCE_MS);
       }
-      window.setTimeout(() => {
-        router.push(pathFor(slug));
-      }, CLICK_BOUNCE_MS);
     },
     [router, triggerClickFx],
   );

@@ -126,6 +126,29 @@ body {
   animation: featured-in 360ms ease both;
 }
 
+/* Tool-page entrance, pinned to Hugo's landing position.
+ *
+ * The transform-origin is set via CSS variables that ToolFrame fills
+ * in when the `hugoslekstuga:dot-arrived` event fires (or after a 50ms
+ * fallback timer for direct-URL visits). Result: the tool page
+ * expands from the spot the user just watched Hugo land at —
+ * reinforcing that the page opened because Hugo opened it.
+ *
+ * The spring easing matches the dot's bounce on click (existing
+ * cubic-bezier(0.34, 1.56, 0.64, 1)) so the motion language stays
+ * consistent.
+ */
+@keyframes card-arrive {
+  from { opacity: 0; transform: scale(0.4); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.card-arrive {
+  transform-origin: var(--enter-origin-x, 50%) var(--enter-origin-y, 0);
+  animation: card-arrive 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  will-change: transform, opacity;
+}
+
 /* Visible focus that fits the playful palette */
 :where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
   outline: 3px solid var(--color-blue);
@@ -139,7 +162,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .fade-rise,
   .featured-in,
-  .pulse-dot {
+  .pulse-dot,
+  .card-arrive {
     animation: none !important;
   }
   /* Breathing brand dot also stops on reduced-motion. The animation is

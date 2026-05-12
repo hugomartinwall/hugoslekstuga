@@ -57,6 +57,11 @@ export default function BrandDot({
   const [dotIdx, setDotIdx] = useLocalStorageState<number>(DOT_KEY, 0);
   const [bouncing, setBouncing] = useState(false);
   const [eyesVisible, setEyesVisible] = useState(false);
+  // True while Hugo is on a fetch-and-return trip (initiated by clicking
+  // a tool on the homepage swarm). The canvas-rendered traveling dot in
+  // the root layout draws Hugo during this window; we hide the real
+  // nav dot so there aren't two dots stacked on top of each other.
+  const [traveling, setTraveling] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const hideTimerRef = useRef<number | null>(null);
 
@@ -65,6 +70,25 @@ export default function BrandDot({
       ? dotIdx
       : 0;
   const color = DOT_COLORS[safeIdx];
+
+  // Subscribe to Hugo's travel state. Applies to both interactive (nav)
+  // and non-interactive (footer) variants — the footer dot also hides
+  // because Hugo can fly across the bottom of the viewport during a
+  // tool click on long pages and the eye sees both dots otherwise.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onTraveling = (e: Event) => {
+      const detail = (e as CustomEvent<{ traveling: boolean }>).detail;
+      if (!detail) return;
+      setTraveling(detail.traveling);
+    };
+    window.addEventListener("hugoslekstuga:hugo-traveling", onTraveling);
+    return () =>
+      window.removeEventListener(
+        "hugoslekstuga:hugo-traveling",
+        onTraveling,
+      );
+  }, []);
 
   // Proximity detection — interactive variant only. Mouse-only; touch
   // users get the eye reveal via the tap handler so they aren't excluded.
@@ -116,6 +140,8 @@ export default function BrandDot({
           borderRadius: "9999px",
           background: color,
           verticalAlign: "baseline",
+          opacity: traveling ? 0 : 1,
+          transition: "opacity 60ms linear",
         }}
       />
     );
@@ -150,10 +176,11 @@ export default function BrandDot({
         background: color,
         cursor: "pointer",
         verticalAlign: "baseline",
+        opacity: traveling ? 0 : 1,
         transform: bouncing ? "scale(1.4)" : undefined,
         transition: bouncing
-          ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background 220ms ease"
-          : "transform 180ms ease, background 220ms ease",
+          ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background 220ms ease, opacity 60ms linear"
+          : "transform 180ms ease, background 220ms ease, opacity 60ms linear",
         animation: bouncing
           ? "none"
           : "brand-dot-breathe 3.4s ease-in-out infinite",
