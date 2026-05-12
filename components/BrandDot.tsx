@@ -15,24 +15,39 @@ const DOT_COLORS = [
 ];
 
 const DOT_KEY = "hugoslekstuga:dot-color";
-const PROXIMITY_PX = 80;
+/**
+ * Proximity threshold scales with the rendered dot size — bigger dot,
+ * more breathing room around it that triggers the eyes; smaller dot,
+ * tighter trigger area so the eyes don't pop on every cursor move.
+ * 4× the dot diameter feels right across mobile (14px → 56px reach)
+ * and desktop (17px → 68px reach). Floored at 40 so a vanishingly
+ * small dot still has some catchment.
+ */
+const PROXIMITY_RATIO = 4;
+const PROXIMITY_FLOOR_PX = 40;
 const EYES_HIDE_DELAY_MS = 600;
 
 /**
- * The brand dot. A small coloured disc that punctuates the wordmark.
+ * The brand dot. Internally we call him **Hugo** — a small coloured
+ * disc that lives in the wordmark, in the nav corner of every tool
+ * page, and (when a tool is clicked) travels up from the swarm into
+ * the nav. The character of the brand carried by behaviour, not shape.
  *
  *   - Form: a circle sized at 0.7em so it scales with the wordmark's
  *     font-size. Sits next to the last letter like a period that
  *     learned to draw itself.
  *   - Behaviour: two tiny cream eyes appear when the cursor passes
- *     within 80px (interactive variant only). On touch, tapping the
- *     dot toggles the eyes *and* cycles colour together — same atom,
- *     two affordances. Idle breathing stays.
+ *     close (interactive variant only). On touch, tapping the dot
+ *     toggles the eyes *and* cycles colour together — same atom, two
+ *     affordances. Idle breathing stays.
  *   - State: the chosen colour persists in `hugoslekstuga:dot-color`
  *     so the nav, footer, tool-page corner dot, and back-link dot
  *     all stay in sync.
  *   - `data-brand-dot` is set so the TravelingDot in the root layout
  *     can find the nav dot to fly the swarm hand-off into.
+ *   - `data-name="hugo"` is set for the same Easter-egg reason a code
+ *     character would have a name: the dot is Hugo. Never surfaced in
+ *     user copy, only in DevTools for anyone curious enough to look.
  */
 export default function BrandDot({
   interactive = false,
@@ -63,7 +78,11 @@ export default function BrandDot({
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
       const d = Math.hypot(e.clientX - cx, e.clientY - cy);
-      if (d < PROXIMITY_PX) {
+      const proximityPx = Math.max(
+        PROXIMITY_FLOOR_PX,
+        Math.max(r.width, r.height) * PROXIMITY_RATIO,
+      );
+      if (d < proximityPx) {
         setEyesVisible(true);
         if (hideTimerRef.current) {
           window.clearTimeout(hideTimerRef.current);
@@ -89,6 +108,7 @@ export default function BrandDot({
       <span
         aria-hidden
         data-brand-dot
+        data-name="hugo"
         style={{
           display: "inline-block",
           width: "0.7em",
@@ -117,6 +137,7 @@ export default function BrandDot({
       onClick={cycle}
       aria-label="Change accent colour"
       data-brand-dot
+      data-name="hugo"
       style={{
         position: "relative",
         display: "inline-block",
@@ -155,8 +176,8 @@ export default function BrandDot({
         <span
           style={{
             display: "inline-block",
-            width: "0.18em",
-            height: "0.18em",
+            width: "0.22em",
+            height: "0.22em",
             borderRadius: "9999px",
             background: "var(--color-cream)",
           }}
@@ -164,8 +185,8 @@ export default function BrandDot({
         <span
           style={{
             display: "inline-block",
-            width: "0.18em",
-            height: "0.18em",
+            width: "0.22em",
+            height: "0.22em",
             borderRadius: "9999px",
             background: "var(--color-cream)",
           }}

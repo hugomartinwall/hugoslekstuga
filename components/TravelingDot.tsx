@@ -29,6 +29,14 @@ type Journey = {
 
 const TRAVEL_MS = 480;
 const DOT_SIZE = 28;
+/** Two ghost dots lag behind the main one so the flight reads as a
+ *  trail, not a teleport. Each is smaller, fainter, and starts moving
+ *  slightly later — they all arrive at the destination together by
+ *  running shorter transitions. */
+const TRAIL = [
+  { delayMs: 70, sizeRatio: 0.78, opacity: 0.5 },
+  { delayMs: 140, sizeRatio: 0.6, opacity: 0.28 },
+];
 
 export default function TravelingDot() {
   const [journey, setJourney] = useState<Journey | null>(null);
@@ -101,27 +109,64 @@ export default function TravelingDot() {
   const y = flying ? journey.toY : journey.fromY;
 
   return (
-    <div
-      key={journey.id}
-      aria-hidden
-      style={{
-        position: "fixed",
-        left: 0,
-        top: 0,
-        width: DOT_SIZE,
-        height: DOT_SIZE,
-        marginLeft: -DOT_SIZE / 2,
-        marginTop: -DOT_SIZE / 2,
-        borderRadius: 9999,
-        background: journey.color,
-        transform: `translate(${x}px, ${y}px) scale(${flying ? 0.6 : 1})`,
-        transition: flying
-          ? `transform ${TRAVEL_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`
-          : "none",
-        pointerEvents: "none",
-        zIndex: 50,
-        willChange: "transform",
-      }}
-    />
+    <>
+      {/* Trail dots — render *behind* the main one (z-index 49), each
+          smaller and fainter, each with a transition that starts later
+          but ends at the same wall-clock time so they all arrive at the
+          nav together. The result reads as a comet tail. */}
+      {TRAIL.map((t, i) => {
+        const size = DOT_SIZE * t.sizeRatio;
+        const dur = TRAVEL_MS - t.delayMs;
+        return (
+          <div
+            key={`trail-${i}-${journey.id}`}
+            aria-hidden
+            style={{
+              position: "fixed",
+              left: 0,
+              top: 0,
+              width: size,
+              height: size,
+              marginLeft: -size / 2,
+              marginTop: -size / 2,
+              borderRadius: 9999,
+              background: journey.color,
+              opacity: t.opacity,
+              transform: `translate(${x}px, ${y}px) scale(${flying ? 0.5 : 1})`,
+              transition: flying
+                ? `transform ${dur}ms cubic-bezier(0.65, 0, 0.35, 1) ${t.delayMs}ms`
+                : "none",
+              pointerEvents: "none",
+              zIndex: 49,
+              willChange: "transform",
+            }}
+          />
+        );
+      })}
+
+      {/* Main dot — the one that lands at the nav. */}
+      <div
+        key={journey.id}
+        aria-hidden
+        style={{
+          position: "fixed",
+          left: 0,
+          top: 0,
+          width: DOT_SIZE,
+          height: DOT_SIZE,
+          marginLeft: -DOT_SIZE / 2,
+          marginTop: -DOT_SIZE / 2,
+          borderRadius: 9999,
+          background: journey.color,
+          transform: `translate(${x}px, ${y}px) scale(${flying ? 0.6 : 1})`,
+          transition: flying
+            ? `transform ${TRAVEL_MS}ms cubic-bezier(0.65, 0, 0.35, 1)`
+            : "none",
+          pointerEvents: "none",
+          zIndex: 50,
+          willChange: "transform",
+        }}
+      />
+    </>
   );
 }
