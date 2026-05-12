@@ -62,6 +62,10 @@ export default function BrandDot({
   // the root layout draws Hugo during this window; we hide the real
   // nav dot so there aren't two dots stacked on top of each other.
   const [traveling, setTraveling] = useState(false);
+  // True for the ~100ms an idle blink lasts. Only fires while eyes are
+  // already visible; adds a beat of life so a held-open gaze doesn't
+  // feel like a statue.
+  const [blinking, setBlinking] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const hideTimerRef = useRef<number | null>(null);
 
@@ -70,6 +74,50 @@ export default function BrandDot({
       ? dotIdx
       : 0;
   const color = DOT_COLORS[safeIdx];
+
+  // Idle-blink scheduler — runs only while eyes are visible. Every
+  // 4-7s, briefly close the eyes for ~100ms then open them again.
+  // Close transition is fast (60ms ease) so it reads as a snap; the
+  // open transition stays at the same 220ms ease the proximity reveal
+  // uses. Asymmetric on purpose — real blinks close quickly, open
+  // more slowly.
+  useEffect(() => {
+    if (!interactive) return;
+    if (!eyesVisible) {
+      // One-time reset when proximity ends mid-blink so the next
+      // proximity reveal doesn't start with `blinking` stuck at true.
+      // Not a cascading-render risk (only fires on the boolean edge),
+      // but the React 19 compiler can't tell — suppress just here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBlinking(false);
+      return;
+    }
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    let scheduleTid: number | null = null;
+    let openTid: number | null = null;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      const delay = 4000 + Math.random() * 3000;
+      scheduleTid = window.setTimeout(() => {
+        if (cancelled) return;
+        setBlinking(true);
+        openTid = window.setTimeout(() => {
+          if (cancelled) return;
+          setBlinking(false);
+          scheduleNext();
+        }, 100);
+      }, delay);
+    };
+    scheduleNext();
+
+    return () => {
+      cancelled = true;
+      if (scheduleTid) window.clearTimeout(scheduleTid);
+      if (openTid) window.clearTimeout(openTid);
+    };
+  }, [interactive, eyesVisible]);
 
   // Subscribe to Hugo's travel state. Applies to both interactive (nav)
   // and non-interactive (footer) variants — the footer dot also hides
@@ -195,8 +243,13 @@ export default function BrandDot({
           alignItems: "center",
           justifyContent: "center",
           gap: "0.12em",
-          opacity: eyesVisible ? 1 : 0,
-          transition: "opacity 220ms ease",
+          opacity: eyesVisible && !blinking ? 1 : 0,
+          // Fast close (blink starting) so it reads as a snap; slow
+          // open (blink ending or proximity revealing) so the gaze
+          // re-engages gently. Mirrors a real blink's asymmetry.
+          transition: blinking
+            ? "opacity 60ms ease"
+            : "opacity 220ms ease",
           pointerEvents: "none",
         }}
       >

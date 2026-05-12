@@ -123,27 +123,20 @@ export default function TravelingDot() {
       const state = resolveState(t, j);
 
       // Record the trail sample (only during flight phases, not
-      // anticipation/scoop/settle where Hugo barely moves)
+      // anticipation/scoop/settle where Hugo barely moves). The
+      // pruning cutoff stays at the full STREAK_BUFFER_MS even
+      // during non-flight, so when Hugo finishes a flight phase the
+      // streak doesn't snap empty — it ages out naturally over the
+      // next ~120ms behind him as he comes to rest.
       if (state.inFlight) {
         trailRef.current.push({ x: state.x, y: state.y, t: now });
-        // Prune old samples
-        const cutoff = now - STREAK_BUFFER_MS;
-        while (
-          trailRef.current.length > 0 &&
-          trailRef.current[0].t < cutoff
-        ) {
-          trailRef.current.shift();
-        }
-      } else {
-        // Outside flight phases, decay the trail so it doesn't
-        // linger when Hugo's stationary (during scoop)
-        const cutoff = now - STREAK_BUFFER_MS / 2;
-        while (
-          trailRef.current.length > 0 &&
-          trailRef.current[0].t < cutoff
-        ) {
-          trailRef.current.shift();
-        }
+      }
+      const cutoff = now - STREAK_BUFFER_MS;
+      while (
+        trailRef.current.length > 0 &&
+        trailRef.current[0].t < cutoff
+      ) {
+        trailRef.current.shift();
       }
 
       // Draw the tapered streak first so the dot renders on top
@@ -272,6 +265,11 @@ type FrameState = {
   color: string;
   // Whether to draw eyes
   drawEyes: boolean;
+  // Eye offset within the dot — both eyes shift together so Hugo's
+  // gaze can point somewhere (downward at the tool during scoop, etc.)
+  // Defaults to (0, 0) = neutral forward stare.
+  eyeOffsetX: number;
+  eyeOffsetY: number;
   // Whether we're currently in one of the two flight phases (drives streak sampling)
   inFlight: boolean;
 };
@@ -296,6 +294,8 @@ function resolveState(t: number, j: Journey): FrameState {
       angle: 0,
       color: navColor,
       drawEyes: false,
+      eyeOffsetX: 0,
+      eyeOffsetY: 0,
       inFlight: false,
     };
   }
@@ -322,12 +322,16 @@ function resolveState(t: number, j: Journey): FrameState {
       angle: speed > 0.01 ? Math.atan2(vy, vx) : 0,
       color: navColor,
       drawEyes: false,
+      eyeOffsetX: 0,
+      eyeOffsetY: 0,
       inFlight: true,
     };
   }
 
   if (t < PHASE.scoopEnd) {
-    // Scoop pause — Hugo at the tool dot, eyes open
+    // Scoop pause — Hugo at the tool dot, eyes open and looking down
+    // at the thing beneath him. That single beat of him *seeing* what
+    // he's about to carry is the personality of the whole animation.
     return {
       x: j.toolX,
       y: j.toolY,
@@ -336,6 +340,8 @@ function resolveState(t: number, j: Journey): FrameState {
       angle: 0,
       color: navColor, // hasn't picked up the tint yet — that happens during return
       drawEyes: true,
+      eyeOffsetX: 0,
+      eyeOffsetY: DOT_RADIUS_PX * 0.28, // look down
       inFlight: false,
     };
   }
@@ -363,6 +369,8 @@ function resolveState(t: number, j: Journey): FrameState {
       angle: speed > 0.01 ? Math.atan2(vy, vx) : 0,
       color,
       drawEyes: false,
+      eyeOffsetX: 0,
+      eyeOffsetY: 0,
       inFlight: true,
     };
   }
@@ -385,6 +393,8 @@ function resolveState(t: number, j: Journey): FrameState {
     angle: 0,
     color: navColor,
     drawEyes: false,
+    eyeOffsetX: 0,
+    eyeOffsetY: 0,
     inFlight: false,
   };
 }
@@ -409,9 +419,13 @@ function drawHugo(ctx: CanvasRenderingContext2D, s: FrameState) {
     const eyeGap = DOT_RADIUS_PX * 0.32;
     // Rotate back to upright for the eyes (face-forward, regardless of body angle)
     ctx.rotate(-s.angle);
+    // Both eyes shift together by eyeOffsetX/eyeOffsetY so Hugo can
+    // direct his gaze — e.g. look down at the tool during the scoop.
+    const ex = s.eyeOffsetX;
+    const ey = s.eyeOffsetY;
     ctx.beginPath();
-    ctx.arc(-eyeGap, 0, eyeR, 0, Math.PI * 2);
-    ctx.arc(eyeGap, 0, eyeR, 0, Math.PI * 2);
+    ctx.arc(-eyeGap + ex, ey, eyeR, 0, Math.PI * 2);
+    ctx.arc(eyeGap + ex, ey, eyeR, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
