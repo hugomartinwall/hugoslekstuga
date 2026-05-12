@@ -92,8 +92,11 @@ export default function BrandDot({
   const hoverHideTimerRef = useRef<number | null>(null);
   // Easter egg state — Hugo plays dead when click-spammed. While
   // playing dead, his eyes squint to thin lines and stay visible
-  // regardless of proximity/hover state.
+  // regardless of proximity/hover state. `huffSeq` is incremented
+  // each trigger and used as a React key on the huff puff so the CSS
+  // animation re-runs on repeat triggers.
   const [playingDead, setPlayingDead] = useState(false);
+  const [huffSeq, setHuffSeq] = useState(0);
   const clickTimesRef = useRef<number[]>([]);
   const playDeadTimerRef = useRef<number | null>(null);
 
@@ -319,6 +322,7 @@ export default function BrandDot({
     if (history.length >= SPAM_CLICK_THRESHOLD) {
       clickTimesRef.current = [];
       setPlayingDead(true);
+      setHuffSeq((s) => s + 1);
       if (playDeadTimerRef.current) {
         window.clearTimeout(playDeadTimerRef.current);
       }
@@ -362,6 +366,62 @@ export default function BrandDot({
           : "brand-dot-breathe 3.4s ease-in-out infinite",
       }}
     >
+      {/* The "annoyed huff" puff — three overlapping ink circles
+          rising out of Hugo's head when he plays dead. Only mounted
+          while `playingDead` is true; the CSS animation runs once and
+          ends invisible (opacity 0). Keyed on playingDead so each new
+          easter-egg trigger re-mounts and re-plays the animation. */}
+      {playingDead && (
+        <span
+          key={`huff-${huffSeq}`}
+          aria-hidden
+          style={{
+            position: "absolute",
+            bottom: "100%",
+            left: "50%",
+            marginLeft: "-0.45em",
+            width: "0.9em",
+            height: "0.55em",
+            pointerEvents: "none",
+            animation: "hugo-huff 1500ms ease-out forwards",
+          }}
+        >
+          {/* Three overlapping puffs forming a cartoon exhale silhouette */}
+          <span
+            style={{
+              position: "absolute",
+              left: "0.05em",
+              bottom: 0,
+              width: "0.28em",
+              height: "0.28em",
+              borderRadius: "9999px",
+              background: "var(--color-ink)",
+            }}
+          />
+          <span
+            style={{
+              position: "absolute",
+              left: "0.28em",
+              bottom: "0.12em",
+              width: "0.36em",
+              height: "0.36em",
+              borderRadius: "9999px",
+              background: "var(--color-ink)",
+            }}
+          />
+          <span
+            style={{
+              position: "absolute",
+              right: "0.05em",
+              bottom: 0,
+              width: "0.28em",
+              height: "0.28em",
+              borderRadius: "9999px",
+              background: "var(--color-ink)",
+            }}
+          />
+        </span>
+      )}
       <span
         aria-hidden
         style={{
