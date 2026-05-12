@@ -141,6 +141,45 @@ npm run build    # rm -rf .next first if Next caches stale routes
 - Agent-authored commits include
   `Co-Authored-By: Claude ... <noreply@anthropic.com>`
 
+## The lab (`/lab`)
+
+`/lab` is a private prototyping surface for design + behaviour decisions
+before they ship. The layout calls `notFound()` when `NODE_ENV` is
+`production`, and `app/robots.ts` disallows the path — so even in the
+unlikely case a prod build leaks, it returns 404 to humans and robots.
+Lab routes render under the real nav + footer so prototypes are seen
+in context.
+
+**Use it for**: anything that needs an A/B before committing to it
+across the site — logo directions, motion idioms, page-transition
+experiments, new colour/typography sets, palette swaps, hero
+treatments. Anything you'd otherwise prototype in CodePen.
+
+**Don't use it for**: a draft of a real tool. Tools land in
+`app/tools/<slug>/` from the start — the lab is for *exploring shape*,
+not for hiding work-in-progress functionality.
+
+**Adding a lab experiment**:
+
+1. `app/lab/<slug>/page.tsx` — optional server wrapper. If you need
+   `"use client"` (most do, because the lab is interactive), pair with
+   `app/lab/<slug>/Client.tsx`.
+2. Add an entry to the `EXPERIMENTS` array in `app/lab/page.tsx` so the
+   index lists it.
+3. No need to touch `lib/tools.ts`, `lib/clusters.ts`, or `app/sitemap.ts`
+   — lab routes are deliberately invisible to the regular site.
+
+**Lifecycle**: when an experiment lands in production, delete its lab
+route. The lab is a workshop, not an archive. The lab index should be
+0–3 entries at any given time.
+
+**The dot character — internal naming**: the brand dot in the nav and
+the traveling dot that flies from the swarm to the nav share a name
+internally — **Hugo**. Never surfaced in user copy; only present in
+code comments and `data-name="hugo"` attributes on the dot elements
+for the curious DevTools visitor. Use the name in code conversation so
+"the dot" and "Hugo" mean the same thing.
+
 ## When adding a new tool
 
 The bar from `README.md`: it (a) beats the alternatives, (b) is genuinely
