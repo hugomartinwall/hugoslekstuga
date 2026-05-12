@@ -6,11 +6,19 @@ export const contentType = "image/png";
 export const alt = "hugoslekstuga";
 
 /**
- * OG / share-card image — just the wordmark, centered, on cream.
- * The description sentence does the talking in the message preview;
- * the image is purely the brand identity.
+ * OG / share-card image — the wordmark with the brand dot beside it,
+ * centred on cream. The dot has two tiny cream eyes so the social
+ * preview wears the *character* face of the identity, not just the
+ * shape. (Live, the eyes only appear when a cursor passes near the
+ * nav dot; on a static share-card the face is the introduction.)
  */
 export default async function OGImage() {
+  // Sized relative to the dot so eyes stay proportional if we ever
+  // change the dot dimensions.
+  const dotSize = 110;
+  const eyeSize = Math.round(dotSize * 0.18);
+  const eyeGap = Math.round(dotSize * 0.12);
+
   return new ImageResponse(
     (
       <div
@@ -37,14 +45,36 @@ export default async function OGImage() {
           hugoslekstuga
           <div
             style={{
-              width: 28,
-              height: 28,
+              position: "relative",
+              width: dotSize,
+              height: dotSize,
               borderRadius: 9999,
               background: "#ff5a3c",
-              marginLeft: 12,
-              marginBottom: 22,
+              marginLeft: 18,
+              marginBottom: 14,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: eyeGap,
             }}
-          />
+          >
+            <div
+              style={{
+                width: eyeSize,
+                height: eyeSize,
+                borderRadius: 9999,
+                background: "#fbf6ee",
+              }}
+            />
+            <div
+              style={{
+                width: eyeSize,
+                height: eyeSize,
+                borderRadius: 9999,
+                background: "#fbf6ee",
+              }}
+            />
+          </div>
         </div>
       </div>
     ),

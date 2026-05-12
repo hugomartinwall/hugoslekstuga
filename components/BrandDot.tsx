@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 const DOT_COLORS = [
@@ -15,21 +15,24 @@ const DOT_COLORS = [
 ];
 
 const DOT_KEY = "hugoslekstuga:dot-color";
+const PROXIMITY_PX = 80;
+const EYES_HIDE_DELAY_MS = 600;
 
 /**
- * The colored period that punctuates the wordmark.
+ * The brand dot. A small coloured disc that punctuates the wordmark.
  *
- * Two flavours:
- *   - `interactive` — used in the top nav. Click cycles to the next
- *     colour and bounces. Idle "breathing" animation hints that it's
- *     a button, not a typeface period.
- *   - non-interactive — used in the footer. Reads the same localStorage
- *     key so footer + nav stay in sync; if you click the nav dot pink,
- *     the footer dot turns pink on the next render.
- *
- * Both share `hugoslekstuga:dot-color` storage. Rendered as the literal
- * "." glyph so the wordmark's typographic rhythm stays intact — the
- * colour is the only thing changing.
+ *   - Form: a circle sized at 0.7em so it scales with the wordmark's
+ *     font-size. Sits next to the last letter like a period that
+ *     learned to draw itself.
+ *   - Behaviour: two tiny cream eyes appear when the cursor passes
+ *     within 80px (interactive variant only). On touch, tapping the
+ *     dot toggles the eyes *and* cycles colour together — same atom,
+ *     two affordances. Idle breathing stays.
+ *   - State: the chosen colour persists in `hugoslekstuga:dot-color`
+ *     so the nav, footer, tool-page corner dot, and back-link dot
+ *     all stay in sync.
+ *   - `data-brand-dot` is set so the TravelingDot in the root layout
+ *     can find the nav dot to fly the swarm hand-off into.
  */
 export default function BrandDot({
   interactive = false,
@@ -38,6 +41,9 @@ export default function BrandDot({
 }) {
   const [dotIdx, setDotIdx] = useLocalStorageState<number>(DOT_KEY, 0);
   const [bouncing, setBouncing] = useState(false);
+  const [eyesVisible, setEyesVisible] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const hideTimerRef = useRef<number | null>(null);
 
   const safeIdx =
     Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
@@ -45,42 +51,125 @@ export default function BrandDot({
       : 0;
   const color = DOT_COLORS[safeIdx];
 
+  // Proximity detection — interactive variant only. Mouse-only; touch
+  // users get the eye reveal via the tap handler so they aren't excluded.
+  useEffect(() => {
+    if (!interactive) return;
+    if (typeof window === "undefined") return;
+    const onMove = (e: MouseEvent) => {
+      const node = btnRef.current;
+      if (!node) return;
+      const r = node.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const d = Math.hypot(e.clientX - cx, e.clientY - cy);
+      if (d < PROXIMITY_PX) {
+        setEyesVisible(true);
+        if (hideTimerRef.current) {
+          window.clearTimeout(hideTimerRef.current);
+          hideTimerRef.current = null;
+        }
+      } else {
+        if (hideTimerRef.current) return;
+        hideTimerRef.current = window.setTimeout(() => {
+          setEyesVisible(false);
+          hideTimerRef.current = null;
+        }, EYES_HIDE_DELAY_MS);
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    };
+  }, [interactive]);
+
   if (!interactive) {
-    return <span style={{ color }}>.</span>;
+    return (
+      <span
+        aria-hidden
+        data-brand-dot
+        style={{
+          display: "inline-block",
+          width: "0.7em",
+          height: "0.7em",
+          borderRadius: "9999px",
+          background: color,
+          verticalAlign: "baseline",
+        }}
+      />
+    );
   }
 
   const cycle = () => {
     setDotIdx((i) => (i + 1) % DOT_COLORS.length);
+    // Tap-toggle eyes for touch users. Mouse users get proximity-driven
+    // reveal anyway, so the toggle is harmless on desktop.
+    setEyesVisible((v) => !v);
     setBouncing(true);
     window.setTimeout(() => setBouncing(false), 280);
   };
 
-  // Idle "breathing" hint: a slow, gentle scale pulse so the dot reads
-  // as interactive. Disabled while bouncing so the cycle animation
-  // isn't fighting the breathe transform on the same element.
   return (
     <button
       type="button"
+      ref={btnRef}
       onClick={cycle}
       aria-label="Change accent colour"
-      className="cursor-pointer rounded transition-transform hover:scale-110"
+      data-brand-dot
       style={{
-        color,
+        position: "relative",
+        display: "inline-block",
+        width: "0.7em",
+        height: "0.7em",
+        borderRadius: "9999px",
+        border: "none",
+        padding: 0,
+        margin: 0,
+        background: color,
+        cursor: "pointer",
+        verticalAlign: "baseline",
         transform: bouncing ? "scale(1.4)" : undefined,
         transition: bouncing
-          ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), color 220ms ease"
-          : "transform 180ms ease, color 220ms ease",
+          ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background 220ms ease"
+          : "transform 180ms ease, background 220ms ease",
+        animation: bouncing
+          ? "none"
+          : "brand-dot-breathe 3.4s ease-in-out infinite",
       }}
     >
       <span
+        aria-hidden
         style={{
-          display: "inline-block",
-          animation: bouncing
-            ? "none"
-            : "brand-dot-breathe 3.4s ease-in-out infinite",
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.12em",
+          opacity: eyesVisible ? 1 : 0,
+          transition: "opacity 220ms ease",
+          pointerEvents: "none",
         }}
       >
-        .
+        <span
+          style={{
+            display: "inline-block",
+            width: "0.18em",
+            height: "0.18em",
+            borderRadius: "9999px",
+            background: "var(--color-cream)",
+          }}
+        />
+        <span
+          style={{
+            display: "inline-block",
+            width: "0.18em",
+            height: "0.18em",
+            borderRadius: "9999px",
+            background: "var(--color-cream)",
+          }}
+        />
       </span>
     </button>
   );

@@ -431,6 +431,42 @@ export default function ToolMap({
     }
   }, []);
 
+  /**
+   * Commit a click on a tool dot — runs the click fx, fires the
+   * traveling-dot event so the dot animates up to the nav while the
+   * route changes, then pushes the new route. Used by both the
+   * pointer click and the keyboard activation paths so they stay in
+   * sync.
+   */
+  const commitNavigation = useCallback(
+    (slug: string) => {
+      const node = nodeBySlug.current.get(slug);
+      if (!node) return;
+      setBouncingSlug(slug);
+      triggerClickFx(slug);
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect && typeof window !== "undefined") {
+        try {
+          window.dispatchEvent(
+            new CustomEvent("hugoslekstuga:dot-travel", {
+              detail: {
+                fromX: rect.left + node.x,
+                fromY: rect.top + node.y,
+                color: COLOR_HEX[node.tool.color],
+              },
+            }),
+          );
+        } catch {
+          // Safari < 15 etc — fail silent; navigation continues
+        }
+      }
+      window.setTimeout(() => {
+        router.push(pathFor(slug));
+      }, CLICK_BOUNCE_MS);
+    },
+    [router, triggerClickFx],
+  );
+
   const onSvgPointerUp = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
       const drag = dragRef.current;
@@ -448,14 +484,10 @@ export default function ToolMap({
       const wasClick = !drag.moved;
       dragRef.current = null;
       if (wasClick) {
-        setBouncingSlug(drag.slug);
-        triggerClickFx(drag.slug);
-        window.setTimeout(() => {
-          router.push(pathFor(drag.slug));
-        }, CLICK_BOUNCE_MS);
+        commitNavigation(drag.slug);
       }
     },
-    [router, triggerClickFx],
+    [commitNavigation],
   );
 
   const explode = useCallback(() => {
@@ -560,11 +592,7 @@ export default function ToolMap({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    setBouncingSlug(n.tool.slug);
-                    triggerClickFx(n.tool.slug);
-                    window.setTimeout(() => {
-                      router.push(pathFor(n.tool.slug));
-                    }, CLICK_BOUNCE_MS);
+                    commitNavigation(n.tool.slug);
                   }
                 }}
               >

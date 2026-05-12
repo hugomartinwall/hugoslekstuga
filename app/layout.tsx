@@ -3,6 +3,7 @@ import { Geist, Bricolage_Grotesque } from "next/font/google";
 import Nav from "@/components/Nav";
 import ConditionalFooter from "@/components/ConditionalFooter";
 import { SearchPalette, SearchProvider } from "@/components/Search";
+import TravelingDot from "@/components/TravelingDot";
 import "./globals.css";
 
 const sans = Geist({
@@ -115,6 +116,7 @@ export default function RootLayout({
           <div className="flex-1">{children}</div>
           <ConditionalFooter />
           <SearchPalette />
+          <TravelingDot />
         </SearchProvider>
       </body>
     </html>
