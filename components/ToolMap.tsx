@@ -92,6 +92,17 @@ const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
 // takes 5-10 seconds to drift a dragged dot back to centre.
 // The wall bounce is softened so a thrown dot kisses the wall
 // instead of springing off.
+/**
+ * Physics constants are tuned for a ~400px canvas — what you get on
+ * mobile portrait. At larger canvases the absolute pull becomes
+ * proportionally too gentle and the swarm clusters into a small puddle
+ * in the corner instead of filling the canvas. PHYSICS_BASELINE is the
+ * canvas size where the constants below feel right; on bigger canvases
+ * we scale REPEL up (so dots push each other apart further) and
+ * CENTER_PULL down (so gravity doesn't keep them packed). The end
+ * result: the swarm fills 60–80% of the viewport at any size.
+ */
+const PHYSICS_BASELINE = 400;
 const CENTER_PULL = 0.0003;
 const REPEL = 100;
 const DAMPING = 0.92;
@@ -756,6 +767,23 @@ function step(
   if (nodes.length === 0) return 0;
   const now = performance.now();
 
+  // Scale physics by the smallest canvas dimension. At the baseline
+  // (~400px = mobile portrait) scale is 1 and behaviour matches what
+  // the existing constants were tuned for. On a 1280×800 desktop the
+  // canvas height (728 after nav) is the constraint → scale ≈ 1.82.
+  //
+  // Equilibrium pair distance for a centre-pull / repel system scales
+  // as cube-root(repel / centre_pull). To make the swarm equilibrium
+  // grow roughly *linearly* with canvas size we need repel/centre_pull
+  // to scale by scale³. We split it: repel grows by scale³, centre_pull
+  // shrinks by scale². End result on desktop: ~6× repel, ~1/3 centre
+  // pull — the swarm spreads to fill instead of puddling.
+  const scale = Math.max(1, Math.min(width, height) / PHYSICS_BASELINE);
+  const scale2 = scale * scale;
+  const scale3 = scale2 * scale;
+  const repelScaled = REPEL * scale3;
+  const centerPullScaled = CENTER_PULL / scale2;
+
   // Mutual repulsion (O(n²)) — keeps labels from overlapping.
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
@@ -765,7 +793,7 @@ function step(
       const dy = b.y - a.y;
       const d2 = dx * dx + dy * dy + 0.01;
       const d = Math.sqrt(d2);
-      const f = -REPEL / Math.max(d2, 100);
+      const f = -repelScaled / Math.max(d2, 100);
       const fx = (dx / d) * f;
       const fy = (dy / d) * f;
       if (!a.pinned) {
@@ -787,8 +815,8 @@ function step(
     if (n.pinned) continue;
     // Gravity — pulls every dot toward the canvas centre. The only
     // attractor in the system; cursor doesn't influence it.
-    n.vx += (cx - n.x) * CENTER_PULL;
-    n.vy += (cy - n.y) * CENTER_PULL;
+    n.vx += (cx - n.x) * centerPullScaled;
+    n.vy += (cy - n.y) * centerPullScaled;
     // Idle wobble — long-period drift so the swarm feels alive at rest.
     if (wobbleAmp > 0) {
       n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
