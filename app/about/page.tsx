@@ -38,10 +38,16 @@ export default function AboutPage() {
           Things you won&rsquo;t find here
         </h2>
         <ul className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {NOT_HERE.map((item) => (
+          {NOT_HERE.map((item, i) => (
             <li
               key={item}
-              className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-center text-sm font-semibold text-ink-soft line-through decoration-ink/60"
+              // Quiet wobble on hover so the panel reads as a row of
+              // strikethroughs leaning slightly when a cursor passes —
+              // alternating tilt direction so they don't all lean the
+              // same way. No-op on mobile (no hover).
+              className={`rounded-full border-2 border-ink bg-cream px-3 py-1 text-center text-sm font-semibold text-ink-soft line-through decoration-ink/60 transition-transform duration-200 hover:-translate-y-px ${
+                i % 2 === 0 ? "hover:-rotate-2" : "hover:rotate-2"
+              }`}
             >
               {item}
             </li>
