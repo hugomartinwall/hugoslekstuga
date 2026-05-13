@@ -330,6 +330,24 @@ export default function BrandDot({
         setPlayingDead(false);
         playDeadTimerRef.current = null;
       }, PLAY_DEAD_DURATION_MS);
+      // Hugo's anger ripples out — the whole page shakes for ~500ms
+      // with a quick warm-tint flush on the background. Direct DOM
+      // class toggle so it works regardless of which React tree the
+      // BrandDot was rendered into.
+      if (typeof document !== "undefined") {
+        const cls = "hugo-tantrum";
+        // Remove first to reset the animation if a previous tantrum
+        // hadn't fully finished, then re-add on the next frame so the
+        // CSS animation restarts cleanly.
+        document.body.classList.remove(cls);
+        // Force a reflow so the class re-add re-triggers the animation
+        // (browsers debounce identical class adds within a frame).
+        void document.body.offsetWidth;
+        document.body.classList.add(cls);
+        window.setTimeout(() => {
+          document.body.classList.remove(cls);
+        }, 520);
+      }
     }
   };
 
