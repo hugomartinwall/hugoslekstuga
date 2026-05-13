@@ -100,10 +100,12 @@ const SNAP_GAP = 33;
  *  extrapolate forward when the next snap is late. */
 const INTERP_LEAD = 1;
 /** Maximum t value when interpolating + extrapolating. With INTERP_LEAD
- *  = 1 and this = 2.2, we render between cur (t=1) and ~1.2 snaps past
- *  cur (t=2.2). Linear extrapolation, so a sharp turn pays a one-snap
- *  overshoot — fair price for snappier-feeling bots. */
-const EXTRAP_LIMIT = 2.2;
+ *  = 1 and this = 1.5, we render between cur (t=1) and ~0.5 snaps past
+ *  cur (t=1.5). Lowered from 2.2 so remote snakes overshoot less when
+ *  snapshots arrive late under multi-player load — the visible
+ *  trade-off is bots feel ~16ms less snappy, gained in exchange for no
+ *  jerky snap-back. */
+const EXTRAP_LIMIT = 1.5;
 /** Trail buffer cap for the local self. Long enough for any plausible
  *  snake length at boost speed. Same value the server uses. */
 const LOCAL_TRAIL_MAX = 1200;
@@ -184,6 +186,17 @@ export default function NoodleClient() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myLength, setMyLength] = useState<number>(8);
   const [copied, setCopied] = useState(false);
+  // Live RTT in ms, updated each snapshot from the server's `tEcho`
+  // echo of our latest input timestamp. Only rendered when
+  // `?debug=1` is in the URL — the overlay is opt-in, no perf cost
+  // for normal users.
+  const [rtt, setRtt] = useState<number | null>(null);
+  // `?debug=1` toggles the RTT overlay + any future in-game telemetry.
+  // Computed once at mount; URL changes mid-session don't flip it.
+  const isDebug = useState<boolean>(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("debug"),
+  )[0];
 
   // Mutable game state — refs so the render loop doesn't trigger re-renders.
   const wsRef = useRef<WebSocket | null>(null);
@@ -286,6 +299,12 @@ export default function NoodleClient() {
           food: msg.food,
           leaderboard: msg.leaderboard,
         };
+        // RTT update — server echoed our most recent input's `t` back
+        // in `tEcho`. Only setState in debug mode so we don't trigger
+        // 30 re-renders per second for normal users.
+        if (isDebug && typeof msg.tEcho === "number") {
+          setRtt(Date.now() - msg.tEcho);
+        }
         setLeaderboard(msg.leaderboard);
         // ---- eat detection (own length grew) ----
         const newLen = Math.floor(msg.you.length);
@@ -419,7 +438,7 @@ export default function NoodleClient() {
           : "Couldn't reach the server. Try again in a minute.",
       );
     };
-  }, []);
+  }, [isDebug]);
 
   // Keep the ref pointing at the current connect closure so onclose
   // retry can reach it.
@@ -518,6 +537,9 @@ export default function NoodleClient() {
         aim: { x: aim.x, y: aim.y },
         boost: boostRef.current,
         ...(aspect !== undefined ? { aspect } : {}),
+        // Stamp client time so the server's `tEcho` lets us compute RTT.
+        // Pure telemetry; server ignores it for gameplay.
+        t: Date.now(),
       };
       ws.send(JSON.stringify(msg));
     }, 33);
@@ -765,6 +787,14 @@ export default function NoodleClient() {
             onLeave={disconnect}
             copied={copied}
           />
+        )}
+        {isDebug && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute bottom-3 left-3 rounded bg-ink/80 px-2 py-1 font-mono text-[11px] text-cream"
+          >
+            rtt {rtt == null ? "—" : `${rtt}ms`}
+          </div>
         )}
       </div>
     );

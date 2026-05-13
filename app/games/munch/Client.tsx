@@ -58,6 +58,14 @@ export default function MunchPage() {
   const [name, setName] = useLocalStorageState<string>(NAME_KEY, "");
   const [phase, setPhase] = useState<Phase>("lobby");
   const [error, setError] = useState<string>("");
+  // Live RTT (ms) — see noodle Client.tsx for rationale. Updated each
+  // snapshot from the server's `tEcho` echo, only rendered when
+  // `?debug=1` is in the URL.
+  const [rtt, setRtt] = useState<number | null>(null);
+  const isDebug = useState<boolean>(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("debug"),
+  )[0];
   const [deadInfo, setDeadInfo] = useState<{ score: number; killer: string | null } | null>(
     null,
   );
@@ -136,6 +144,9 @@ export default function MunchPage() {
         retriedRef.current = false; // reset retry budget on success
         setPhase("playing");
       } else if (msg.type === "state") {
+        if (isDebug && typeof msg.tEcho === "number") {
+          setRtt(Date.now() - msg.tEcho);
+        }
         const prev = curSnapRef.current;
         // Detect things that disappeared from view since the last
         // snapshot. Anything that vanished while still inside the
@@ -257,7 +268,7 @@ export default function MunchPage() {
           : "Couldn't reach the server. Try again in a minute.",
       );
     };
-  }, []);
+  }, [isDebug]);
 
   // Keep the ref pointing at the current connect closure so the
   // ws.onclose retry timeout can reach it.
@@ -376,6 +387,7 @@ export default function MunchPage() {
         dir: { x: dx, y: dy },
         split,
         ...(aspect !== undefined ? { aspect } : {}),
+        t: Date.now(),
       };
       ws.send(JSON.stringify(msg));
     }, 33);
@@ -556,6 +568,14 @@ export default function MunchPage() {
             onLeave={disconnect}
             copied={copied}
           />
+        )}
+        {isDebug && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute bottom-3 left-3 rounded bg-ink/80 px-2 py-1 font-mono text-[11px] text-cream"
+          >
+            rtt {rtt == null ? "—" : `${rtt}ms`}
+          </div>
         )}
       </div>
     );
