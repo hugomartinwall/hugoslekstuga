@@ -12,8 +12,12 @@ export const WORLD_SIZE = 5000; // square map, units = pixels.
                                 // long snakes somewhere to go without
                                 // making the map feel deserted.
 
-/** Population caps. Same shape as munch. */
-export const MAX_PLAYERS = 80;
+/** Population caps. Same shape as munch.
+ *  MAX_PLAYERS counts HUMANS only (the bot manager keeps bot counts
+ *  separate). Holding at 10 keeps the room intimate and bandwidth/CPU
+ *  cost bounded on the single-machine Fly.io setup. Late joiners are
+ *  parked in a queue (see server/noodle/handler.ts). */
+export const MAX_PLAYERS = 10;
 export const BOT_FLOOR = 8;
 
 /** Server tick + snapshot rates. Snapshot rate matches the tick rate

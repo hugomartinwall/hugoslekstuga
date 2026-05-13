@@ -13,7 +13,11 @@ export const START_MASS = 20;
 export const MIN_MASS = 20;
 /** Hard cap on total population (humans + bots). Guardrail, not a target —
  *  in practice population settles at max(BOT_FLOOR, humanCount). */
-export const MAX_PLAYERS = 100;
+/** Counts HUMANS only — the bot manager keeps bot counts separate.
+ *  Holding at 10 keeps the room intimate and bandwidth/CPU cost bounded
+ *  on the single-machine Fly.io setup. Late joiners are parked in a
+ *  queue (see server/munch/handler.ts). */
+export const MAX_PLAYERS = 10;
 /** Minimum population the room maintains. When humans < BOT_FLOOR, bots
  *  fill the gap; when humans >= BOT_FLOOR, bots are absent. */
 export const BOT_FLOOR = 10;

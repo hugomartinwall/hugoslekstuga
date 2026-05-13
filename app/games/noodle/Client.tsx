@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
+import BrandDot from "@/components/BrandDot";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { clamp } from "@/lib/math";
@@ -826,17 +827,7 @@ export default function NoodleClient() {
           </p>
         )}
         {phase === "queued" && queueInfo && (
-          <div className="card-chunk flex flex-col items-center gap-2 rounded-[var(--radius-card)] bg-cream p-6 text-center">
-            <p className="font-display text-2xl font-extrabold tracking-tight">
-              The room is full
-            </p>
-            <p className="text-sm text-ink-soft">
-              You&rsquo;re position{" "}
-              <span className="font-bold text-ink">{queueInfo.position}</span>
-              {queueInfo.total > 1 ? ` of ${queueInfo.total}` : ""} in line.
-              You&rsquo;ll be wiggled in as soon as a spot opens.
-            </p>
-          </div>
+          <QueueWait position={queueInfo.position} total={queueInfo.total} />
         )}
         {phase === "disconnected" && (
           <div className="card-chunk flex flex-col items-center gap-3 rounded-[var(--radius-card)] bg-tomato-soft p-6 text-center">
@@ -863,6 +854,56 @@ export default function NoodleClient() {
           onSubmit={onSubmitLobby}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Queue wait                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Card shown when the room is at MAX_PLAYERS and we've been parked
+ *  in the server's queue. Hugo (the interactive BrandDot, scaled up
+ *  via the parent font-size context) is the centerpiece — he keeps
+ *  the user company. All his existing behaviours apply: hover to
+ *  open his eyes, click to cycle the accent colour, spam-click for
+ *  the play-dead easter egg. When position drops he gives a small
+ *  excited bounce. */
+function QueueWait({ position, total }: { position: number; total: number }) {
+  const [bounce, setBounce] = useState(false);
+  const prevPosRef = useRef(position);
+  useEffect(() => {
+    if (position < prevPosRef.current) {
+      setBounce(true);
+      const t = window.setTimeout(() => setBounce(false), 360);
+      return () => window.clearTimeout(t);
+    }
+    prevPosRef.current = position;
+  }, [position]);
+  return (
+    <div className="card-chunk flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-cream p-6 text-center">
+      <p className="font-display text-2xl font-extrabold tracking-tight">
+        The room is full
+      </p>
+      <div
+        aria-hidden
+        className="flex items-center justify-center transition-transform duration-300"
+        style={{
+          fontSize: "4.5rem",
+          transform: bounce ? "scale(1.2)" : "scale(1)",
+        }}
+      >
+        <BrandDot interactive />
+      </div>
+      <p className="font-display text-lg font-extrabold tabular-nums">
+        Position <span className="text-tomato">{position}</span>
+        {total > 1 ? <span className="text-ink-muted"> / {total}</span> : null}
+      </p>
+      <p className="max-w-xs text-sm text-ink-soft">
+        {position === 1
+          ? "Hugo’s holding the door open. You’re in next."
+          : "Hugo’s keeping you company. You’ll be wiggled in as soon as a spot opens."}
+      </p>
     </div>
   );
 }
