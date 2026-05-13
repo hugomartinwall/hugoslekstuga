@@ -224,6 +224,29 @@ export default function BrandDot({
     };
   }, []);
 
+  // Any code on the site can dispatch `hugoslekstuga:hugo-happy` to
+  // trigger Hugo's joy reaction — eyes wide, coloured sparkles burst
+  // above his head. Currently fires when a Sudoku puzzle is solved.
+  // The local drag-release flow has its own path; this is purely the
+  // global-event surface so other tools don't need to know how the
+  // celebration is rendered.
+  useEffect(() => {
+    if (!interactive) return;
+    if (typeof window === "undefined") return;
+    const onHappy = () => {
+      setHappy(true);
+      setSparkSeq((s) => s + 1);
+      if (happyTimerRef.current) window.clearTimeout(happyTimerRef.current);
+      happyTimerRef.current = window.setTimeout(() => {
+        setHappy(false);
+        happyTimerRef.current = null;
+      }, HAPPY_DURATION_MS);
+    };
+    window.addEventListener("hugoslekstuga:hugo-happy", onHappy);
+    return () =>
+      window.removeEventListener("hugoslekstuga:hugo-happy", onHappy);
+  }, [interactive]);
+
   // Recompute eyes-visible from the OR of the two "wants open" sources.
   // Wrapped so both effect handlers below can call it without duplicating
   // the boolean expression.

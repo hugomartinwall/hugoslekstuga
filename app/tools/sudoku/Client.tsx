@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
-import { generatePuzzle, type Difficulty } from "./generator";
+import { generatePuzzle, PEERS_OF, type Difficulty } from "./generator";
 
 /* -------------------------------------------------------------------------
  * Types + persistence
@@ -21,24 +21,42 @@ type Cell = {
 
 type Game = {
   cells: Cell[];
-  /** The unique solution to this puzzle — used for mistake detection
-   *  and win check. The user never sees it directly. */
+  /** The unique solution to this puzzle — used for mistake detection,
+   *  hint reveals, and win check. The user never sees it directly. */
   solution: number[];
   difficulty: Difficulty;
   /** Epoch ms when the puzzle was started. Timer renders elapsed time
-   *  as `now - startedAt`. */
+   *  as `now - startedAt`. When the puzzle is paused and resumed,
+   *  startedAt is shifted forward by the pause duration — so elapsed
+   *  always equals `now - startedAt` without any additional bookkeeping. */
   startedAt: number;
+  /** Epoch ms when the user paused (set on pause, cleared on resume).
+   *  While set, the board is overlaid with a "Paused" panel so the
+   *  player can take a break without staring at the puzzle. */
+  pausedAt: number | null;
   /** Set to `now` when the user fills the final correct cell. While
    *  set, the board is read-only and the win panel is shown. */
   finishedAt: number | null;
   /** Wrong-fill counter. Increments any time a user-filled value
    *  doesn't match the solution. */
   mistakes: number;
+  /** Number of times the player used the Hint button. Shown in the
+   *  win panel as a small "honest record" of how much help they
+   *  needed. */
+  hintsUsed: number;
 };
 
 const GAME_KEY = "hugoslekstuga:sudoku:game";
 const NOTES_MODE_KEY = "hugoslekstuga:sudoku:notes-mode";
+const BEST_TIMES_KEY = "hugoslekstuga:sudoku:best-times";
 const PICKER_DEFAULT: Difficulty = "medium";
+
+/** Maximum entries kept on the undo stack. Each entry is a shallow
+ *  snapshot of the 81-cell array — tiny. 50 is generous; almost no
+ *  player ever undoes that deep. */
+const UNDO_LIMIT = 50;
+
+type BestTimes = Partial<Record<Difficulty, number>>;
 
 /* -------------------------------------------------------------------------
  * Helpers
@@ -102,9 +120,31 @@ function freshGame(difficulty: Difficulty): Game {
     solution,
     difficulty,
     startedAt: Date.now(),
+    pausedAt: null,
     finishedAt: null,
     mistakes: 0,
+    hintsUsed: 0,
   };
+}
+
+/** Strip `digit` from the notes of every cell that shares a row,
+ *  column, or 3×3 box with `i`. Returns a new cells array so React
+ *  state stays immutable; if no peer notes change, returns the
+ *  original cells unchanged so a no-op doesn't trigger a re-render. */
+function clearPeerNotes(
+  cells: Cell[],
+  i: number,
+  digit: number,
+): Cell[] {
+  const bit = noteBit(digit);
+  let next: Cell[] | null = null;
+  for (const p of PEERS_OF[i]) {
+    const c = cells[p];
+    if ((c.notes & bit) === 0) continue;
+    if (!next) next = cells.slice();
+    next[p] = { ...c, notes: c.notes & ~bit };
+  }
+  return next ?? cells;
 }
 
 /* -------------------------------------------------------------------------
@@ -112,6 +152,8 @@ function freshGame(difficulty: Difficulty): Game {
  * ---------------------------------------------------------------------- */
 
 const DEFAULT_GAME_VALUE: Game | null = null;
+
+const DEFAULT_BEST_TIMES: BestTimes = {};
 
 export default function SudokuClient() {
   const tool = findTool("sudoku")!;
@@ -123,19 +165,53 @@ export default function SudokuClient() {
     NOTES_MODE_KEY,
     false,
   );
+  const [bestTimes, setBestTimes] = useLocalStorageState<BestTimes>(
+    BEST_TIMES_KEY,
+    DEFAULT_BEST_TIMES,
+  );
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [pickerDifficulty, setPickerDifficulty] =
     useState<Difficulty>(PICKER_DEFAULT);
+  // Undo stack — local to this session (not persisted). Each entry is
+  // a snapshot of the cells array taken BEFORE the mutation that
+  // produced the current state. Pop on undo and restore. `historyLen`
+  // mirrors `historyRef.current.length` as React state so the render
+  // can derive `canUndo` without reading the ref during render.
+  const historyRef = useRef<Cell[][]>([]);
+  const [historyLen, setHistoryLen] = useState(0);
+  // `lastNewBest` flags a fresh personal best so the win panel can
+  // celebrate it. Cleared when a new game starts.
+  const [lastNewBest, setLastNewBest] = useState<boolean>(false);
 
   // Tick-driven timer — `now` updates each second while a game is
-  // active and unfinished, so the displayed elapsed time stays live
-  // without re-rendering the whole game tree on every animation frame.
+  // active, unfinished, and not paused. The displayed elapsed time
+  // stays live without re-rendering the whole game tree on every rAF.
   const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
-    if (!game || game.finishedAt !== null) return;
+    if (!game || game.finishedAt !== null || game.pausedAt !== null) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [game]);
+
+  // Reset session-local state whenever the game id changes (new
+  // puzzle, restart). Looks at startedAt as a proxy for "this is a
+  // different game now". The setState calls here are one-shot edge
+  // resets, not cascading renders — suppressing the lint accordingly.
+  const gameStartedAt = game?.startedAt;
+  useEffect(() => {
+    historyRef.current = [];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistoryLen(0);
+    setLastNewBest(false);
+  }, [gameStartedAt]);
+
+  /** Push the current cells snapshot onto the undo stack before a
+   *  mutation. Caps the stack to UNDO_LIMIT entries. */
+  const pushHistory = useCallback((cells: Cell[]) => {
+    historyRef.current.push(cells);
+    if (historyRef.current.length > UNDO_LIMIT) historyRef.current.shift();
+    setHistoryLen(historyRef.current.length);
+  }, []);
 
   /* ------------------------------------------------------------------
    * Derived state
@@ -176,10 +252,13 @@ export default function SudokuClient() {
       if (!game) return;
       if (selectedIdx === null) return;
       if (game.finishedAt !== null) return;
+      if (game.pausedAt !== null) return;
       const cell = game.cells[selectedIdx];
       if (cell.given) return;
 
-      const cells = game.cells.slice();
+      pushHistory(game.cells);
+
+      let cells = game.cells.slice();
       if (notesMode) {
         // Notes only apply to empty cells — once a value is committed,
         // notes for that cell are cleared anyway.
@@ -197,38 +276,142 @@ export default function SudokuClient() {
       }
 
       // Value entry. Always clears the cell's notes — once you commit,
-      // pencil marks for THIS cell stop mattering. (Peer notes are
-      // intentionally NOT auto-cleared; many Sudoku enthusiasts manage
-      // their own notes hygiene.)
+      // pencil marks for THIS cell stop mattering. *And* auto-eliminates
+      // that digit from peer cells' notes — the single biggest QoL
+      // win for serious Sudoku players (saves manual notes hygiene).
       const isCorrect = digit === game.solution[selectedIdx];
       const mistakeBump = !isCorrect && cell.v !== digit ? 1 : 0;
       cells[selectedIdx] = { ...cell, v: digit, notes: 0 };
+      cells = clearPeerNotes(cells, selectedIdx, digit);
 
       const allFilled = cells.every((c) => c.v !== 0);
       const allCorrect =
         allFilled && cells.every((c, i) => c.v === game.solution[i]);
 
+      let finishedAt: number | null = null;
+      if (allCorrect) {
+        finishedAt = Date.now();
+        const elapsed = finishedAt - game.startedAt;
+        // Track best time per difficulty. Don't count puzzles with
+        // hints used toward best times — that'd let players game the
+        // leaderboard by spamming hints. Mistakes are still allowed
+        // since they don't strictly help solve.
+        if (game.hintsUsed === 0) {
+          const prev = bestTimes[game.difficulty];
+          if (prev === undefined || elapsed < prev) {
+            setBestTimes({ ...bestTimes, [game.difficulty]: elapsed });
+            setLastNewBest(true);
+          }
+        }
+        // Tell Hugo to be happy. The BrandDot in the nav listens and
+        // bursts coloured sparkles above his head.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+        }
+      }
+
       setGame({
         ...game,
         cells,
         mistakes: game.mistakes + mistakeBump,
-        finishedAt: allCorrect ? Date.now() : null,
+        finishedAt,
       });
     },
-    [game, selectedIdx, notesMode, setGame],
+    [game, selectedIdx, notesMode, setGame, pushHistory, bestTimes, setBestTimes],
   );
 
   const clearSelected = useCallback(() => {
     if (!game) return;
     if (selectedIdx === null) return;
     if (game.finishedAt !== null) return;
+    if (game.pausedAt !== null) return;
     const cell = game.cells[selectedIdx];
     if (cell.given) return;
     if (cell.v === 0 && cell.notes === 0) return;
+    pushHistory(game.cells);
     const cells = game.cells.slice();
     cells[selectedIdx] = { ...cell, v: 0, notes: 0 };
     setGame({ ...game, cells });
-  }, [game, selectedIdx, setGame]);
+  }, [game, selectedIdx, setGame, pushHistory]);
+
+  const undo = useCallback(() => {
+    if (!game) return;
+    if (game.finishedAt !== null) return;
+    if (game.pausedAt !== null) return;
+    const prev = historyRef.current.pop();
+    if (!prev) return;
+    setHistoryLen(historyRef.current.length);
+    setGame({ ...game, cells: prev });
+  }, [game, setGame]);
+
+  /** Hint reveals the solution value for one cell. Prefers the
+   *  currently selected empty cell (so the user can ask "what goes
+   *  here?"); otherwise picks the first empty cell. Bumps hintsUsed
+   *  and disqualifies the puzzle from the best-time leaderboard. */
+  const hint = useCallback(() => {
+    if (!game) return;
+    if (game.finishedAt !== null) return;
+    if (game.pausedAt !== null) return;
+    let target = -1;
+    if (
+      selectedIdx !== null &&
+      !game.cells[selectedIdx].given &&
+      game.cells[selectedIdx].v === 0
+    ) {
+      target = selectedIdx;
+    } else {
+      // First empty cell, in reading order. Predictable rather than
+      // random — easier to debug, and the player can request hints
+      // for specific cells via selection if they want surgical help.
+      target = game.cells.findIndex((c) => c.v === 0 && !c.given);
+    }
+    if (target < 0) return;
+    pushHistory(game.cells);
+    const correct = game.solution[target];
+    let cells = game.cells.slice();
+    cells[target] = { v: correct, given: false, notes: 0 };
+    cells = clearPeerNotes(cells, target, correct);
+    setSelectedIdx(target);
+
+    const allFilled = cells.every((c) => c.v !== 0);
+    const allCorrect =
+      allFilled && cells.every((c, i) => c.v === game.solution[i]);
+    let finishedAt: number | null = null;
+    if (allCorrect) {
+      finishedAt = Date.now();
+      // Hints in this puzzle → no best-time eligibility, but Hugo
+      // still gets to celebrate.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+      }
+    }
+
+    setGame({
+      ...game,
+      cells,
+      hintsUsed: game.hintsUsed + 1,
+      finishedAt,
+    });
+  }, [game, selectedIdx, setGame, pushHistory]);
+
+  /** Pause toggle. While paused, the timer stops (we shift startedAt
+   *  forward by the pause duration on resume) and a "Paused" overlay
+   *  hides the board so the player can step away without staring at
+   *  the puzzle. */
+  const togglePause = useCallback(() => {
+    if (!game) return;
+    if (game.finishedAt !== null) return;
+    if (game.pausedAt === null) {
+      setGame({ ...game, pausedAt: Date.now() });
+    } else {
+      const pauseMs = Date.now() - game.pausedAt;
+      setGame({
+        ...game,
+        pausedAt: null,
+        startedAt: game.startedAt + pauseMs,
+      });
+    }
+  }, [game, setGame]);
 
   /* ------------------------------------------------------------------
    * Keyboard
@@ -249,6 +432,13 @@ export default function SudokuClient() {
       }
       if (game.finishedAt !== null) return;
       const k = e.key;
+      // Pause toggle works while paused too (so the user can resume).
+      if (k === "p" || k === "P") {
+        togglePause();
+        return;
+      }
+      // Other actions are blocked while paused — the board is hidden.
+      if (game.pausedAt !== null) return;
       if (k >= "1" && k <= "9") {
         applyEntry(Number(k));
         return;
@@ -259,6 +449,15 @@ export default function SudokuClient() {
       }
       if (k === "n" || k === "N") {
         setNotesMode((n) => !n);
+        return;
+      }
+      if (k === "h" || k === "H") {
+        hint();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (k === "z" || k === "Z")) {
+        e.preventDefault();
+        undo();
         return;
       }
       if (k === "Escape") {
@@ -285,7 +484,16 @@ export default function SudokuClient() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [game, selectedIdx, applyEntry, clearSelected, setNotesMode]);
+  }, [
+    game,
+    selectedIdx,
+    applyEntry,
+    clearSelected,
+    setNotesMode,
+    undo,
+    hint,
+    togglePause,
+  ]);
 
   /* ------------------------------------------------------------------
    * Render
@@ -306,7 +514,18 @@ export default function SudokuClient() {
     );
   }
 
-  const elapsed = (game.finishedAt ?? now) - game.startedAt;
+  // While paused, elapsed = how long it had been at the moment of
+  // pause. (After resume, startedAt is shifted forward so live
+  // elapsed still equals `now - startedAt`.)
+  const elapsed =
+    game.pausedAt !== null
+      ? game.pausedAt - game.startedAt
+      : (game.finishedAt ?? now) - game.startedAt;
+
+  const paused = game.pausedAt !== null;
+  const finished = game.finishedAt !== null;
+  const canUndo = historyLen > 0;
+  const hasEmptyCell = game.cells.some((c) => c.v === 0 && !c.given);
 
   return (
     <ToolFrame tool={tool}>
@@ -315,16 +534,36 @@ export default function SudokuClient() {
           elapsed={elapsed}
           difficulty={game.difficulty}
           mistakes={game.mistakes}
+          hintsUsed={game.hintsUsed}
+          paused={paused}
         />
 
-        <Board
-          cells={game.cells}
-          selectedIdx={selectedIdx}
-          conflictMask={conflictMask}
-          selectedValue={selectedValue}
-          onSelect={(i) => setSelectedIdx(i)}
-          finished={game.finishedAt !== null}
-        />
+        <div className="relative">
+          <Board
+            cells={game.cells}
+            selectedIdx={selectedIdx}
+            conflictMask={conflictMask}
+            selectedValue={selectedValue}
+            onSelect={(i) => setSelectedIdx(i)}
+            finished={finished || paused}
+            hidden={paused}
+          />
+          {paused && (
+            <button
+              type="button"
+              onClick={togglePause}
+              className="card-chunk absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] bg-pink-soft text-center"
+              aria-label="Resume"
+            >
+              <p className="font-display text-3xl font-extrabold tracking-tight">
+                Paused
+              </p>
+              <p className="text-sm text-ink-soft">
+                Tap to resume
+              </p>
+            </button>
+          )}
+        </div>
 
         <NumberPad
           notesMode={notesMode}
@@ -332,7 +571,13 @@ export default function SudokuClient() {
           remainingByValue={remainingByValue}
           onDigit={applyEntry}
           onErase={clearSelected}
-          disabled={game.finishedAt !== null}
+          onUndo={undo}
+          onHint={hint}
+          onPause={togglePause}
+          canUndo={canUndo}
+          canHint={hasEmptyCell}
+          paused={paused}
+          disabled={finished || paused}
         />
 
         <Controls
@@ -350,18 +595,24 @@ export default function SudokuClient() {
               ...game,
               cells,
               mistakes: 0,
+              hintsUsed: 0,
               startedAt: Date.now(),
+              pausedAt: null,
               finishedAt: null,
             });
+            historyRef.current = [];
             setSelectedIdx(null);
           }}
         />
 
-        {game.finishedAt !== null && (
+        {finished && (
           <WinPanel
             elapsed={elapsed}
             difficulty={game.difficulty}
             mistakes={game.mistakes}
+            hintsUsed={game.hintsUsed}
+            bestTime={bestTimes[game.difficulty]}
+            isNewBest={lastNewBest}
             onNewGame={() => {
               setSelectedIdx(null);
               setGame(null);
@@ -452,21 +703,33 @@ function StatusBar({
   elapsed,
   difficulty,
   mistakes,
+  hintsUsed,
+  paused,
 }: {
   elapsed: number;
   difficulty: Difficulty;
   mistakes: number;
+  hintsUsed: number;
+  paused: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
       <Stat label="Difficulty" value={titleCase(difficulty)} />
-      <Stat label="Time" value={formatDuration(elapsed)} mono />
+      <Stat
+        label={paused ? "Paused" : "Time"}
+        value={formatDuration(elapsed)}
+        mono
+        muted={paused}
+      />
       <Stat
         label="Mistakes"
         value={String(mistakes)}
         mono
         muted={mistakes === 0}
       />
+      {hintsUsed > 0 && (
+        <Stat label="Hints" value={String(hintsUsed)} mono />
+      )}
     </div>
   );
 }
@@ -505,6 +768,7 @@ function Board({
   selectedValue,
   onSelect,
   finished,
+  hidden,
 }: {
   cells: Cell[];
   selectedIdx: number | null;
@@ -512,6 +776,7 @@ function Board({
   selectedValue: number;
   onSelect: (i: number) => void;
   finished: boolean;
+  hidden?: boolean;
 }) {
   const selRow = selectedIdx === null ? -1 : rowOf(selectedIdx);
   const selCol = selectedIdx === null ? -1 : colOf(selectedIdx);
@@ -524,6 +789,9 @@ function Board({
       className="card-chunk mx-auto grid w-full max-w-[min(100%,32rem)] grid-cols-9 overflow-hidden rounded-[var(--radius-card)] border-2 border-ink bg-cream"
       style={{
         aspectRatio: "1 / 1",
+        // Hidden during pause so the player can step away without
+        // staring at the puzzle. visibility: hidden keeps layout.
+        visibility: hidden ? "hidden" : "visible",
       }}
     >
       {cells.map((cell, i) => {
@@ -629,6 +897,12 @@ function NumberPad({
   remainingByValue,
   onDigit,
   onErase,
+  onUndo,
+  onHint,
+  onPause,
+  canUndo,
+  canHint,
+  paused,
   disabled,
 }: {
   notesMode: boolean;
@@ -636,6 +910,12 @@ function NumberPad({
   remainingByValue: number[];
   onDigit: (d: number) => void;
   onErase: () => void;
+  onUndo: () => void;
+  onHint: () => void;
+  onPause: () => void;
+  canUndo: boolean;
+  canHint: boolean;
+  paused: boolean;
   disabled: boolean;
 }) {
   return (
@@ -680,14 +960,40 @@ function NumberPad({
           type="button"
           onClick={onErase}
           disabled={disabled}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink"
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-50"
         >
           Erase
         </button>
-        <p className="ml-auto self-center text-[11px] text-ink-muted">
-          1–9 to place · N for notes · backspace to erase
-        </p>
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={disabled || !canUndo}
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          onClick={onHint}
+          disabled={disabled || !canHint}
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
+        >
+          Hint
+        </button>
+        <button
+          type="button"
+          onClick={onPause}
+          aria-pressed={paused}
+          className={`btn-chunk rounded-[var(--radius-button)] px-4 py-2 text-sm font-display font-extrabold ${
+            paused ? "bg-ink text-cream" : "bg-cream text-ink"
+          }`}
+        >
+          {paused ? "Resume" : "Pause"}
+        </button>
       </div>
+      <p className="text-[11px] text-ink-muted">
+        1–9 place · N notes · H hint · P pause · ⌘Z undo · backspace erase
+      </p>
     </div>
   );
 }
@@ -723,11 +1029,17 @@ function WinPanel({
   elapsed,
   difficulty,
   mistakes,
+  hintsUsed,
+  bestTime,
+  isNewBest,
   onNewGame,
 }: {
   elapsed: number;
   difficulty: Difficulty;
   mistakes: number;
+  hintsUsed: number;
+  bestTime: number | undefined;
+  isNewBest: boolean;
   onNewGame: () => void;
 }) {
   return (
@@ -735,7 +1047,12 @@ function WinPanel({
       <p className="font-display text-3xl font-extrabold tracking-tight text-ink">
         Solved.
       </p>
-      <div className="flex items-center justify-center gap-6">
+      {isNewBest && (
+        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold uppercase tracking-wider text-ink">
+          New personal best
+        </p>
+      )}
+      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
         <Stat label="Difficulty" value={titleCase(difficulty)} />
         <Stat label="Time" value={formatDuration(elapsed)} mono />
         <Stat
@@ -744,7 +1061,19 @@ function WinPanel({
           mono
           muted={mistakes === 0}
         />
+        {hintsUsed > 0 && (
+          <Stat label="Hints" value={String(hintsUsed)} mono />
+        )}
+        {bestTime !== undefined && !isNewBest && (
+          <Stat label="Best" value={formatDuration(bestTime)} mono muted />
+        )}
       </div>
+      {hintsUsed > 0 && (
+        <p className="max-w-xs text-[11px] text-ink/70">
+          Best-time records are reserved for runs with no hints — keep
+          trying.
+        </p>
+      )}
       <button
         type="button"
         onClick={onNewGame}

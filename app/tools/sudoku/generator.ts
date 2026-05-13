@@ -60,9 +60,11 @@ function boxOf(i: number): number {
 /**
  * Indices of every other cell that shares a row, column, or box with
  * the given index. Computed once at module load — a 81×20 lookup is
- * tiny and saves O(81) work on every candidate computation.
+ * tiny and saves O(81) work on every candidate computation. Also
+ * exported (as `PEERS_OF`) so the client can reuse it for
+ * auto-eliminating peer pencil marks when a value is placed.
  */
-const PEERS: number[][] = (() => {
+export const PEERS_OF: readonly (readonly number[])[] = (() => {
   const arr: number[][] = [];
   for (let i = 0; i < SIZE; i++) {
     const r = rowOf(i);
@@ -80,7 +82,7 @@ const PEERS: number[][] = (() => {
 
 function candidatesFor(board: number[], i: number): number {
   let mask = ALL_BITS;
-  for (const p of PEERS[i]) {
+  for (const p of PEERS_OF[i]) {
     const v = board[p];
     if (v !== 0) mask &= ~bit(v);
   }
