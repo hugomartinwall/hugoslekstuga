@@ -175,6 +175,14 @@ export type ServerMsg =
       finalScore: number;
       killer: string | null;
     }
+  | {
+      /** Sent when a join request hits MAX_PLAYERS. Client shows a
+       *  waiting state; server promotes from the queue as slots open
+       *  and eventually sends a normal welcome. `position` is 1-indexed. */
+      type: "queued";
+      position: number;
+      total: number;
+    }
   | { type: "error"; reason: string }
   | { type: "ping" };
 

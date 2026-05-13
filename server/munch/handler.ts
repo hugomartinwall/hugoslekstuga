@@ -30,6 +30,78 @@ const sockets = new Map<string, WebSocket>();
 let nextPlayerId = 1;
 const lastDeadEmitTick = new Map<string, number>();
 
+/* -------------------------- waiting queue --------------------------- */
+// Mirror of the noodle handler's queue — see comments there for the
+// design. Park join requests that would push us over MAX_PLAYERS (humans
+// only); the tick loop promotes the front of the queue as slots open.
+
+type QueueEntry = {
+  ws: WebSocket;
+  name: string;
+  nobots: boolean;
+  joinedAt: number;
+};
+
+const queue: QueueEntry[] = [];
+const QUEUE_BROADCAST_MS = 2000;
+let lastQueueBroadcastAt = 0;
+
+type ConnState = { playerId: string | null };
+const wsState = new WeakMap<WebSocket, ConnState>();
+
+function humanCount(): number {
+  let n = 0;
+  for (const p of game.players.values()) {
+    if (!p.isBot) n++;
+  }
+  return n;
+}
+
+function broadcastQueuePositions(): void {
+  for (let i = 0; i < queue.length; i++) {
+    send(queue[i].ws, {
+      type: "queued",
+      position: i + 1,
+      total: queue.length,
+    });
+  }
+}
+
+function removeFromQueue(ws: WebSocket): void {
+  const idx = queue.findIndex((q) => q.ws === ws);
+  if (idx !== -1) queue.splice(idx, 1);
+}
+
+function joinPlayer(
+  ws: WebSocket,
+  state: ConnState,
+  name: string,
+  nobots: boolean,
+): void {
+  const id = `p${nextPlayerId++}`;
+  state.playerId = id;
+  sockets.set(id, ws);
+  // Place new humans near a random bot when bots exist.
+  const spawn = nobots ? null : bots.pickHumanSpawnPosition();
+  const player = spawn
+    ? game.addPlayer(id, name, spawn.x, spawn.y)
+    : game.addPlayer(id, name);
+  if (nobots) bots.setNobots(id, true);
+  send(ws, {
+    type: "welcome",
+    playerId: id,
+    worldSize: WORLD_SIZE,
+    color: player.color,
+    name: player.name,
+  });
+}
+
+function promoteFromQueue(entry: QueueEntry): void {
+  const state = wsState.get(entry.ws);
+  if (!state) return;
+  joinPlayer(entry.ws, state, entry.name, entry.nobots);
+}
+
 /* -------------------------- telemetry ------------------------------- */
 //
 // Phase-A telemetry — see server/noodle/handler.ts for the rationale.
@@ -155,6 +227,17 @@ const tickTimer = setInterval(() => {
     }
 
     logTelemetryIfDue(now, humans, botCount);
+
+    // Promote queued joins when human slots open.
+    while (queue.length > 0 && humanCount() < MAX_PLAYERS) {
+      const next = queue.shift()!;
+      if (next.ws.readyState !== next.ws.OPEN) continue;
+      promoteFromQueue(next);
+    }
+    if (queue.length > 0 && now - lastQueueBroadcastAt > QUEUE_BROADCAST_MS) {
+      broadcastQueuePositions();
+      lastQueueBroadcastAt = now;
+    }
   } catch (err) {
     console.error("munch: error in tick", err);
   }
@@ -166,17 +249,8 @@ const tickTimer = setInterval(() => {
  *  routes the WS upgrade by URL path. */
 export function mountMunch(ws: WebSocket): void {
   try {
-    // Cap covers humans AND bots — population can't exceed MAX_PLAYERS.
-    if (game.players.size >= MAX_PLAYERS) {
-      send(ws, {
-        type: "error",
-        reason: "Room is full — try again in a minute.",
-      });
-      ws.close();
-      return;
-    }
-
-    let playerId: string | null = null;
+    const state: ConnState = { playerId: null };
+    wsState.set(ws, state);
 
     ws.on("message", (raw) => {
       try {
@@ -187,36 +261,32 @@ export function mountMunch(ws: WebSocket): void {
           return;
         }
         if (msg.type === "join") {
-          if (playerId !== null) return; // already joined
+          if (state.playerId !== null) return; // already joined
+          if (queue.some((q) => q.ws === ws)) return; // already queued
           const name = sanitiseName(msg.name);
-          const id = `p${nextPlayerId++}`;
-          playerId = id;
-          sockets.set(id, ws);
-          // Place new humans near a random bot when bots exist.
-          const spawn = msg.nobots === true ? null : bots.pickHumanSpawnPosition();
-          const player = spawn
-            ? game.addPlayer(id, name, spawn.x, spawn.y)
-            : game.addPlayer(id, name);
-          if (msg.nobots === true) bots.setNobots(id, true);
-          send(ws, {
-            type: "welcome",
-            playerId: id,
-            worldSize: WORLD_SIZE,
-            color: player.color,
-            name: player.name,
-          });
+          const nobots = msg.nobots === true;
+          if (humanCount() >= MAX_PLAYERS) {
+            queue.push({ ws, name, nobots, joinedAt: Date.now() });
+            send(ws, {
+              type: "queued",
+              position: queue.length,
+              total: queue.length,
+            });
+            return;
+          }
+          joinPlayer(ws, state, name, nobots);
           return;
         }
-        if (!playerId) return; // ignore until joined
+        if (!state.playerId) return; // ignore until joined
         if (msg.type === "input") {
-          const me = game.players.get(playerId);
+          const me = game.players.get(state.playerId);
           if (!me) return;
           if (!me.alive) {
-            if (msg.split) game.respawn(playerId);
+            if (msg.split) game.respawn(state.playerId);
             return;
           }
           game.setInput(
-            playerId,
+            state.playerId,
             msg.dir,
             msg.split,
             msg.aspect,
@@ -229,21 +299,20 @@ export function mountMunch(ws: WebSocket): void {
       }
     });
 
-    ws.on("close", () => {
-      if (playerId) {
-        game.removePlayer(playerId);
-        sockets.delete(playerId);
-        bots.setNobots(playerId, false);
+    const cleanup = () => {
+      removeFromQueue(ws);
+      if (state.playerId) {
+        game.removePlayer(state.playerId);
+        sockets.delete(state.playerId);
+        bots.setNobots(state.playerId, false);
+        state.playerId = null;
       }
-    });
+    };
 
+    ws.on("close", cleanup);
     ws.on("error", (err) => {
       console.error("munch: socket error", err);
-      if (playerId) {
-        game.removePlayer(playerId);
-        sockets.delete(playerId);
-        bots.setNobots(playerId, false);
-      }
+      cleanup();
     });
   } catch (err) {
     console.error("munch: error in connection handler", err);

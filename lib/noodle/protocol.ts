@@ -265,6 +265,15 @@ export type ServerMsg =
       finalLength: number;
       killer: string | null;
     }
+  | {
+      /** Sent when a join request hits the player cap. Client should
+       *  show a waiting state with the position; the server promotes
+       *  the front of the queue as slots open and eventually sends a
+       *  normal welcome. `position` is 1-indexed (1 = next in line). */
+      type: "queued";
+      position: number;
+      total: number;
+    }
   | { type: "error"; reason: string }
   | { type: "ping" };
 

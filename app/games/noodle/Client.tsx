@@ -27,7 +27,7 @@ import {
 /* Types + constants                                                   */
 /* ------------------------------------------------------------------ */
 
-type Phase = "lobby" | "connecting" | "playing" | "dead" | "disconnected";
+type Phase = "lobby" | "connecting" | "queued" | "playing" | "dead" | "disconnected";
 
 type Snapshot = {
   receivedAt: number;
@@ -186,6 +186,10 @@ export default function NoodleClient() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myLength, setMyLength] = useState<number>(8);
   const [copied, setCopied] = useState(false);
+  // Set whenever the server sends a `queued` message — the room was at
+  // MAX_PLAYERS when this client tried to join. The tick loop on the
+  // server promotes the front of the queue as soon as a slot opens.
+  const [queueInfo, setQueueInfo] = useState<{ position: number; total: number } | null>(null);
   // Live RTT in ms, updated each snapshot from the server's `tEcho`
   // echo of our latest input timestamp. Only rendered when
   // `?debug=1` is in the URL — the overlay is opt-in, no perf cost
@@ -280,6 +284,11 @@ export default function NoodleClient() {
       try {
         msg = JSON.parse(e.data);
       } catch {
+        return;
+      }
+      if (msg.type === "queued") {
+        setQueueInfo({ position: msg.position, total: msg.total });
+        setPhase("queued");
         return;
       }
       if (msg.type === "welcome") {
@@ -815,6 +824,19 @@ export default function NoodleClient() {
           <p className="card-chunk rounded-[var(--radius-card)] bg-cream p-6 text-center font-display text-lg font-bold">
             …connecting to the noodle…
           </p>
+        )}
+        {phase === "queued" && queueInfo && (
+          <div className="card-chunk flex flex-col items-center gap-2 rounded-[var(--radius-card)] bg-cream p-6 text-center">
+            <p className="font-display text-2xl font-extrabold tracking-tight">
+              The room is full
+            </p>
+            <p className="text-sm text-ink-soft">
+              You&rsquo;re position{" "}
+              <span className="font-bold text-ink">{queueInfo.position}</span>
+              {queueInfo.total > 1 ? ` of ${queueInfo.total}` : ""} in line.
+              You&rsquo;ll be wiggled in as soon as a spot opens.
+            </p>
+          </div>
         )}
         {phase === "disconnected" && (
           <div className="card-chunk flex flex-col items-center gap-3 rounded-[var(--radius-card)] bg-tomato-soft p-6 text-center">

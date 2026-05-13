@@ -24,7 +24,7 @@ import {
   type ServerMsg,
 } from "@/lib/munch/protocol";
 
-type Phase = "lobby" | "connecting" | "playing" | "dead" | "disconnected";
+type Phase = "lobby" | "connecting" | "queued" | "playing" | "dead" | "disconnected";
 
 type Snapshot = {
   receivedAt: number;
@@ -58,6 +58,10 @@ export default function MunchPage() {
   const [name, setName] = useLocalStorageState<string>(NAME_KEY, "");
   const [phase, setPhase] = useState<Phase>("lobby");
   const [error, setError] = useState<string>("");
+  // Set whenever the server sends a `queued` message — the room hit
+  // MAX_PLAYERS when this client tried to join. Server promotes the
+  // front of the queue as slots open.
+  const [queueInfo, setQueueInfo] = useState<{ position: number; total: number } | null>(null);
   // Live RTT (ms) — see noodle Client.tsx for rationale. Updated each
   // snapshot from the server's `tEcho` echo, only rendered when
   // `?debug=1` is in the URL.
@@ -133,6 +137,11 @@ export default function MunchPage() {
       try {
         msg = JSON.parse(e.data);
       } catch {
+        return;
+      }
+      if (msg.type === "queued") {
+        setQueueInfo({ position: msg.position, total: msg.total });
+        setPhase("queued");
         return;
       }
       if (msg.type === "welcome") {
@@ -597,6 +606,20 @@ export default function MunchPage() {
           <p className="card-chunk rounded-[var(--radius-card)] bg-cream p-6 text-center font-display text-lg font-bold">
             …connecting to the map…
           </p>
+        )}
+
+        {phase === "queued" && queueInfo && (
+          <div className="card-chunk flex flex-col items-center gap-2 rounded-[var(--radius-card)] bg-cream p-6 text-center">
+            <p className="font-display text-2xl font-extrabold tracking-tight">
+              The room is full
+            </p>
+            <p className="text-sm text-ink-soft">
+              You&rsquo;re position{" "}
+              <span className="font-bold text-ink">{queueInfo.position}</span>
+              {queueInfo.total > 1 ? ` of ${queueInfo.total}` : ""} in line.
+              You&rsquo;ll be dropped in as soon as a spot opens.
+            </p>
+          </div>
         )}
 
         {phase === "disconnected" && (
