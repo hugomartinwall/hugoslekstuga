@@ -52,6 +52,13 @@ const MIN_LENGTH = 4;
  *  ~250-segment snake at boost speed; longer than the body needs. */
 const MAX_TRAIL_LEN = 1200;
 
+/** Cap on bot snake length. Bots stop growing past this so each tick's
+ *  per-segment cost (collision grid rebuild, snapshot serialisation)
+ *  stays bounded over long sessions. Humans aren't capped. 80 is large
+ *  enough that bots are still threatening but small enough that 8
+ *  bots together don't dominate the body-grid build cost. */
+const MAX_BOT_LENGTH = 80;
+
 /** Per-bot AI state. Lives on the Snake so the bot tick loop reads
  *  and mutates without juggling parallel maps. Null on humans. */
 export type BotState = {
@@ -364,7 +371,12 @@ export class Game {
         const d2 = dx * dx + dy * dy;
         const r2 = (myHeadR + f.r) * (myHeadR + f.r);
         if (d2 < r2) {
-          s.length += f.fromDeath ? GROW_PER_DEATH_FOOD : GROW_PER_FOOD;
+          // Bots still EAT the food (so the world doesn't pile up) but
+          // stop growing past MAX_BOT_LENGTH — keeps per-tick cost
+          // bounded over long sessions.
+          if (!(s.isBot && s.length >= MAX_BOT_LENGTH)) {
+            s.length += f.fromDeath ? GROW_PER_DEATH_FOOD : GROW_PER_FOOD;
+          }
           this.food.delete(f.id);
         }
       }

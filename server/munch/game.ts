@@ -48,6 +48,22 @@ const PALETTE = [
   "#14b8a6",
 ];
 
+/** Cap on bot total mass. Bots stop growing past this so each tick's
+ *  per-cell cost (collision grid build, snapshot serialisation) stays
+ *  bounded over long sessions. Humans aren't capped. 150 is large
+ *  enough that bots can split into a couple of cells and feel like
+ *  real opponents but small enough that 10 grown bots don't dominate
+ *  the simulation. */
+const MAX_BOT_MASS = 150;
+
+/** Sum of mass across a player's cells. Inlined often elsewhere; a
+ *  named helper makes the bot-cap checks below read clearer. */
+function totalMassOf(p: { cells: { mass: number }[] }): number {
+  let m = 0;
+  for (const c of p.cells) m += c.mass;
+  return m;
+}
+
 export type Cell = {
   id: number;
   x: number;
@@ -514,7 +530,11 @@ export class Game {
         const eater = this.players.get(e.eaterPlayer);
         const cell = eater?.cells.find((c) => c.id === e.eaterCellId);
         if (!cell || !this.food.has(e.foodId)) continue;
-        cell.mass += FOOD_MASS;
+        // Bots stop growing past MAX_BOT_MASS but still consume the
+        // food (so it doesn't pile up in the world).
+        if (!eater || !(eater.isBot && totalMassOf(eater) >= MAX_BOT_MASS)) {
+          cell.mass += FOOD_MASS;
+        }
         this.food.delete(e.foodId);
         eatenFood.add(e.foodId);
       } else {
@@ -525,7 +545,11 @@ export class Game {
         if (!eater || !eaterCell || !victim) continue;
         const victimCell = victim.cells.find((c) => c.id === e.victimCellId);
         if (!victimCell) continue;
-        eaterCell.mass += victimCell.mass;
+        // Bots can kill humans/other bots but cap their own growth so
+        // the simulation cost stays bounded.
+        if (!(eater.isBot && totalMassOf(eater) >= MAX_BOT_MASS)) {
+          eaterCell.mass += victimCell.mass;
+        }
         victim.cells = victim.cells.filter((c) => c.id !== victimCell.id);
         eatenCells.add(victimCell.id);
         // Did this kill the victim?

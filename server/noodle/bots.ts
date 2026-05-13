@@ -33,6 +33,18 @@ import type { Game, Snake } from "./game.js";
 /* Tuning                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Threshold for "the room has enough humans" — at or above this many
+ *  human players, the bot floor collapses to BUSY_BOT_FLOOR instead of
+ *  the normal BOT_FLOOR. Bots exist to fill empty rooms; once humans
+ *  show up the bots can step back and the server has CPU left for the
+ *  real players. Per the lag stabilisation plan. */
+const BUSY_HUMAN_COUNT = 3;
+
+/** Bot count when the room is busy. Two bots keep the world feeling
+ *  inhabited but cost a tiny fraction of the per-tick CPU that 8 bots
+ *  do, especially once those bots have grown long. */
+const BUSY_BOT_FLOOR = 2;
+
 /** Foraging sight — how far a bot looks for food. Multiplied by the
  *  bot's personal sightFactor. */
 const FOOD_SIGHT = 320;
@@ -175,8 +187,17 @@ export class BotManager {
       if (!p.alive && p.bot.diedAt === 0) p.bot.diedAt = now;
     }
 
-    // 2. Population steering.
-    const target = this.botFloorActive() ? Math.max(0, BOT_FLOOR - this.humanCount()) : 0;
+    // 2. Population steering. Once the room has enough humans
+    //    (BUSY_HUMAN_COUNT) we drop hard to BUSY_BOT_FLOOR — bots are
+    //    there to fill empty rooms; humans don't need them and the
+    //    server CPU is better spent on the human snakes.
+    const humans = this.humanCount();
+    let target = 0;
+    if (this.botFloorActive()) {
+      target = humans >= BUSY_HUMAN_COUNT
+        ? BUSY_BOT_FLOOR
+        : Math.max(0, BOT_FLOOR - humans);
+    }
     const have = this.botCount();
     if (have < target) {
       if (this.game.players.size < MAX_PLAYERS && now - this.lastSpawnAt > SPAWN_RATE_MS) {

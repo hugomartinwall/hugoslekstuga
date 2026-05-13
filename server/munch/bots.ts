@@ -37,6 +37,16 @@ import type { Game, Player } from "./game.js";
 /* Tuning                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Threshold for "the room has enough humans" — at or above this many
+ *  human players, the bot floor collapses to BUSY_BOT_FLOOR. Bots
+ *  exist to fill empty rooms; once humans show up the bots can step
+ *  back. Per the lag stabilisation plan. */
+const BUSY_HUMAN_COUNT = 3;
+
+/** Bot count when the room is busy. Two bots keep the world feeling
+ *  inhabited without costing per-tick CPU that 9-10 grown bots do. */
+const BUSY_BOT_FLOOR = 2;
+
 /** Base sight radius at START_MASS. Scales up with mass^0.35 (matching
  *  the per-player viewport scale in the protocol) so a mass-400 bot
  *  sees ~2000 units instead of always-700 — bigger blobs see further,
@@ -157,8 +167,17 @@ export class BotManager {
       if (!p.alive && p.bot.diedAt === 0) p.bot.diedAt = now;
     }
 
-    // 2. Adjust population toward the target.
-    const target = this.botFloorActive() ? Math.max(0, BOT_FLOOR - this.humanCount()) : 0;
+    // 2. Adjust population toward the target. Once the room has enough
+    //    humans (BUSY_HUMAN_COUNT) we drop hard to BUSY_BOT_FLOOR — bots
+    //    are there to fill empty rooms; humans don't need them and the
+    //    server CPU is better spent on the human cells.
+    const humans = this.humanCount();
+    let target = 0;
+    if (this.botFloorActive()) {
+      target = humans >= BUSY_HUMAN_COUNT
+        ? BUSY_BOT_FLOOR
+        : Math.max(0, BOT_FLOOR - humans);
+    }
     const have = this.botCount();
     if (have < target) {
       const cap = MAX_PLAYERS;
