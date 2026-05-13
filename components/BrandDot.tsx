@@ -38,6 +38,24 @@ const SPAM_CLICK_WINDOW_MS = 1500;
 const PLAY_DEAD_DURATION_MS = 1800;
 
 /**
+ * Easter egg — drag Hugo around. Pointer-down on the dot starts a drag;
+ * movement past DRAG_TRIGGER_PX commits it. He follows the cursor 1:1
+ * while held, then springs back to home with a bouncy ease on release
+ * and bursts a coloured-sparkle "happy puff" above his head. Hugo gets
+ * a beat of joy for being played with.
+ */
+const DRAG_TRIGGER_PX = 4;
+const SPRING_BACK_MS = 420;
+const HAPPY_DURATION_MS = 1300;
+const HAPPY_SPARK_COLORS = [
+  "var(--color-tomato)",
+  "var(--color-yellow)",
+  "var(--color-pink)",
+  "var(--color-green)",
+  "var(--color-blue)",
+];
+
+/**
  * The brand dot. Internally we call him **Hugo** — a small coloured
  * disc that lives in the wordmark, in the nav corner of every tool
  * page, and (when a tool is clicked) travels up from the swarm into
@@ -99,6 +117,27 @@ export default function BrandDot({
   const [huffSeq, setHuffSeq] = useState(0);
   const clickTimesRef = useRef<number[]>([]);
   const playDeadTimerRef = useRef<number | null>(null);
+  // Drag-and-spring state. `dragOffset` is the transform applied to the
+  // dot while held; `dragging` disables the transform transition so the
+  // dot tracks the cursor instantly; `springingBack` enables a bouncy
+  // transition that animates the offset back to zero on release;
+  // `happy` triggers the coloured sparkle puff and forces the eyes
+  // open + content. `sparkSeq` keys the puff so a repeat drag
+  // re-mounts and re-plays the animation.
+  const [dragOffsetX, setDragOffsetX] = useState(0);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [springingBack, setSpringingBack] = useState(false);
+  const [happy, setHappy] = useState(false);
+  const [sparkSeq, setSparkSeq] = useState(0);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const springTimerRef = useRef<number | null>(null);
+  const happyTimerRef = useRef<number | null>(null);
 
   const safeIdx =
     Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
@@ -169,12 +208,18 @@ export default function BrandDot({
       );
   }, []);
 
-  // Clear the play-dead timer on unmount so a navigation away during
-  // the easter-egg window doesn't leak a setTimeout.
+  // Clear the easter-egg timers on unmount so a navigation away
+  // during the play-dead or drag-and-spring window doesn't leak.
   useEffect(() => {
     return () => {
       if (playDeadTimerRef.current) {
         window.clearTimeout(playDeadTimerRef.current);
+      }
+      if (springTimerRef.current) {
+        window.clearTimeout(springTimerRef.current);
+      }
+      if (happyTimerRef.current) {
+        window.clearTimeout(happyTimerRef.current);
       }
     };
   }, []);
@@ -351,11 +396,126 @@ export default function BrandDot({
     }
   };
 
+  // Pointer handlers — replace the simple onClick with a pointer
+  // capture flow so we can disambiguate a click from a drag. A short
+  // press releases as a click (cycle colour); a longer drag with
+  // movement releases as a drop (spring back + happy puff). Pointer
+  // capture means we keep receiving move/up events even if the
+  // cursor wanders off Hugo.
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (playingDead || traveling) return;
+    if (dragRef.current) return; // already tracking a drag
+    const node = btnRef.current;
+    if (!node) return;
+    try {
+      node.setPointerCapture(e.pointerId);
+    } catch {
+      // Some legacy browsers throw on setPointerCapture; safe to fall
+      // through — pointermove/up will still fire on the button itself
+      // for the immediate area.
+    }
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const ds = dragRef.current;
+    if (!ds || e.pointerId !== ds.pointerId) return;
+    const dx = e.clientX - ds.startX;
+    const dy = e.clientY - ds.startY;
+    if (!ds.moved && Math.hypot(dx, dy) > DRAG_TRIGGER_PX) {
+      ds.moved = true;
+      setDragging(true);
+    }
+    if (ds.moved) {
+      setDragOffsetX(dx);
+      setDragOffsetY(dy);
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const ds = dragRef.current;
+    if (!ds || e.pointerId !== ds.pointerId) return;
+    const node = btnRef.current;
+    if (node) {
+      try {
+        node.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+    if (ds.moved) {
+      // Drag-and-drop completed. Spring Hugo home, then celebrate.
+      setDragOffsetX(0);
+      setDragOffsetY(0);
+      setSpringingBack(true);
+      setDragging(false);
+      if (springTimerRef.current) window.clearTimeout(springTimerRef.current);
+      springTimerRef.current = window.setTimeout(() => {
+        setSpringingBack(false);
+        setHappy(true);
+        setSparkSeq((s) => s + 1);
+        if (happyTimerRef.current) window.clearTimeout(happyTimerRef.current);
+        happyTimerRef.current = window.setTimeout(() => {
+          setHappy(false);
+          happyTimerRef.current = null;
+        }, HAPPY_DURATION_MS);
+        springTimerRef.current = null;
+      }, SPRING_BACK_MS);
+    } else {
+      // Short tap — defer to the existing click behaviour.
+      cycle();
+    }
+    dragRef.current = null;
+  };
+
+  const onPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const ds = dragRef.current;
+    if (!ds || e.pointerId !== ds.pointerId) return;
+    // Cancel mid-drag — spring home without the happy reward.
+    setDragOffsetX(0);
+    setDragOffsetY(0);
+    setSpringingBack(true);
+    setDragging(false);
+    if (springTimerRef.current) window.clearTimeout(springTimerRef.current);
+    springTimerRef.current = window.setTimeout(() => {
+      setSpringingBack(false);
+      springTimerRef.current = null;
+    }, SPRING_BACK_MS);
+    dragRef.current = null;
+  };
+
+  // Compose the active transform from drag offset + bounce scale.
+  // Order matters: translate first, scale after, so the bounce
+  // happens around the dragged position rather than the origin.
+  const hasDragOffset = dragOffsetX !== 0 || dragOffsetY !== 0;
+  const transformParts: string[] = [];
+  if (hasDragOffset) {
+    transformParts.push(`translate(${dragOffsetX}px, ${dragOffsetY}px)`);
+  }
+  if (bouncing) transformParts.push("scale(1.4)");
+  const transform = transformParts.length > 0 ? transformParts.join(" ") : undefined;
+
+  // Transition selection — instant during drag, spring back on release,
+  // bouncy on click, gentle ease otherwise.
+  const transformTransition = dragging
+    ? "transform 0ms linear"
+    : springingBack
+    ? `transform ${SPRING_BACK_MS}ms cubic-bezier(0.34, 1.56, 0.64, 1)`
+    : bouncing
+    ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1)"
+    : "transform 180ms ease";
+
   return (
     <button
       type="button"
       ref={btnRef}
-      onClick={cycle}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       aria-label="Change accent colour"
       data-brand-dot
       data-name="hugo"
@@ -369,19 +529,27 @@ export default function BrandDot({
         padding: 0,
         margin: 0,
         background: color,
-        cursor: "pointer",
+        cursor: dragging ? "grabbing" : "pointer",
         verticalAlign: "baseline",
         // A hair of breathing room so the dot doesn't kiss the 'a' of
         // the wordmark. Em-based so it scales with font size.
         marginLeft: "0.16em",
         opacity: traveling ? 0 : 1,
-        transform: bouncing ? "scale(1.4)" : undefined,
-        transition: bouncing
-          ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), background 220ms ease, opacity 60ms linear"
-          : "transform 180ms ease, background 220ms ease, opacity 60ms linear",
-        animation: bouncing
-          ? "none"
-          : "brand-dot-breathe 3.4s ease-in-out infinite",
+        transform,
+        transition: `${transformTransition}, background 220ms ease, opacity 60ms linear`,
+        // Idle breathing pauses during any active animation (drag,
+        // spring, bounce, or happy reaction) so the dot's motion comes
+        // from one coherent place at a time.
+        animation:
+          bouncing || dragging || springingBack || happy
+            ? "none"
+            : "brand-dot-breathe 3.4s ease-in-out infinite",
+        // Pointer-down should commit to a drag intent rather than
+        // letting the browser interpret it as a text selection or
+        // touch scroll.
+        touchAction: "none",
+        userSelect: "none",
+        WebkitUserSelect: "none",
       }}
     >
       {/* The "annoyed huff" puff — three overlapping ink circles
@@ -440,6 +608,57 @@ export default function BrandDot({
           />
         </span>
       )}
+      {/* The "happy puff" — coloured sparkles that fan out above
+          Hugo's head when a drag completes. Five small accent-coloured
+          dots fly outward along an upward arc, scale up at the apex,
+          then fade as they continue. Keyed on sparkSeq so each
+          completed drag re-mounts and re-plays the animation. */}
+      {happy && (
+        <span
+          key={`spark-${sparkSeq}`}
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "0",
+            width: 0,
+            height: 0,
+            pointerEvents: "none",
+          }}
+        >
+          {HAPPY_SPARK_COLORS.map((sparkColor, i) => {
+            // Five sparkles spread across the upper hemisphere
+            // (angles 200° → 340°, measured CCW from +x).
+            const angle = ((200 + i * 35) * Math.PI) / 180;
+            // Travel distance scales with the dot's font-size so big
+            // and small renders both work. Magic numbers picked to
+            // feel like a small joyful burst, not a celebration cannon.
+            const dx = Math.cos(angle) * 1.4;
+            const dy = Math.sin(angle) * 1.4;
+            return (
+              <span
+                key={i}
+                style={
+                  {
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    width: "0.2em",
+                    height: "0.2em",
+                    marginLeft: "-0.1em",
+                    marginTop: "-0.1em",
+                    borderRadius: "9999px",
+                    background: sparkColor,
+                    animation: "hugo-happy-spark 1200ms ease-out forwards",
+                    "--dx": `${dx}em`,
+                    "--dy": `${dy}em`,
+                  } as React.CSSProperties
+                }
+              />
+            );
+          })}
+        </span>
+      )}
       <span
         aria-hidden
         style={{
@@ -450,13 +669,17 @@ export default function BrandDot({
           justifyContent: "center",
           gap: "0.12em",
           opacity:
-            playingDead || (eyesVisible && !blinking) ? 1 : 0,
+            playingDead || happy || dragging || (eyesVisible && !blinking)
+              ? 1
+              : 0,
           // Shift the whole eye-container by the gaze offset so both
           // eyes track together toward the hovered tool. Skip when
-          // playing dead — gaze is irrelevant if the eyes are shut.
-          transform: playingDead
-            ? "translate(0px, 0px)"
-            : `translate(${eyeGazeX}px, ${eyeGazeY}px)`,
+          // playing dead, dragging, or in a happy moment — Hugo's
+          // attention is on his current state, not the cursor.
+          transform:
+            playingDead || happy || dragging
+              ? "translate(0px, 0px)"
+              : `translate(${eyeGazeX}px, ${eyeGazeY}px)`,
           // Fast close (blink starting) so it reads as a snap; slow
           // open (blink ending or proximity revealing) so the gaze
           // re-engages gently. Gaze translate eases smoothly so the
