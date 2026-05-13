@@ -31,6 +31,13 @@ share a small WebSocket server for game state. The server keeps no logs,
 no DB, no third-party connections. That's the only network round-trip in
 the whole site.
 
+**Critical multiplayer constraint** — the Fly.io app
+(`hugoslekstuga-munch`, both games share one process at `/munch` and
+`/noodle` paths) must run **exactly one machine**. The game state lives
+in-memory; two machines = two `Game` singletons = players split across
+sessions. Set with `flyctl scale count 1`. Documented in `fly.toml`.
+Don't scale up unless we move state out of process (Redis, etc).
+
 The on-`/about` brand voice now lives in two pieces: the hero sentence
 ("…where I release things I made for fun.") and the *Things you won't
 find here* strikethrough list. Both carry the wink — treat them the
@@ -42,6 +49,8 @@ same way as the rules: don't quietly reword without asking.
 - `lib/clusters.ts` — `pathFor()` resolver for /tools vs /games routing.
   The file is named after the old cluster system — visible categories
   on the homepage map were retired. Only the path helper remains.
+  `lib/links.ts` is also gone (was the inter-tool edge map for the
+  old clustered homepage); the swarm doesn't need it.
 - `lib/colors.ts` — single source for the 8 accent colours
 - `lib/use-local-storage-state.ts` — canonical persistence hook
 - `lib/format.ts`, `lib/dates.ts`, `lib/math.ts` — shared helpers
@@ -83,6 +92,16 @@ export `metadata`.
 - `components/CustomMinutes.tsx` — "Custom — N min" pill (focus, talk)
 - `components/Search.tsx` — ⌘K palette
 - `components/ToolMap.tsx` — force-directed map on /
+- `components/BrandDot.tsx` — Hugo (the dot). Renders the wordmark's
+  trailing dot in the nav + footer. Internally rich: persisted-colour
+  cycling, proximity-eyes, idle blinks, swarm-hover gaze tracking,
+  drag-and-spring (release for sparkle puff), spam-click play-dead
+  with whole-page tantrum shake, listens for
+  `hugoslekstuga:hugo-happy` to celebrate (Sudoku win, etc).
+- `components/TravelingDot.tsx` — canvas-rendered Hugo who flies out
+  of the nav, fetches a clicked swarm tool, returns home. Lives in
+  the root layout. ToolMap dispatches
+  `hugoslekstuga:dot-travel` on click to trigger it.
 
 ## Things NOT to do
 
@@ -100,8 +119,12 @@ export `metadata`.
    only when explicitly asked.
 6. **Don't introduce another CSS framework.** Tailwind + the `card-chunk` /
    `btn-chunk` shadow language is the system.
-7. **Don't add new server features.** Munch is the one server-backed tool —
-   resist leaderboards, accounts, friends lists.
+7. **Don't add new server features.** Munch + Noodle are the only
+   server-backed experiences — resist leaderboards, accounts,
+   friends lists, persistent ranks. The room is capped at 10 humans
+   (a queue takes overflow).
+8. **Don't scale the multiplayer Fly.io app past one machine.** See
+   the multiplayer constraint above — in-memory state would split.
 
 ## Privacy audit (run before any network-adjacent commit)
 
@@ -128,10 +151,15 @@ also matches the grep — those are documentation, not network calls.
 
 ```sh
 npm run dev      # Next dev on :3000
-npm run munch    # WebSocket server on :8080 (only needed for /games/munch)
+npm run munch    # WebSocket server on :8080 (hosts BOTH /munch + /noodle,
+                 # only needed if you're playing the multiplayer games)
 npm run lint
 npm run build    # rm -rf .next first if Next caches stale routes
 ```
+
+The multiplayer server is deployed via `flyctl deploy --remote-only`
+to the `hugoslekstuga-munch` app (Stockholm region, `arn`). Single
+machine — see the multiplayer constraint up top.
 
 ## Commit style
 
@@ -173,12 +201,28 @@ not for hiding work-in-progress functionality.
 route. The lab is a workshop, not an archive. The lab index should be
 0–3 entries at any given time.
 
-**The dot character — internal naming**: the brand dot in the nav and
-the traveling dot that flies from the swarm to the nav share a name
+**The dot character — internal naming**: the brand dot in the nav,
+the footer, and the canvas-rendered TravelingDot all share a name
 internally — **Hugo**. Never surfaced in user copy; only present in
 code comments and `data-name="hugo"` attributes on the dot elements
 for the curious DevTools visitor. Use the name in code conversation so
 "the dot" and "Hugo" mean the same thing.
+
+**Hugo's global event surface** — anywhere on the site can:
+
+- Dispatch `hugoslekstuga:hugo-happy` to trigger his celebration
+  state (eyes wide + coloured-sparkle puff). Currently fires when a
+  Sudoku puzzle is solved.
+- Dispatch `hugoslekstuga:dot-travel` with `{ fromX, fromY, toX,
+  toY, color, navColor, duration }` to make him fly from one screen
+  point to another. ToolMap uses this for the swarm→nav fetch-and-
+  return.
+- Listen for `hugoslekstuga:hugo-traveling` (fired by TravelingDot)
+  to know when Hugo is mid-trip (BrandDot uses it to hide the nav
+  dot so there's only one Hugo on screen at a time).
+- Listen for `hugoslekstuga:tool-hover` from ToolMap (rAF-rate
+  `{ x, y } | null`) — BrandDot uses it to make Hugo's eyes track
+  the hovered swarm tool.
 
 ## When adding a new tool
 
@@ -187,9 +231,13 @@ useful, (c) feels cool. Most pitches don't clear it; that's the point.
 
 Mechanical steps once it's earned a slot:
 
-1. Add an entry to `lib/tools.ts` (slug, title, tagline, description, color, emoji)
-2. Map it to a cluster in `lib/clusters.ts`
-3. Add at least one edge in `lib/links.ts` so it isn't an orphan on the map
-4. Create `app/tools/<slug>/Client.tsx` (`"use client"`) and the server wrapper
-   `page.tsx` exporting `metadata`
-5. Use the shared components and helpers — don't reinvent
+1. Add an entry to `lib/tools.ts` (slug, title, tagline, description,
+   color, emoji). For games, also add the slug to `GAME_SLUGS` in
+   `lib/clusters.ts` so `pathFor()` routes it to `/games/<slug>`.
+2. Create `app/tools/<slug>/Client.tsx` (`"use client"`) and the server
+   wrapper `page.tsx` exporting `metadata` from the registry entry.
+3. Use the shared components and helpers — don't reinvent.
+
+That's it. The cluster system is retired and there's no `lib/links.ts`
+to update — the homepage swarm picks up the new tool automatically
+from the `tools` array.
