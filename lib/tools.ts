@@ -153,6 +153,15 @@ export const tools: Tool[] = [
     color: "green",
     emoji: "⌑",
   },
+  {
+    slug: "sudoku",
+    title: "Sudoku",
+    tagline: "Nine by nine. No noise.",
+    description:
+      "Generate a fresh Sudoku at the difficulty you want, then sit with it. Notes mode for pencil marks, gentle conflict highlighting, a quiet timer, and your puzzle resumes where you left it. No ads, no streaks chasing you for tomorrow.",
+    color: "pink",
+    emoji: "#",
+  },
 
   // ---------- games ----------
 
