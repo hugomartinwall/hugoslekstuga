@@ -115,6 +115,9 @@ export type Player = {
   inputDir: { x: number; y: number };
   splitRequested: boolean;
   lastInputAt: number;
+  /** Last client-side timestamp from an input message — echoed back in
+   *  state snapshots for RTT measurement. */
+  lastInputT?: number;
   killedBy: string | null;
   finalScore: number;
   /** Last non-zero input direction; used as the ejection vector when
@@ -232,6 +235,7 @@ export class Game {
     dir: { x: number; y: number },
     split: boolean,
     aspect?: number,
+    t?: number,
   ): void {
     const p = this.players.get(id);
     if (!p) return;
@@ -249,6 +253,9 @@ export class Game {
       p.aspect = Math.max(0.2, Math.min(5, aspect));
     }
     p.lastInputAt = Date.now();
+    if (typeof t === "number" && Number.isFinite(t)) {
+      p.lastInputT = t;
+    }
   }
 
   respawn(id: string, x?: number, y?: number): void {

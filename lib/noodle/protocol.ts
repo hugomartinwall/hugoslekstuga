@@ -217,6 +217,11 @@ export type ClientMsg =
       /** Optional canvas aspect ratio (width / height). Same shape as
        *  munch — server reshapes the snapshot viewport to fit. */
       aspect?: number;
+      /** Optional client timestamp (Date.now()) for RTT measurement.
+       *  Server echoes the latest seen value back in the state's `tEcho`
+       *  so the client can compute round-trip time. Never persisted,
+       *  never affects gameplay — pure telemetry. */
+      t?: number;
     }
   | { type: "respawn" }
   | { type: "pong" };
@@ -249,6 +254,11 @@ export type ServerMsg =
       snakes: SnakeView[];
       food: FoodView[];
       leaderboard: LeaderboardEntry[];
+      /** Echo of the latest `t` field the server received on this
+       *  player's input messages. Lets the client compute RTT without
+       *  separate ping-pongs. Absent if the client hasn't sent any
+       *  timestamps yet (older client builds). */
+      tEcho?: number;
     }
   | {
       type: "dead";

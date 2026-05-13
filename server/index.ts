@@ -103,7 +103,21 @@ setInterval(() => {
  * a WebSocket, and route by URL path.
  * -----------------------------------------------------------------------*/
 
-const wss = new WebSocketServer({ noServer: true });
+// Enable permessage-deflate compression on outgoing frames. JSON
+// snapshots from Noodle compress 5-10×; cost is negligible CPU on
+// modern Node (deflate is native). zlib settings tuned conservatively
+// — small concurrent-window so per-connection memory stays bounded
+// even at MAX_PLAYERS, and a 1KB threshold so tiny welcome/pong
+// frames bypass compression overhead.
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: {
+    zlibDeflateOptions: { level: 1, memLevel: 7 },
+    clientNoContextTakeover: true,
+    serverNoContextTakeover: true,
+    threshold: 1024,
+  },
+});
 
 httpServer.on("upgrade", (req, socket, head) => {
   const ip = clientIpFrom(req);

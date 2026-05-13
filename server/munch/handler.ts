@@ -30,6 +30,36 @@ const sockets = new Map<string, WebSocket>();
 let nextPlayerId = 1;
 const lastDeadEmitTick = new Map<string, number>();
 
+/* -------------------------- telemetry ------------------------------- */
+//
+// Phase-A telemetry — see server/noodle/handler.ts for the rationale.
+
+const TELEMETRY_INTERVAL_MS = 5000;
+let telemetryTickCount = 0;
+let telemetryTickTimeMs = 0;
+let telemetrySnapshotCount = 0;
+let telemetrySnapshotBytes = 0;
+let lastTelemetryLogAt = Date.now();
+
+function logTelemetryIfDue(now: number, humans: number, bots: number): void {
+  if (now - lastTelemetryLogAt < TELEMETRY_INTERVAL_MS) return;
+  const tickAvgMs = telemetryTickCount > 0
+    ? (telemetryTickTimeMs / telemetryTickCount).toFixed(2)
+    : "0";
+  const snapAvgBytes = telemetrySnapshotCount > 0
+    ? Math.round(telemetrySnapshotBytes / telemetrySnapshotCount)
+    : 0;
+  const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  console.log(
+    `munch: humans=${humans} bots=${bots} tick=${tickAvgMs}ms snap=${snapAvgBytes}B rss=${rssMb}MB`,
+  );
+  telemetryTickCount = 0;
+  telemetryTickTimeMs = 0;
+  telemetrySnapshotCount = 0;
+  telemetrySnapshotBytes = 0;
+  lastTelemetryLogAt = now;
+}
+
 /* -------------------------- tick loop ------------------------------- */
 
 const tickIntervalMs = 1000 / TICK_HZ;
@@ -39,8 +69,11 @@ let lastSnapshotAt = 0;
 const tickTimer = setInterval(() => {
   try {
     // Bots first so the AI's input is consumed by this tick's physics.
+    const tickStart = performance.now();
     bots.tick();
     game.tick();
+    telemetryTickTimeMs += performance.now() - tickStart;
+    telemetryTickCount++;
     const now = Date.now();
 
     // AFK kick — humans only.
@@ -76,8 +109,25 @@ const tickTimer = setInterval(() => {
       lastDeadEmitTick.set(id, 1);
     }
 
-    if (now - lastSnapshotAt < snapshotIntervalMs) return;
+    if (now - lastSnapshotAt < snapshotIntervalMs) {
+      // Tick-only frames still tick the telemetry log.
+      let humans = 0;
+      let botCount = 0;
+      for (const p of game.players.values()) {
+        if (p.isBot) botCount++;
+        else humans++;
+      }
+      logTelemetryIfDue(now, humans, botCount);
+      return;
+    }
     lastSnapshotAt = now;
+
+    let humans = 0;
+    let botCount = 0;
+    for (const p of game.players.values()) {
+      if (p.isBot) botCount++;
+      else humans++;
+    }
 
     // Per-player snapshot.
     for (const [id, ws] of sockets.entries()) {
@@ -89,15 +139,22 @@ const tickTimer = setInterval(() => {
         me.aspect ?? undefined,
       );
       const snap = game.snapshotFor(id, hx, hy);
-      send(ws, {
-        type: "state",
-        tick: 0,
-        you: snap.you,
-        players: snap.players,
-        food: snap.food,
-        leaderboard: snap.leaderboard,
-      });
+      send(
+        ws,
+        {
+          type: "state",
+          tick: 0,
+          you: snap.you,
+          players: snap.players,
+          food: snap.food,
+          leaderboard: snap.leaderboard,
+          tEcho: me.lastInputT,
+        },
+        true,
+      );
     }
+
+    logTelemetryIfDue(now, humans, botCount);
   } catch (err) {
     console.error("munch: error in tick", err);
   }
@@ -158,7 +215,13 @@ export function mountMunch(ws: WebSocket): void {
             if (msg.split) game.respawn(playerId);
             return;
           }
-          game.setInput(playerId, msg.dir, msg.split, msg.aspect);
+          game.setInput(
+            playerId,
+            msg.dir,
+            msg.split,
+            msg.aspect,
+            msg.t,
+          );
           return;
         }
       } catch (err) {
@@ -212,10 +275,19 @@ export function shutdownMunch(): void {
 
 /* -------------------------- helpers --------------------------------- */
 
-function send(ws: WebSocket, msg: ServerMsg): void {
+function send(
+  ws: WebSocket,
+  msg: ServerMsg,
+  countBytes: boolean = false,
+): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
-    ws.send(JSON.stringify(msg));
+    const payload = JSON.stringify(msg);
+    if (countBytes) {
+      telemetrySnapshotBytes += payload.length;
+      telemetrySnapshotCount++;
+    }
+    ws.send(payload);
   } catch {
     // socket died mid-send; cleanup happens on close
   }

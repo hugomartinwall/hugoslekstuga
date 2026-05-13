@@ -26,6 +26,40 @@ const sockets = new Map<string, WebSocket>();
 let nextPlayerId = 1;
 const lastDeadEmitTick = new Map<string, number>();
 
+/* -------------------------- telemetry ------------------------------- */
+//
+// Per-Phase-A of the lag-stabilisation plan: tracks per-tick CPU time
+// and per-snapshot byte size so we can see, from Fly.io logs, whether
+// 3-player lag is bandwidth-bound, CPU-bound, or interpolation-bound.
+// Logged once every TELEMETRY_INTERVAL_MS and reset.
+
+const TELEMETRY_INTERVAL_MS = 5000;
+let telemetryTickCount = 0;
+let telemetryTickTimeMs = 0;
+let telemetrySnapshotCount = 0;
+let telemetrySnapshotBytes = 0;
+let lastTelemetryLogAt = Date.now();
+
+function logTelemetryIfDue(now: number, humans: number, bots: number): void {
+  if (now - lastTelemetryLogAt < TELEMETRY_INTERVAL_MS) return;
+  const tickAvgMs = telemetryTickCount > 0
+    ? (telemetryTickTimeMs / telemetryTickCount).toFixed(2)
+    : "0";
+  const snapAvgBytes = telemetrySnapshotCount > 0
+    ? Math.round(telemetrySnapshotBytes / telemetrySnapshotCount)
+    : 0;
+  const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  // One-line summary — easy to grep in Fly.io logs.
+  console.log(
+    `noodle: humans=${humans} bots=${bots} tick=${tickAvgMs}ms snap=${snapAvgBytes}B rss=${rssMb}MB`,
+  );
+  telemetryTickCount = 0;
+  telemetryTickTimeMs = 0;
+  telemetrySnapshotCount = 0;
+  telemetrySnapshotBytes = 0;
+  lastTelemetryLogAt = now;
+}
+
 /* -------------------------- tick loop ------------------------------- */
 
 const tickIntervalMs = 1000 / TICK_HZ;
@@ -37,8 +71,11 @@ const tickTimer = setInterval(() => {
     // Game tick first (moves snakes, builds body grid). Bots tick after,
     // reading the fresh body grid for swerve decisions and queuing aim
     // for the NEXT game tick — one-tick lag is invisible at 30Hz.
+    const tickStart = performance.now();
     game.tick();
     bots.tick();
+    telemetryTickTimeMs += performance.now() - tickStart;
+    telemetryTickCount++;
     const now = Date.now();
 
     // AFK kick — humans only.
@@ -74,8 +111,26 @@ const tickTimer = setInterval(() => {
       lastDeadEmitTick.set(id, 1);
     }
 
-    if (now - lastSnapshotAt < snapshotIntervalMs) return;
+    if (now - lastSnapshotAt < snapshotIntervalMs) {
+      // Telemetry can still tick on non-snapshot frames so the periodic
+      // log fires regardless of snapshot cadence.
+      let humans = 0;
+      let botCount = 0;
+      for (const s of game.players.values()) {
+        if (s.isBot) botCount++;
+        else humans++;
+      }
+      logTelemetryIfDue(now, humans, botCount);
+      return;
+    }
     lastSnapshotAt = now;
+
+    let humans = 0;
+    let botCount = 0;
+    for (const s of game.players.values()) {
+      if (s.isBot) botCount++;
+      else humans++;
+    }
 
     for (const [id, ws] of sockets.entries()) {
       const me = game.players.get(id);
@@ -85,15 +140,22 @@ const tickTimer = setInterval(() => {
         me.aspect ?? undefined,
       );
       const snap = game.snapshotFor(id, hx, hy);
-      send(ws, {
-        type: "state",
-        tick: 0,
-        you: snap.you,
-        snakes: snap.snakes,
-        food: snap.food,
-        leaderboard: snap.leaderboard,
-      });
+      send(
+        ws,
+        {
+          type: "state",
+          tick: 0,
+          you: snap.you,
+          snakes: snap.snakes,
+          food: snap.food,
+          leaderboard: snap.leaderboard,
+          tEcho: me.lastInputT,
+        },
+        true, // count bytes for telemetry
+      );
     }
+
+    logTelemetryIfDue(now, humans, botCount);
   } catch (err) {
     console.error("noodle: error in tick", err);
   }
@@ -144,7 +206,7 @@ export function mountNoodle(ws: WebSocket): void {
           const me = game.players.get(playerId);
           if (!me) return;
           if (!me.alive) return;
-          game.setInput(playerId, msg.aim, msg.boost, msg.aspect);
+          game.setInput(playerId, msg.aim, msg.boost, msg.aspect, msg.t);
           return;
         }
         if (msg.type === "respawn") {
@@ -202,10 +264,19 @@ export function shutdownNoodle(): void {
 
 /* -------------------------- helpers --------------------------------- */
 
-function send(ws: WebSocket, msg: ServerMsg): void {
+function send(
+  ws: WebSocket,
+  msg: ServerMsg,
+  countBytes: boolean = false,
+): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
-    ws.send(JSON.stringify(msg));
+    const payload = JSON.stringify(msg);
+    if (countBytes) {
+      telemetrySnapshotBytes += payload.length;
+      telemetrySnapshotCount++;
+    }
+    ws.send(payload);
   } catch {
     // socket died mid-send; cleanup happens on close
   }

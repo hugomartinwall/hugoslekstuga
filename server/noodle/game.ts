@@ -117,6 +117,9 @@ export type Snake = {
   aspect: number | null;
   /** Last input epoch ms — for AFK kick. */
   lastInputAt: number;
+  /** Last client-side timestamp received on an input message — echoed
+   *  back in the next state snapshot so the client can compute RTT. */
+  lastInputT?: number;
   /** Set on death. */
   killedBy: string | null;
   /** Length at death — final score. */
@@ -227,6 +230,7 @@ export class Game {
     aim: { x: number; y: number },
     boost: boolean,
     aspect?: number,
+    t?: number,
   ): void {
     const s = this.players.get(id);
     if (!s) return;
@@ -239,6 +243,9 @@ export class Game {
       s.aspect = Math.max(0.2, Math.min(5, aspect));
     }
     s.lastInputAt = Date.now();
+    if (typeof t === "number" && Number.isFinite(t)) {
+      s.lastInputT = t;
+    }
   }
 
   respawn(id: string, x?: number, y?: number): void {

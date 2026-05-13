@@ -140,6 +140,10 @@ export type ClientMsg =
        *  shape, preserving total visible area for fairness. Older
        *  clients that don't send it get the desktop-default 1.4:1. */
       aspect?: number;
+      /** Optional client timestamp (Date.now()) for RTT measurement.
+       *  Server echoes the latest seen value back in the state's `tEcho`.
+       *  Telemetry only. */
+      t?: number;
     }
   | { type: "pong" };
 
@@ -162,6 +166,9 @@ export type ServerMsg =
       players: PlayerView[];
       food: FoodView[];
       leaderboard: LeaderboardEntry[];
+      /** Echo of latest `t` field from input messages — see noodle
+       *  protocol for the RTT-measurement rationale. */
+      tEcho?: number;
     }
   | {
       type: "dead";
