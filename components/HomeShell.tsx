@@ -21,7 +21,7 @@ export default function HomeShell() {
   const [explodeTrigger, setExplodeTrigger] = useState(0);
 
   return (
-    <div className="relative h-[calc(100dvh-72px)] w-full overflow-hidden">
+    <div className="relative h-dvh w-full overflow-hidden">
       {/* Visually-hidden page heading + intro. The homepage UI is
           almost entirely an SVG map, so the crawler and screen
           readers would otherwise see an empty page. This is the

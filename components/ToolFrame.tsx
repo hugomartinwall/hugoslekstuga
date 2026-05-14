@@ -84,7 +84,7 @@ export default function ToolFrame({
   return (
     <div
       ref={rootRef}
-      className={`mx-auto w-full max-w-3xl px-5 py-10 sm:px-8 sm:py-14 ${
+      className={`mx-auto w-full max-w-3xl px-5 pt-16 pb-10 sm:px-8 sm:pt-20 sm:pb-14 ${
         ready ? "card-arrive" : "opacity-0"
       }`}
     >

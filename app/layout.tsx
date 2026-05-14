@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Bricolage_Grotesque } from "next/font/google";
-import Nav from "@/components/Nav";
+import BrandCorner from "@/components/BrandCorner";
 import ConditionalFooter from "@/components/ConditionalFooter";
 import { SearchPalette, SearchProvider } from "@/components/Search";
 import TravelingDot from "@/components/TravelingDot";
@@ -112,7 +112,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(SITE_JSON_LD) }}
         />
         <SearchProvider>
-          <Nav />
+          <BrandCorner />
           <div className="flex-1">{children}</div>
           <ConditionalFooter />
           <SearchPalette />
