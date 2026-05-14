@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
+import { HugoRoom } from "@/components/HugoRoom";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
   clearFirstVisitFlag,
@@ -224,6 +225,7 @@ export default function BrandDot({
   // ref so we don't re-render at 60 Hz.
   const [leashed, setLeashed] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const [roomOpen, setRoomOpen] = useState(false);
   const leashTargetRef = useRef({ x: 0, y: 0 });
   const leashPosRef = useRef({ x: 0, y: 0 });
   const leashElementRef = useRef<HTMLSpanElement | null>(null);
@@ -1120,6 +1122,10 @@ export default function BrandDot({
         }, HAPPY_DURATION_MS);
         springTimerRef.current = null;
       }, SPRING_BACK_MS);
+    } else if (e.shiftKey) {
+      // Shift-click opens Hugo's room — a peek into his inner state.
+      // Skip the colour cycle so we don't change colour on the way in.
+      setRoomOpen(true);
     } else {
       // Short tap — defer to the existing click behaviour.
       cycle();
@@ -1531,6 +1537,10 @@ export default function BrandDot({
         />
       </span>
     </button>
+    {/* Hugo's room — shift+click the dot opens it. Rendered via a
+        portal so it sits at the body level above the rest of the
+        UI. Closes on Esc or click-outside (handled inside). */}
+    {roomOpen && <HugoRoom onClose={() => setRoomOpen(false)} />}
     </>
   );
 }

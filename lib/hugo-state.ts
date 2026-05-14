@@ -320,6 +320,9 @@ function tick() {
 
   const bpm = computeBpm(mood, energy);
 
+  // Sample energy into the 1-hour history buffer (once per minute).
+  maybeRecordEnergy(wallNow);
+
   // Only emit if something meaningful changed.
   if (
     energy !== state.energy ||
@@ -434,6 +437,26 @@ export function hugoNap() {
 
 export function clearFirstVisitFlag() {
   if (state.isFirstVisitToday) set({ isFirstVisitToday: false });
+}
+
+// ---------------------------------------------------------------------------
+// Energy history (for Hugo's room)
+// ---------------------------------------------------------------------------
+
+const ENERGY_HISTORY_MAX = 60;
+const ENERGY_HISTORY_INTERVAL_MS = 60_000;
+const energyHistory: { t: number; energy: number }[] = [];
+let lastEnergySampleAt = 0;
+
+function maybeRecordEnergy(now: number) {
+  if (now - lastEnergySampleAt < ENERGY_HISTORY_INTERVAL_MS) return;
+  lastEnergySampleAt = now;
+  energyHistory.push({ t: now, energy: state.energy });
+  while (energyHistory.length > ENERGY_HISTORY_MAX) energyHistory.shift();
+}
+
+export function getEnergyHistory(): { t: number; energy: number }[] {
+  return energyHistory.slice();
 }
 
 // ---------------------------------------------------------------------------
