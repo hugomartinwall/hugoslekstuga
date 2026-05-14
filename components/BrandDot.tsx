@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
+  clearFirstVisitFlag,
+  getHugoState,
   hugoInteraction,
   hugoMoodEvent,
   hugoNap,
@@ -209,8 +211,40 @@ export default function BrandDot({
   const moodGlobal = useHugoState((s) => s.mood);
   const attention = useHugoState((s) => s.attention);
   const idleAction = useHugoState((s) => s.idleAction);
+  const isFirstVisitToday = useHugoState((s) => s.isFirstVisitToday);
+  const streakDays = useHugoState((s) => s.memory.streakDays);
   const pathname = usePathname();
   const prevPathRef = useRef<string | null>(null);
+
+  // Streak recognition. When today is a new calendar day and the
+  // user's consecutive-day streak is ≥ 3, fire a small reaction
+  // ~700 ms after the page settles. 3–6: one sparkle. 7–29: sparkle +
+  // bounce. 30+: sparkle + full somersault. The streak-clearing flag
+  // prevents this firing twice on a quick tab-out / tab-in.
+  useEffect(() => {
+    if (!interactive) return;
+    if (!isFirstVisitToday) return;
+    if (streakDays < 3) return;
+    const tid = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+      if (streakDays >= 7) {
+        // One-shot bounce — same animation curve as the click bounce.
+        setBouncing(true);
+        window.setTimeout(() => setBouncing(false), 280);
+      }
+      if (streakDays >= 30) {
+        setFlipping(true);
+        if (flipTimerRef.current)
+          window.clearTimeout(flipTimerRef.current);
+        flipTimerRef.current = window.setTimeout(() => {
+          setFlipping(false);
+          flipTimerRef.current = null;
+        }, FLIP_DURATION_MS);
+      }
+      clearFirstVisitFlag();
+    }, 700);
+    return () => window.clearTimeout(tid);
+  }, [interactive, isFirstVisitToday, streakDays]);
 
   // Hydrate persisted memory from localStorage on first mount. This
   // is a side-effect so server-render markup matches the first client
@@ -275,7 +309,14 @@ export default function BrandDot({
 
     const scheduleNext = () => {
       if (cancelled) return;
-      const delay = 4000 + Math.random() * 3000;
+      // Blink cadence scales with Hugo's energy: high energy → quick
+      // blinks (3–5s); medium → baseline (5–8s); low → laggy lid
+      // travel (9–15s). Read at schedule time so a state change
+      // applies on the next cycle without resetting the timer.
+      const e = getHugoState().energy;
+      const minDelay = e > 80 ? 3000 : e > 50 ? 5000 : 9000;
+      const maxDelay = e > 80 ? 5000 : e > 50 ? 8000 : 15000;
+      const delay = minDelay + Math.random() * (maxDelay - minDelay);
       scheduleTid = window.setTimeout(() => {
         if (cancelled) return;
         setBlinking(true);
