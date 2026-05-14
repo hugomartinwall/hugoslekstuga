@@ -110,10 +110,26 @@ body {
 
 /* Subtle "breathing" for the interactive brand period. Slower and
    gentler than .pulse-dot — meant to read as ambient life, not a
-   call-to-action. Used by components/BrandDot.tsx. */
+   call-to-action. Used by components/BrandDot.tsx. Period is set via
+   the --hugo-breath-period CSS variable so Hugo's breath can sync to
+   his live BPM (one breath per ~4 heartbeats). */
 @keyframes brand-dot-breathe {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.14); }
+}
+
+/* Hugo's heartbeat — a "lub-dub" double pulse of the inner ring
+   inside the dot. Period is driven by --hugo-beat-period set inline
+   in BrandDot. Two scale spikes per cycle reproduce the systolic +
+   diastolic feel; opacity dips between them. Used by
+   components/BrandDot.tsx. */
+@keyframes hugo-heart-pulse {
+  0%   { transform: scale(0.6); opacity: 0.25; }
+  10%  { transform: scale(0.85); opacity: 0.55; }
+  22%  { transform: scale(0.7);  opacity: 0.35; }
+  32%  { transform: scale(0.95); opacity: 0.7; }
+  46%  { transform: scale(0.6);  opacity: 0.25; }
+  100% { transform: scale(0.6);  opacity: 0.25; }
 }
 
 /* Cross-fade for the cycling featured tool. */
@@ -275,9 +291,11 @@ body {
   }
   /* Breathing brand dot also stops on reduced-motion. The animation is
      an inline style on a span inside <BrandDot>; this rule reaches it.
-     The konami flip is gated the same way — sparkle still fires. */
+     The konami flip and heart pulse are gated the same way — the
+     sparkle still fires and the heart ring stays painted, just still. */
   *[style*="brand-dot-breathe"],
-  *[style*="hugo-flip"] {
+  *[style*="hugo-flip"],
+  *[style*="hugo-heart-pulse"] {
     animation: none !important;
   }
   .btn-chunk,

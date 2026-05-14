@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import {
+  hugoInteraction,
+  hugoMoodEvent,
+  hugoNap,
+  hydrateFromStorage,
+  useHugoState,
+} from "@/lib/hugo-state";
 
 const DOT_COLORS = [
   "var(--color-tomato)",
@@ -190,6 +197,44 @@ export default function BrandDot({
   // the midpoint.
   const [flipping, setFlipping] = useState(false);
   const flipTimerRef = useRef<number | null>(null);
+  // Subscribe to Hugo's inner state — only primitives so re-renders
+  // are cheap. BPM drives the heartbeat + breath rate; mood drives
+  // the shadow halo + (later) the visible idle behaviours.
+  const bpm = useHugoState((s) => s.bpm);
+  const moodGlobal = useHugoState((s) => s.mood);
+
+  // Hydrate persisted memory from localStorage on first mount. This
+  // is a side-effect so server-render markup matches the first client
+  // paint; the persisted state lands in a second render.
+  useEffect(() => {
+    if (!interactive) return;
+    hydrateFromStorage();
+  }, [interactive]);
+
+  // Mark a meaningful user interaction whenever the cursor moves or a
+  // key is pressed. Used by the energy/mood loop to decide whether
+  // Hugo should be draining or restoring energy.
+  useEffect(() => {
+    if (!interactive) return;
+    if (typeof window === "undefined") return;
+    let last = 0;
+    const onInteract = () => {
+      const now = Date.now();
+      if (now - last < 1000) return; // throttle to 1 Hz
+      last = now;
+      hugoInteraction(now);
+    };
+    window.addEventListener("pointermove", onInteract, { passive: true });
+    window.addEventListener("keydown", onInteract);
+    window.addEventListener("touchstart", onInteract, { passive: true });
+    window.addEventListener("scroll", onInteract, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", onInteract);
+      window.removeEventListener("keydown", onInteract);
+      window.removeEventListener("touchstart", onInteract);
+      window.removeEventListener("scroll", onInteract);
+    };
+  }, [interactive]);
 
   const safeIdx =
     Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
@@ -317,6 +362,7 @@ export default function BrandDot({
           dozeTimerRef.current = null;
           sleepTimerRef.current = window.setTimeout(() => {
             setMood("asleep");
+            hugoNap();
             sleepTimerRef.current = null;
           }, SLEEP_DELAY_MS - DOZE_DELAY_MS);
         }, DOZE_DELAY_MS);
@@ -339,6 +385,7 @@ export default function BrandDot({
             }
             yawnTimerRef.current = window.setTimeout(() => {
               setMood("awake");
+              hugoMoodEvent("wake");
               yawnTimerRef.current = null;
             }, YAWN_DURATION_MS);
             return "yawning";
@@ -374,6 +421,7 @@ export default function BrandDot({
     const onHappy = () => {
       setHappy(true);
       setSparkSeq((s) => s + 1);
+      hugoMoodEvent("happy");
       if (happyTimerRef.current) window.clearTimeout(happyTimerRef.current);
       happyTimerRef.current = window.setTimeout(() => {
         setHappy(false);
@@ -507,6 +555,7 @@ export default function BrandDot({
       }
       buffer.length = 0;
       // Trigger the flip
+      hugoMoodEvent("flip");
       setFlipping(true);
       if (flipTimerRef.current) window.clearTimeout(flipTimerRef.current);
       flipTimerRef.current = window.setTimeout(() => {
@@ -640,6 +689,7 @@ export default function BrandDot({
       clickTimesRef.current = [];
       setPlayingDead(true);
       setHuffSeq((s) => s + 1);
+      hugoMoodEvent("tantrum");
       if (playDeadTimerRef.current) {
         window.clearTimeout(playDeadTimerRef.current);
       }
@@ -770,6 +820,25 @@ export default function BrandDot({
   if (bouncing) transformParts.push("scale(1.4)");
   const transform = transformParts.length > 0 ? transformParts.join(" ") : undefined;
 
+  // Derive heartbeat + breath periods from the live BPM. Clamp BPM so
+  // a wild state value never produces a 0-second animation. Breath is
+  // one cycle per 4 beats — a rough echo of the real respiratory : heart
+  // ratio.
+  const safeBpm = Math.max(20, Math.min(180, bpm));
+  const beatPeriodSec = 60 / safeBpm;
+  const breathPeriodSec = beatPeriodSec * 4;
+
+  // Mood-tinted halo. Subtle by default; a warmer pink when excited,
+  // a tomato edge when grumpy, soft and quiet when sleepy.
+  const moodShadow: Record<string, string> = {
+    sleepy: "0 2px 4px rgba(26, 24, 18, 0.18)",
+    calm: "0 3px 7px rgba(26, 24, 18, 0.16)",
+    curious: "0 4px 9px rgba(26, 24, 18, 0.20)",
+    excited: "0 5px 13px var(--color-pink-soft)",
+    grumpy: "0 4px 10px var(--color-tomato-soft)",
+  };
+  const dotShadow = moodShadow[moodGlobal] ?? moodShadow.calm;
+
   // Transition selection — instant during drag, spring back on release,
   // bouncy on click, gentle ease otherwise.
   const transformTransition = dragging
@@ -813,12 +882,20 @@ export default function BrandDot({
         // spring, bounce, or happy reaction) so the dot's motion comes
         // from one coherent place at a time. Konami flip wins over
         // breathing — it's a one-shot 360° tumble on the `rotate`
-        // longhand so it composes with the inline `transform`.
+        // longhand so it composes with the inline `transform`. Breath
+        // period is tied to live BPM via --hugo-breath-period.
         animation: flipping
           ? `hugo-flip ${FLIP_DURATION_MS}ms cubic-bezier(0.5, 0, 0.5, 1)`
           : bouncing || dragging || springingBack || happy
             ? "none"
-            : "brand-dot-breathe 3.4s ease-in-out infinite",
+            : `brand-dot-breathe var(--hugo-breath-period, 3.4s) ease-in-out infinite`,
+        // Mood-tinted halo. Adds a tiny sense of "Hugo is feeling X."
+        boxShadow: dotShadow,
+        // Expose BPM-derived periods for the heartbeat ring + breath
+        // animation to consume. CSS variable lets the animations stay
+        // declarative and pause cleanly with prefers-reduced-motion.
+        ["--hugo-beat-period" as string]: `${beatPeriodSec}s`,
+        ["--hugo-breath-period" as string]: `${breathPeriodSec}s`,
         // Pointer-down should commit to a drag intent rather than
         // letting the browser interpret it as a text selection or
         // touch scroll.
@@ -827,6 +904,27 @@ export default function BrandDot({
         WebkitUserSelect: "none",
       }}
     >
+      {/* The visible heartbeat — a faint darker concentric ring that
+          pulses at Hugo's live BPM. Gives him a sense of being alive
+          beyond a flat-shaded dot. Hidden during easter eggs that have
+          their own visual centerpiece (huff, drag, happy, travel) and
+          while sleeping (the Z does the work). */}
+      {!playingDead && !happy && !dragging && !traveling && mood !== "asleep" && (
+        <span
+          aria-hidden
+          data-name="hugo-heart"
+          style={{
+            position: "absolute",
+            inset: "22%",
+            borderRadius: "9999px",
+            background: "rgba(26, 24, 18, 0.22)",
+            transformOrigin: "center",
+            animation: `hugo-heart-pulse var(--hugo-beat-period, 1s) ease-in-out infinite`,
+            pointerEvents: "none",
+            mixBlendMode: "multiply",
+          }}
+        />
+      )}
       {/* The "annoyed huff" puff — three overlapping ink circles
           rising out of Hugo's head when he plays dead. Only mounted
           while `playingDead` is true; the CSS animation runs once and
