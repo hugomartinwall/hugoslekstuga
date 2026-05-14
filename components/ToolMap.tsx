@@ -300,6 +300,137 @@ export default function ToolMap({
     return () => mq.removeEventListener("change", listener);
   }, []);
 
+  // Idle "play fetch on his own" — after IDLE_MS without input, Hugo
+  // leaves the nav, flies out to a random swarm dot, taps it (the dot
+  // bounces in the swarm physics via the nudge event), flies home. No
+  // navigation, no route push. Just ambient life. Gated off mobile
+  // (no cursor signal) and reduced motion. Cooldown after each fetch
+  // so he doesn't pester a returning visitor.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!window.matchMedia("(hover: hover)").matches) return;
+
+    const IDLE_MS = 60_000;
+    const COOLDOWN_MS = 30_000;
+    const POLL_MS = 5_000;
+
+    let lastActivity = performance.now();
+    let cooldownUntil = 0;
+    let traveling = false;
+    let pollTid: number | null = null;
+
+    const onActivity = () => {
+      lastActivity = performance.now();
+    };
+
+    const onTraveling = (e: Event) => {
+      const detail = (e as CustomEvent<{ traveling: boolean }>).detail;
+      if (!detail) return;
+      traveling = detail.traveling;
+      if (!traveling) {
+        cooldownUntil = performance.now() + COOLDOWN_MS;
+        lastActivity = performance.now();
+      }
+    };
+
+    const fire = () => {
+      // Pick a random non-pinned tool. Skip pinned (currently dragged).
+      const candidates = nodesRef.current.filter((n) => !n.pinned);
+      if (candidates.length === 0) return;
+      const node =
+        candidates[Math.floor(Math.random() * candidates.length)];
+      const rect = containerRef.current?.getBoundingClientRect();
+      const navDot =
+        document.querySelector<HTMLElement>("[data-brand-dot]");
+      if (!rect || !navDot) return;
+      const navRect = navDot.getBoundingClientRect();
+      const isMobile = window.innerWidth < 640;
+      const duration = isMobile ? 560 : 720;
+      try {
+        window.dispatchEvent(
+          new CustomEvent("hugoslekstuga:dot-travel", {
+            detail: {
+              fromX: rect.left + node.x,
+              fromY: rect.top + node.y,
+              toX: navRect.left + navRect.width / 2,
+              toY: navRect.top + navRect.height / 2,
+              color: COLOR_HEX[node.tool.color],
+              navColor: readNavDotColor(),
+              duration,
+              // New: "nudge" mode tells TravelingDot to skip the
+              // looking-down scoop pose and the route-push side effect.
+              // The contact moment dispatches dot-nudge-target back
+              // into ToolMap, which applies the impulse.
+              mode: "nudge",
+              slug: node.tool.slug,
+            },
+          }),
+        );
+      } catch {
+        // dispatch can fail in legacy browsers — fail silent
+      }
+    };
+
+    const poll = () => {
+      const nowT = performance.now();
+      if (
+        !document.hidden &&
+        !traveling &&
+        nowT > cooldownUntil &&
+        nowT - lastActivity > IDLE_MS
+      ) {
+        fire();
+      }
+      pollTid = window.setTimeout(poll, POLL_MS);
+    };
+    pollTid = window.setTimeout(poll, POLL_MS);
+
+    window.addEventListener("pointermove", onActivity, { passive: true });
+    window.addEventListener("scroll", onActivity, { passive: true });
+    window.addEventListener("keydown", onActivity);
+    window.addEventListener("touchstart", onActivity, { passive: true });
+    window.addEventListener("click", onActivity);
+    window.addEventListener("hugoslekstuga:hugo-traveling", onTraveling);
+
+    return () => {
+      if (pollTid) window.clearTimeout(pollTid);
+      window.removeEventListener("pointermove", onActivity);
+      window.removeEventListener("scroll", onActivity);
+      window.removeEventListener("keydown", onActivity);
+      window.removeEventListener("touchstart", onActivity);
+      window.removeEventListener("click", onActivity);
+      window.removeEventListener(
+        "hugoslekstuga:hugo-traveling",
+        onTraveling,
+      );
+    };
+  }, []);
+
+  // Receive the nudge-target dispatched by TravelingDot at the contact
+  // moment of an idle fetch. Adds a small impulse to the named node so
+  // it visibly bobs in the swarm physics — the tap reads as "Hugo
+  // poked this one."
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onNudge = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{ slug: string; vx: number; vy: number }>
+      ).detail;
+      if (!detail) return;
+      const node = nodeBySlug.current.get(detail.slug);
+      if (!node) return;
+      node.vx += detail.vx;
+      node.vy += detail.vy;
+    };
+    window.addEventListener("hugoslekstuga:dot-nudge-target", onNudge);
+    return () =>
+      window.removeEventListener(
+        "hugoslekstuga:dot-nudge-target",
+        onNudge,
+      );
+  }, []);
+
   // Simulation loop.
   useEffect(() => {
     if (!initializedRef.current) return;

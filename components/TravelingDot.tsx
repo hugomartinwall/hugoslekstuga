@@ -43,6 +43,15 @@ type Journey = {
   // Total journey duration. 720ms desktop, 560ms mobile.
   duration: number;
   startedAt: number;
+  // "fetch" (default) — Hugo flies out, looks down, carries the tool
+  // home; ToolMap fires the route push at start-of-return.
+  // "nudge" — ambient idle play. Hugo flies out, taps the tool
+  // (dispatches dot-nudge-target so the swarm gives the dot a small
+  // impulse), flies home. No route push, no looking-down scoop pose.
+  mode: "fetch" | "nudge";
+  // Slug of the target tool — only needed for "nudge" so the impulse
+  // can be addressed by name.
+  slug: string | null;
 };
 
 // Phase splits as fractions of total duration (desktop 720ms).
@@ -107,11 +116,36 @@ export default function TravelingDot() {
 
     let arrivedDispatched = false;
     let travelingDoneDispatched = false;
+    let nudgeDispatched = false;
 
     const tick = (now: number) => {
       const j = journeyRef.current;
       if (!j) return;
       const t = Math.min(1, (now - j.startedAt) / j.duration);
+
+      // Nudge contact — at the apex of outbound, dispatch the impulse
+      // back to ToolMap so the swarm tool visibly bobs. Fires once per
+      // journey, only in "nudge" mode. Impulse direction is the bezier
+      // tangent at t = 1 (Hugo's arrival velocity), normalized to a
+      // fixed magnitude so the bonk is consistent regardless of how
+      // far he flew.
+      if (j.mode === "nudge" && !nudgeDispatched && t >= PHASE.outboundEnd) {
+        nudgeDispatched = true;
+        if (j.slug) {
+          const [vx, vy] = velocityAtT(1, j.navX, j.navY, j.toolX, j.toolY);
+          const speed = Math.hypot(vx, vy) || 1;
+          const IMPULSE_MAG = 8;
+          window.dispatchEvent(
+            new CustomEvent("hugoslekstuga:dot-nudge-target", {
+              detail: {
+                slug: j.slug,
+                vx: (vx / speed) * IMPULSE_MAG,
+                vy: (vy / speed) * IMPULSE_MAG,
+              },
+            }),
+          );
+        }
+      }
 
       // Clear the whole canvas each frame. Hugo's movement is fast
       // enough that fade-style "ghost trails" via composite-over
@@ -192,6 +226,8 @@ export default function TravelingDot() {
           color: string;
           navColor: string;
           duration: number;
+          mode?: "fetch" | "nudge";
+          slug?: string;
         }>
       ).detail;
       if (!detail) return;
@@ -214,6 +250,8 @@ export default function TravelingDot() {
         navColor: detail.navColor,
         duration: detail.duration,
         startedAt: performance.now(),
+        mode: detail.mode ?? "fetch",
+        slug: detail.slug ?? null,
       };
 
       // Announce departure so BrandDot hides its nav dot
@@ -329,9 +367,10 @@ function resolveState(t: number, j: Journey): FrameState {
   }
 
   if (t < PHASE.scoopEnd) {
-    // Scoop pause — Hugo at the tool dot, eyes open and looking down
-    // at the thing beneath him. That single beat of him *seeing* what
-    // he's about to carry is the personality of the whole animation.
+    // Scoop pause — Hugo at the tool dot, eyes open. In fetch mode he
+    // looks down at the thing he's about to carry; in nudge mode he
+    // looks forward (he isn't carrying anything, just tapping it).
+    const isNudge = j.mode === "nudge";
     return {
       x: j.toolX,
       y: j.toolY,
@@ -341,7 +380,7 @@ function resolveState(t: number, j: Journey): FrameState {
       color: navColor, // hasn't picked up the tint yet — that happens during return
       drawEyes: true,
       eyeOffsetX: 0,
-      eyeOffsetY: DOT_RADIUS_PX * 0.28, // look down
+      eyeOffsetY: isNudge ? 0 : DOT_RADIUS_PX * 0.28,
       inFlight: false,
     };
   }
