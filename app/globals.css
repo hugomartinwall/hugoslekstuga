@@ -196,6 +196,14 @@ body {
   100% { opacity: 0; transform: translateY(-26px) scale(1.1); }
 }
 
+/* Leashed Hugo place-marker pulse — an expanding ring around the
+ * placed dot for the LEASH_PLACE_MS window. Soft, brand-coloured,
+ * fades. Used by components/BrandDot.tsx. */
+@keyframes hugo-place-pulse {
+  0%   { transform: scale(0.8); opacity: 0.55; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
 /* Konami code somersault — one 360° tumble. Drives the `rotate`
  * longhand (not `transform`) so it composes with whatever transform
  * BrandDot has inline (drag offset, bounce scale). Used by

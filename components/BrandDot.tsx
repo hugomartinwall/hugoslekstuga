@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
@@ -85,6 +86,19 @@ const Z_CYCLE_MS = 3600;
  * midpoint. Works regardless of focused element — the sequence is
  * unlikely to be typed by accident inside an input.
  */
+/**
+ * The leash. Long-press the dot for LEASH_LONG_PRESS_MS without
+ * dragging and Hugo "snaps off" his nav post — follows the cursor
+ * with spring physics from then on. Click anywhere = place him there
+ * for LEASH_PLACE_MS as a marker. Esc / 12s without movement / click
+ * on the wordmark = unleash, fly home.
+ */
+const LEASH_LONG_PRESS_MS = 700;
+const LEASH_IDLE_TIMEOUT_MS = 12_000;
+const LEASH_PLACE_MS = 2000;
+const LEASH_LERP = 0.18;
+const LEASH_RETURN_MS = 400;
+
 const KONAMI = [
   "ArrowUp",
   "ArrowUp",
@@ -204,6 +218,19 @@ export default function BrandDot({
   // the midpoint.
   const [flipping, setFlipping] = useState(false);
   const flipTimerRef = useRef<number | null>(null);
+  // Leash. Long-press the dot to detach; from then on Hugo follows
+  // the cursor with spring physics until clicked-to-place or unleashed.
+  // Visible state lives in `leashed`/`placing`; live position is in a
+  // ref so we don't re-render at 60 Hz.
+  const [leashed, setLeashed] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const leashTargetRef = useRef({ x: 0, y: 0 });
+  const leashPosRef = useRef({ x: 0, y: 0 });
+  const leashElementRef = useRef<HTMLSpanElement | null>(null);
+  const leashRafRef = useRef<number>(0);
+  const longPressTimerRef = useRef<number | null>(null);
+  const leashIdleTimerRef = useRef<number | null>(null);
+  const placeTimerRef = useRef<number | null>(null);
   // Subscribe to Hugo's inner state — only primitives so re-renders
   // are cheap. BPM drives the heartbeat + breath rate; mood drives
   // the shadow halo + (later) the visible idle behaviours.
@@ -379,6 +406,18 @@ export default function BrandDot({
       }
       if (flipTimerRef.current) {
         window.clearTimeout(flipTimerRef.current);
+      }
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+      if (leashIdleTimerRef.current) {
+        window.clearTimeout(leashIdleTimerRef.current);
+      }
+      if (placeTimerRef.current) {
+        window.clearTimeout(placeTimerRef.current);
+      }
+      if (leashRafRef.current) {
+        cancelAnimationFrame(leashRafRef.current);
       }
     };
   }, []);
@@ -791,25 +830,28 @@ export default function BrandDot({
     };
   }, [interactive]);
 
-  if (!interactive) {
-    return (
-      <span
-        aria-hidden
-        data-brand-dot
-        data-name="hugo"
-        style={{
-          display: "inline-block",
-          width: "0.7em",
-          height: "0.7em",
-          borderRadius: "9999px",
-          background: color,
-          verticalAlign: "baseline",
-          opacity: traveling ? 0 : 1,
-          transition: "opacity 60ms linear",
-        }}
-      />
-    );
-  }
+  // The non-interactive variant (footer dot) renders a plain coloured
+  // disc with no eyes, no heartbeat, no leash. Hooks above all still
+  // run so React's hook-order contract is preserved across both
+  // variants. Returned as the JSX below — the inner-life behaviours
+  // hang off the interactive variant only.
+  const nonInteractiveMarkup = !interactive ? (
+    <span
+      aria-hidden
+      data-brand-dot
+      data-name="hugo"
+      style={{
+        display: "inline-block",
+        width: "0.7em",
+        height: "0.7em",
+        borderRadius: "9999px",
+        background: color,
+        verticalAlign: "baseline",
+        opacity: traveling ? 0 : 1,
+        transition: "opacity 60ms linear",
+      }}
+    />
+  ) : null;
 
   const cycle = () => {
     setDotIdx((i) => (i + 1) % DOT_COLORS.length);
@@ -864,6 +906,125 @@ export default function BrandDot({
     }
   };
 
+  // ----- Leash: activate / unleash / place ---------------------------------
+  const startLeashRaf = () => {
+    if (leashRafRef.current) cancelAnimationFrame(leashRafRef.current);
+    const step = () => {
+      const target = leashTargetRef.current;
+      const pos = leashPosRef.current;
+      pos.x += (target.x - pos.x) * LEASH_LERP;
+      pos.y += (target.y - pos.y) * LEASH_LERP;
+      const el = leashElementRef.current;
+      if (el) {
+        el.style.transform = `translate(${pos.x - 7}px, ${pos.y - 7}px)`;
+      }
+      leashRafRef.current = requestAnimationFrame(step);
+    };
+    leashRafRef.current = requestAnimationFrame(step);
+  };
+
+  const resetLeashIdle = () => {
+    if (leashIdleTimerRef.current)
+      window.clearTimeout(leashIdleTimerRef.current);
+    leashIdleTimerRef.current = window.setTimeout(
+      () => unleash(),
+      LEASH_IDLE_TIMEOUT_MS,
+    );
+  };
+
+  const activateLeash = (x: number, y: number) => {
+    leashPosRef.current = { x, y };
+    leashTargetRef.current = { x, y };
+    setLeashed(true);
+    setBouncing(true); // small visual "ack" at activation
+    window.setTimeout(() => setBouncing(false), 280);
+    resetLeashIdle();
+    // Release the captured pointer so subsequent clicks don't fight us.
+    const node = btnRef.current;
+    if (node && dragRef.current) {
+      try {
+        node.releasePointerCapture(dragRef.current.pointerId);
+      } catch {}
+    }
+    dragRef.current = null;
+    // RAF loop kicks off in an effect once `leashed` is true (so the
+    // portal element exists for the ref).
+  };
+
+  const placeAt = (x: number, y: number) => {
+    leashTargetRef.current = { x, y };
+    setPlacing(true);
+    if (placeTimerRef.current) window.clearTimeout(placeTimerRef.current);
+    placeTimerRef.current = window.setTimeout(() => {
+      setPlacing(false);
+      placeTimerRef.current = null;
+    }, LEASH_PLACE_MS);
+    resetLeashIdle();
+  };
+
+  const unleash = () => {
+    // Animate target toward the nav anchor and clean up after a beat.
+    const node = btnRef.current;
+    if (node) {
+      const r = node.getBoundingClientRect();
+      leashTargetRef.current = {
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+      };
+    }
+    if (leashIdleTimerRef.current) {
+      window.clearTimeout(leashIdleTimerRef.current);
+      leashIdleTimerRef.current = null;
+    }
+    if (placeTimerRef.current) {
+      window.clearTimeout(placeTimerRef.current);
+      placeTimerRef.current = null;
+    }
+    setPlacing(false);
+    window.setTimeout(() => {
+      if (leashRafRef.current) {
+        cancelAnimationFrame(leashRafRef.current);
+        leashRafRef.current = 0;
+      }
+      setLeashed(false);
+    }, LEASH_RETURN_MS);
+  };
+
+  // While leashed: kick the rAF loop, listen for cursor movement
+  // (chase target), Esc (unleash), and clicks (place down).
+  useEffect(() => {
+    if (!interactive) return;
+    if (!leashed) return;
+    if (typeof window === "undefined") return;
+    startLeashRaf();
+    const onMove = (e: PointerEvent) => {
+      leashTargetRef.current = { x: e.clientX, y: e.clientY };
+      resetLeashIdle();
+    };
+    const onWinClick = (e: MouseEvent) => {
+      // If the click landed on the wordmark itself (the nav anchor),
+      // unleash and return; otherwise place down at the click.
+      const target = e.target as Element | null;
+      if (target && target.closest?.("[data-brand-dot]")) {
+        // Handled by the dot's own onPointerDown — skip.
+        return;
+      }
+      placeAt(e.clientX, e.clientY);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") unleash();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("click", onWinClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("click", onWinClick);
+      window.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interactive, leashed]);
+
   // Pointer handlers — replace the simple onClick with a pointer
   // capture flow so we can disambiguate a click from a drag. A short
   // press releases as a click (cycle colour); a longer drag with
@@ -872,6 +1033,13 @@ export default function BrandDot({
   // cursor wanders off Hugo.
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (playingDead || traveling) return;
+    if (leashed) {
+      // Long-press while leashed unleashes immediately. Skip the rest
+      // of the drag/click flow so the button doesn't also try to cycle.
+      e.preventDefault();
+      unleash();
+      return;
+    }
     if (dragRef.current) return; // already tracking a drag
     const node = btnRef.current;
     if (!node) return;
@@ -888,6 +1056,16 @@ export default function BrandDot({
       startY: e.clientY,
       moved: false,
     };
+    // Start the long-press → leash countdown. Cancelled by movement
+    // (becomes drag-and-spring) or release (becomes cycle-colour).
+    if (longPressTimerRef.current)
+      window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      const ds = dragRef.current;
+      if (!ds || ds.moved) return;
+      activateLeash(e.clientX, e.clientY);
+    }, LEASH_LONG_PRESS_MS);
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -898,6 +1076,11 @@ export default function BrandDot({
     if (!ds.moved && Math.hypot(dx, dy) > DRAG_TRIGGER_PX) {
       ds.moved = true;
       setDragging(true);
+      // Movement → not a long-press. Cancel the leash countdown.
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
     }
     if (ds.moved) {
       setDragOffsetX(dx);
@@ -906,6 +1089,11 @@ export default function BrandDot({
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    // Release cancels any pending long-press → leash.
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
     const ds = dragRef.current;
     if (!ds || e.pointerId !== ds.pointerId) return;
     const node = btnRef.current;
@@ -1000,7 +1188,58 @@ export default function BrandDot({
     ? "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1)"
     : "transform 180ms ease";
 
+  if (nonInteractiveMarkup) return nonInteractiveMarkup;
+
   return (
+    <>
+    {/* The leashed dot — a portal'd fixed-position copy of Hugo that
+        follows the cursor with a soft spring while leashed. Position
+        is driven by a rAF loop writing directly to `transform` so we
+        don't re-render React state at 60 Hz. The "placing" pulse uses
+        an outer ring overlay; the dot itself stays the same colour
+        and size as the nav original. */}
+    {interactive && leashed && typeof document !== "undefined" &&
+      createPortal(
+        <span
+          ref={leashElementRef}
+          aria-hidden
+          data-name="hugo-leashed"
+          style={{
+            position: "fixed",
+            left: 0,
+            top: 0,
+            width: "14px",
+            height: "14px",
+            borderRadius: "9999px",
+            background: color,
+            boxShadow: dotShadow,
+            pointerEvents: "none",
+            zIndex: 60,
+            // Initial transform — the rAF loop overrides this on its
+            // first frame (well within a paint cycle). The ref read
+            // is intentional; using it here avoids an off-origin
+            // flash before the loop catches up.
+            // eslint-disable-next-line react-hooks/refs
+            transform: `translate(${leashPosRef.current.x - 7}px, ${leashPosRef.current.y - 7}px)`,
+          }}
+        >
+          {placing && (
+            <span
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: "-6px",
+                borderRadius: "9999px",
+                border: `2px solid ${color}`,
+                opacity: 0.5,
+                animation: "hugo-place-pulse 800ms ease-out infinite",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+        </span>,
+        document.body,
+      )}
     <button
       type="button"
       ref={btnRef}
@@ -1026,7 +1265,8 @@ export default function BrandDot({
         // A hair of breathing room so the dot doesn't kiss the 'a' of
         // the wordmark. Em-based so it scales with font size.
         marginLeft: "0.16em",
-        opacity: traveling ? 0 : 1,
+        opacity: traveling || leashed ? 0 : 1,
+        pointerEvents: leashed ? "none" : undefined,
         transform,
         transition: `${transformTransition}, background 220ms ease, opacity 60ms linear`,
         // Idle breathing pauses during any active animation (drag,
@@ -1291,5 +1531,6 @@ export default function BrandDot({
         />
       </span>
     </button>
+    </>
   );
 }
