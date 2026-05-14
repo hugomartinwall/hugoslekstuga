@@ -168,6 +168,18 @@ body {
   40%, 60% { background-color: var(--color-tomato-soft); }
 }
 
+/* The sleep "z" — a single small glyph that fades in above Hugo's
+ * head, drifts up, and fades out while he's asleep (tab hidden a
+ * while). Re-fires every Z_CYCLE_MS via a React key. Slower easing
+ * than the other Hugo effects on purpose — sleep should feel quiet,
+ * not animated. Used by components/BrandDot.tsx. */
+@keyframes hugo-z-drift {
+  0%   { opacity: 0; transform: translateY(2px) scale(0.5); }
+  18%  { opacity: 0.7; transform: translateY(-2px) scale(1); }
+  60%  { opacity: 0.55; transform: translateY(-14px) scale(1.05); }
+  100% { opacity: 0; transform: translateY(-26px) scale(1.1); }
+}
+
 /* The happy puff — five coloured sparkles fan out above Hugo when a
  * drag-and-release completes. Each sparkle gets its own `--dx`/`--dy`
  * direction inline so a single keyframe covers all five with the
@@ -244,10 +256,13 @@ body {
   }
   /* The play-dead huff and happy sparkles are also gated off — the
      easter eggs still fire (eyes squint / wide), just without the
-     rising puff or fanning sparkles. */
+     rising puff or fanning sparkles. The sleep "z" drift is gated
+     here too — Hugo still closes his eyes, just no drifting glyph. */
   *[style*="hugo-huff"],
-  *[style*="hugo-happy-spark"] {
+  *[style*="hugo-happy-spark"],
+  *[style*="hugo-z-drift"] {
     animation: none !important;
+    opacity: 0 !important;
   }
   /* Breathing brand dot also stops on reduced-motion. The animation is
      an inline style on a span inside <BrandDot>; this rule reaches it. */

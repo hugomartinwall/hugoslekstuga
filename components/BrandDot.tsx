@@ -56,6 +56,19 @@ const HAPPY_SPARK_COLORS = [
 ];
 
 /**
+ * Visibility-based sleep. Tab hidden ≥ 200 ms → Hugo dozes (eyes
+ * close to thin lines). Hidden ≥ 3 s → he's asleep, with a small "z"
+ * drifting up from above his head every ~3.6 s. On tab-back, eyes pop
+ * to a brief scale-up yawn before settling. None of it persists; sleep
+ * is in-memory only. The wink: people who tab-hop to hunt for
+ * something come back to a sleeping Hugo and feel slightly bad.
+ */
+const DOZE_DELAY_MS = 200;
+const SLEEP_DELAY_MS = 3000;
+const YAWN_DURATION_MS = 700;
+const Z_CYCLE_MS = 3600;
+
+/**
  * The brand dot. Internally we call him **Hugo** — a small coloured
  * disc that lives in the wordmark, in the nav corner of every tool
  * page, and (when a tool is clicked) travels up from the swarm into
@@ -138,6 +151,16 @@ export default function BrandDot({
   } | null>(null);
   const springTimerRef = useRef<number | null>(null);
   const happyTimerRef = useRef<number | null>(null);
+  // Sleep state machine — `awake` (default) → `dozing` (tab hidden a
+  // moment) → `asleep` (tab hidden a while, Z drifting) → `yawning`
+  // (tab just returned, eyes pop) → `awake`. Lives in-memory only.
+  // `zSeq` increments each Z cycle so the CSS animation re-runs.
+  type Mood = "awake" | "dozing" | "asleep" | "yawning";
+  const [mood, setMood] = useState<Mood>("awake");
+  const [zSeq, setZSeq] = useState(0);
+  const dozeTimerRef = useRef<number | null>(null);
+  const sleepTimerRef = useRef<number | null>(null);
+  const yawnTimerRef = useRef<number | null>(null);
 
   const safeIdx =
     Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
@@ -221,8 +244,91 @@ export default function BrandDot({
       if (happyTimerRef.current) {
         window.clearTimeout(happyTimerRef.current);
       }
+      if (dozeTimerRef.current) {
+        window.clearTimeout(dozeTimerRef.current);
+      }
+      if (sleepTimerRef.current) {
+        window.clearTimeout(sleepTimerRef.current);
+      }
+      if (yawnTimerRef.current) {
+        window.clearTimeout(yawnTimerRef.current);
+      }
     };
   }, []);
+
+  // Visibility-driven sleep state machine. Only attached on the
+  // interactive variant — the footer dot stays awake (no eyes anyway).
+  // Tab-hidden starts a doze countdown; tab-visible interrupts and
+  // either yawns him awake (if he had drifted off) or no-ops. The
+  // play-dead / drag / happy easter eggs run independent of sleep —
+  // they win locally while they're active, and a tab-hide during one
+  // of them still arms the doze countdown but the visual is just
+  // overridden by the easter egg until it finishes.
+  useEffect(() => {
+    if (!interactive) return;
+    if (typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (document.hidden) {
+        // Tab leaving — cancel any pending yawn, start the doze
+        // countdown. Don't preemptively set "dozing" before the small
+        // grace period so a quick Cmd-Tab back-and-forth doesn't
+        // briefly read as "Hugo closed his eyes."
+        if (yawnTimerRef.current) {
+          window.clearTimeout(yawnTimerRef.current);
+          yawnTimerRef.current = null;
+        }
+        if (dozeTimerRef.current) {
+          window.clearTimeout(dozeTimerRef.current);
+        }
+        dozeTimerRef.current = window.setTimeout(() => {
+          setMood("dozing");
+          dozeTimerRef.current = null;
+          sleepTimerRef.current = window.setTimeout(() => {
+            setMood("asleep");
+            sleepTimerRef.current = null;
+          }, SLEEP_DELAY_MS - DOZE_DELAY_MS);
+        }, DOZE_DELAY_MS);
+      } else {
+        // Tab returning — clear pending. If he had actually drifted
+        // off, run the yawn. If he was just dozing or hadn't started
+        // yet, skip the yawn (no need to dramatise a non-event).
+        if (dozeTimerRef.current) {
+          window.clearTimeout(dozeTimerRef.current);
+          dozeTimerRef.current = null;
+        }
+        if (sleepTimerRef.current) {
+          window.clearTimeout(sleepTimerRef.current);
+          sleepTimerRef.current = null;
+        }
+        setMood((current) => {
+          if (current === "asleep" || current === "dozing") {
+            if (yawnTimerRef.current) {
+              window.clearTimeout(yawnTimerRef.current);
+            }
+            yawnTimerRef.current = window.setTimeout(() => {
+              setMood("awake");
+              yawnTimerRef.current = null;
+            }, YAWN_DURATION_MS);
+            return "yawning";
+          }
+          return "awake";
+        });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [interactive]);
+
+  // Cycle the Z key while asleep so the CSS animation re-fires every
+  // ~3.6 s. One Z at a time — a slow, gentle ambient signal.
+  useEffect(() => {
+    if (mood !== "asleep") return;
+    if (typeof window === "undefined") return;
+    const id = window.setInterval(() => setZSeq((s) => s + 1), Z_CYCLE_MS);
+    return () => window.clearInterval(id);
+  }, [mood]);
 
   // Any code on the site can dispatch `hugoslekstuga:hugo-happy` to
   // trigger Hugo's joy reaction — eyes wide, coloured sparkles burst
@@ -631,6 +737,32 @@ export default function BrandDot({
           />
         </span>
       )}
+      {/* The sleep "z" — a single small glyph that fades in above
+          Hugo's right ear, drifts up, and fades out. Re-mounted on
+          each zSeq tick so the CSS animation re-runs. One Z at a time;
+          never a cloud. Gated off entirely under reduced motion via
+          globals.css. */}
+      {mood === "asleep" && (
+        <span
+          key={`z-${zSeq}`}
+          aria-hidden
+          style={{
+            position: "absolute",
+            bottom: "70%",
+            left: "70%",
+            fontSize: "0.55em",
+            lineHeight: 1,
+            pointerEvents: "none",
+            color: "var(--color-ink-soft)",
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            animation: "hugo-z-drift 2400ms ease-out forwards",
+            opacity: 0,
+          }}
+        >
+          z
+        </span>
+      )}
       {/* The "happy puff" — coloured sparkles that fan out above
           Hugo's head when a drag completes. Five small accent-coloured
           dots fly outward along an upward arc, scale up at the apex,
@@ -691,25 +823,46 @@ export default function BrandDot({
           alignItems: "center",
           justifyContent: "center",
           gap: "0.12em",
+          // Sleep states force eyes visible (closed lids show as thin
+          // lines, see below); yawn forces them visible too so the
+          // pop-scale reads.
           opacity:
-            playingDead || happy || dragging || (eyesVisible && !blinking)
+            playingDead ||
+            happy ||
+            dragging ||
+            mood === "dozing" ||
+            mood === "asleep" ||
+            mood === "yawning" ||
+            (eyesVisible && !blinking)
               ? 1
               : 0,
           // Shift the whole eye-container by the gaze offset so both
           // eyes track together toward the hovered tool. Skip when
           // playing dead, dragging, or in a happy moment — Hugo's
-          // attention is on his current state, not the cursor.
+          // attention is on his current state, not the cursor. Sleep
+          // also forces the gaze neutral. Yawn pops the whole pair to
+          // 1.15× before settling back, springy curve.
           transform:
-            playingDead || happy || dragging
+            playingDead ||
+            happy ||
+            dragging ||
+            mood === "dozing" ||
+            mood === "asleep"
               ? "translate(0px, 0px)"
+              : mood === "yawning"
+              ? `translate(${eyeGazeX}px, ${eyeGazeY}px) scale(1.15)`
               : `translate(${eyeGazeX}px, ${eyeGazeY}px)`,
           // Fast close (blink starting) so it reads as a snap; slow
           // open (blink ending or proximity revealing) so the gaze
-          // re-engages gently. Gaze translate eases smoothly so the
-          // eyes track a moving swarm dot fluidly rather than snap.
-          transition: blinking
-            ? "opacity 60ms ease, transform 200ms ease"
-            : "opacity 220ms ease, transform 200ms ease",
+          // re-engages gently. Yawn uses a springy curve so the pop
+          // reads as a stretch-and-settle. Gaze translate eases
+          // smoothly so the eyes track a moving swarm dot fluidly.
+          transition:
+            mood === "yawning"
+              ? "opacity 220ms ease, transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1)"
+              : blinking
+              ? "opacity 60ms ease, transform 200ms ease"
+              : "opacity 220ms ease, transform 200ms ease",
           pointerEvents: "none",
         }}
       >
@@ -719,7 +872,10 @@ export default function BrandDot({
             width: "0.22em",
             // Eyes squeeze shut into thin horizontal lines when Hugo
             // is playing dead — height collapses, width stays.
-            height: playingDead ? "0.04em" : "0.22em",
+            height:
+              playingDead || mood === "dozing" || mood === "asleep"
+                ? "0.04em"
+                : "0.22em",
             borderRadius: "9999px",
             background: "var(--color-cream)",
             transition: "height 220ms ease",
@@ -729,7 +885,10 @@ export default function BrandDot({
           style={{
             display: "inline-block",
             width: "0.22em",
-            height: playingDead ? "0.04em" : "0.22em",
+            height:
+              playingDead || mood === "dozing" || mood === "asleep"
+                ? "0.04em"
+                : "0.22em",
             borderRadius: "9999px",
             background: "var(--color-cream)",
             transition: "height 220ms ease",
