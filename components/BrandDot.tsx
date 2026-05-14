@@ -121,6 +121,10 @@ export default function BrandDot({
   const proxOpenRef = useRef(false);
   const hoverOpenRef = useRef(false);
   const hoverHideTimerRef = useRef<number | null>(null);
+  // Third "wants eyes open" source — when the user selects text on
+  // the page, Hugo opens his eyes and aims his gaze at the selection.
+  // Lower priority than hover (hover wins if both are active).
+  const selectionOpenRef = useRef(false);
   // Easter egg state — Hugo plays dead when click-spammed. While
   // playing dead, his eyes squint to thin lines and stay visible
   // regardless of proximity/hover state. `huffSeq` is incremented
@@ -353,11 +357,15 @@ export default function BrandDot({
       window.removeEventListener("hugoslekstuga:hugo-happy", onHappy);
   }, [interactive]);
 
-  // Recompute eyes-visible from the OR of the two "wants open" sources.
-  // Wrapped so both effect handlers below can call it without duplicating
-  // the boolean expression.
+  // Recompute eyes-visible from the OR of the three "wants open"
+  // sources. Wrapped so each effect handler can call it without
+  // duplicating the boolean expression.
   const syncEyes = () => {
-    setEyesVisible(proxOpenRef.current || hoverOpenRef.current);
+    setEyesVisible(
+      proxOpenRef.current ||
+        hoverOpenRef.current ||
+        selectionOpenRef.current,
+    );
   };
 
   // Proximity detection — interactive variant only. Mouse-only; touch
@@ -450,6 +458,80 @@ export default function BrandDot({
       window.removeEventListener("hugoslekstuga:tool-hover", onHover);
       if (hoverHideTimerRef.current)
         window.clearTimeout(hoverHideTimerRef.current);
+    };
+  }, [interactive]);
+
+  // Selection-glance handler. Whenever the user has a non-collapsed
+  // text selection on the page, Hugo opens his eyes and aims them at
+  // the selection's bounding rect — like he's reading over your
+  // shoulder. Decays after 800 ms of no further selection change.
+  // Hover wins (tool-hover sets its own gaze); skipped when the
+  // selection overlaps Hugo himself (don't look at yourself) or when
+  // it spans more than half the viewport in either axis (Cmd+A has
+  // no sensible target).
+  useEffect(() => {
+    if (!interactive) return;
+    if (typeof document === "undefined") return;
+    let decayTid: number | null = null;
+    const onSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        if (decayTid) window.clearTimeout(decayTid);
+        decayTid = window.setTimeout(() => {
+          selectionOpenRef.current = false;
+          // Reset gaze only if hover hasn't claimed it.
+          if (!hoverOpenRef.current) {
+            setEyeGazeX(0);
+            setEyeGazeY(0);
+          }
+          syncEyes();
+          decayTid = null;
+        }, 800);
+        return;
+      }
+      // Hover-driven gaze wins — let it stay in control.
+      if (hoverOpenRef.current) return;
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      if (
+        rect.width > window.innerWidth / 2 ||
+        rect.height > window.innerHeight / 2
+      ) {
+        return;
+      }
+      const node = btnRef.current;
+      if (!node) return;
+      const r = node.getBoundingClientRect();
+      // Don't aim at a selection that overlaps Hugo (e.g. someone
+      // selects across the wordmark). Eyes shouldn't track themselves.
+      const overlapsSelf = !(
+        rect.right < r.left ||
+        rect.left > r.right ||
+        rect.bottom < r.top ||
+        rect.top > r.bottom
+      );
+      if (overlapsSelf) return;
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dx = rect.left + rect.width / 2 - cx;
+      const dy = rect.top + rect.height / 2 - cy;
+      const dist = Math.hypot(dx, dy) || 1;
+      // Same 22% gaze offset the hover handler uses, so both gaze
+      // sources read at the same visual amplitude.
+      const offset = Math.min(r.width, r.height) * 0.22;
+      setEyeGazeX((dx / dist) * offset);
+      setEyeGazeY((dy / dist) * offset);
+      selectionOpenRef.current = true;
+      if (decayTid) {
+        window.clearTimeout(decayTid);
+        decayTid = null;
+      }
+      syncEyes();
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      if (decayTid) window.clearTimeout(decayTid);
     };
   }, [interactive]);
 
