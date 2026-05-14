@@ -180,6 +180,15 @@ body {
   100% { opacity: 0; transform: translateY(-26px) scale(1.1); }
 }
 
+/* Konami code somersault — one 360° tumble. Drives the `rotate`
+ * longhand (not `transform`) so it composes with whatever transform
+ * BrandDot has inline (drag offset, bounce scale). Used by
+ * components/BrandDot.tsx after the konami sequence is matched. */
+@keyframes hugo-flip {
+  0%   { rotate: 0deg; }
+  100% { rotate: 360deg; }
+}
+
 /* The happy puff — five coloured sparkles fan out above Hugo when a
  * drag-and-release completes. Each sparkle gets its own `--dx`/`--dy`
  * direction inline so a single keyframe covers all five with the
@@ -265,8 +274,10 @@ body {
     opacity: 0 !important;
   }
   /* Breathing brand dot also stops on reduced-motion. The animation is
-     an inline style on a span inside <BrandDot>; this rule reaches it. */
-  *[style*="brand-dot-breathe"] {
+     an inline style on a span inside <BrandDot>; this rule reaches it.
+     The konami flip is gated the same way — sparkle still fires. */
+  *[style*="brand-dot-breathe"],
+  *[style*="hugo-flip"] {
     animation: none !important;
   }
   .btn-chunk,

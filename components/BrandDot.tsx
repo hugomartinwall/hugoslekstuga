@@ -69,6 +69,26 @@ const YAWN_DURATION_MS = 700;
 const Z_CYCLE_MS = 3600;
 
 /**
+ * Konami code easter egg. Type ↑ ↑ ↓ ↓ ← → ← → B A anywhere on the
+ * site and Hugo does one 360° tumble with the happy-spark puff at the
+ * midpoint. Works regardless of focused element — the sequence is
+ * unlikely to be typed by accident inside an input.
+ */
+const KONAMI = [
+  "ArrowUp",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowLeft",
+  "ArrowRight",
+  "b",
+  "a",
+];
+const FLIP_DURATION_MS = 700;
+
+/**
  * The brand dot. Internally we call him **Hugo** — a small coloured
  * disc that lives in the wordmark, in the nav corner of every tool
  * page, and (when a tool is clicked) travels up from the swarm into
@@ -165,6 +185,11 @@ export default function BrandDot({
   const dozeTimerRef = useRef<number | null>(null);
   const sleepTimerRef = useRef<number | null>(null);
   const yawnTimerRef = useRef<number | null>(null);
+  // Konami-code somersault. While `flipping` is true, the dot
+  // animates one rotation; the existing happy puff fires alongside at
+  // the midpoint.
+  const [flipping, setFlipping] = useState(false);
+  const flipTimerRef = useRef<number | null>(null);
 
   const safeIdx =
     Number.isFinite(dotIdx) && dotIdx >= 0 && dotIdx < DOT_COLORS.length
@@ -256,6 +281,9 @@ export default function BrandDot({
       }
       if (yawnTimerRef.current) {
         window.clearTimeout(yawnTimerRef.current);
+      }
+      if (flipTimerRef.current) {
+        window.clearTimeout(flipTimerRef.current);
       }
     };
   }, []);
@@ -459,6 +487,39 @@ export default function BrandDot({
       if (hoverHideTimerRef.current)
         window.clearTimeout(hoverHideTimerRef.current);
     };
+  }, [interactive]);
+
+  // Konami code listener. Maintains a 10-deep circular buffer of
+  // recent keys; any non-matching key resets the buffer naturally
+  // because it never aligns with KONAMI[0]. On match, fire the flip
+  // and the existing happy event (so the sparkle puff plays in sync).
+  useEffect(() => {
+    if (!interactive) return;
+    if (typeof window === "undefined") return;
+    const buffer: string[] = [];
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      buffer.push(k);
+      if (buffer.length > KONAMI.length) buffer.shift();
+      if (buffer.length < KONAMI.length) return;
+      for (let i = 0; i < KONAMI.length; i++) {
+        if (buffer[i] !== KONAMI[i]) return;
+      }
+      buffer.length = 0;
+      // Trigger the flip
+      setFlipping(true);
+      if (flipTimerRef.current) window.clearTimeout(flipTimerRef.current);
+      flipTimerRef.current = window.setTimeout(() => {
+        setFlipping(false);
+        flipTimerRef.current = null;
+      }, FLIP_DURATION_MS);
+      // Fire the happy puff at the midpoint via the existing event
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+      }, FLIP_DURATION_MS / 2);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [interactive]);
 
   // Selection-glance handler. Whenever the user has a non-collapsed
@@ -750,9 +811,12 @@ export default function BrandDot({
         transition: `${transformTransition}, background 220ms ease, opacity 60ms linear`,
         // Idle breathing pauses during any active animation (drag,
         // spring, bounce, or happy reaction) so the dot's motion comes
-        // from one coherent place at a time.
-        animation:
-          bouncing || dragging || springingBack || happy
+        // from one coherent place at a time. Konami flip wins over
+        // breathing — it's a one-shot 360° tumble on the `rotate`
+        // longhand so it composes with the inline `transform`.
+        animation: flipping
+          ? `hugo-flip ${FLIP_DURATION_MS}ms cubic-bezier(0.5, 0, 0.5, 1)`
+          : bouncing || dragging || springingBack || happy
             ? "none"
             : "brand-dot-breathe 3.4s ease-in-out infinite",
         // Pointer-down should commit to a drag intent rather than
