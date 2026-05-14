@@ -196,6 +196,16 @@ body {
   100% { opacity: 0; transform: translateY(-26px) scale(1.1); }
 }
 
+/* Leashed Hugo spawn-pop — when the long-press activates the leash,
+ * the portal'd dot pops from 0 → 1.25 → 1 with a springy curve so
+ * the activation is obviously visible. Plays once on mount.
+ * Used by components/BrandDot.tsx. */
+@keyframes hugo-leash-pop {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.4); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 /* Leashed Hugo place-marker pulse — an expanding ring around the
  * placed dot for the LEASH_PLACE_MS window. Soft, brand-coloured,
  * fades. Used by components/BrandDot.tsx. */

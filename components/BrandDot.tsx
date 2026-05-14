@@ -94,7 +94,7 @@ const Z_CYCLE_MS = 3600;
  * for LEASH_PLACE_MS as a marker. Esc / 12s without movement / click
  * on the wordmark = unleash, fly home.
  */
-const LEASH_LONG_PRESS_MS = 700;
+const LEASH_LONG_PRESS_MS = 550;
 const LEASH_IDLE_TIMEOUT_MS = 12_000;
 const LEASH_PLACE_MS = 2000;
 const LEASH_LERP = 0.18;
@@ -918,7 +918,7 @@ export default function BrandDot({
       pos.y += (target.y - pos.y) * LEASH_LERP;
       const el = leashElementRef.current;
       if (el) {
-        el.style.transform = `translate(${pos.x - 7}px, ${pos.y - 7}px)`;
+        el.style.transform = `translate(${pos.x - 8}px, ${pos.y - 8}px)`;
       }
       leashRafRef.current = requestAnimationFrame(step);
     };
@@ -1214,8 +1214,8 @@ export default function BrandDot({
             position: "fixed",
             left: 0,
             top: 0,
-            width: "14px",
-            height: "14px",
+            width: "16px",
+            height: "16px",
             borderRadius: "9999px",
             background: color,
             boxShadow: dotShadow,
@@ -1226,9 +1226,23 @@ export default function BrandDot({
             // is intentional; using it here avoids an off-origin
             // flash before the loop catches up.
             // eslint-disable-next-line react-hooks/refs
-            transform: `translate(${leashPosRef.current.x - 7}px, ${leashPosRef.current.y - 7}px)`,
+            transform: `translate(${leashPosRef.current.x - 8}px, ${leashPosRef.current.y - 8}px)`,
           }}
         >
+          {/* Spawn pop — a quick expanding ring around the leashed
+              dot the moment it appears, so the leash activation is
+              obviously visible. Animation runs once, then unmounts. */}
+          <span
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: "-10px",
+              borderRadius: "9999px",
+              border: `3px solid ${color}`,
+              animation: "hugo-leash-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+              pointerEvents: "none",
+            }}
+          />
           {placing && (
             <span
               aria-hidden
