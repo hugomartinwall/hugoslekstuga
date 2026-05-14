@@ -29,6 +29,14 @@ import { clamp } from "@/lib/math";
  * Plus drag-to-fling, click-to-open, idle wobble.
  */
 
+/**
+ * Anchored "nav" roles. These dots float in the swarm but pull
+ * toward fixed anchor points along the top edge instead of the
+ * canvas centre, and click-routes to navigation actions rather than
+ * a tool page. They replace the old top-nav links.
+ */
+type AnchorRole = "search" | "about";
+
 type Node = {
   tool: Tool;
   x: number;
@@ -44,6 +52,12 @@ type Node = {
   dragLastT: number;
   dragLastX: number;
   dragLastY: number;
+  /** Anchored "nav" role — present only for the two pseudo-tool
+   *  dots that live up top (Search and About). When set, gravity
+   *  targets this node's own anchor instead of the canvas centre,
+   *  and click-handling routes to a palette / route instead of a
+   *  tool page. */
+  role?: AnchorRole;
 };
 
 type Drag = {
@@ -105,6 +119,47 @@ const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
 const PHYSICS_BASELINE = 400;
 const CENTER_PULL = 0.0003;
 const REPEL = 100;
+/** Anchored nav dots get a much stronger pull toward their own
+ *  anchor than tool dots get toward the canvas centre — they stay
+ *  perched up top even as the swarm jostles them. */
+const ANCHOR_PULL = 0.008;
+
+/**
+ * The two top-edge "nav" pseudo-tools — Search opens the ⌘K palette
+ * (no route push), About goes to /about. They render as ordinary
+ * swarm dots so they read as part of the playhouse, but their
+ * physics anchors them to fixed spots along the top.
+ */
+const ANCHOR_TOOLS: Record<AnchorRole, Tool> = {
+  search: {
+    slug: "$search",
+    title: "Search",
+    tagline: "Find a tool by name.",
+    description: "Opens the ⌘K palette — type to filter every tool.",
+    color: "yellow",
+    emoji: "⌕",
+  },
+  about: {
+    slug: "$about",
+    title: "About",
+    tagline: "What this place is.",
+    description: "The story, the rules, the things you won't find here.",
+    color: "pink",
+    emoji: "i",
+  },
+};
+
+/** Anchor coordinates for each nav dot. Computed from canvas size so
+ *  the dots track viewport resizes. Search sits left-of-centre along
+ *  the top; About sits right-of-centre. Clamped so they never sit on
+ *  top of Hugo's corner or the Explode / Surprise buttons. */
+function anchorPos(role: AnchorRole, w: number): { x: number; y: number } {
+  const y = 70;
+  if (role === "search") {
+    return { x: Math.max(140, Math.min(w * 0.34, w - 280)), y };
+  }
+  return { x: Math.max(220, Math.min(w * 0.66, w - 160)), y };
+}
 const DAMPING = 0.92;
 /** Velocity retained after bouncing off a wall. 0.45 = 45% kept —
  *  enough to register as a bounce, soft enough not to feel rubbery. */
@@ -269,6 +324,30 @@ export default function ToolMap({
         dragLastX: 0,
         dragLastY: 0,
       };
+    });
+    // Spawn the two anchored nav dots near their final positions so
+    // they don't drift in from the centre on mount. Their gravity to
+    // the anchor still settles them precisely.
+    const anchorRoles: AnchorRole[] = ["search", "about"];
+    anchorRoles.forEach((role, i) => {
+      const a = anchorPos(role, w);
+      nodesRef.current.push({
+        tool: ANCHOR_TOOLS[role],
+        x: a.x,
+        y: a.y,
+        vx: 0,
+        vy: 0,
+        pinned: false,
+        phase: Math.random() * Math.PI * 2,
+        entranceStart: t0 + (tools.length + i) * ENTRANCE_STAGGER,
+        hasSparkled: false,
+        dragVx: 0,
+        dragVy: 0,
+        dragLastT: 0,
+        dragLastX: 0,
+        dragLastY: 0,
+        role,
+      });
     });
     nodeBySlug.current = new Map(nodesRef.current.map((n) => [n.tool.slug, n]));
     particlesRef.current = [];
@@ -655,8 +734,22 @@ export default function ToolMap({
       if (!node) return;
       setBouncingSlug(slug);
       triggerClickFx(slug);
+      // Special anchored nav dots: Search opens the ⌘K palette
+      // (no flight, no route push), About navigates to /about with
+      // the standard Hugo fetch.
+      if (node.role === "search") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("hugoslekstuga:open-search"),
+          );
+        }
+        return;
+      }
       const rect = containerRef.current?.getBoundingClientRect();
       const navDot = document.querySelector<HTMLElement>("[data-brand-dot]");
+      // About uses a fixed pathname rather than pathFor(slug).
+      const targetPath =
+        node.role === "about" ? "/about" : pathFor(slug);
       if (rect && navDot && typeof window !== "undefined") {
         // Freeze the nav position at click time. The nav doesn't move
         // mid-flight, but reading once and reusing keeps the contract
@@ -694,14 +787,14 @@ export default function ToolMap({
         // outbound (260ms) + scoop (60ms) = 400ms. Or scale for mobile.
         const pushDelay = isMobile ? (duration * 400) / 720 : 400;
         window.setTimeout(() => {
-          router.push(pathFor(slug));
+          router.push(targetPath);
         }, pushDelay);
       } else {
         // No nav dot in DOM (shouldn't happen but defensive). Skip the
         // Hugo animation entirely and just navigate after the click
         // bounce, like the pre-redesign behaviour.
         window.setTimeout(() => {
-          router.push(pathFor(slug));
+          router.push(targetPath);
         }, CLICK_BOUNCE_MS);
       }
     },
@@ -1082,14 +1175,23 @@ function step(
 
   for (const n of nodes) {
     if (n.pinned) continue;
-    // Gravity — pulls every dot toward the canvas centre. The only
-    // attractor in the system; cursor doesn't influence it.
-    n.vx += (cx - n.x) * centerPullScaled;
-    n.vy += (cy - n.y) * centerPullScaled;
-    // Idle wobble — long-period drift so the swarm feels alive at rest.
-    if (wobbleAmp > 0) {
-      n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
-      n.vy += Math.cos(wobbleT * 1.3 + n.phase * 1.7) * wobbleAmp;
+    if (n.role) {
+      // Anchored nav dot — strong pull to its own top-edge anchor,
+      // no idle wobble. It still participates in mutual repel so
+      // tool dots give it room.
+      const a = anchorPos(n.role, width);
+      n.vx += (a.x - n.x) * ANCHOR_PULL;
+      n.vy += (a.y - n.y) * ANCHOR_PULL;
+    } else {
+      // Gravity — tool dots pull toward the canvas centre. The only
+      // attractor in the system; cursor doesn't influence it.
+      n.vx += (cx - n.x) * centerPullScaled;
+      n.vy += (cy - n.y) * centerPullScaled;
+      // Idle wobble — long-period drift so the swarm feels alive at rest.
+      if (wobbleAmp > 0) {
+        n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
+        n.vy += Math.cos(wobbleT * 1.3 + n.phase * 1.7) * wobbleAmp;
+      }
     }
     n.vx *= DAMPING;
     n.vy *= DAMPING;

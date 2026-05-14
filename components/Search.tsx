@@ -43,6 +43,17 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // External openers — the homepage's anchored Search dot dispatches
+  // `hugoslekstuga:open-search` instead of taking the ⌘K route, so it
+  // works even when the user's hands aren't on the keyboard. Any
+  // other surface can do the same.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("hugoslekstuga:open-search", onOpen);
+    return () =>
+      window.removeEventListener("hugoslekstuga:open-search", onOpen);
+  }, []);
+
   return (
     <SearchCtx.Provider value={{ open, setOpen }}>
       {children}
