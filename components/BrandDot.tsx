@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import {
   hugoInteraction,
   hugoMoodEvent,
   hugoNap,
+  hugoSawTool,
   hydrateFromStorage,
   useHugoState,
 } from "@/lib/hugo-state";
@@ -152,6 +154,9 @@ export default function BrandDot({
   // the page, Hugo opens his eyes and aims his gaze at the selection.
   // Lower priority than hover (hover wins if both are active).
   const selectionOpenRef = useRef(false);
+  // Fourth "wants eyes open" source — page attention from the
+  // MutationObserver. Lowest priority of the gaze drivers.
+  const attentionOpenRef = useRef(false);
   // Easter egg state — Hugo plays dead when click-spammed. While
   // playing dead, his eyes squint to thin lines and stay visible
   // regardless of proximity/hover state. `huffSeq` is incremented
@@ -202,6 +207,10 @@ export default function BrandDot({
   // the shadow halo + (later) the visible idle behaviours.
   const bpm = useHugoState((s) => s.bpm);
   const moodGlobal = useHugoState((s) => s.mood);
+  const attention = useHugoState((s) => s.attention);
+  const idleAction = useHugoState((s) => s.idleAction);
+  const pathname = usePathname();
+  const prevPathRef = useRef<string | null>(null);
 
   // Hydrate persisted memory from localStorage on first mount. This
   // is a side-effect so server-render markup matches the first client
@@ -440,7 +449,8 @@ export default function BrandDot({
     setEyesVisible(
       proxOpenRef.current ||
         hoverOpenRef.current ||
-        selectionOpenRef.current,
+        selectionOpenRef.current ||
+        attentionOpenRef.current,
     );
   };
 
@@ -536,6 +546,101 @@ export default function BrandDot({
         window.clearTimeout(hoverHideTimerRef.current);
     };
   }, [interactive]);
+
+  // Page-attention → gaze. When the central state's `attention`
+  // target updates (driven by MutationObserver on the page), shift
+  // Hugo's eyes toward it. Hover and selection win — if either is
+  // claiming the gaze, attention waits its turn.
+  useEffect(() => {
+    if (!interactive) return;
+    if (!attention) return;
+    if (hoverOpenRef.current || selectionOpenRef.current) return;
+    const node = btnRef.current;
+    if (!node) return;
+    const r = node.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dx = attention.x - cx;
+    const dy = attention.y - cy;
+    const dist = Math.hypot(dx, dy) || 1;
+    const offset = Math.min(r.width, r.height) * 0.22;
+    setEyeGazeX((dx / dist) * offset);
+    setEyeGazeY((dy / dist) * offset);
+    // Open eyes briefly so the glance reads. Uses its own ref so the
+    // mousemove handler can't flip it off mid-glance the way a shared
+    // proxOpenRef would.
+    attentionOpenRef.current = true;
+    syncEyes();
+  }, [attention, interactive]);
+
+  // When attention clears and nothing else is claiming the gaze,
+  // ease the eyes back to neutral. Keeps the gaze priority chain
+  // honest without putting the cleanup logic in three places.
+  useEffect(() => {
+    if (!interactive) return;
+    if (attention) return;
+    attentionOpenRef.current = false;
+    if (hoverOpenRef.current || selectionOpenRef.current) return;
+    setEyeGazeX(0);
+    setEyeGazeY(0);
+    syncEyes();
+  }, [attention, interactive]);
+
+  // Stochastic idle-action visual driver. The store fires an action
+  // every 25–45 s; here we translate it into a visible micro-effect:
+  //   - look-around → random-direction gaze for ~700 ms
+  //   - deep-blink  → forced blink for ~350 ms
+  // head-tilt and deep-breath are rendered as inline transforms on
+  // the button itself (further down).
+  useEffect(() => {
+    if (!interactive) return;
+    if (!idleAction) return;
+    if (idleAction === "deep-blink") {
+      // One-shot transient — the compiler warns about setState in
+      // an effect but this is the right pattern for a discrete
+      // visual that needs to clear after its duration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBlinking(true);
+      const tid = window.setTimeout(() => setBlinking(false), 350);
+      return () => window.clearTimeout(tid);
+    }
+    if (idleAction === "look-around") {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const angle = Math.random() * Math.PI * 2;
+      const offset = Math.min(r.width, r.height) * 0.22;
+      setEyeGazeX(Math.cos(angle) * offset);
+      setEyeGazeY(Math.sin(angle) * offset);
+      attentionOpenRef.current = true;
+      syncEyes();
+      const tid = window.setTimeout(() => {
+        setEyeGazeX(0);
+        setEyeGazeY(0);
+        attentionOpenRef.current = false;
+        syncEyes();
+      }, 700);
+      return () => window.clearTimeout(tid);
+    }
+  }, [idleAction, interactive]);
+
+  // Route-change → mood + memory. Excited mood spike on every
+  // navigation; if the new path is a tool/game, also bump that
+  // tool's open count in persistent memory so we can compute a
+  // favourite later.
+  useEffect(() => {
+    if (!interactive) return;
+    if (prevPathRef.current === null) {
+      prevPathRef.current = pathname;
+      return;
+    }
+    if (prevPathRef.current === pathname) return;
+    prevPathRef.current = pathname;
+    hugoMoodEvent("navigated");
+    const m =
+      pathname.match(/\/tools\/([^/]+)/) ||
+      pathname.match(/\/games\/([^/]+)/);
+    if (m) hugoSawTool(m[1]);
+  }, [pathname, interactive]);
 
   // Konami code listener. Maintains a 10-deep circular buffer of
   // recent keys; any non-matching key resets the buffer naturally
@@ -818,6 +923,11 @@ export default function BrandDot({
     transformParts.push(`translate(${dragOffsetX}px, ${dragOffsetY}px)`);
   }
   if (bouncing) transformParts.push("scale(1.4)");
+  // Stochastic idle micro-behaviour visuals. Head-tilt nudges ~4°;
+  // deep-breath scales up briefly to 1.2 (more than the regular
+  // 1.14 breath peak) so the difference reads as "noticeable inhale."
+  if (idleAction === "head-tilt") transformParts.push("rotate(4deg)");
+  if (idleAction === "deep-breath") transformParts.push("scale(1.22)");
   const transform = transformParts.length > 0 ? transformParts.join(" ") : undefined;
 
   // Derive heartbeat + breath periods from the live BPM. Clamp BPM so

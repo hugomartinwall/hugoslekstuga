@@ -440,12 +440,165 @@ export function clearFirstVisitFlag() {
 // React binding
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Page-attention via MutationObserver
+// ---------------------------------------------------------------------------
+
+let mutationObserver: MutationObserver | null = null;
+let mutationQueue: MutationRecord[] = [];
+let mutationTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startMutationObserver() {
+  if (mutationObserver) return;
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  mutationObserver = new MutationObserver((muts) => {
+    mutationQueue.push(...muts);
+    if (mutationTimer === null) {
+      // Throttle to ~5 Hz so a chatty React tree doesn't pin the CPU.
+      mutationTimer = setTimeout(drainMutations, 200);
+    }
+  });
+  mutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+}
+
+function stopMutationObserver() {
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+    mutationObserver = null;
+  }
+  if (mutationTimer !== null) {
+    clearTimeout(mutationTimer);
+    mutationTimer = null;
+  }
+  mutationQueue = [];
+}
+
+function drainMutations() {
+  mutationTimer = null;
+  const muts = mutationQueue;
+  mutationQueue = [];
+  // Find the largest meaningful newly-added element on screen.
+  // Skip Hugo's own DOM, skip tiny non-visual nodes, skip off-screen.
+  let best: { el: Element; area: number } | null = null;
+  for (const m of muts) {
+    if (m.type !== "childList") continue;
+    for (let i = 0; i < m.addedNodes.length; i++) {
+      const node = m.addedNodes[i];
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      const el = node as Element;
+      // Skip Hugo's own DOM (the heartbeat ring, eyes, sleep z, etc.).
+      if (el.closest?.("[data-name='hugo'],[data-brand-dot]")) continue;
+      // Skip the TravelingDot canvas — it mutates every frame.
+      if (el.tagName === "CANVAS") continue;
+      const rect = el.getBoundingClientRect?.();
+      if (!rect || rect.width < 20 || rect.height < 20) continue;
+      if (
+        rect.right < 0 ||
+        rect.bottom < 0 ||
+        rect.left > window.innerWidth ||
+        rect.top > window.innerHeight
+      ) {
+        continue;
+      }
+      const area = rect.width * rect.height;
+      if (!best || area > best.area) best = { el, area };
+    }
+  }
+  if (!best) return;
+  const rect = best.el.getBoundingClientRect();
+  hugoAttention({
+    kind: "mutation",
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    since: Date.now(),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Stochastic idle micro-behaviours
+// ---------------------------------------------------------------------------
+
+let idleActionTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startIdleScheduler() {
+  if (idleActionTimer !== null) return;
+  if (typeof window === "undefined") return;
+  scheduleNextIdleAction();
+}
+
+function stopIdleScheduler() {
+  if (idleActionTimer === null) return;
+  clearTimeout(idleActionTimer);
+  idleActionTimer = null;
+}
+
+function scheduleNextIdleAction() {
+  // Every 25–45 s an idle action fires (look-around / head-tilt /
+  // deep-blink / deep-breath), unless Hugo is excited or the user
+  // just interacted. The next slot is scheduled regardless so the
+  // cadence stays steady.
+  const delay = 25_000 + Math.random() * 20_000;
+  idleActionTimer = setTimeout(() => {
+    fireIdleAction();
+    scheduleNextIdleAction();
+  }, delay);
+}
+
+function fireIdleAction() {
+  if (state.mood === "excited") return;
+  if (Date.now() - state.lastInteraction < 8000) return;
+  if (typeof document !== "undefined" && document.hidden) return;
+  const actions = [
+    "look-around",
+    "head-tilt",
+    "deep-blink",
+    "deep-breath",
+  ] as const;
+  const action = actions[Math.floor(Math.random() * actions.length)];
+  set({ idleAction: action });
+  // Auto-clear after the longest-running visual (look-around at 700 ms).
+  setTimeout(() => {
+    if (state.idleAction === action) set({ idleAction: null });
+  }, 900);
+}
+
+// ---------------------------------------------------------------------------
+// Tool-hover bridge (drives `curious` mood)
+// ---------------------------------------------------------------------------
+
+let toolHoverListenerAttached = false;
+let lastHoverMoodAt = 0;
+
+function attachToolHoverListener() {
+  if (toolHoverListenerAttached) return;
+  if (typeof window === "undefined") return;
+  toolHoverListenerAttached = true;
+  window.addEventListener("hugoslekstuga:tool-hover", (e: Event) => {
+    const detail = (e as CustomEvent<{ x: number; y: number } | null>).detail;
+    if (!detail) return;
+    const now = Date.now();
+    if (now - lastHoverMoodAt < 3000) return;
+    lastHoverMoodAt = now;
+    hugoMoodEvent("hover-tool");
+  });
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   startTickLoop();
+  startMutationObserver();
+  startIdleScheduler();
+  attachToolHoverListener();
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) stopTickLoop();
+    if (listeners.size === 0) {
+      stopTickLoop();
+      stopMutationObserver();
+      stopIdleScheduler();
+    }
   };
 }
 
