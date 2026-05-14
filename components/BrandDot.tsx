@@ -1372,6 +1372,42 @@ export default function BrandDot({
           />
         </span>
       )}
+      {/* Hugo's ⌘K whisper — a tiny pill drifts up over his head the
+          way the sleep "z" does, but with the keyboard shortcut for
+          the search palette inside. Fires from the central idle
+          scheduler when the user is on a non-homepage route. Uses
+          the same hugo-z-drift keyframe so the motion vocabulary
+          stays unified. */}
+      {idleAction === "cmd-k-hint" && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            bottom: "100%",
+            left: "50%",
+            marginLeft: "-1.2em",
+            fontSize: "0.32em",
+            lineHeight: 1,
+            fontWeight: 800,
+            fontFamily: "var(--font-display)",
+            color: "var(--color-cream)",
+            background: "var(--color-ink)",
+            border: "2px solid var(--color-ink)",
+            borderRadius: "9999px",
+            padding: "0.3em 0.7em",
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            animation: "hugo-z-drift 1800ms ease-out forwards",
+            opacity: 0,
+            letterSpacing: "0.04em",
+          }}
+        >
+          {typeof navigator !== "undefined" &&
+          /mac/i.test(navigator.platform)
+            ? "⌘K"
+            : "Ctrl K"}
+        </span>
+      )}
       {/* The sleep "z" — a single small glyph that fades in above
           Hugo's right ear, drifts up, and fades out. Re-mounted on
           each zSeq tick so the CSS animation re-runs. One Z at a time;

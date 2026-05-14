@@ -224,6 +224,15 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
             label="Favourite tool"
             value={favTool ? favTool.title : "—"}
           />
+          <Pair
+            label="Search"
+            value={
+              typeof navigator !== "undefined" &&
+              /mac/i.test(navigator.platform)
+                ? "⌘K"
+                : "Ctrl K"
+            }
+          />
         </section>
 
         <footer

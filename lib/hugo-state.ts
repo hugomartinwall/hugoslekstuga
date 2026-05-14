@@ -73,7 +73,16 @@ export type HugoState = {
   /** True for the first page load on a new calendar day. */
   isFirstVisitToday: boolean;
   /** Transient stochastic idle action, cleared after it plays. */
-  idleAction: "look-around" | "head-tilt" | "deep-blink" | "deep-breath" | null;
+  idleAction:
+    | "look-around"
+    | "head-tilt"
+    | "deep-blink"
+    | "deep-breath"
+    /** Hugo whispers ⌘K — a tiny pill drifts up over his head telling
+     *  the visitor about the search shortcut. Weighted heavily on
+     *  non-homepage routes where the visible nav is gone. */
+    | "cmd-k-hint"
+    | null;
   /** Set true after `hydrateFromStorage` finishes; lets effects fire once. */
   hydrated: boolean;
 };
@@ -574,18 +583,29 @@ function fireIdleAction() {
   if (state.mood === "excited") return;
   if (Date.now() - state.lastInteraction < 8000) return;
   if (typeof document !== "undefined" && document.hidden) return;
-  const actions = [
+  // Pool of stochastic idle behaviours. cmd-k-hint is weighted by
+  // context — only fires on non-homepage routes (where Search isn't
+  // a visible swarm dot anymore) and gets two slots in the pool so
+  // it surfaces oftener than the other four.
+  const pool: NonNullable<HugoState["idleAction"]>[] = [
     "look-around",
     "head-tilt",
     "deep-blink",
     "deep-breath",
-  ] as const;
-  const action = actions[Math.floor(Math.random() * actions.length)];
+  ];
+  const onTool =
+    typeof window !== "undefined" && window.location.pathname !== "/";
+  if (onTool) {
+    pool.push("cmd-k-hint", "cmd-k-hint");
+  }
+  const action = pool[Math.floor(Math.random() * pool.length)];
   set({ idleAction: action });
-  // Auto-clear after the longest-running visual (look-around at 700 ms).
+  // Auto-clear after the longest-running visual. cmd-k-hint needs
+  // longer so the visitor can actually read it.
+  const clearMs = action === "cmd-k-hint" ? 1800 : 900;
   setTimeout(() => {
     if (state.idleAction === action) set({ idleAction: null });
-  }, 900);
+  }, clearMs);
 }
 
 // ---------------------------------------------------------------------------

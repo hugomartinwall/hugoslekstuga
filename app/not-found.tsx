@@ -43,11 +43,11 @@ export default function NotFound() {
           ← Back home
         </Link>
         <p className="flex items-center text-sm text-ink-muted">
-          or press{" "}
+          or, you know,{" "}
           <kbd className="mx-1 rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
             ⌘K
           </kbd>{" "}
-          anywhere on the site to search the {tools.length} tools
+          from anywhere.
         </p>
       </section>
 
