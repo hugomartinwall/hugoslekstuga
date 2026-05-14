@@ -1165,13 +1165,14 @@ export default function BrandDot({
   if (idleAction === "deep-breath") transformParts.push("scale(1.22)");
   const transform = transformParts.length > 0 ? transformParts.join(" ") : undefined;
 
-  // Derive heartbeat + breath periods from the live BPM. Clamp BPM so
-  // a wild state value never produces a 0-second animation. Breath is
-  // one cycle per 4 beats — a rough echo of the real respiratory : heart
-  // ratio.
+  // Derive breath period from the live BPM. Clamp BPM so a wild
+  // state value never produces a 0-second animation. Breath is one
+  // cycle per ~4 beats — a rough echo of the real respiratory : heart
+  // ratio. (BPM itself is still surfaced as a number inside Hugo's
+  // room; the visible heartbeat ring was removed for being too loud
+  // for an easter egg.)
   const safeBpm = Math.max(20, Math.min(180, bpm));
-  const beatPeriodSec = 60 / safeBpm;
-  const breathPeriodSec = beatPeriodSec * 4;
+  const breathPeriodSec = (60 / safeBpm) * 4;
 
   // Mood-tinted halo. Subtle by default; a warmer pink when excited,
   // a tomato edge when grumpy, soft and quiet when sleepy.
@@ -1302,10 +1303,10 @@ export default function BrandDot({
             : `brand-dot-breathe var(--hugo-breath-period, 3.4s) ease-in-out infinite`,
         // Mood-tinted halo. Adds a tiny sense of "Hugo is feeling X."
         boxShadow: dotShadow,
-        // Expose BPM-derived periods for the heartbeat ring + breath
-        // animation to consume. CSS variable lets the animations stay
-        // declarative and pause cleanly with prefers-reduced-motion.
-        ["--hugo-beat-period" as string]: `${beatPeriodSec}s`,
+        // Expose BPM-derived breath period to the breathing animation
+        // so it speeds/slows with Hugo's mood. The CSS variable keeps
+        // the animation declarative and pauses cleanly under
+        // prefers-reduced-motion.
         ["--hugo-breath-period" as string]: `${breathPeriodSec}s`,
         // Pointer-down should commit to a drag intent rather than
         // letting the browser interpret it as a text selection or
@@ -1315,27 +1316,6 @@ export default function BrandDot({
         WebkitUserSelect: "none",
       }}
     >
-      {/* The visible heartbeat — a faint darker concentric ring that
-          pulses at Hugo's live BPM. Gives him a sense of being alive
-          beyond a flat-shaded dot. Hidden during easter eggs that have
-          their own visual centerpiece (huff, drag, happy, travel) and
-          while sleeping (the Z does the work). */}
-      {!playingDead && !happy && !dragging && !traveling && mood !== "asleep" && (
-        <span
-          aria-hidden
-          data-name="hugo-heart"
-          style={{
-            position: "absolute",
-            inset: "22%",
-            borderRadius: "9999px",
-            background: "rgba(26, 24, 18, 0.22)",
-            transformOrigin: "center",
-            animation: `hugo-heart-pulse var(--hugo-beat-period, 1s) ease-in-out infinite`,
-            pointerEvents: "none",
-            mixBlendMode: "multiply",
-          }}
-        />
-      )}
       {/* The "annoyed huff" puff — three overlapping ink circles
           rising out of Hugo's head when he plays dead. Only mounted
           while `playingDead` is true; the CSS animation runs once and
