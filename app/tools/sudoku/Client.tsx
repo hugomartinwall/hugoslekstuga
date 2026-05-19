@@ -809,10 +809,18 @@ function Board({
         // Background priority: conflict > selected > sameValue >
         // peer-highlight > base. Given cells get a slightly darker
         // base so they read as "fixed by the puzzle".
+        //
+        // A subtle but real bug used to live here: when you selected
+        // an empty cell, bg-pink + text-pink rendered placed digits
+        // as pink-on-pink (camouflaged) until you clicked elsewhere.
+        // The fix is the `holdsUserValue` branch — once the focused
+        // cell holds a user-placed digit, the bg flips to ink and the
+        // text to cream so placement is impossible to miss.
+        const holdsUserValue = cell.v !== 0 && !cell.given;
         let bg = cell.given ? "bg-cream-deep" : "bg-cream";
         if (inHighlight) bg = cell.given ? "bg-pink-soft/60" : "bg-pink-soft/50";
         if (sameValue) bg = "bg-pink-soft";
-        if (isSelected) bg = "bg-pink";
+        if (isSelected) bg = holdsUserValue ? "bg-ink" : "bg-pink";
         if (conflict) bg = "bg-tomato-soft";
 
         // Borders: a uniform 2px reservation per cell so widths stay
@@ -835,7 +843,23 @@ function Board({
             ? "border-b-2 border-b-ink"
             : "border-b-2 border-b-ink/15";
 
-        const textCol = cell.given ? "text-ink" : "text-pink";
+        // Text colour: ink for the puzzle's given clues, pink for the
+        // player's marks (so they read as "I placed this"). When the
+        // cell is the focused one AND holds a user-placed digit, the
+        // background went to ink — flip the digit to cream so it pops.
+        const textCol = cell.given
+          ? "text-ink"
+          : isSelected && holdsUserValue
+            ? "text-cream"
+            : "text-pink";
+
+        // Inset ink ring marks the selected cell. Layered as a ring
+        // (not a border) so it sits on top of the grid's per-cell
+        // border lines without disturbing layout. relative + z makes
+        // sure neighbour cells' borders sit behind it.
+        const selectedRing = isSelected
+          ? "relative z-10 ring-[3px] ring-inset ring-ink"
+          : "";
 
         return (
           <button
@@ -846,14 +870,22 @@ function Board({
             aria-selected={isSelected}
             onClick={() => onSelect(i)}
             disabled={finished}
-            className={`flex items-center justify-center font-display font-extrabold leading-none transition-colors ${bg} ${textCol} ${borderRight} ${borderBottom}`}
+            className={`flex items-center justify-center font-display font-extrabold leading-none transition-colors ${bg} ${textCol} ${borderRight} ${borderBottom} ${selectedRing}`}
             style={{
               fontSize: "clamp(1.1rem, 4vw, 1.7rem)",
               cursor: finished ? "default" : "pointer",
             }}
           >
             {cell.v !== 0 ? (
-              <span>{cell.v}</span>
+              // Key on the digit so a replacement remounts the span
+              // and the pop animation re-fires. Skipped for given
+              // cells — the puzzle's clues shouldn't pulse.
+              <span
+                key={`v-${cell.v}`}
+                className={cell.given ? "" : "sudoku-placed inline-block"}
+              >
+                {cell.v}
+              </span>
             ) : cell.notes !== 0 ? (
               <NotesGrid notes={cell.notes} />
             ) : null}
