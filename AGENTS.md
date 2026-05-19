@@ -241,7 +241,12 @@ Mechanical steps once it's earned a slot:
    `lib/clusters.ts` so `pathFor()` routes it to `/games/<slug>`.
 2. Create `app/tools/<slug>/Client.tsx` (`"use client"`) and the server
    wrapper `page.tsx` exporting `metadata` from the registry entry.
-3. Use the shared components and helpers — don't reinvent.
+3. Create `app/tools/<slug>/opengraph-image.tsx` — a one-line wrapper
+   around `renderToolOG("<slug>")` from `lib/og.tsx`. Copy any existing
+   tool's OG file as the template and update the slug + alt string.
+   Skipping this means the tool's share preview falls back to the
+   generic site-wide OG.
+4. Use the shared components and helpers — don't reinvent.
 
 That's it. The cluster system is retired and there's no `lib/links.ts`
 to update — the homepage swarm picks up the new tool automatically
