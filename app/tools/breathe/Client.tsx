@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import { hugoMoodEvent } from "@/lib/hugo-state";
 
 type PhaseName = "in" | "hold-in" | "out" | "hold-out";
 
@@ -127,6 +128,13 @@ export default function BreathePage() {
     setRunning(false);
     setDone(true);
     endChime();
+  }, []);
+
+  // Hugo joins the calm — fires once on mount so the navigated-excited
+  // mood from the route change settles immediately. No win celebration
+  // for breathing — the right note is quiet completion, not confetti.
+  useEffect(() => {
+    hugoMoodEvent("calm-down");
   }, []);
 
   // ----- prefers-reduced-motion -----

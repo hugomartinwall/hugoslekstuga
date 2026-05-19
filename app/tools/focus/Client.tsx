@@ -5,6 +5,7 @@ import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { localISODate } from "@/lib/dates";
+import { hugoMoodEvent } from "@/lib/hugo-state";
 import CustomMinutes from "@/components/CustomMinutes";
 
 type Phase = "setup" | "running" | "paused" | "done";
@@ -57,6 +58,13 @@ export default function FocusPage() {
 
   const today = useMemo(() => localISODate(new Date()), []);
   const todayCount = sessions.date === today ? sessions.count : 0;
+
+  // Hugo settles to calm on this page. Route-change fires `navigated` which
+  // sets him excited; the calm-down lands right after so by the time you
+  // type an intention he's reading the room. Re-fires on mount only.
+  useEffect(() => {
+    hugoMoodEvent("calm-down");
+  }, []);
 
   // ---------- ambient audio orchestration ----------
   // The session's ambient AudioContext lives across pause/resume so we
@@ -194,6 +202,10 @@ export default function FocusPage() {
         setPhase("done");
         playChime();
         notifyDone(intention);
+        // Hugo notices the natural completion (not the bail-out via Stop).
+        // BrandDot lights up with the sparkle puff; hugoMoodEvent("happy")
+        // also feeds the inner state so the mood stays excited briefly.
+        window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
         // Increment session count only on natural completion (not on Stop).
         setSessions((prev) =>
           prev.date === today

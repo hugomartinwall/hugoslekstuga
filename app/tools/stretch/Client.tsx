@@ -275,6 +275,8 @@ export default function StretchPage() {
           setDone(true);
           endChime();
           cancelSpeech();
+          // Hugo joins the relief — sparkle puff when the routine wraps.
+          window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
           // Increment counters. Reset today's count if the date changed.
           setState((s) => {
             const today = todayIso();
@@ -329,6 +331,9 @@ export default function StretchPage() {
       setDone(true);
       endChime();
       cancelSpeech();
+      // Same as the natural-completion path — chime fires either way,
+      // so Hugo celebrates either way.
+      window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
     }
   };
 

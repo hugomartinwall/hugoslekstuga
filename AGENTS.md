@@ -214,8 +214,10 @@ for the curious DevTools visitor. Use the name in code conversation so
 **Hugo's global event surface** — anywhere on the site can:
 
 - Dispatch `hugoslekstuga:hugo-happy` to trigger his celebration
-  state (eyes wide + coloured-sparkle puff). Currently fires when a
-  Sudoku puzzle is solved.
+  state (eyes wide + coloured-sparkle puff). Fires when a Sudoku
+  puzzle is solved, when a Focus session completes naturally, when
+  a Stretch routine finishes, and when Typing hits a new personal
+  best. Keep the bar high — it should mean something each time.
 - Dispatch `hugoslekstuga:dot-travel` with `{ fromX, fromY, toX,
   toY, color, navColor, duration }` to make him fly from one screen
   point to another. ToolMap uses this for the swarm→nav fetch-and-

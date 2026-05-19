@@ -104,6 +104,9 @@ export default function TypingPage() {
       setRecent((arr) => [wpm, ...arr].slice(0, RECENT_LIMIT));
       if (!best || wpm > best.wpm) {
         setBest(stats);
+        // Personal best — Hugo notices. Stays quiet on ordinary finishes
+        // so the celebration means something.
+        window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
       }
     }
   }, [typed, passage, best, seconds, setBest, setRecent]);
