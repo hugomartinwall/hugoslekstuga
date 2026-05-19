@@ -4,7 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
-import { generatePuzzle, PEERS_OF, type Difficulty } from "./generator";
+import { localISODate } from "@/lib/dates";
+import {
+  generatePuzzle,
+  mulberry32,
+  PEERS_OF,
+  seedFromDate,
+  type Difficulty,
+} from "./generator";
 
 /* -------------------------------------------------------------------------
  * Types + persistence
@@ -44,12 +51,41 @@ type Game = {
    *  win panel as a small "honest record" of how much help they
    *  needed. */
   hintsUsed: number;
+  /** YYYY-MM-DD if this puzzle came from the "Today's puzzle" picker.
+   *  Same date → same puzzle, deterministically seeded on the client.
+   *  Absent on regular generated puzzles. */
+  daily?: string;
+  /** True if the puzzle was started in strict mode. In strict mode,
+   *  reaching STRICT_MISTAKE_CAP mistakes ends the run with a loss
+   *  panel instead of a win panel. Absent / false = lenient (current
+   *  default) — mistakes are just a counter, never fatal. */
+  strict?: boolean;
+  /** Set when strict mode reaches its mistake cap. Distinct from
+   *  finishedAt (which means "solved correctly") so the renderer can
+   *  pick the right end panel. Absent on lenient and on running games. */
+  lostAt?: number | null;
 };
 
 const GAME_KEY = "hugoslekstuga:sudoku:game";
 const NOTES_MODE_KEY = "hugoslekstuga:sudoku:notes-mode";
 const BEST_TIMES_KEY = "hugoslekstuga:sudoku:best-times";
+const DAILY_SOLVED_KEY = "hugoslekstuga:sudoku:daily-solved";
+const STRICT_PREF_KEY = "hugoslekstuga:sudoku:strict-pref";
 const PICKER_DEFAULT: Difficulty = "medium";
+/** Strict mode tolerates this many mistakes before ending the run.
+ *  Tunable; 3 lines up with classic Minesweeper / Lights Out style
+ *  "you've used your lives" pacing. */
+const STRICT_MISTAKE_CAP = 3;
+/** Difficulty of the daily puzzle. Pinned to medium so the daily is
+ *  approachable but not trivial — beating it should feel like an
+ *  accomplishment without being a chore. */
+const DAILY_DIFFICULTY: Difficulty = "medium";
+
+/** Map of YYYY-MM-DD → true once the daily puzzle for that date has
+ *  been solved. Persisted across sessions so the picker can show a
+ *  "solved ✓" mark on today's puzzle if the player already finished. */
+type DailySolved = Record<string, true>;
+const DEFAULT_DAILY_SOLVED: DailySolved = {};
 
 /** Maximum entries kept on the undo stack. Each entry is a shallow
  *  snapshot of the 81-cell array — tiny. 50 is generous; almost no
@@ -192,6 +228,11 @@ function placedSetCompletions(
 
 const WRONG_SHAKE_MS = 360;
 const COMPLETED_FLASH_MS = 900;
+const HINT_PULSE_MS = 700;
+/** Below this many empty user cells, surface an "almost there"
+ *  acknowledgement in the status bar. Tuned so the cue appears at
+ *  what feels like the home stretch, not too early. */
+const ALMOST_THERE_THRESHOLD = 5;
 
 /** Pad a duration in ms to `m:ss` (or `mm:ss` past 10 minutes). */
 function formatDuration(ms: number): string {
@@ -201,8 +242,23 @@ function formatDuration(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function freshGame(difficulty: Difficulty): Game {
-  const { puzzle, solution } = generatePuzzle(difficulty);
+type FreshGameOptions = {
+  /** Today's-puzzle mode. When set, the puzzle is generated from a
+   *  deterministic seed derived from `daily` (the YYYY-MM-DD key) so
+   *  every client on that date sees the same board. */
+  daily?: string;
+  /** Strict mode — three mistakes and you're out. */
+  strict?: boolean;
+};
+
+function freshGame(
+  difficulty: Difficulty,
+  options: FreshGameOptions = {},
+): Game {
+  const rng = options.daily
+    ? mulberry32(seedFromDate(options.daily))
+    : Math.random;
+  const { puzzle, solution } = generatePuzzle(difficulty, rng);
   const cells: Cell[] = puzzle.map((v) => ({
     v,
     given: v !== 0,
@@ -217,6 +273,9 @@ function freshGame(difficulty: Difficulty): Game {
     finishedAt: null,
     mistakes: 0,
     hintsUsed: 0,
+    daily: options.daily,
+    strict: options.strict,
+    lostAt: null,
   };
 }
 
@@ -262,6 +321,20 @@ export default function SudokuClient() {
     BEST_TIMES_KEY,
     DEFAULT_BEST_TIMES,
   );
+  // Persisted YYYY-MM-DD → solved-flag map for daily puzzles. Read by
+  // the picker so it can show a small ✓ on "Today's puzzle" when the
+  // player already finished today's, and by the win panel so a daily
+  // solve writes the entry.
+  const [dailySolved, setDailySolved] = useLocalStorageState<DailySolved>(
+    DAILY_SOLVED_KEY,
+    DEFAULT_DAILY_SOLVED,
+  );
+  // Player's strict-mode preference. Persisted so the toggle stays
+  // sticky between sessions for players who like the harder ruleset.
+  const [strictPref, setStrictPref] = useLocalStorageState<boolean>(
+    STRICT_PREF_KEY,
+    false,
+  );
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [pickerDifficulty, setPickerDifficulty] =
     useState<Difficulty>(PICKER_DEFAULT);
@@ -292,8 +365,14 @@ export default function SudokuClient() {
   const [completedFlashIndices, setCompletedFlashIndices] = useState<number[]>(
     [],
   );
+  // `hintRevealedIdx` — the cell the hint button just revealed. Drives
+  // a short ring-pulse animation so the player's eye lands on what
+  // changed without scanning the whole grid. Cleared after
+  // HINT_PULSE_MS.
+  const [hintRevealedIdx, setHintRevealedIdx] = useState<number | null>(null);
   const wrongTimerRef = useRef<number | null>(null);
   const completedTimerRef = useRef<number | null>(null);
+  const hintTimerRef = useRef<number | null>(null);
 
   // Tick-driven timer — `now` updates each second while a game is
   // active, unfinished, and not paused. The displayed elapsed time
@@ -318,6 +397,7 @@ export default function SudokuClient() {
     // Clear any in-flight transient visuals from the previous game.
     setWrongPlacedIdx(null);
     setCompletedFlashIndices([]);
+    setHintRevealedIdx(null);
   }, [gameStartedAt]);
 
   // Cleanup transient-flash timers on unmount so a navigation away
@@ -327,6 +407,7 @@ export default function SudokuClient() {
       if (wrongTimerRef.current) window.clearTimeout(wrongTimerRef.current);
       if (completedTimerRef.current)
         window.clearTimeout(completedTimerRef.current);
+      if (hintTimerRef.current) window.clearTimeout(hintTimerRef.current);
     };
   }, []);
 
@@ -377,6 +458,7 @@ export default function SudokuClient() {
       if (!game) return;
       if (selectedIdx === null) return;
       if (game.finishedAt !== null) return;
+      if (game.lostAt) return;
       if (game.pausedAt !== null) return;
       const cell = game.cells[selectedIdx];
       if (cell.given) return;
@@ -458,6 +540,18 @@ export default function SudokuClient() {
         }
       }
 
+      const nextMistakes = game.mistakes + mistakeBump;
+
+      // Strict-mode loss check. Hitting the mistake cap ends the run
+      // immediately with a loss-panel render path, distinct from the
+      // win path. Lenient (default) games never set lostAt, so the
+      // mistake counter is just a counter there.
+      const strict = game.strict === true;
+      let lostAt: number | null = null;
+      if (strict && nextMistakes >= STRICT_MISTAKE_CAP && !allCorrect) {
+        lostAt = Date.now();
+      }
+
       let finishedAt: number | null = null;
       if (allCorrect) {
         finishedAt = Date.now();
@@ -473,6 +567,12 @@ export default function SudokuClient() {
             setLastNewBest(true);
           }
         }
+        // Daily-puzzle bookkeeping. Once solved, mark the date so the
+        // picker can show a ✓ and the player can't replay it for "first
+        // solve today" credit — re-attempts still play normally.
+        if (game.daily && !dailySolved[game.daily]) {
+          setDailySolved({ ...dailySolved, [game.daily]: true });
+        }
         // Tell Hugo to be happy. The BrandDot in the nav listens and
         // bursts coloured sparkles above his head.
         if (typeof window !== "undefined") {
@@ -483,17 +583,29 @@ export default function SudokuClient() {
       setGame({
         ...game,
         cells,
-        mistakes: game.mistakes + mistakeBump,
+        mistakes: nextMistakes,
         finishedAt,
+        lostAt,
       });
     },
-    [game, selectedIdx, notesMode, setGame, pushHistory, bestTimes, setBestTimes],
+    [
+      game,
+      selectedIdx,
+      notesMode,
+      setGame,
+      pushHistory,
+      bestTimes,
+      setBestTimes,
+      dailySolved,
+      setDailySolved,
+    ],
   );
 
   const clearSelected = useCallback(() => {
     if (!game) return;
     if (selectedIdx === null) return;
     if (game.finishedAt !== null) return;
+    if (game.lostAt) return;
     if (game.pausedAt !== null) return;
     const cell = game.cells[selectedIdx];
     if (cell.given) return;
@@ -507,6 +619,7 @@ export default function SudokuClient() {
   const undo = useCallback(() => {
     if (!game) return;
     if (game.finishedAt !== null) return;
+    if (game.lostAt) return;
     if (game.pausedAt !== null) return;
     const prev = historyRef.current.pop();
     if (!prev) return;
@@ -521,6 +634,7 @@ export default function SudokuClient() {
   const hint = useCallback(() => {
     if (!game) return;
     if (game.finishedAt !== null) return;
+    if (game.lostAt) return;
     if (game.pausedAt !== null) return;
     let target = -1;
     if (
@@ -542,6 +656,16 @@ export default function SudokuClient() {
     cells[target] = { v: correct, given: false, notes: 0 };
     cells = clearPeerNotes(cells, target, correct);
     setSelectedIdx(target);
+
+    // Pulse-highlight the revealed cell so the eye lands on what just
+    // changed. Cleared after HINT_PULSE_MS; multiple rapid hints just
+    // re-target the same animation.
+    setHintRevealedIdx(target);
+    if (hintTimerRef.current) window.clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = window.setTimeout(() => {
+      setHintRevealedIdx(null);
+      hintTimerRef.current = null;
+    }, HINT_PULSE_MS);
 
     const allFilled = cells.every((c) => c.v !== 0);
     const allCorrect =
@@ -576,6 +700,12 @@ export default function SudokuClient() {
     let finishedAt: number | null = null;
     if (allCorrect) {
       finishedAt = Date.now();
+      // Daily-solved bookkeeping mirrors the applyEntry path — a hint
+      // can complete the final cell, and the daily ✓ should land
+      // either way.
+      if (game.daily && !dailySolved[game.daily]) {
+        setDailySolved({ ...dailySolved, [game.daily]: true });
+      }
       // Hints in this puzzle → no best-time eligibility, but Hugo
       // still gets to celebrate.
       if (typeof window !== "undefined") {
@@ -589,7 +719,7 @@ export default function SudokuClient() {
       hintsUsed: game.hintsUsed + 1,
       finishedAt,
     });
-  }, [game, selectedIdx, setGame, pushHistory]);
+  }, [game, selectedIdx, setGame, pushHistory, dailySolved, setDailySolved]);
 
   /** Pause toggle. While paused, the timer stops (we shift startedAt
    *  forward by the pause duration on resume) and a "Paused" overlay
@@ -598,6 +728,7 @@ export default function SudokuClient() {
   const togglePause = useCallback(() => {
     if (!game) return;
     if (game.finishedAt !== null) return;
+    if (game.lostAt) return;
     if (game.pausedAt === null) {
       setGame({ ...game, pausedAt: Date.now() });
     } else {
@@ -628,6 +759,7 @@ export default function SudokuClient() {
         return;
       }
       if (game.finishedAt !== null) return;
+      if (game.lostAt) return;
       const k = e.key;
       // Pause toggle works while paused too (so the user can resume).
       if (k === "p" || k === "P") {
@@ -697,14 +829,29 @@ export default function SudokuClient() {
    * ---------------------------------------------------------------- */
 
   if (!game) {
+    const todayKey = localISODate(new Date());
+    const todaySolved = Boolean(dailySolved[todayKey]);
     return (
       <ToolFrame tool={tool}>
         <DifficultyPicker
           chosen={pickerDifficulty}
           onChoose={setPickerDifficulty}
+          strict={strictPref}
+          onChangeStrict={setStrictPref}
+          todayKey={todayKey}
+          todaySolved={todaySolved}
+          onStartDaily={() => {
+            setSelectedIdx(null);
+            setGame(
+              freshGame(DAILY_DIFFICULTY, {
+                daily: todayKey,
+                strict: strictPref,
+              }),
+            );
+          }}
           onStart={(d) => {
             setSelectedIdx(null);
-            setGame(freshGame(d));
+            setGame(freshGame(d, { strict: strictPref }));
           }}
         />
       </ToolFrame>
@@ -721,8 +868,15 @@ export default function SudokuClient() {
 
   const paused = game.pausedAt !== null;
   const finished = game.finishedAt !== null;
+  const lost = Boolean(game.lostAt);
+  // Empty user cells left to fill — drives the "almost there" hint
+  // in the status bar. Doesn't count given clues (already correct).
+  const emptyUserCells = game.cells.reduce(
+    (n, c) => (!c.given && c.v === 0 ? n + 1 : n),
+    0,
+  );
   const canUndo = historyLen > 0;
-  const hasEmptyCell = game.cells.some((c) => c.v === 0 && !c.given);
+  const hasEmptyCell = emptyUserCells > 0;
 
   return (
     <ToolFrame tool={tool}>
@@ -733,6 +887,14 @@ export default function SudokuClient() {
           mistakes={game.mistakes}
           hintsUsed={game.hintsUsed}
           paused={paused}
+          daily={game.daily}
+          strict={game.strict === true}
+          strictCap={STRICT_MISTAKE_CAP}
+          almostThere={
+            !finished && !lost && emptyUserCells > 0 &&
+            emptyUserCells <= ALMOST_THERE_THRESHOLD
+          }
+          emptyUserCells={emptyUserCells}
         />
 
         <div className="relative">
@@ -743,8 +905,9 @@ export default function SudokuClient() {
             selectedValue={selectedValue}
             wrongPlacedIdx={wrongPlacedIdx}
             completedFlashIndices={completedFlashIndices}
+            hintRevealedIdx={hintRevealedIdx}
             onSelect={(i) => setSelectedIdx(i)}
-            finished={finished || paused}
+            finished={finished || paused || lost}
             hidden={paused}
           />
           {paused && (
@@ -776,7 +939,7 @@ export default function SudokuClient() {
           canUndo={canUndo}
           canHint={hasEmptyCell}
           paused={paused}
-          disabled={finished || paused}
+          disabled={finished || paused || lost}
         />
 
         <Controls
@@ -798,6 +961,7 @@ export default function SudokuClient() {
               startedAt: Date.now(),
               pausedAt: null,
               finishedAt: null,
+              lostAt: null,
             });
             historyRef.current = [];
             setSelectedIdx(null);
@@ -812,6 +976,36 @@ export default function SudokuClient() {
             hintsUsed={game.hintsUsed}
             bestTime={bestTimes[game.difficulty]}
             isNewBest={lastNewBest}
+            daily={game.daily}
+            onNewGame={() => {
+              setSelectedIdx(null);
+              setGame(null);
+            }}
+          />
+        )}
+
+        {lost && (
+          <LossPanel
+            mistakes={game.mistakes}
+            cap={STRICT_MISTAKE_CAP}
+            onRestart={() => {
+              if (!game) return;
+              const cells = game.cells.map((c) =>
+                c.given ? c : { ...c, v: 0, notes: 0 },
+              );
+              setGame({
+                ...game,
+                cells,
+                mistakes: 0,
+                hintsUsed: 0,
+                startedAt: Date.now(),
+                pausedAt: null,
+                finishedAt: null,
+                lostAt: null,
+              });
+              historyRef.current = [];
+              setSelectedIdx(null);
+            }}
             onNewGame={() => {
               setSelectedIdx(null);
               setGame(null);
@@ -831,10 +1025,20 @@ function DifficultyPicker({
   chosen,
   onChoose,
   onStart,
+  strict,
+  onChangeStrict,
+  todayKey,
+  todaySolved,
+  onStartDaily,
 }: {
   chosen: Difficulty;
   onChoose: (d: Difficulty) => void;
   onStart: (d: Difficulty) => void;
+  strict: boolean;
+  onChangeStrict: (next: boolean) => void;
+  todayKey: string;
+  todaySolved: boolean;
+  onStartDaily: () => void;
 }) {
   const opts: { d: Difficulty; label: string; sub: string }[] = [
     { d: "easy", label: "Easy", sub: "ish 42 clues — mostly forced moves" },
@@ -855,6 +1059,37 @@ function DifficultyPicker({
           Each puzzle is generated fresh and has exactly one solution.
         </p>
       </div>
+
+      {/* Today's puzzle — same board for everyone on this date,
+          generated locally from a seed (no server round-trip). The
+          solved-state mark persists in localStorage. */}
+      <button
+        type="button"
+        onClick={onStartDaily}
+        className="card-chunk flex items-center justify-between gap-4 rounded-[var(--radius-card)] bg-yellow px-5 py-4 text-left transition-colors hover:bg-yellow-soft"
+      >
+        <div className="flex flex-col">
+          <span className="flex items-center gap-2 font-display text-lg font-extrabold tracking-tight text-ink">
+            Today&rsquo;s puzzle
+            {todaySolved && (
+              <span
+                aria-label="Solved today"
+                title="You already solved today's puzzle"
+                className="rounded-full border-2 border-ink bg-cream px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink"
+              >
+                Solved ✓
+              </span>
+            )}
+          </span>
+          <span className="text-xs text-ink/80">
+            Same medium puzzle for everyone today · {todayKey}
+          </span>
+        </div>
+        <span aria-hidden className="font-display text-2xl font-extrabold text-ink">
+          →
+        </span>
+      </button>
+
       <div className="flex flex-col gap-2">
         {opts.map((o) => {
           const active = chosen === o.d;
@@ -887,6 +1122,35 @@ function DifficultyPicker({
           );
         })}
       </div>
+
+      {/* Strict-mode toggle. Applies to both today's puzzle and the
+          standard-difficulty options. Sticky across sessions. */}
+      <button
+        type="button"
+        onClick={() => onChangeStrict(!strict)}
+        aria-pressed={strict}
+        className={`flex items-center justify-between gap-3 rounded-full border-2 border-dashed border-ink-muted px-4 py-2.5 text-left transition-colors ${
+          strict ? "bg-tomato-soft" : "bg-cream-deep hover:bg-cream"
+        }`}
+      >
+        <div className="flex flex-col">
+          <span className="text-sm font-display font-extrabold tracking-tight">
+            Strict mode
+          </span>
+          <span className="text-[11px] text-ink-soft">
+            {strict
+              ? `Three mistakes and the run ends. Wrong moves matter.`
+              : `Off — mistakes are just a counter. Toggle for stakes.`}
+          </span>
+        </div>
+        <span
+          aria-hidden
+          className={`flex h-6 w-12 items-center rounded-full border-2 border-ink p-0.5 ${strict ? "justify-end bg-tomato" : "justify-start bg-cream"}`}
+        >
+          <span className="h-4 w-4 rounded-full bg-cream-deep border border-ink" />
+        </span>
+      </button>
+
       <button
         type="button"
         onClick={() => onStart(chosen)}
@@ -904,30 +1168,55 @@ function StatusBar({
   mistakes,
   hintsUsed,
   paused,
+  daily,
+  strict,
+  strictCap,
+  almostThere,
+  emptyUserCells,
 }: {
   elapsed: number;
   difficulty: Difficulty;
   mistakes: number;
   hintsUsed: number;
   paused: boolean;
+  /** YYYY-MM-DD if this is the daily puzzle; renders an alt label. */
+  daily?: string;
+  /** Strict-mode flag — switches the mistake stat to read X/CAP. */
+  strict: boolean;
+  strictCap: number;
+  /** True when the player is in the home stretch (few empty cells left). */
+  almostThere: boolean;
+  /** Empty user cells remaining; surfaced inside the almost-there pill. */
+  emptyUserCells: number;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 text-xs">
-      <Stat label="Difficulty" value={titleCase(difficulty)} />
-      <Stat
-        label={paused ? "Paused" : "Time"}
-        value={formatDuration(elapsed)}
-        mono
-        muted={paused}
-      />
-      <Stat
-        label="Mistakes"
-        value={String(mistakes)}
-        mono
-        muted={mistakes === 0}
-      />
-      {hintsUsed > 0 && (
-        <Stat label="Hints" value={String(hintsUsed)} mono />
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <Stat
+          label="Difficulty"
+          value={daily ? "Today" : titleCase(difficulty)}
+        />
+        <Stat
+          label={paused ? "Paused" : "Time"}
+          value={formatDuration(elapsed)}
+          mono
+          muted={paused}
+        />
+        <Stat
+          label="Mistakes"
+          value={strict ? `${mistakes}/${strictCap}` : String(mistakes)}
+          mono
+          muted={mistakes === 0}
+        />
+        {hintsUsed > 0 && (
+          <Stat label="Hints" value={String(hintsUsed)} mono />
+        )}
+      </div>
+      {almostThere && (
+        <p className="self-end rounded-full border-2 border-dashed border-yellow bg-yellow-soft px-3 py-0.5 text-[11px] font-bold tracking-wide text-ink">
+          almost there — {emptyUserCells}{" "}
+          {emptyUserCells === 1 ? "cell" : "cells"} to go
+        </p>
       )}
     </div>
   );
@@ -967,6 +1256,7 @@ function Board({
   selectedValue,
   wrongPlacedIdx,
   completedFlashIndices,
+  hintRevealedIdx,
   onSelect,
   finished,
   hidden,
@@ -981,6 +1271,9 @@ function Board({
   /** Cell indices belonging to a row/col/box that just completed;
    *  get a brief green-soft flash. Empty when nothing flashing. */
   completedFlashIndices: number[];
+  /** Cell index the hint button just revealed; gets a yellow ring
+   *  pulse so the player's eye lands on what changed. */
+  hintRevealedIdx: number | null;
   onSelect: (i: number) => void;
   finished: boolean;
   hidden?: boolean;
@@ -1082,8 +1375,10 @@ function Board({
         // a newly-completed set (unlikely but cheap to support).
         const isWrongPlaced = i === wrongPlacedIdx;
         const isCompletedFlash = completedFlashSet.has(i);
+        const isHintRevealed = i === hintRevealedIdx;
         const flashClass = isCompletedFlash ? "sudoku-completed-flash" : "";
         const shakeClass = isWrongPlaced ? "sudoku-wrong-shake" : "";
+        const hintClass = isHintRevealed ? "sudoku-hint-pulse" : "";
 
         return (
           <button
@@ -1094,7 +1389,7 @@ function Board({
             aria-selected={isSelected}
             onClick={() => onSelect(i)}
             disabled={finished}
-            className={`flex items-center justify-center font-display font-extrabold leading-none transition-colors ${bg} ${textCol} ${borderRight} ${borderBottom} ${selectedRing} ${flashClass} ${shakeClass}`}
+            className={`flex items-center justify-center font-display font-extrabold leading-none transition-colors ${bg} ${textCol} ${borderRight} ${borderBottom} ${selectedRing} ${flashClass} ${shakeClass} ${hintClass}`}
             style={{
               fontSize: "clamp(1.1rem, 4vw, 1.7rem)",
               cursor: finished ? "default" : "pointer",
@@ -1288,6 +1583,7 @@ function WinPanel({
   hintsUsed,
   bestTime,
   isNewBest,
+  daily,
   onNewGame,
 }: {
   elapsed: number;
@@ -1296,20 +1592,32 @@ function WinPanel({
   hintsUsed: number;
   bestTime: number | undefined;
   isNewBest: boolean;
+  /** When set, this was the daily puzzle for the given YYYY-MM-DD —
+   *  the win panel acknowledges it as "Today's puzzle" instead of the
+   *  generic "Solved." */
+  daily?: string;
   onNewGame: () => void;
 }) {
   return (
     <div className="card-chunk relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-pink p-6 text-center">
       <p className="font-display text-3xl font-extrabold tracking-tight text-ink">
-        Solved.
+        {daily ? "Today, done." : "Solved."}
       </p>
+      {daily && (
+        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold uppercase tracking-wider text-ink">
+          Today&rsquo;s puzzle · {daily}
+        </p>
+      )}
       {isNewBest && (
         <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold uppercase tracking-wider text-ink">
           New personal best
         </p>
       )}
       <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
-        <Stat label="Difficulty" value={titleCase(difficulty)} />
+        <Stat
+          label="Difficulty"
+          value={daily ? "Today" : titleCase(difficulty)}
+        />
         <Stat label="Time" value={formatDuration(elapsed)} mono />
         <Stat
           label="Mistakes"
@@ -1320,7 +1628,7 @@ function WinPanel({
         {hintsUsed > 0 && (
           <Stat label="Hints" value={String(hintsUsed)} mono />
         )}
-        {bestTime !== undefined && !isNewBest && (
+        {bestTime !== undefined && !isNewBest && !daily && (
           <Stat label="Best" value={formatDuration(bestTime)} mono muted />
         )}
       </div>
@@ -1337,6 +1645,46 @@ function WinPanel({
       >
         Another one
       </button>
+    </div>
+  );
+}
+
+function LossPanel({
+  mistakes,
+  cap,
+  onRestart,
+  onNewGame,
+}: {
+  mistakes: number;
+  cap: number;
+  onRestart: () => void;
+  onNewGame: () => void;
+}) {
+  return (
+    <div className="card-chunk relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-tomato-soft p-6 text-center">
+      <p className="font-display text-3xl font-extrabold tracking-tight text-ink">
+        Out of mistakes.
+      </p>
+      <p className="max-w-xs text-sm text-ink-soft">
+        Strict mode caps you at {cap} wrong moves. You used {mistakes}.
+        The board is paused — start over or pick a fresh puzzle.
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onRestart}
+          className="btn-chunk rounded-[var(--radius-button)] bg-ink px-5 py-2 text-sm font-display font-extrabold text-cream"
+        >
+          Start over
+        </button>
+        <button
+          type="button"
+          onClick={onNewGame}
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-5 py-2 text-sm font-display font-extrabold text-ink"
+        >
+          New puzzle
+        </button>
+      </div>
     </div>
   );
 }

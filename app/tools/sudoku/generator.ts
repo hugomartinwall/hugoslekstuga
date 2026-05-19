@@ -109,10 +109,41 @@ function findMrv(board: number[]): { idx: number; cands: number } | null {
   return best ? { idx: best.idx, cands: best.cands } : null;
 }
 
-function shuffle<T>(arr: T[]): T[] {
+/** PRNG signature — returns a float in [0, 1). When omitted from
+ *  helpers below, defaults to Math.random. The seeded variant comes
+ *  from `mulberry32`, used by the daily-puzzle path so all clients on
+ *  the same calendar day produce the same board. */
+export type Rng = () => number;
+
+/** Tiny deterministic PRNG. Same input seed → same sequence. Good
+ *  enough for a puzzle's worth of shuffles. */
+export function mulberry32(seed: number): Rng {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Hash a date string (YYYY-MM-DD) to a 32-bit seed. The exact mix
+ *  doesn't matter — any deterministic function from the date string
+ *  to a number works. */
+export function seedFromDate(dateKey: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < dateKey.length; i++) {
+    h ^= dateKey.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function shuffle<T>(arr: T[], rng: Rng = Math.random): T[] {
   const out = arr.slice();
   for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     const tmp = out[i];
     out[i] = out[j];
     out[j] = tmp;
@@ -123,16 +154,17 @@ function shuffle<T>(arr: T[]): T[] {
 /**
  * Solve a board in place, returning true if a solution exists. Tries
  * digits in random order so we get a different solved grid each time
- * (used by the puzzle generator to produce variety).
+ * (used by the puzzle generator to produce variety). The optional
+ * `rng` lets daily-puzzle generation seed every shuffle deterministically.
  */
-function solveOne(board: number[]): boolean {
+function solveOne(board: number[], rng: Rng = Math.random): boolean {
   const cell = findMrv(board);
   if (!cell) return true;
   if (cell.cands === 0) return false;
-  const values = shuffle(bitsToValues(cell.cands));
+  const values = shuffle(bitsToValues(cell.cands), rng);
   for (const v of values) {
     board[cell.idx] = v;
-    if (solveOne(board)) return true;
+    if (solveOne(board, rng)) return true;
     board[cell.idx] = 0;
   }
   return false;
@@ -170,14 +202,14 @@ export function solve(board: number[]): number[] | null {
 }
 
 /** Generate a complete solved 9×9 board. */
-function generateSolved(): number[] {
+function generateSolved(rng: Rng = Math.random): number[] {
   const board = new Array<number>(SIZE).fill(0);
   // Seed the three diagonal 3×3 boxes first — they don't interact, so
   // we can fill each one with a random permutation of 1–9 and the
   // backtracker will fan out from there. Skipping this still works
   // but tends to produce boards that look similar to each other.
   for (let box = 0; box < 3; box++) {
-    const perm = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const perm = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9], rng);
     let p = 0;
     const startRow = box * 3;
     const startCol = box * 3;
@@ -187,7 +219,7 @@ function generateSolved(): number[] {
       }
     }
   }
-  solveOne(board);
+  solveOne(board, rng);
   return board;
 }
 
@@ -208,17 +240,25 @@ const TARGET_CLUES: Record<Difficulty, number> = {
  * Generate a puzzle by removing cells from a solved board while
  * maintaining a unique solution. Removes cells in randomised order
  * until the clue count hits the difficulty target, or until no more
- * removable cells remain.
+ * removable cells remain. The optional `rng` makes generation
+ * deterministic — every client on the same calendar day sees the
+ * same daily puzzle without any server round-trip.
  */
-export function generatePuzzle(difficulty: Difficulty): {
+export function generatePuzzle(
+  difficulty: Difficulty,
+  rng: Rng = Math.random,
+): {
   puzzle: number[];
   solution: number[];
 } {
-  const solution = generateSolved();
+  const solution = generateSolved(rng);
   const puzzle = solution.slice();
   const target = TARGET_CLUES[difficulty];
 
-  const order = shuffle(Array.from({ length: SIZE }, (_, i) => i));
+  const order = shuffle(
+    Array.from({ length: SIZE }, (_, i) => i),
+    rng,
+  );
   let clues = SIZE;
   for (const i of order) {
     if (clues <= target) break;

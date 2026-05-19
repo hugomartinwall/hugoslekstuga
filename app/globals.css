@@ -241,6 +241,21 @@ body {
   animation: sudoku-wrong-shake 360ms ease-in-out;
 }
 
+/* Sudoku hint pulse. Fires once on the cell the hint button just
+ * revealed so the player's eye lands on the change instead of having
+ * to scan the whole grid. Yellow-soft hold then fade — keeps a hint
+ * visually distinct from a placement (pink/ink) or a row completion
+ * (green). */
+@keyframes sudoku-hint-pulse {
+  0%   { background-color: var(--color-yellow-soft); }
+  40%  { background-color: var(--color-yellow-soft); }
+  100% { background-color: transparent; }
+}
+
+.sudoku-hint-pulse {
+  animation: sudoku-hint-pulse 700ms ease-out;
+}
+
 /* Sudoku completion flash. Fires on every cell of a row, column, or
  * 3×3 box the moment it transitions from incomplete to all-correct.
  * The cell briefly tints green-soft (matches the Stretch / Focus
@@ -332,7 +347,8 @@ body {
   .hugo-tantrum,
   .sudoku-placed,
   .sudoku-wrong-shake,
-  .sudoku-completed-flash {
+  .sudoku-completed-flash,
+  .sudoku-hint-pulse {
     animation: none !important;
   }
   /* The play-dead huff and happy sparkles are also gated off — the
