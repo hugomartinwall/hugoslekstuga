@@ -10,8 +10,8 @@ is strictly the operational view.
 
 | Surface | Host | URL |
 |---|---|---|
-| Static site (43 tools + lobby) | Vercel | https://hugoslekstuga.com |
-| Munch WebSocket server | Fly.io (Stockholm `arn`) | https://hugoslekstuga-munch.fly.dev |
+| Static site (16 tools + 2 games + about) | Vercel | https://hugoslekstuga.com |
+| Munch + Noodle WebSocket server | Fly.io (Stockholm `arn`) | https://hugoslekstuga-munch.fly.dev |
 | Source | GitHub (public) | https://github.com/hugomartinwall/hugoslekstuga |
 
 `hugoslekstuga.vercel.app` still works as a fallback (Vercel keeps the
@@ -63,10 +63,12 @@ flyctl deploy --remote-only
 ```
 
 `--remote-only` builds on Fly's builder so you don't need Docker running
-locally. Takes ~3 minutes. The current setup runs **2 machines**, both
-in Stockholm, both `auto_stop_machines = "stop"` so they sleep when no
-players are online. First connection after idle takes ~5 seconds while
-Fly wakes a machine.
+locally. Takes ~3 minutes. The setup runs **exactly one machine** in
+Stockholm — a hard rule, since both games hold state in-memory and
+scaling past 1 would split players across sessions. See AGENTS.md and
+`fly.toml`. `auto_stop_machines = "stop"` so the machine sleeps when no
+players are online; first connection after idle takes ~5 seconds while
+Fly wakes it.
 
 Useful commands:
 
@@ -74,7 +76,7 @@ Useful commands:
 flyctl status -a hugoslekstuga-munch   # machine state, health
 flyctl logs -a hugoslekstuga-munch     # tail real-time logs (Ctrl-C to stop)
 flyctl ssh console -a hugoslekstuga-munch  # shell into a machine
-flyctl scale count 1 -a hugoslekstuga-munch  # drop to 1 machine if costs grow
+flyctl scale count 1 -a hugoslekstuga-munch  # enforce single-machine (the hard rule)
 ```
 
 Fly dashboard: https://fly.io/apps/hugoslekstuga-munch
@@ -89,9 +91,9 @@ curl -fsS https://hugoslekstuga.com/sitemap.xml >/dev/null && echo OK
 curl -s https://hugoslekstuga-munch.fly.dev/health
 ```
 
-If `/health` fails, run `flyctl status` first — both machines may be
-stopped (auto-stop). A real client connection wakes them; if they
-won't wake, `flyctl machine restart <id>` per machine.
+If `/health` fails, run `flyctl status` first — the machine may be
+stopped (auto-stop). A real client connection wakes it; if it won't
+wake, `flyctl machine restart <id>`.
 
 ## Outstanding
 
@@ -104,18 +106,18 @@ won't wake, `flyctl machine restart <id>` per machine.
    has a path to a scary invoice. The Fly invoice email at
    `hugo@oogywawa.se` is the actual safety net.
 2. **Final QA pass.**
-   - Walk every cluster on the homepage map at 375px viewport
-     (iPhone SE size) and ~5 popular tools. Mobile inputs (sift CSV
-     drop, sketch drawing, etc.) need a real-touch sanity check.
-   - Run Lighthouse on `/`, `/tools/sum`, `/tools/sift`,
+   - Walk the homepage swarm at 375px viewport (iPhone SE size) and
+     ~5 of the kept tools. Mobile inputs (Convert drop zone, Strip
+     image drop, PDF picker, etc.) need a real-touch sanity check.
+   - Run Lighthouse on `/`, `/tools/convert`, `/tools/pdf`,
      `/games/munch`. Target ≥90 a11y, ≥90 perf.
 
 ## When something breaks
 
 - **Munch lobby says "Couldn't reach the server. Try again in a
-  minute."** First check `flyctl status`. If both machines are
-  stopped, that's expected; the next real connection should wake one.
-  If `started` but `/health` fails, look at `flyctl logs` for stack
+  minute."** First check `flyctl status`. If the machine is stopped,
+  that's expected; the next real connection should wake it. If
+  `started` but `/health` fails, look at `flyctl logs` for stack
   traces. The server has a try/catch around every connection handler
   so one bad client can't take everyone down.
 - **`/games/munch` page itself 404s or is blank.** Vercel deploy

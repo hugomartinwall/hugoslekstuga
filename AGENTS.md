@@ -79,9 +79,9 @@ Every tool is two files:
 - `app/tools/<slug>/page.tsx` — server-component wrapper that exports
   `metadata = { title, description }` from the registry and renders `<Client />`
 
-Same shape for the one game at `app/games/munch/`. The split is so each page
-ships its own `<title>` and `<meta description>` — client components can't
-export `metadata`.
+Same shape for the games at `app/games/munch/` and `app/games/noodle/`.
+The split is so each page ships its own `<title>` and `<meta description>`
+— client components can't export `metadata`.
 
 ## Shared components (use, don't reinvent)
 
@@ -92,11 +92,14 @@ export `metadata`.
 - `components/CustomMinutes.tsx` — "Custom — N min" pill (focus, talk)
 - `components/Search.tsx` — ⌘K palette
 - `components/ToolMap.tsx` — force-directed map on /
-- `components/BrandDot.tsx` — Hugo (the dot). Renders the wordmark's
-  trailing dot in the nav + footer. Internally rich: persisted-colour
+- `components/BrandDot.tsx` — Hugo (the dot). Rendered by
+  `BrandCorner` (the fixed top-left brand mark on every page) and at
+  the join screens of `/games/munch` and `/games/noodle`. The top nav
+  is gone — Hugo is the brand. Internally rich: persisted-colour
   cycling, proximity-eyes, idle blinks, swarm-hover gaze tracking,
   drag-and-spring (release for sparkle puff), spam-click play-dead
-  with whole-page tantrum shake, listens for
+  with whole-page tantrum shake, long-press leash, shift+click opens
+  Hugo's room, Konami code somersault, tab-hidden sleep, listens for
   `hugoslekstuga:hugo-happy` to celebrate (Sudoku win, etc).
 - `components/TravelingDot.tsx` — canvas-rendered Hugo who flies out
   of the nav, fetches a clicked swarm tool, returns home. Lives in
