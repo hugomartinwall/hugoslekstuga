@@ -151,10 +151,12 @@ const ANCHOR_TOOLS: Record<AnchorRole, Tool> = {
 
 /** Anchor coordinates for each nav dot. Computed from canvas size so
  *  the dots track viewport resizes. Search sits left-of-centre along
- *  the top; About sits right-of-centre. Clamped so they never sit on
- *  top of Hugo's corner or the Explode / Surprise buttons. */
+ *  the top; About sits right-of-centre. y=110 puts the dot's top edge
+ *  at ~84, comfortably below the ~68px corner buttons and Hugo's
+ *  ~55px brand mark — at 375px viewport the old y=70 packed the
+ *  anchored dots side-by-side with the Explode / Surprise pills. */
 function anchorPos(role: AnchorRole, w: number): { x: number; y: number } {
-  const y = 70;
+  const y = 110;
   if (role === "search") {
     return { x: Math.max(140, Math.min(w * 0.34, w - 280)), y };
   }
@@ -303,8 +305,17 @@ export default function ToolMap({
   // Declared above its first caller so the react-hooks compiler-aware
   // lint rule (variable-accessed-before-declared) is happy.
   function initNodes(w: number, h: number) {
-    const cx = w / 2;
-    const cy = h / 2;
+    // The `size` state lags the actual container during the initial
+    // `useLayoutEffect → setState → re-render` cycle. If we trust
+    // `size` here, dots spawn at the wrong centre and the centre
+    // pull is too gentle to migrate them once they've settled. Read
+    // the container directly so the spawn position is always the
+    // real centre, regardless of size-state timing.
+    const rect = containerRef.current?.getBoundingClientRect();
+    const actualW = rect && rect.width > MIN_W ? rect.width : w;
+    const actualH = rect && rect.height > MIN_H ? rect.height : h;
+    const cx = actualW / 2;
+    const cy = actualH / 2;
     const t0 = performance.now();
     nodesRef.current = tools.map((t, i) => {
       const angle = (i / tools.length) * Math.PI * 2;
@@ -330,7 +341,7 @@ export default function ToolMap({
     // the anchor still settles them precisely.
     const anchorRoles: AnchorRole[] = ["search", "about"];
     anchorRoles.forEach((role, i) => {
-      const a = anchorPos(role, w);
+      const a = anchorPos(role, actualW);
       nodesRef.current.push({
         tool: ANCHOR_TOOLS[role],
         x: a.x,
