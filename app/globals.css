@@ -225,6 +225,39 @@ body {
   animation: sudoku-placed 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
+/* Sudoku wrong-placement shake. Brief 4-stop horizontal shimmy on the
+ * cell that just received a wrong digit, alongside the static
+ * conflict styling on the cell + its peers. Tells the player
+ * physically that the move was a mistake. */
+@keyframes sudoku-wrong-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-4px); }
+  40%      { transform: translateX(4px); }
+  60%      { transform: translateX(-2px); }
+  80%      { transform: translateX(2px); }
+}
+
+.sudoku-wrong-shake {
+  animation: sudoku-wrong-shake 360ms ease-in-out;
+}
+
+/* Sudoku completion flash. Fires on every cell of a row, column, or
+ * 3×3 box the moment it transitions from incomplete to all-correct.
+ * The cell briefly tints green-soft (matches the Stretch / Focus
+ * accent green) then fades back to whatever Tailwind class is
+ * already painting its background. Visual win moment without
+ * spoiling the puzzle. Two-stop: hold the green for the first 35%
+ * so the tint is unmistakable, then fade for the remainder. */
+@keyframes sudoku-completed-flash {
+  0%   { background-color: var(--color-green-soft); }
+  35%  { background-color: var(--color-green-soft); }
+  100% { background-color: transparent; }
+}
+
+.sudoku-completed-flash {
+  animation: sudoku-completed-flash 900ms ease-out;
+}
+
 /* The happy puff — five coloured sparkles fan out above Hugo when a
  * drag-and-release completes. Each sparkle gets its own `--dx`/`--dy`
  * direction inline so a single keyframe covers all five with the
@@ -297,7 +330,9 @@ body {
   .pulse-dot,
   .card-arrive,
   .hugo-tantrum,
-  .sudoku-placed {
+  .sudoku-placed,
+  .sudoku-wrong-shake,
+  .sudoku-completed-flash {
     animation: none !important;
   }
   /* The play-dead huff and happy sparkles are also gated off — the

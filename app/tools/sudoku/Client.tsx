@@ -100,6 +100,99 @@ function isConflict(cells: Cell[], i: number): boolean {
   return false;
 }
 
+/* Completion detection — a row/col/box is "complete" when every cell
+ * in it holds the solution's value. The board fires a brief green
+ * flash on those nine cells and dispatches `hugoslekstuga:hugo-happy`
+ * once per placement, so the player gets a small win moment for
+ * progress (not just for solving the whole puzzle). */
+function rowComplete(cells: Cell[], solution: number[], r: number): boolean {
+  for (let c = 0; c < 9; c++) {
+    const i = r * 9 + c;
+    if (cells[i].v !== solution[i]) return false;
+  }
+  return true;
+}
+function colComplete(cells: Cell[], solution: number[], c: number): boolean {
+  for (let r = 0; r < 9; r++) {
+    const i = r * 9 + c;
+    if (cells[i].v !== solution[i]) return false;
+  }
+  return true;
+}
+function boxComplete(cells: Cell[], solution: number[], b: number): boolean {
+  const br = Math.floor(b / 3) * 3;
+  const bc = (b % 3) * 3;
+  for (let dr = 0; dr < 3; dr++) {
+    for (let dc = 0; dc < 3; dc++) {
+      const i = (br + dr) * 9 + bc + dc;
+      if (cells[i].v !== solution[i]) return false;
+    }
+  }
+  return true;
+}
+
+/** All 81 cell indices in a row / col / box. Used to translate a
+ *  newly-completed `row-3` / `col-7` / `box-2` key into the set of
+ *  cells that should briefly flash. */
+function cellsInSet(key: string): number[] {
+  const [kind, nStr] = key.split("-");
+  const n = Number(nStr);
+  if (kind === "row") {
+    return Array.from({ length: 9 }, (_, c) => n * 9 + c);
+  }
+  if (kind === "col") {
+    return Array.from({ length: 9 }, (_, r) => r * 9 + n);
+  }
+  // box
+  const br = Math.floor(n / 3) * 3;
+  const bc = (n % 3) * 3;
+  const out: number[] = [];
+  for (let dr = 0; dr < 3; dr++) {
+    for (let dc = 0; dc < 3; dc++) {
+      out.push((br + dr) * 9 + bc + dc);
+    }
+  }
+  return out;
+}
+
+/** Which of the placed cell's row, column, or 3×3 box just transitioned
+ *  from incomplete to all-correct as a result of this placement?
+ *  Local-diff: a single-cell placement can only affect those three
+ *  sets, so we don't need to recheck all 27. */
+function placedSetCompletions(
+  before: Cell[],
+  after: Cell[],
+  solution: number[],
+  idx: number,
+): string[] {
+  const r = rowOf(idx);
+  const c = colOf(idx);
+  const b = boxOf(idx);
+  const out: string[] = [];
+  if (
+    !rowComplete(before, solution, r) &&
+    rowComplete(after, solution, r)
+  ) {
+    out.push(`row-${r}`);
+  }
+  if (
+    !colComplete(before, solution, c) &&
+    colComplete(after, solution, c)
+  ) {
+    out.push(`col-${c}`);
+  }
+  if (
+    !boxComplete(before, solution, b) &&
+    boxComplete(after, solution, b)
+  ) {
+    out.push(`box-${b}`);
+  }
+  return out;
+}
+
+const WRONG_SHAKE_MS = 360;
+const COMPLETED_FLASH_MS = 900;
+
 /** Pad a duration in ms to `m:ss` (or `mm:ss` past 10 minutes). */
 function formatDuration(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -183,6 +276,25 @@ export default function SudokuClient() {
   // celebrate it. Cleared when a new game starts.
   const [lastNewBest, setLastNewBest] = useState<boolean>(false);
 
+  // Transient visual flags driven by placements.
+  //
+  //  - `wrongPlacedIdx` — the cell the player just placed a wrong
+  //    digit into. Cleared after WRONG_SHAKE_MS so the shake plays
+  //    once. Strong "that move was a mistake" signal in addition to
+  //    the static conflict styling.
+  //
+  //  - `completedFlashIndices` — the cells in any row/col/box that
+  //    just transitioned from incomplete to all-correct as a result
+  //    of the most recent placement. Cleared after COMPLETED_FLASH_MS.
+  //    Detected via a local before/after diff in applyEntry/hint, so
+  //    undo cleanly "un-completes" a set and a re-placement re-flashes.
+  const [wrongPlacedIdx, setWrongPlacedIdx] = useState<number | null>(null);
+  const [completedFlashIndices, setCompletedFlashIndices] = useState<number[]>(
+    [],
+  );
+  const wrongTimerRef = useRef<number | null>(null);
+  const completedTimerRef = useRef<number | null>(null);
+
   // Tick-driven timer — `now` updates each second while a game is
   // active, unfinished, and not paused. The displayed elapsed time
   // stays live without re-rendering the whole game tree on every rAF.
@@ -203,7 +315,20 @@ export default function SudokuClient() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistoryLen(0);
     setLastNewBest(false);
+    // Clear any in-flight transient visuals from the previous game.
+    setWrongPlacedIdx(null);
+    setCompletedFlashIndices([]);
   }, [gameStartedAt]);
+
+  // Cleanup transient-flash timers on unmount so a navigation away
+  // mid-flash doesn't leak.
+  useEffect(() => {
+    return () => {
+      if (wrongTimerRef.current) window.clearTimeout(wrongTimerRef.current);
+      if (completedTimerRef.current)
+        window.clearTimeout(completedTimerRef.current);
+    };
+  }, []);
 
   /** Push the current cells snapshot onto the undo stack before a
    *  mutation. Caps the stack to UNDO_LIMIT entries. */
@@ -280,13 +405,58 @@ export default function SudokuClient() {
       // that digit from peer cells' notes — the single biggest QoL
       // win for serious Sudoku players (saves manual notes hygiene).
       const isCorrect = digit === game.solution[selectedIdx];
-      const mistakeBump = !isCorrect && cell.v !== digit ? 1 : 0;
+      const isPlacementChange = cell.v !== digit;
+      const mistakeBump = !isCorrect && isPlacementChange ? 1 : 0;
       cells[selectedIdx] = { ...cell, v: digit, notes: 0 };
       cells = clearPeerNotes(cells, selectedIdx, digit);
 
       const allFilled = cells.every((c) => c.v !== 0);
       const allCorrect =
         allFilled && cells.every((c, i) => c.v === game.solution[i]);
+
+      // Wrong-placement shake — fires once on the just-placed cell so
+      // the mistake reads physically, not just through the small
+      // mistake counter in the status bar. Skipped when the user is
+      // re-affirming a value they already had.
+      if (!isCorrect && isPlacementChange) {
+        const placedIdx = selectedIdx;
+        setWrongPlacedIdx(placedIdx);
+        if (wrongTimerRef.current) window.clearTimeout(wrongTimerRef.current);
+        wrongTimerRef.current = window.setTimeout(() => {
+          setWrongPlacedIdx((current) =>
+            current === placedIdx ? null : current,
+          );
+          wrongTimerRef.current = null;
+        }, WRONG_SHAKE_MS);
+      }
+
+      // Row / col / box completion detection. Local diff: a placement
+      // can only complete the placed cell's row, column, or box.
+      // Flash those cells green and dispatch hugo-happy once.
+      // Suppressed when the whole puzzle just solved — the full-solve
+      // path below fires its own Hugo cheer and dominates the moment.
+      const newlyCompleted = placedSetCompletions(
+        game.cells,
+        cells,
+        game.solution,
+        selectedIdx,
+      );
+      if (newlyCompleted.length > 0 && !allCorrect) {
+        const flashed = new Set<number>();
+        for (const key of newlyCompleted) {
+          for (const i of cellsInSet(key)) flashed.add(i);
+        }
+        setCompletedFlashIndices([...flashed]);
+        if (completedTimerRef.current)
+          window.clearTimeout(completedTimerRef.current);
+        completedTimerRef.current = window.setTimeout(() => {
+          setCompletedFlashIndices([]);
+          completedTimerRef.current = null;
+        }, COMPLETED_FLASH_MS);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+        }
+      }
 
       let finishedAt: number | null = null;
       if (allCorrect) {
@@ -376,6 +546,33 @@ export default function SudokuClient() {
     const allFilled = cells.every((c) => c.v !== 0);
     const allCorrect =
       allFilled && cells.every((c, i) => c.v === game.solution[i]);
+
+    // Same completion-flash + Hugo-cheer wiring as applyEntry. A hint
+    // can finish a row/col/box too, and the player should feel that
+    // even when the digit came from a hint.
+    const newlyCompleted = placedSetCompletions(
+      game.cells,
+      cells,
+      game.solution,
+      target,
+    );
+    if (newlyCompleted.length > 0 && !allCorrect) {
+      const flashed = new Set<number>();
+      for (const key of newlyCompleted) {
+        for (const i of cellsInSet(key)) flashed.add(i);
+      }
+      setCompletedFlashIndices([...flashed]);
+      if (completedTimerRef.current)
+        window.clearTimeout(completedTimerRef.current);
+      completedTimerRef.current = window.setTimeout(() => {
+        setCompletedFlashIndices([]);
+        completedTimerRef.current = null;
+      }, COMPLETED_FLASH_MS);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+      }
+    }
+
     let finishedAt: number | null = null;
     if (allCorrect) {
       finishedAt = Date.now();
@@ -544,6 +741,8 @@ export default function SudokuClient() {
             selectedIdx={selectedIdx}
             conflictMask={conflictMask}
             selectedValue={selectedValue}
+            wrongPlacedIdx={wrongPlacedIdx}
+            completedFlashIndices={completedFlashIndices}
             onSelect={(i) => setSelectedIdx(i)}
             finished={finished || paused}
             hidden={paused}
@@ -766,6 +965,8 @@ function Board({
   selectedIdx,
   conflictMask,
   selectedValue,
+  wrongPlacedIdx,
+  completedFlashIndices,
   onSelect,
   finished,
   hidden,
@@ -774,6 +975,12 @@ function Board({
   selectedIdx: number | null;
   conflictMask: boolean[];
   selectedValue: number;
+  /** Cell index that just received a wrong placement; gets a brief
+   *  shake. Null when no recent mistake is mid-animation. */
+  wrongPlacedIdx: number | null;
+  /** Cell indices belonging to a row/col/box that just completed;
+   *  get a brief green-soft flash. Empty when nothing flashing. */
+  completedFlashIndices: number[];
   onSelect: (i: number) => void;
   finished: boolean;
   hidden?: boolean;
@@ -781,6 +988,11 @@ function Board({
   const selRow = selectedIdx === null ? -1 : rowOf(selectedIdx);
   const selCol = selectedIdx === null ? -1 : colOf(selectedIdx);
   const selBox = selectedIdx === null ? -1 : boxOf(selectedIdx);
+  // Set form for O(1) lookup during the 81-cell render loop.
+  const completedFlashSet = useMemo(
+    () => new Set(completedFlashIndices),
+    [completedFlashIndices],
+  );
 
   return (
     <div
@@ -844,14 +1056,18 @@ function Board({
             : "border-b-2 border-b-ink/15";
 
         // Text colour: ink for the puzzle's given clues, pink for the
-        // player's marks (so they read as "I placed this"). When the
-        // cell is the focused one AND holds a user-placed digit, the
-        // background went to ink — flip the digit to cream so it pops.
+        // player's marks (so they read as "I placed this"). Conflict
+        // beats pink — a dark tomato digit on tomato-soft makes the
+        // wrong cell loud, even unselected. When the cell is the
+        // focused one AND holds a user-placed digit, the background
+        // went to ink — flip the digit to cream so it pops.
         const textCol = cell.given
           ? "text-ink"
-          : isSelected && holdsUserValue
-            ? "text-cream"
-            : "text-pink";
+          : conflict
+            ? "text-tomato"
+            : isSelected && holdsUserValue
+              ? "text-cream"
+              : "text-pink";
 
         // Inset ink ring marks the selected cell. Layered as a ring
         // (not a border) so it sits on top of the grid's per-cell
@@ -860,6 +1076,14 @@ function Board({
         const selectedRing = isSelected
           ? "relative z-10 ring-[3px] ring-inset ring-ink"
           : "";
+
+        // Transient animation classes. Mutually compatible — a cell
+        // could in principle be the just-placed wrong AND a member of
+        // a newly-completed set (unlikely but cheap to support).
+        const isWrongPlaced = i === wrongPlacedIdx;
+        const isCompletedFlash = completedFlashSet.has(i);
+        const flashClass = isCompletedFlash ? "sudoku-completed-flash" : "";
+        const shakeClass = isWrongPlaced ? "sudoku-wrong-shake" : "";
 
         return (
           <button
@@ -870,7 +1094,7 @@ function Board({
             aria-selected={isSelected}
             onClick={() => onSelect(i)}
             disabled={finished}
-            className={`flex items-center justify-center font-display font-extrabold leading-none transition-colors ${bg} ${textCol} ${borderRight} ${borderBottom} ${selectedRing}`}
+            className={`flex items-center justify-center font-display font-extrabold leading-none transition-colors ${bg} ${textCol} ${borderRight} ${borderBottom} ${selectedRing} ${flashClass} ${shakeClass}`}
             style={{
               fontSize: "clamp(1.1rem, 4vw, 1.7rem)",
               cursor: finished ? "default" : "pointer",
@@ -1024,7 +1248,7 @@ function NumberPad({
         </button>
       </div>
       <p className="text-[11px] text-ink-muted">
-        1–9 place · N notes · H hint · P pause · ⌘Z undo · backspace erase
+        1–9 place · arrow keys move · N notes · H hint · P pause · ⌘Z undo · backspace erase
       </p>
     </div>
   );
