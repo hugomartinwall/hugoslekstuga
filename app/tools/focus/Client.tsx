@@ -426,6 +426,12 @@ function Setup({
   );
 }
 
+// Geometry for the circular progress ring. viewBox is 0..100, stroke
+// sits centered at radius 46 so a ~3-unit stroke clears the chunky ink
+// border at the outer edge. Computed once, not on every render.
+const RING_RADIUS = 46;
+const RING_CIRC = 2 * Math.PI * RING_RADIUS;
+
 function Running({
   intention,
   remainingSec,
@@ -443,6 +449,13 @@ function Running({
   onResume: () => void;
   onReset: () => void;
 }) {
+  // Last-minute breathe: ≤60s remaining, not paused. A 3s scale wave that
+  // says "almost done" without alarm. Stops the moment the timer reaches
+  // zero (Running unmounts and Done takes over).
+  const breathing = !paused && remainingSec > 0 && remainingSec <= 60;
+  // Clamp progress for the dashoffset math — drift past 1 would produce
+  // a tiny negative offset that some browsers render as a stray dot.
+  const clamped = Math.min(1, Math.max(0, progress));
   return (
     <div className="flex flex-col items-center gap-8 py-4 text-center">
       <p className="max-w-md text-sm font-semibold uppercase tracking-wide text-ink-muted">
@@ -454,15 +467,40 @@ function Running({
         </p>
       )}
 
-      <div className="card-chunk relative w-full max-w-md overflow-hidden rounded-[var(--radius-card)] bg-cream p-10">
+      <div className="flex flex-col items-center gap-3">
         <div
-          className="absolute left-0 top-0 h-full bg-green-soft transition-[width] duration-200 ease-linear"
-          style={{ width: `${Math.min(100, Math.max(0, progress * 100))}%` }}
-          aria-hidden
-        />
-        <p className="relative z-10 font-display text-6xl font-extrabold leading-none tracking-tight tabular-nums sm:text-7xl">
-          {formatClock(remainingSec)}
-        </p>
+          className={`card-chunk relative rounded-full bg-cream transition-opacity ${
+            paused ? "opacity-60" : ""
+          } ${breathing ? "focus-breathe" : ""}`}
+          style={{ width: "min(80vw, 320px)", aspectRatio: "1" }}
+        >
+          <svg
+            viewBox="0 0 100 100"
+            className="absolute inset-0 h-full w-full -rotate-90"
+            aria-hidden
+          >
+            <circle
+              cx="50"
+              cy="50"
+              r={RING_RADIUS}
+              fill="none"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray={RING_CIRC}
+              strokeDashoffset={RING_CIRC * (1 - clamped)}
+              style={{ stroke: "var(--color-green)" }}
+              className="transition-[stroke-dashoffset] duration-200 ease-linear"
+            />
+          </svg>
+          <p className="absolute inset-0 flex items-center justify-center font-display text-6xl font-extrabold leading-none tracking-tight tabular-nums sm:text-7xl">
+            {formatClock(remainingSec)}
+          </p>
+        </div>
+        {paused && (
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            paused
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap justify-center gap-3">

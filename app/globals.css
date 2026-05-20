@@ -273,6 +273,21 @@ body {
   animation: sudoku-completed-flash 900ms ease-out;
 }
 
+/* Focus last-minute breathe. Applied to the Running-screen clock when
+ * ≤60 seconds remain. A gentle 3-second scale wave — barely more than
+ * a heartbeat — that says "you're nearly there" without alarm. The
+ * chime + hugo-happy fire at 0; this only sets the mood for the final
+ * stretch. */
+@keyframes focus-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.025); }
+}
+
+.focus-breathe {
+  animation: focus-breathe 3s ease-in-out infinite;
+  transform-origin: center center;
+}
+
 /* The happy puff — five coloured sparkles fan out above Hugo when a
  * drag-and-release completes. Each sparkle gets its own `--dx`/`--dy`
  * direction inline so a single keyframe covers all five with the
@@ -348,7 +363,8 @@ body {
   .sudoku-placed,
   .sudoku-wrong-shake,
   .sudoku-completed-flash,
-  .sudoku-hint-pulse {
+  .sudoku-hint-pulse,
+  .focus-breathe {
     animation: none !important;
   }
   /* The play-dead huff and happy sparkles are also gated off — the
