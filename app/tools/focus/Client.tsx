@@ -16,8 +16,11 @@ const STORAGE_KEY_DURATION = "hugoslekstuga:focus:duration";
 const STORAGE_KEY_AMBIENT = "hugoslekstuga:focus:ambient";
 const STORAGE_KEY_SESSIONS = "hugoslekstuga:focus:sessions";
 
-type SessionState = { date: string; count: number };
-const SESSIONS_DEFAULT: SessionState = { date: "", count: 0 };
+// `minutes` is the total focused time today, summed across sessions. Optional
+// for backward compatibility — older localStorage entries (pre-Today's-minutes
+// pass) only have date + count.
+type SessionState = { date: string; count: number; minutes?: number };
+const SESSIONS_DEFAULT: SessionState = { date: "", count: 0, minutes: 0 };
 
 // Minimal subset of the WakeLock API to avoid relying on lib.dom typings that
 // aren't always present in build environments.
@@ -52,12 +55,19 @@ export default function FocusPage() {
   const [sessions, setSessions] = useLocalStorageState<SessionState>(STORAGE_KEY_SESSIONS, SESSIONS_DEFAULT);
   const [remainingSec, setRemainingSec] = useState(durationSec);
   const [phase, setPhase] = useState<Phase>("setup");
+  // The duration of the *current* session, in seconds. Diverges from
+  // `durationSec` (the user's chosen preference) when they hit "+5 min" on
+  // the Done screen — that extension is a one-off 5-min session. Reset on
+  // each start() and extend() so progress math always relates to the
+  // session actually in flight, not whatever pref persists in localStorage.
+  const [sessionDurationSec, setSessionDurationSec] = useState(durationSec);
   const startedAtRef = useRef<number | null>(null);
   const baseRemainingRef = useRef<number>(durationSec);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
 
   const today = useMemo(() => localISODate(new Date()), []);
   const todayCount = sessions.date === today ? sessions.count : 0;
+  const todayMinutes = sessions.date === today ? (sessions.minutes ?? 0) : 0;
 
   // Hugo settles to calm on this page. Route-change fires `navigated` which
   // sets him excited; the calm-down lands right after so by the time you
@@ -206,16 +216,24 @@ export default function FocusPage() {
         // BrandDot lights up with the sparkle puff; hugoMoodEvent("happy")
         // also feeds the inner state so the mood stays excited briefly.
         window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
-        // Increment session count only on natural completion (not on Stop).
+        // Increment session count + minutes only on natural completion (not
+        // on Stop). Minutes is the source of truth for "today's focused time"
+        // on the Setup screen — count is kept for the "N sessions today" line
+        // on the Done screen, since 3×5min reads differently from 1×15min.
+        const minutesDone = sessionDurationSec / 60;
         setSessions((prev) =>
           prev.date === today
-            ? { date: today, count: prev.count + 1 }
-            : { date: today, count: 1 },
+            ? {
+                date: today,
+                count: prev.count + 1,
+                minutes: (prev.minutes ?? 0) + minutesDone,
+              }
+            : { date: today, count: 1, minutes: minutesDone },
         );
       }
     }, 200);
     return () => window.clearInterval(id);
-  }, [phase, intention, today, setSessions]);
+  }, [phase, intention, today, setSessions, sessionDurationSec]);
 
   // ---------- wake lock ----------
   useEffect(() => {
@@ -247,12 +265,25 @@ export default function FocusPage() {
   }, [phase]);
 
   const start = useCallback(() => {
+    setSessionDurationSec(durationSec);
     baseRemainingRef.current = durationSec;
     setRemainingSec(durationSec);
     startedAtRef.current = Date.now();
     setPhase("running");
     requestNotificationPermission();
   }, [durationSec]);
+
+  // Extend by N minutes from the Done screen. Starts a fresh session at
+  // the new duration without touching the user's stored durationSec — when
+  // they come back to Setup, their original preference is intact.
+  const extend = useCallback((mins: number) => {
+    const sec = mins * 60;
+    setSessionDurationSec(sec);
+    baseRemainingRef.current = sec;
+    setRemainingSec(sec);
+    startedAtRef.current = Date.now();
+    setPhase("running");
+  }, []);
 
   const pause = useCallback(() => {
     const startedAt = startedAtRef.current;
@@ -277,9 +308,10 @@ export default function FocusPage() {
   }, [durationSec]);
 
   const progress = useMemo(() => {
-    if (durationSec <= 0) return 0;
-    return 1 - remainingSec / durationSec;
-  }, [remainingSec, durationSec]);
+    if (sessionDurationSec <= 0) return 0;
+    return 1 - remainingSec / sessionDurationSec;
+  }, [remainingSec, sessionDurationSec]);
+  const elapsedSec = Math.max(0, sessionDurationSec - remainingSec);
 
   return (
     <ToolFrame tool={tool}>
@@ -291,6 +323,7 @@ export default function FocusPage() {
           setDurationSec={setDurationSec}
           ambient={ambient}
           setAmbient={setAmbient}
+          todayMinutes={todayMinutes}
           onStart={start}
         />
       )}
@@ -299,6 +332,7 @@ export default function FocusPage() {
         <Running
           intention={intention}
           remainingSec={remainingSec}
+          elapsedSec={elapsedSec}
           progress={progress}
           paused={phase === "paused"}
           onPause={pause}
@@ -308,7 +342,12 @@ export default function FocusPage() {
       )}
 
       {phase === "done" && (
-        <Done intention={intention} todayCount={todayCount} onReset={reset} />
+        <Done
+          intention={intention}
+          todayCount={todayCount}
+          onReset={reset}
+          onExtend={extend}
+        />
       )}
     </ToolFrame>
   );
@@ -321,6 +360,7 @@ function Setup({
   setDurationSec,
   ambient,
   setAmbient,
+  todayMinutes,
   onStart,
 }: {
   intention: string;
@@ -329,10 +369,22 @@ function Setup({
   setDurationSec: (n: number) => void;
   ambient: boolean;
   setAmbient: (b: boolean) => void;
+  todayMinutes: number;
   onStart: () => void;
 }) {
+  // Round to whole minutes for display — the underlying number may have
+  // half-minute artifacts from a future custom-seconds path, but the
+  // surface should always read clean.
+  const roundedMinutes = Math.round(todayMinutes);
   return (
     <div className="flex flex-col gap-7">
+      {roundedMinutes > 0 && (
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          {roundedMinutes === 1
+            ? "1 minute focused today"
+            : `${roundedMinutes} minutes focused today`}
+        </p>
+      )}
       <div className="flex flex-col gap-2">
         <label
           htmlFor="intention"
@@ -432,9 +484,20 @@ function Setup({
 const RING_RADIUS = 46;
 const RING_CIRC = 2 * Math.PI * RING_RADIUS;
 
+// Stop guard threshold. Past this much elapsed time, the Stop button
+// becomes two-tap to avoid losing a real session to a stray click. Under
+// the threshold, Stop is one-tap — early in a session the lost cost is
+// trivially small.
+const STOP_GUARD_THRESHOLD_SEC = 5 * 60;
+// Window after the first tap during which a second tap actually stops.
+// Long enough to read "tap again to stop" and reach the button; short
+// enough that an accidental first tap times out before the second.
+const STOP_GUARD_WINDOW_MS = 2000;
+
 function Running({
   intention,
   remainingSec,
+  elapsedSec,
   progress,
   paused,
   onPause,
@@ -443,6 +506,7 @@ function Running({
 }: {
   intention: string;
   remainingSec: number;
+  elapsedSec: number;
   progress: number;
   paused: boolean;
   onPause: () => void;
@@ -456,6 +520,41 @@ function Running({
   // Clamp progress for the dashoffset math — drift past 1 would produce
   // a tiny negative offset that some browsers render as a stray dot.
   const clamped = Math.min(1, Math.max(0, progress));
+
+  // Two-tap stop guard. First tap arms; second tap (within the window)
+  // actually stops. Below the threshold of elapsed time, stop is one-tap.
+  const [stopArmed, setStopArmed] = useState(false);
+  const stopTimerRef = useRef<number | null>(null);
+  // Cleanup on unmount so a pending timer doesn't leak. (The session
+  // could end naturally while the user has Stop armed.)
+  useEffect(
+    () => () => {
+      if (stopTimerRef.current !== null) {
+        window.clearTimeout(stopTimerRef.current);
+      }
+    },
+    [],
+  );
+  const handleStopClick = () => {
+    const needsGuard = elapsedSec > STOP_GUARD_THRESHOLD_SEC;
+    if (needsGuard && !stopArmed) {
+      setStopArmed(true);
+      if (stopTimerRef.current !== null) {
+        window.clearTimeout(stopTimerRef.current);
+      }
+      stopTimerRef.current = window.setTimeout(() => {
+        setStopArmed(false);
+        stopTimerRef.current = null;
+      }, STOP_GUARD_WINDOW_MS);
+      return;
+    }
+    if (stopTimerRef.current !== null) {
+      window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+    setStopArmed(false);
+    onReset();
+  };
   return (
     <div className="flex flex-col items-center gap-8 py-4 text-center">
       <p className="max-w-md text-sm font-semibold uppercase tracking-wide text-ink-muted">
@@ -523,10 +622,12 @@ function Running({
         )}
         <button
           type="button"
-          onClick={onReset}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-7 py-4 font-display text-base font-extrabold sm:px-6 sm:py-3"
+          onClick={handleStopClick}
+          className={`btn-chunk rounded-[var(--radius-button)] px-7 py-4 font-display text-base font-extrabold transition-colors sm:px-6 sm:py-3 ${
+            stopArmed ? "bg-pink text-ink" : "bg-cream"
+          }`}
         >
-          Stop
+          {stopArmed ? "Tap again to stop" : "Stop"}
         </button>
       </div>
     </div>
@@ -537,10 +638,12 @@ function Done({
   intention,
   todayCount,
   onReset,
+  onExtend,
 }: {
   intention: string;
   todayCount: number;
   onReset: () => void;
+  onExtend: (mins: number) => void;
 }) {
   const countLine =
     todayCount === 1
@@ -562,13 +665,22 @@ function Done({
           {countLine}
         </p>
       )}
-      <button
-        type="button"
-        onClick={onReset}
-        className="btn-chunk mx-auto rounded-[var(--radius-button)] bg-green px-7 py-3 font-display text-base font-extrabold text-cream"
-      >
-        Another round
-      </button>
+      <div className="flex flex-wrap justify-center gap-3">
+        <button
+          type="button"
+          onClick={() => onExtend(5)}
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-6 py-3 font-display text-base font-extrabold"
+        >
+          +5 min
+        </button>
+        <button
+          type="button"
+          onClick={onReset}
+          className="btn-chunk rounded-[var(--radius-button)] bg-green px-7 py-3 font-display text-base font-extrabold text-cream"
+        >
+          Another round
+        </button>
+      </div>
     </div>
   );
 }
