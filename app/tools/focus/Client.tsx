@@ -84,6 +84,79 @@ export default function FocusPage() {
   const ambientGainRef = useRef<GainNode | null>(null);
   const ambientSrcRef = useRef<AudioBufferSourceNode | null>(null);
 
+  // Separate, short-lived AudioContext for the Setup-screen preview.
+  // Lives long enough for a 2.2s fade-in / hold / fade-out, then tears
+  // itself down. A new click cancels the previous preview so repeated
+  // taps don't pile contexts up.
+  const previewCtxRef = useRef<AudioContext | null>(null);
+  const previewTimerRef = useRef<number | null>(null);
+
+  const previewAmbient = useCallback(() => {
+    // Cancel any in-flight preview so a re-click doesn't layer noise.
+    if (previewCtxRef.current) {
+      try {
+        previewCtxRef.current.close();
+      } catch {}
+      previewCtxRef.current = null;
+    }
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const buf = makeBrownBuffer(ctx);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = false;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001;
+      src.connect(gain).connect(ctx.destination);
+      src.start();
+      const now = ctx.currentTime;
+      // Quick ramp up, brief hold, ramp down. Short enough to feel like
+      // a sample, long enough to recognise the texture.
+      gain.gain.exponentialRampToValueAtTime(AMBIENT_VOLUME, now + 0.4);
+      gain.gain.setValueAtTime(AMBIENT_VOLUME, now + 1.6);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
+      previewCtxRef.current = ctx;
+      previewTimerRef.current = window.setTimeout(() => {
+        try {
+          src.stop();
+        } catch {}
+        try {
+          ctx.close();
+        } catch {}
+        previewCtxRef.current = null;
+        previewTimerRef.current = null;
+      }, 2400);
+    } catch {
+      // Audio unsupported / blocked — silently skip.
+    }
+  }, []);
+
+  // Clean up any leftover preview on unmount.
+  useEffect(
+    () => () => {
+      if (previewCtxRef.current) {
+        try {
+          previewCtxRef.current.close();
+        } catch {}
+        previewCtxRef.current = null;
+      }
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
   const startAmbient = useCallback(() => {
     if (ambientCtxRef.current) return; // already running
     try {
@@ -324,6 +397,7 @@ export default function FocusPage() {
           ambient={ambient}
           setAmbient={setAmbient}
           todayMinutes={todayMinutes}
+          onPreviewAmbient={previewAmbient}
           onStart={start}
         />
       )}
@@ -361,6 +435,7 @@ function Setup({
   ambient,
   setAmbient,
   todayMinutes,
+  onPreviewAmbient,
   onStart,
 }: {
   intention: string;
@@ -370,6 +445,7 @@ function Setup({
   ambient: boolean;
   setAmbient: (b: boolean) => void;
   todayMinutes: number;
+  onPreviewAmbient: () => void;
   onStart: () => void;
 }) {
   // Round to whole minutes for display — the underlying number may have
@@ -434,7 +510,7 @@ function Setup({
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Ambient sound
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setAmbient(false)}
@@ -452,6 +528,18 @@ function Setup({
             }`}
           >
             Brown noise
+          </button>
+          {/* Preview sits beside the toggle pair, intentionally lighter
+              weight — it isn't a selection, just a 2-second taste so you
+              know what you're committing to. Always present so you can
+              hear it before deciding either way. */}
+          <button
+            type="button"
+            onClick={onPreviewAmbient}
+            aria-label="Preview brown noise"
+            className="rounded-full border-2 border-ink bg-cream px-3 py-2 text-xs font-semibold transition-colors hover:bg-green-soft"
+          >
+            ▸ hear it
           </button>
         </div>
         <p className="text-xs text-ink-muted">
