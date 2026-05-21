@@ -891,7 +891,7 @@ export default function SudokuClient() {
           strict={game.strict === true}
           strictCap={STRICT_MISTAKE_CAP}
           almostThere={
-            !finished && !lost && emptyUserCells > 0 &&
+            !finished && !lost && !paused && emptyUserCells > 0 &&
             emptyUserCells <= ALMOST_THERE_THRESHOLD
           }
           emptyUserCells={emptyUserCells}
@@ -1294,6 +1294,13 @@ function Board({
       className="card-chunk mx-auto grid w-full max-w-[min(100%,32rem)] grid-cols-9 overflow-hidden rounded-[var(--radius-card)] border-2 border-ink bg-cream"
       style={{
         aspectRatio: "1 / 1",
+        // Equal-1fr rows are non-negotiable. Without an explicit row
+        // template the grid falls back to auto-rows: each row sizes to
+        // its cells' content, and an all-empty row collapses to ~3px
+        // because empty cells render `null` (no line-box). Today's
+        // puzzle had no clues in row 0 and the row vanished. This
+        // makes the row heights independent of content.
+        gridTemplateRows: "repeat(9, 1fr)",
         // Hidden during pause so the player can step away without
         // staring at the puzzle. visibility: hidden keeps layout.
         visibility: hidden ? "hidden" : "visible",
