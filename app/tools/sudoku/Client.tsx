@@ -229,6 +229,10 @@ function placedSetCompletions(
 const WRONG_SHAKE_MS = 360;
 const COMPLETED_FLASH_MS = 900;
 const HINT_PULSE_MS = 700;
+// Board-wide flash on win. Matches the per-set flash duration so the
+// WinPanel fades in over a board that's actively returning to its
+// resting state.
+const BOARD_WIDE_FLASH_MS = 900;
 /** Below this many empty user cells, surface an "almost there"
  *  acknowledgement in the status bar. Tuned so the cue appears at
  *  what feels like the home stretch, not too early. */
@@ -370,9 +374,14 @@ export default function SudokuClient() {
   // changed without scanning the whole grid. Cleared after
   // HINT_PULSE_MS.
   const [hintRevealedIdx, setHintRevealedIdx] = useState<number | null>(null);
+  // `boardWideFlash` — on the winning placement, every cell briefly
+  // tints green-soft. Reuses the per-set flash keyframe; cleared after
+  // BOARD_WIDE_FLASH_MS so the WinPanel arrives over a cooling board.
+  const [boardWideFlash, setBoardWideFlash] = useState(false);
   const wrongTimerRef = useRef<number | null>(null);
   const completedTimerRef = useRef<number | null>(null);
   const hintTimerRef = useRef<number | null>(null);
+  const boardWideFlashTimerRef = useRef<number | null>(null);
 
   // Tick-driven timer — `now` updates each second while a game is
   // active, unfinished, and not paused. The displayed elapsed time
@@ -398,6 +407,7 @@ export default function SudokuClient() {
     setWrongPlacedIdx(null);
     setCompletedFlashIndices([]);
     setHintRevealedIdx(null);
+    setBoardWideFlash(false);
   }, [gameStartedAt]);
 
   // Cleanup transient-flash timers on unmount so a navigation away
@@ -408,6 +418,8 @@ export default function SudokuClient() {
       if (completedTimerRef.current)
         window.clearTimeout(completedTimerRef.current);
       if (hintTimerRef.current) window.clearTimeout(hintTimerRef.current);
+      if (boardWideFlashTimerRef.current)
+        window.clearTimeout(boardWideFlashTimerRef.current);
     };
   }, []);
 
@@ -578,6 +590,16 @@ export default function SudokuClient() {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
         }
+        // Board-wide green sweep on the winning placement. Every cell
+        // briefly tints green-soft so the board itself acknowledges
+        // the solve, before the WinPanel rises into view above it.
+        setBoardWideFlash(true);
+        if (boardWideFlashTimerRef.current)
+          window.clearTimeout(boardWideFlashTimerRef.current);
+        boardWideFlashTimerRef.current = window.setTimeout(() => {
+          setBoardWideFlash(false);
+          boardWideFlashTimerRef.current = null;
+        }, BOARD_WIDE_FLASH_MS);
       }
 
       setGame({
@@ -711,6 +733,14 @@ export default function SudokuClient() {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
       }
+      // Board-wide green sweep on the winning hint, same as applyEntry.
+      setBoardWideFlash(true);
+      if (boardWideFlashTimerRef.current)
+        window.clearTimeout(boardWideFlashTimerRef.current);
+      boardWideFlashTimerRef.current = window.setTimeout(() => {
+        setBoardWideFlash(false);
+        boardWideFlashTimerRef.current = null;
+      }, BOARD_WIDE_FLASH_MS);
     }
 
     setGame({
@@ -906,6 +936,7 @@ export default function SudokuClient() {
             wrongPlacedIdx={wrongPlacedIdx}
             completedFlashIndices={completedFlashIndices}
             hintRevealedIdx={hintRevealedIdx}
+            boardWideFlash={boardWideFlash}
             onSelect={(i) => setSelectedIdx(i)}
             finished={finished || paused || lost}
             hidden={paused}
@@ -1257,6 +1288,7 @@ function Board({
   wrongPlacedIdx,
   completedFlashIndices,
   hintRevealedIdx,
+  boardWideFlash,
   onSelect,
   finished,
   hidden,
@@ -1274,6 +1306,9 @@ function Board({
   /** Cell index the hint button just revealed; gets a yellow ring
    *  pulse so the player's eye lands on what changed. */
   hintRevealedIdx: number | null;
+  /** True for ~900ms on the winning placement — every cell tints
+   *  green-soft so the board itself acknowledges the solve. */
+  boardWideFlash: boolean;
   onSelect: (i: number) => void;
   finished: boolean;
   hidden?: boolean;
@@ -1316,11 +1351,22 @@ function Board({
         const inHighlight = sameRow || sameCol || sameBox;
         const sameValue =
           selectedValue !== 0 && cell.v === selectedValue && !isSelected;
+        // Notes-highlight: empty cells whose pencil notes include the
+        // selected digit. Same intent as sameValue ("where this digit
+        // is relevant") but weaker — these are considerations, not
+        // placements. Tinted slightly stronger than the row/col/box
+        // peer-highlight so a noted cell stands out even inside the
+        // selected cell's row.
+        const noteHighlight =
+          selectedValue !== 0 &&
+          cell.v === 0 &&
+          hasNote(cell.notes, selectedValue);
         const conflict = conflictMask[i];
 
-        // Background priority: conflict > selected > sameValue >
-        // peer-highlight > base. Given cells get a slightly darker
-        // base so they read as "fixed by the puzzle".
+        // Background priority (each line may overwrite the previous):
+        //   base → peer-highlight → noteHighlight → sameValue → selected → conflict
+        // Given cells get a slightly darker base so they read as
+        // "fixed by the puzzle".
         //
         // A subtle but real bug used to live here: when you selected
         // an empty cell, bg-pink + text-pink rendered placed digits
@@ -1331,6 +1377,7 @@ function Board({
         const holdsUserValue = cell.v !== 0 && !cell.given;
         let bg = cell.given ? "bg-cream-deep" : "bg-cream";
         if (inHighlight) bg = cell.given ? "bg-pink-soft/60" : "bg-pink-soft/50";
+        if (noteHighlight) bg = "bg-pink-soft/70";
         if (sameValue) bg = "bg-pink-soft";
         if (isSelected) bg = holdsUserValue ? "bg-ink" : "bg-pink";
         if (conflict) bg = "bg-tomato-soft";
@@ -1380,10 +1427,14 @@ function Board({
         // Transient animation classes. Mutually compatible — a cell
         // could in principle be the just-placed wrong AND a member of
         // a newly-completed set (unlikely but cheap to support).
+        // boardWideFlash piggybacks on the per-set flash keyframe so
+        // the entire board pulses green-soft once on the winning
+        // placement.
         const isWrongPlaced = i === wrongPlacedIdx;
         const isCompletedFlash = completedFlashSet.has(i);
         const isHintRevealed = i === hintRevealedIdx;
-        const flashClass = isCompletedFlash ? "sudoku-completed-flash" : "";
+        const flashClass =
+          isCompletedFlash || boardWideFlash ? "sudoku-completed-flash" : "";
         const shakeClass = isWrongPlaced ? "sudoku-wrong-shake" : "";
         const hintClass = isHintRevealed ? "sudoku-hint-pulse" : "";
 
@@ -1413,7 +1464,10 @@ function Board({
                 {cell.v}
               </span>
             ) : cell.notes !== 0 ? (
-              <NotesGrid notes={cell.notes} />
+              <NotesGrid
+                notes={cell.notes}
+                highlight={selectedValue || undefined}
+              />
             ) : null}
           </button>
         );
@@ -1422,26 +1476,42 @@ function Board({
   );
 }
 
-function NotesGrid({ notes }: { notes: number }) {
+function NotesGrid({
+  notes,
+  highlight,
+}: {
+  notes: number;
+  /** If set, render the matching digit in pink so the eye finds it
+   *  inside the 3×3 pencil grid. Companion to the same-digit
+   *  background tint on the cell itself. */
+  highlight?: number;
+}) {
   return (
     <span
       className="grid h-full w-full text-ink-soft"
       style={{
         gridTemplateColumns: "repeat(3, 1fr)",
         gridTemplateRows: "repeat(3, 1fr)",
-        fontSize: "0.55rem",
+        // Scale with the cell — at 375px viewport each cell is ~37px
+        // and 0.55rem renders barely-readable pencil marks. clamp
+        // ramps it up to tablet+ without bloating phones.
+        fontSize: "clamp(0.45rem, 1.4vw, 0.65rem)",
         lineHeight: 1,
         padding: "2px",
       }}
     >
       {Array.from({ length: 9 }, (_, k) => {
         const v = k + 1;
+        const present = hasNote(notes, v);
+        const isHighlight = present && highlight === v;
         return (
           <span
             key={v}
-            className="flex items-center justify-center font-display font-bold"
+            className={`flex items-center justify-center font-display font-bold ${
+              isHighlight ? "text-pink" : ""
+            }`}
           >
-            {hasNote(notes, v) ? v : ""}
+            {present ? v : ""}
           </span>
         );
       })}
@@ -1481,23 +1551,40 @@ function NumberPad({
       <div className="grid grid-cols-9 gap-1.5">
         {Array.from({ length: 9 }, (_, i) => {
           const v = i + 1;
-          const done = remainingByValue[v] <= 0;
+          const remaining = remainingByValue[v];
+          const done = remaining <= 0;
           return (
             <button
               key={v}
               type="button"
               onClick={() => onDigit(v)}
               disabled={disabled || done}
-              className={`btn-chunk flex aspect-square items-center justify-center rounded-[var(--radius-button)] font-display text-xl font-extrabold transition-opacity ${
+              className={`btn-chunk relative flex aspect-square items-center justify-center rounded-[var(--radius-button)] font-display text-xl font-extrabold transition-opacity ${
                 done
                   ? "bg-cream-deep text-ink-muted opacity-50"
                   : notesMode
                     ? "bg-pink-soft text-ink"
                     : "bg-pink text-ink"
               }`}
-              aria-label={`Place ${v}`}
+              aria-label={
+                done
+                  ? `${v}, all placed`
+                  : `Place ${v}, ${remaining} remaining`
+              }
             >
               {v}
+              {/* Remaining-count badge. Tiny ink-on-muted pip in the
+                  top-right of the button — meta-info that doesn't
+                  compete with the digit itself. Hidden when done (the
+                  greyed-out button already says "all placed"). */}
+              {!done && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute right-1 top-1 text-[10px] font-bold leading-none tabular-nums text-ink/60"
+                >
+                  {remaining}
+                </span>
+              )}
             </button>
           );
         })}
@@ -1606,7 +1693,7 @@ function WinPanel({
   onNewGame: () => void;
 }) {
   return (
-    <div className="card-chunk relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-pink p-6 text-center">
+    <div className="card-chunk fade-rise relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-pink p-6 text-center">
       <p className="font-display text-3xl font-extrabold tracking-tight text-ink">
         {daily ? "Today, done." : "Solved."}
       </p>
