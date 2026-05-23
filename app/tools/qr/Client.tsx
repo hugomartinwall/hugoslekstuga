@@ -170,7 +170,7 @@ export default function QrPage() {
 
           <div className="flex flex-col items-center gap-4 self-start">
             <div
-              className={`card-chunk flex aspect-square w-full max-w-xs items-center justify-center rounded-[var(--radius-card)] p-3 ${
+              className={`card-chunk flex aspect-square w-full max-w-xs items-center justify-center overflow-hidden rounded-[var(--radius-card)] p-3 ${
                 !encoded ? "border-dashed bg-cream" : ""
               }`}
               style={
@@ -180,9 +180,20 @@ export default function QrPage() {
               }
             >
               {encoded ? (
+                // The qrcode lib's `toCanvas({ width: size })` writes the
+                // chosen pixel count (256/512/1024) onto the canvas's
+                // intrinsic width/height attributes. Those double as the
+                // canvas's default CSS size when nothing else asserts
+                // itself loudly enough, so picking 512 or 1024 used to
+                // blow the canvas past its `aspect-square w-full max-w-xs`
+                // parent and cover the Download buttons. The inline
+                // 100%/100% + max-* + block + container overflow-hidden
+                // together force the display dimensions regardless of
+                // intrinsic. Render pixels stay high for sharp downloads.
                 <canvas
                   ref={canvasRef}
-                  className="h-full w-full"
+                  className="block max-h-full max-w-full"
+                  style={{ width: "100%", height: "100%" }}
                   aria-label="Generated QR code"
                 />
               ) : (
