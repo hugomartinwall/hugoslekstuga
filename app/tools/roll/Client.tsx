@@ -814,6 +814,13 @@ function Slice({
   const labelR = r * 0.62;
   const fontSize = total <= 4 ? 22 : total <= 6 ? 18 : total <= 9 ? 14 : 11;
   const maxChars = total <= 4 ? 14 : total <= 6 ? 12 : total <= 9 ? 10 : 8;
+  // Text stroke for legibility against photos. Slightly lighter for
+  // very narrow wedges so the outline doesn't swallow the glyphs.
+  const labelStrokeWidth = total > 12 ? 2.5 : 4;
+  // Opacity of the slice-colour overlay on top of an image. Just
+  // enough hue to keep slice identity, not so much that the photo
+  // gets washed out.
+  const TINT_OPACITY = 0.22;
 
   // Single-entry wheel: full circle (no wedge arcs). Image fills it
   // edge-to-edge, text overlays at centre.
@@ -829,14 +836,27 @@ function Slice({
                 <circle cx={cx} cy={cy} r={r} />
               </clipPath>
             </defs>
-            <image
-              href={image!}
-              x={cx - r}
-              y={cy - r}
-              width={2 * r}
-              height={2 * r}
-              clipPath={`url(#${clipId})`}
-              preserveAspectRatio="xMidYMid slice"
+            {/* Wrap the image in a g that owns the clip-path. clip-path
+                on a g clips its children in parent (wheel) space —
+                applying it directly to the <image> alongside a transform
+                made SVG clip-after-rotate, which let the rotated image
+                escape the clip region. */}
+            <g clipPath={`url(#${clipId})`}>
+              <image
+                href={image!}
+                x={cx - r}
+                y={cy - r}
+                width={2 * r}
+                height={2 * r}
+                preserveAspectRatio="xMidYMid slice"
+              />
+            </g>
+            <circle
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill={color.fill}
+              opacity={TINT_OPACITY}
             />
           </>
         )}
@@ -849,7 +869,7 @@ function Slice({
             fontSize="22"
             fill={hasImage ? "#fbf6ee" : color.text}
             stroke={hasImage ? "#1a1812" : undefined}
-            strokeWidth={hasImage ? 3 : undefined}
+            strokeWidth={hasImage ? labelStrokeWidth : undefined}
             strokeLinejoin="round"
             paintOrder={hasImage ? "stroke" : undefined}
             textAnchor="middle"
@@ -876,15 +896,24 @@ function Slice({
   const contentRotation = flip ? midAngle + 180 : midAngle;
   const labelPos = polar(cx, cy, labelR, midAngle);
 
-  // For image-filled slices we sit a square image over the slice and
-  // clip to the wedge path. The square is centred at the slice's
-  // approximate centroid (r·0.55 along the bisector) and sized at
-  // r·1.6 — big enough to cover any wedge up to ~180°, narrow enough
-  // that there's still enough subject-pixel density in the visible
-  // crop.
+  // Image sizing tiered by slice count. Wide wedges (few slices) need a
+  // larger image so the visible crop centres on subject pixels; narrow
+  // wedges shrink the image so it stays inside the wedge with enough
+  // density at the visible scale. Radial centre shifts the same way —
+  // wider wedges pull the centroid inward, narrower wedges push it out.
+  const imageSize =
+    total <= 2  ? r * 2.0 :
+    total <= 4  ? r * 1.7 :
+    total <= 8  ? r * 1.4 :
+    total <= 12 ? r * 1.2 :
+                  r * 1.05;
+  const imageRadialFactor =
+    total <= 2  ? 0.45 :
+    total <= 4  ? 0.50 :
+    total <= 8  ? 0.55 :
+                  0.60;
   const clipId = `roll-slice-${total}-${index}`;
-  const imageSize = r * 1.6;
-  const imageCenter = polar(cx, cy, r * 0.55, midAngle);
+  const imageCenter = polar(cx, cy, r * imageRadialFactor, midAngle);
 
   return (
     <g>
@@ -898,16 +927,26 @@ function Slice({
               <path d={path} />
             </clipPath>
           </defs>
-          <image
-            href={image!}
-            x={imageCenter.x - imageSize / 2}
-            y={imageCenter.y - imageSize / 2}
-            width={imageSize}
-            height={imageSize}
-            clipPath={`url(#${clipId})`}
-            preserveAspectRatio="xMidYMid slice"
-            transform={`rotate(${contentRotation} ${imageCenter.x} ${imageCenter.y})`}
-          />
+          {/* clip-path on the wrapper g, transform on the inner image
+              — applying both to the same <image> made SVG clip
+              after-rotate, which let the rotated image overflow the
+              wheel. The wrapper clips in wheel space; the image
+              rotates inside the clipped region. */}
+          <g clipPath={`url(#${clipId})`}>
+            <image
+              href={image!}
+              x={imageCenter.x - imageSize / 2}
+              y={imageCenter.y - imageSize / 2}
+              width={imageSize}
+              height={imageSize}
+              preserveAspectRatio="xMidYMid slice"
+              transform={`rotate(${contentRotation} ${imageCenter.x} ${imageCenter.y})`}
+            />
+          </g>
+          {/* Slice-colour tint over the image so the wheel still
+              reads as a coloured spinner. Sits between image and
+              outline so the ink border stays crisp on top. */}
+          <path d={path} fill={color.fill} opacity={TINT_OPACITY} />
           <path d={path} fill="none" stroke="#1a1812" strokeWidth="2" />
         </>
       )}
@@ -920,7 +959,7 @@ function Slice({
           fontSize={fontSize}
           fill={hasImage ? "#fbf6ee" : color.text}
           stroke={hasImage ? "#1a1812" : undefined}
-          strokeWidth={hasImage ? 3 : undefined}
+          strokeWidth={hasImage ? labelStrokeWidth : undefined}
           strokeLinejoin="round"
           paintOrder={hasImage ? "stroke" : undefined}
           textAnchor="middle"
