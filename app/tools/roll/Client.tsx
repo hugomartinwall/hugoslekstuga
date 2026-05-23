@@ -1,9 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+} from "react";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
+import { fileToWheelThumbnail } from "@/lib/roll/image";
 
 const STORAGE_KEY = "hugoslekstuga:roll:options";
 const RECENT_KEY = "hugoslekstuga:roll:recent";
@@ -19,13 +29,69 @@ const SLICE_COLORS = [
   { fill: "#14b8a6", text: "#fbf6ee" }, // teal
 ];
 
-const SAMPLE_OPTIONS = `Indian
-Italian
-Sushi
-Tacos
-Cook at home`;
+const SAMPLE_LABELS = ["Indian", "Italian", "Sushi", "Tacos", "Cook at home"];
 
+/**
+ * An entry on the wheel. Used to be a plain string in a textarea;
+ * now carries an optional picture so a "pick a restaurant" wheel
+ * shows the logos, a "pick a dish" wheel shows the food, etc.
+ *
+ * `id` is a stable React key (UUID at creation time). `image` is
+ * a base64-encoded JPEG data URL (center-cropped, 256×256 max) —
+ * see `lib/roll/image.ts` for the encoding. `null` means no image.
+ */
+type Entry = {
+  id: string;
+  label: string;
+  image: string | null;
+};
+
+const EMPTY_ENTRIES: Entry[] = [];
 const EMPTY_RECENT: string[] = [];
+
+/**
+ * Take whatever's currently sitting in `hugoslekstuga:roll:options`
+ * and return Entry[]. Two legacy shapes:
+ *
+ *   - string: the original textarea contents, newline-delimited.
+ *     Each non-empty trimmed line becomes a label-only entry.
+ *   - array:  already the new shape — pass through (filtered to
+ *     defensive-shape items so a corrupt entry can't crash render).
+ *
+ * After first save, the array path is the only one taken.
+ */
+function normaliseEntries(raw: unknown): Entry[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .filter(
+        (e): e is Entry =>
+          e !== null &&
+          typeof e === "object" &&
+          typeof (e as Entry).id === "string" &&
+          typeof (e as Entry).label === "string",
+      )
+      .map((e) => ({
+        id: e.id,
+        label: e.label,
+        image: typeof e.image === "string" ? e.image : null,
+      }));
+  }
+  if (typeof raw === "string") {
+    return raw
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((label) => ({ id: makeId(), label, image: null }));
+  }
+  return [];
+}
+
+function makeId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `e-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
 
 /* -------------------------------------------------------------------------
  * Confetti — lightweight RAF-driven particles rendered inside the wheel SVG.
@@ -50,11 +116,56 @@ const PARTICLE_LIFE_DECAY = 0.022;
 
 export default function RollPage() {
   const tool = findTool("roll")!;
-  const [raw, setRaw] = useLocalStorageState<string>(STORAGE_KEY, "");
-  const [recent, setRecent] = useLocalStorageState<string[]>(RECENT_KEY, EMPTY_RECENT);
+  // Read as `unknown` so the migration helper can inspect the raw shape
+  // (legacy string vs new Entry[]). Writes always go through setStored
+  // with Entry[] — see `setEntries` below.
+  const [stored, setStored] = useLocalStorageState<unknown>(
+    STORAGE_KEY,
+    EMPTY_ENTRIES,
+  );
+  const [recent, setRecent] = useLocalStorageState<string[]>(
+    RECENT_KEY,
+    EMPTY_RECENT,
+  );
+  const entries = useMemo(() => normaliseEntries(stored), [stored]);
+
+  const setEntries = useCallback(
+    (next: Entry[] | ((prev: Entry[]) => Entry[])) => {
+      if (typeof next === "function") {
+        setStored((prev: unknown) => next(normaliseEntries(prev)));
+      } else {
+        setStored(next);
+      }
+    },
+    [setStored],
+  );
+
+  // One-time migration: if storage holds the legacy string format on
+  // mount, write back the normalised Entry[] so subsequent reads hit
+  // the fast path. Runs once per page-load when the shape needs it.
+  useEffect(() => {
+    if (typeof stored === "string" && stored.length > 0) {
+      setEntries(normaliseEntries(stored));
+    }
+    // We only want this to compare the *initial* shape — depending on
+    // `stored` would re-fire on every keystroke. The hook reads the
+    // current snapshot synchronously.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Spinnable entries: those with either a non-empty label or an image.
+  // Empty editor rows (still being typed) are shown in the editor list
+  // but excluded from the wheel until they hold something.
+  const validEntries = useMemo(
+    () => entries.filter((e) => e.label.trim().length > 0 || e.image !== null),
+    [entries],
+  );
+
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState<number | null>(null);
+  const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState("");
   const wheelRef = useRef<SVGGElement>(null);
   const particlesRef = useRef<Particle[]>([]);
   const rafRef = useRef<number | null>(null);
@@ -73,16 +184,7 @@ export default function RollPage() {
     return () => mq.removeEventListener("change", listener);
   }, []);
 
-  const options = useMemo(
-    () =>
-      raw
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    [raw],
-  );
-
-  const canSpin = options.length >= 2;
+  const canSpin = validEntries.length >= 2;
 
   const startConfettiLoop = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -142,7 +244,7 @@ export default function RollPage() {
 
   const spin = useCallback(() => {
     if (!canSpin || spinning) return;
-    const n = options.length;
+    const n = validEntries.length;
     const step = 360 / n;
     const idx = Math.floor(Math.random() * n);
     const winnerCenter = (idx + 0.5) * step;
@@ -157,14 +259,16 @@ export default function RollPage() {
     window.setTimeout(() => {
       setWinner(idx);
       setSpinning(false);
-      const winningOption = options[idx];
+      const winningEntry = validEntries[idx];
       const winningColor = SLICE_COLORS[idx % SLICE_COLORS.length].fill;
       burstConfetti(winningColor);
-      setRecent((prev) => [winningOption, ...prev].slice(0, 5));
+      // Recent stores labels only — images don't follow into the log.
+      const displayLabel = winningEntry.label.trim() || "(no label)";
+      setRecent((prev) => [displayLabel, ...prev].slice(0, 5));
     }, 4100);
-  }, [canSpin, spinning, options, rotation, burstConfetti, setRecent]);
+  }, [canSpin, spinning, validEntries, rotation, burstConfetti, setRecent]);
 
-  // Spacebar to spin (when not focused on the textarea).
+  // Spacebar to spin (when not focused on an input/textarea/contentEditable).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space") return;
@@ -184,39 +288,164 @@ export default function RollPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [spin]);
 
+  /* ---------- Editor handlers ---------- */
+
+  const addEntry = useCallback(() => {
+    setEntries((prev) => [...prev, { id: makeId(), label: "", image: null }]);
+  }, [setEntries]);
+
+  const removeEntry = useCallback(
+    (id: string) => {
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+    },
+    [setEntries],
+  );
+
+  const setLabel = useCallback(
+    (id: string, label: string) => {
+      setEntries((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, label } : e)),
+      );
+    },
+    [setEntries],
+  );
+
+  const setImage = useCallback(
+    (id: string, image: string | null) => {
+      setEntries((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, image } : e)),
+      );
+    },
+    [setEntries],
+  );
+
+  /**
+   * Multi-line paste from the textarea era: when a user pastes text
+   * containing newlines into a label input, splice the lines into
+   * the list — the focused row gets the first line, additional lines
+   * insert as new rows immediately below.
+   */
+  const splitPaste = useCallback(
+    (id: string, text: string) => {
+      const lines = text.split("\n").map((s) => s.trim()).filter(Boolean);
+      if (lines.length <= 1) return;
+      setEntries((prev) => {
+        const idx = prev.findIndex((e) => e.id === id);
+        if (idx === -1) return prev;
+        const head = prev.slice(0, idx);
+        const tail = prev.slice(idx + 1);
+        const updatedFocused = { ...prev[idx], label: lines[0] };
+        const newRows = lines.slice(1).map((label) => ({
+          id: makeId(),
+          label,
+          image: null,
+        }));
+        return [...head, updatedFocused, ...newRows, ...tail];
+      });
+    },
+    [setEntries],
+  );
+
+  /** Append all non-empty lines from the bulk-paste textarea as new rows. */
+  const applyBulkPaste = useCallback(() => {
+    const lines = bulkPasteText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return;
+    setEntries((prev) => [
+      ...prev,
+      ...lines.map((label) => ({ id: makeId(), label, image: null })),
+    ]);
+    setBulkPasteText("");
+    setBulkPasteOpen(false);
+  }, [bulkPasteText, setEntries]);
+
+  const loadSample = useCallback(() => {
+    setEntries(
+      SAMPLE_LABELS.map((label) => ({ id: makeId(), label, image: null })),
+    );
+  }, [setEntries]);
+
+  /* ---------- Render ---------- */
+
   return (
     <ToolFrame tool={tool}>
       <div className="grid grid-cols-1 gap-8 md:grid-cols-[1fr_1fr] md:gap-10">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <label
-              htmlFor="roll-options"
-              className="text-xs font-semibold uppercase tracking-wide text-ink-muted"
-            >
-              Options (one per line)
-            </label>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Options
+            </p>
             <button
               type="button"
-              onClick={() => setRaw(SAMPLE_OPTIONS)}
+              onClick={loadSample}
               className="text-xs font-semibold text-orange underline-offset-2 hover:underline"
             >
               try a sample
             </button>
           </div>
-          <textarea
-            id="roll-options"
-            value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            rows={8}
-            placeholder="Pizza&#10;Sushi&#10;Tacos&#10;Cook at home"
-            className="card-chunk min-h-[12rem] rounded-[var(--radius-card)] bg-cream px-4 py-3 font-mono text-sm leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
-          />
+
+          <ul className="flex flex-col gap-2">
+            {entries.map((entry) => (
+              <EntryRow
+                key={entry.id}
+                entry={entry}
+                onLabelChange={(label) => setLabel(entry.id, label)}
+                onSetImage={(image) => setImage(entry.id, image)}
+                onClearImage={() => setImage(entry.id, null)}
+                onDelete={() => removeEntry(entry.id)}
+                onPasteSplit={(text) => splitPaste(entry.id, text)}
+              />
+            ))}
+          </ul>
+
+          <button
+            type="button"
+            onClick={addEntry}
+            className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink"
+          >
+            + Add option
+          </button>
+
+          {/* Bulk-paste disclosure — recovers the old textarea's
+              "paste 10 lines from a doc" superpower. */}
+          <div className="flex flex-col gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setBulkPasteOpen((o) => !o)}
+              className="self-start text-xs font-semibold text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+              aria-expanded={bulkPasteOpen}
+            >
+              {bulkPasteOpen ? "hide bulk paste" : "paste a list"}
+            </button>
+            {bulkPasteOpen && (
+              <div className="flex flex-col gap-2">
+                <textarea
+                  value={bulkPasteText}
+                  onChange={(e) => setBulkPasteText(e.target.value)}
+                  rows={5}
+                  placeholder="Paste one option per line and click Add all."
+                  className="card-chunk min-h-[8rem] rounded-[var(--radius-card)] bg-cream px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={applyBulkPaste}
+                  disabled={bulkPasteText.trim() === ""}
+                  className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Add all
+                </button>
+              </div>
+            )}
+          </div>
+
           <p className="text-xs text-ink-muted">
-            {options.length === 0
+            {validEntries.length === 0
               ? "Add at least two options to spin."
-              : options.length === 1
+              : validEntries.length === 1
                 ? "Add one more option to spin."
-                : `${options.length} option${options.length === 1 ? "" : "s"} ready.`}
+                : `${validEntries.length} option${validEntries.length === 1 ? "" : "s"} ready.`}
           </p>
         </div>
 
@@ -246,18 +475,18 @@ export default function RollPage() {
                     : "none",
                 }}
               >
-                {options.length === 0 && (
+                {validEntries.length === 0 && (
                   <circle cx="200" cy="200" r="180" fill="#fbf6ee" />
                 )}
-                {options.map((opt, i) => (
+                {validEntries.map((entry, i) => (
                   <Slice
-                    key={`${opt}-${i}`}
+                    key={entry.id}
                     cx={200}
                     cy={200}
                     r={180}
-                    total={options.length}
+                    total={validEntries.length}
                     index={i}
-                    label={opt}
+                    label={entry.label}
                     color={SLICE_COLORS[i % SLICE_COLORS.length]}
                   />
                 ))}
@@ -321,17 +550,10 @@ export default function RollPage() {
           </div>
 
           <div className="flex min-h-[3rem] flex-col items-center gap-3 text-center">
-            {winner !== null && !spinning && (
-              <div className="fade-rise rounded-[var(--radius-card)] border-2 border-ink bg-orange-soft px-4 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                  And the winner is
-                </p>
-                <p className="font-display text-2xl font-extrabold tracking-tight">
-                  {options[winner]}
-                </p>
-              </div>
+            {winner !== null && !spinning && validEntries[winner] && (
+              <WinnerCard entry={validEntries[winner]} />
             )}
-            {options.length === 0 && (
+            {validEntries.length === 0 && (
               <p className="text-sm text-ink-muted">
                 The wheel awaits options.
               </p>
@@ -366,6 +588,197 @@ export default function RollPage() {
     </ToolFrame>
   );
 }
+
+/* -------------------------------------------------------------------------
+ * EntryRow — one row in the editor list. Holds the image cell, label
+ * input, and delete button. Handles file picker, drag-and-drop, paste-
+ * splitting, and image errors.
+ * -----------------------------------------------------------------------*/
+
+function EntryRow({
+  entry,
+  onLabelChange,
+  onSetImage,
+  onClearImage,
+  onDelete,
+  onPasteSplit,
+}: {
+  entry: Entry;
+  onLabelChange: (label: string) => void;
+  onSetImage: (image: string) => void;
+  onClearImage: () => void;
+  onDelete: () => void;
+  onPasteSplit: (text: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      setImageError(null);
+      setBusy(true);
+      try {
+        const dataUrl = await fileToWheelThumbnail(file);
+        onSetImage(dataUrl);
+      } catch {
+        setImageError("Couldn't read that image.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onSetImage],
+  );
+
+  const handleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+    // Allow picking the same file twice in a row.
+    e.target.value = "";
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLLIElement>) => {
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      setDragOver(true);
+    }
+  };
+  const handleDragLeave = () => setDragOver(false);
+  const handleDrop = (e: DragEvent<HTMLLIElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) handleFile(file);
+  };
+
+  const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text/plain");
+    if (!text.includes("\n")) return;
+    e.preventDefault();
+    onPasteSplit(text);
+  };
+
+  const hasImage = entry.image !== null;
+
+  return (
+    <li
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`flex flex-col gap-1 rounded-[var(--radius-card)] p-1 transition-colors ${
+        dragOver ? "bg-blue-soft" : ""
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        {/* Image cell — 44px tap target, doubles as drop hint */}
+        <div className="relative h-11 w-11 shrink-0">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            aria-label={hasImage ? "Change image" : "Add image"}
+            className={`relative h-11 w-11 overflow-hidden rounded-full border-2 ${
+              hasImage
+                ? "border-ink bg-cream"
+                : "border-dashed border-ink-muted bg-cream-deep"
+            } transition-colors hover:border-ink disabled:opacity-50`}
+          >
+            {hasImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={entry.image!}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden
+                className="flex h-full w-full items-center justify-center text-lg font-bold leading-none text-ink-muted"
+              >
+                +
+              </span>
+            )}
+          </button>
+          {hasImage && (
+            <button
+              type="button"
+              onClick={onClearImage}
+              aria-label="Clear image"
+              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-ink bg-cream text-[10px] font-bold leading-none text-ink hover:bg-tomato-soft"
+            >
+              ×
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileInput}
+            className="hidden"
+          />
+        </div>
+
+        <input
+          type="text"
+          value={entry.label}
+          onChange={(e) => onLabelChange(e.target.value)}
+          onPaste={handlePaste}
+          placeholder="An option"
+          className="card-chunk min-w-0 flex-1 rounded-[var(--radius-card)] bg-cream px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
+        />
+
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Remove option"
+          className="shrink-0 rounded-full border-2 border-ink bg-cream px-2 py-1 text-xs font-bold hover:bg-tomato-soft"
+        >
+          ✕
+        </button>
+      </div>
+      {imageError && (
+        <p className="ml-13 text-[11px] text-tomato">{imageError}</p>
+      )}
+    </li>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * WinnerCard — shown after a spin lands. Renders the image prominently
+ * if the winning entry has one, falls back to the text-only original
+ * shape otherwise.
+ * -----------------------------------------------------------------------*/
+
+function WinnerCard({ entry }: { entry: Entry }) {
+  const label = entry.label.trim() || "(no label)";
+  return (
+    <div className="fade-rise flex flex-col items-center gap-2 rounded-[var(--radius-card)] border-2 border-ink bg-orange-soft px-4 py-3">
+      {entry.image && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={entry.image}
+          alt=""
+          className="h-30 w-30 rounded-full border-2 border-ink object-cover"
+          style={{ width: 120, height: 120 }}
+        />
+      )}
+      <div className="flex flex-col items-center">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          And the winner is
+        </p>
+        <p className="font-display text-2xl font-extrabold tracking-tight">
+          {label}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Slice — one pie segment on the wheel. Renders label only in this
+ * commit; the image painting on the slice lands in the next commit.
+ * -----------------------------------------------------------------------*/
 
 function Slice({
   cx,
