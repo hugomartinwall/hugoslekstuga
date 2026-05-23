@@ -50,6 +50,11 @@ export default function QrPage() {
   });
   const [level, setLevel] = useState<Level>("M");
   const [size, setSize] = useState<Size>(512);
+  // Preview scale factor — gives visual feedback when the user picks a
+  // different export size. The QR content is identical at every size;
+  // this scales just the display so clicking a button feels like it
+  // does something. The card's high-DPI buffer means sharp at any scale.
+  const previewScale = size === 256 ? 0.6 : size === 512 ? 0.78 : 1.0;
   const [style, setStyle] = useLocalStorageState<Style>(STYLE_KEY, STYLE_DEFAULT);
   const [pngUrl, setPngUrl] = useState<string | null>(null);
   const [svgString, setSvgString] = useState<string | null>(null);
@@ -190,10 +195,22 @@ export default function QrPage() {
                 // 100%/100% + max-* + block + container overflow-hidden
                 // together force the display dimensions regardless of
                 // intrinsic. Render pixels stay high for sharp downloads.
+                //
+                // `transform: scale(previewScale)` adds visible feedback
+                // when the user picks a different export size — the QR
+                // content is identical at every resolution, but the
+                // preview shrinks/grows so clicking a size button feels
+                // like it does something. The canvas's high-DPI buffer
+                // means the scaled preview stays sharp.
                 <canvas
                   ref={canvasRef}
-                  className="block max-h-full max-w-full"
-                  style={{ width: "100%", height: "100%" }}
+                  className="block max-h-full max-w-full transition-transform duration-200 ease-out"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    transform: `scale(${previewScale})`,
+                    transformOrigin: "center",
+                  }}
                   aria-label="Generated QR code"
                 />
               ) : (
@@ -401,7 +418,7 @@ function StylePanel({
 
       <div className="flex flex-col gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          Image size (PNG export)
+          Image size — {size}×{size} px PNG
         </p>
         <div className="flex flex-wrap gap-2">
           {([256, 512, 1024] as Size[]).map((s) => (
