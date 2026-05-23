@@ -777,10 +777,15 @@ function WinnerCard({ entry }: { entry: Entry }) {
 }
 
 /* -------------------------------------------------------------------------
- * Slice — one pie segment on the wheel. Renders the slice path, an
- * optional circular image inset (when the entry has one), and the
- * label text. Layout adapts to slice count: as slices get narrower,
- * the image shrinks proportionally and the text moves inward.
+ * Slice — one pie segment on the wheel. When the entry carries an image
+ * the image fills the wedge (clipped to the slice's path) instead of a
+ * solid colour; the chunky ink border stays on top so the slice still
+ * reads as a "slice". Text overlays the image with a thick ink stroke
+ * (paintOrder: stroke) so it stays legible against any photo.
+ *
+ * Image rotation matches the text's flip rule (rotate by midAngle, with
+ * a 180° flip on the bottom half so content reads right-side-up while
+ * the wheel sits at rest).
  * -----------------------------------------------------------------------*/
 
 function Slice({
@@ -802,57 +807,56 @@ function Slice({
   image: string | null;
   color: { fill: string; text: string };
 }) {
-  // Image sizing tier — shrinks as slice count rises so the badge
-  // never overflows the slice's arc. Diameter / position are fractions
-  // of the wheel radius `r` so the layout stays proportional.
-  const imageDiameter =
-    total <= 4 ? r * 0.36 :
-    total <= 6 ? r * 0.30 :
-    total <= 9 ? r * 0.24 :
-    total <= 12 ? r * 0.20 :
-    total <= 16 ? r * 0.17 :
-    r * 0.15;
-  const imageRadius = imageDiameter / 2;
-  // Image sits in the outer half of the slice (closer to the wheel
-  // edge); text moves slightly inward to share the radial axis.
-  const imageR = r * 0.78;
-  const labelR = image !== null ? r * 0.42 : r * 0.62;
-  // Text shrinks too — when there's an image above it, leave room.
-  const fontSize = image !== null
-    ? (total <= 4 ? 18 : total <= 6 ? 14 : total <= 9 ? 11 : 9)
-    : (total <= 4 ? 22 : total <= 6 ? 18 : total <= 9 ? 14 : 11);
-  const maxChars = image !== null
-    ? (total <= 4 ? 12 : total <= 6 ? 10 : total <= 9 ? 8 : 6)
-    : (total <= 4 ? 14 : total <= 6 ? 12 : total <= 9 ? 10 : 8);
+  const hasImage = image !== null;
+  // Text position is consistent regardless of image. Same font/char
+  // ramp as the pre-image era — image-bearing slices just get a stroke
+  // for legibility, not a different layout.
+  const labelR = r * 0.62;
+  const fontSize = total <= 4 ? 22 : total <= 6 ? 18 : total <= 9 ? 14 : 11;
+  const maxChars = total <= 4 ? 14 : total <= 6 ? 12 : total <= 9 ? 10 : 8;
 
-  // Single-entry wheel: full circle, no slice arcs.
+  // Single-entry wheel: full circle (no wedge arcs). Image fills it
+  // edge-to-edge, text overlays at centre.
   if (total === 1) {
-    const midAngle = 0;
-    const imagePos = { x: cx, y: cy - r * 0.3 };
+    const clipId = `roll-slice-${total}-${index}`;
     return (
       <g>
-        <circle cx={cx} cy={cy} r={r} fill={color.fill} />
-        {image !== null && (
-          <SliceImage
-            href={image}
-            pos={imagePos}
-            radius={r * 0.36}
-            index={index}
-            rotation={midAngle}
-            total={total}
-          />
+        {!hasImage && <circle cx={cx} cy={cy} r={r} fill={color.fill} />}
+        {hasImage && (
+          <>
+            <defs>
+              <clipPath id={clipId}>
+                <circle cx={cx} cy={cy} r={r} />
+              </clipPath>
+            </defs>
+            <image
+              href={image!}
+              x={cx - r}
+              y={cy - r}
+              width={2 * r}
+              height={2 * r}
+              clipPath={`url(#${clipId})`}
+              preserveAspectRatio="xMidYMid slice"
+            />
+          </>
         )}
-        <text
-          x={cx}
-          y={image !== null ? cy + r * 0.32 : cy + 6}
-          fontFamily="var(--font-display)"
-          fontWeight="800"
-          fontSize={image !== null ? 18 : 22}
-          fill={color.text}
-          textAnchor="middle"
-        >
-          {truncate(label, image !== null ? 14 : 18)}
-        </text>
+        {label.trim().length > 0 && (
+          <text
+            x={cx}
+            y={cy + 6}
+            fontFamily="var(--font-display)"
+            fontWeight="800"
+            fontSize="22"
+            fill={hasImage ? "#fbf6ee" : color.text}
+            stroke={hasImage ? "#1a1812" : undefined}
+            strokeWidth={hasImage ? 3 : undefined}
+            strokeLinejoin="round"
+            paintOrder={hasImage ? "stroke" : undefined}
+            textAnchor="middle"
+          >
+            {truncate(label, 18)}
+          </text>
+        )}
       </g>
     );
   }
@@ -865,26 +869,47 @@ function Slice({
   const largeArc = step > 180 ? 1 : 0;
   const path = `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
 
-  // Label / image sit along the slice radius, rotated to read outward.
-  // Slices on the bottom half flip 180° so content stays right-side up.
+  // Label / image rotate along the slice radius. Slices on the bottom
+  // half flip 180° so content stays right-side-up at rest.
   const midAngle = startAngle + step / 2;
   const flip = midAngle > 90 && midAngle < 270;
   const contentRotation = flip ? midAngle + 180 : midAngle;
   const labelPos = polar(cx, cy, labelR, midAngle);
-  const imagePos = polar(cx, cy, imageR, midAngle);
+
+  // For image-filled slices we sit a square image over the slice and
+  // clip to the wedge path. The square is centred at the slice's
+  // approximate centroid (r·0.55 along the bisector) and sized at
+  // r·1.6 — big enough to cover any wedge up to ~180°, narrow enough
+  // that there's still enough subject-pixel density in the visible
+  // crop.
+  const clipId = `roll-slice-${total}-${index}`;
+  const imageSize = r * 1.6;
+  const imageCenter = polar(cx, cy, r * 0.55, midAngle);
 
   return (
     <g>
-      <path d={path} fill={color.fill} stroke="#1a1812" strokeWidth="2" />
-      {image !== null && (
-        <SliceImage
-          href={image}
-          pos={imagePos}
-          radius={imageRadius}
-          index={index}
-          rotation={contentRotation}
-          total={total}
-        />
+      {!hasImage && (
+        <path d={path} fill={color.fill} stroke="#1a1812" strokeWidth="2" />
+      )}
+      {hasImage && (
+        <>
+          <defs>
+            <clipPath id={clipId}>
+              <path d={path} />
+            </clipPath>
+          </defs>
+          <image
+            href={image!}
+            x={imageCenter.x - imageSize / 2}
+            y={imageCenter.y - imageSize / 2}
+            width={imageSize}
+            height={imageSize}
+            clipPath={`url(#${clipId})`}
+            preserveAspectRatio="xMidYMid slice"
+            transform={`rotate(${contentRotation} ${imageCenter.x} ${imageCenter.y})`}
+          />
+          <path d={path} fill="none" stroke="#1a1812" strokeWidth="2" />
+        </>
       )}
       {label.trim().length > 0 && (
         <text
@@ -893,7 +918,11 @@ function Slice({
           fontFamily="var(--font-display)"
           fontWeight="800"
           fontSize={fontSize}
-          fill={color.text}
+          fill={hasImage ? "#fbf6ee" : color.text}
+          stroke={hasImage ? "#1a1812" : undefined}
+          strokeWidth={hasImage ? 3 : undefined}
+          strokeLinejoin="round"
+          paintOrder={hasImage ? "stroke" : undefined}
           textAnchor="middle"
           dominantBaseline="middle"
           transform={`rotate(${contentRotation} ${labelPos.x} ${labelPos.y})`}
@@ -901,64 +930,6 @@ function Slice({
           {truncate(label, maxChars)}
         </text>
       )}
-    </g>
-  );
-}
-
-/* -------------------------------------------------------------------------
- * SliceImage — a circular image inset positioned at a slice's bisector.
- * Uses a per-slice <clipPath> to keep the image inside its circle, with
- * a 2px ink stroke to match the brand's chunky outline language. The
- * image itself rotates with the slice (matching the text's flip rule)
- * so it never sits sideways for a winning slice landing at the top.
- *
- * `total` is included in the clip-path id so multiple wheel renders
- * across the same DOM don't collide (defensive — we only render one
- * wheel today but it's cheap insurance).
- * -----------------------------------------------------------------------*/
-
-function SliceImage({
-  href,
-  pos,
-  radius,
-  index,
-  rotation,
-  total,
-}: {
-  href: string;
-  pos: { x: number; y: number };
-  radius: number;
-  index: number;
-  rotation: number;
-  total: number;
-}) {
-  const clipId = `roll-slice-${total}-${index}`;
-  const diameter = radius * 2;
-  return (
-    <g>
-      <defs>
-        <clipPath id={clipId}>
-          <circle cx={pos.x} cy={pos.y} r={radius} />
-        </clipPath>
-      </defs>
-      <image
-        href={href}
-        x={pos.x - radius}
-        y={pos.y - radius}
-        width={diameter}
-        height={diameter}
-        clipPath={`url(#${clipId})`}
-        preserveAspectRatio="xMidYMid slice"
-        transform={`rotate(${rotation} ${pos.x} ${pos.y})`}
-      />
-      <circle
-        cx={pos.x}
-        cy={pos.y}
-        r={radius}
-        fill="none"
-        stroke="#1a1812"
-        strokeWidth="2"
-      />
     </g>
   );
 }
