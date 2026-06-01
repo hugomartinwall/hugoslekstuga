@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ToolFrame from "@/components/ToolFrame";
-import { findTool } from "@/lib/tools";
+import Link from "next/link";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { MapShell } from "./MapShell";
 import type { BoatKind } from "@/lib/sjokort/boat-icon";
@@ -26,7 +25,6 @@ const BOAT_KINDS: { value: BoatKind; label: string }[] = [
 ];
 
 export default function SjokortClient() {
-  const tool = findTool("sjokort")!;
   const [profile, setProfile] = useLocalStorageState<BoatProfile>(
     PROFILE_KEY,
     DEFAULT_PROFILE,
@@ -66,32 +64,37 @@ export default function SjokortClient() {
     setProfile((prev) => ({ ...prev, kind }));
 
   return (
-    <ToolFrame tool={tool}>
-      <div className="flex flex-col gap-3">
-        <div className="card-chunk relative h-[65vh] min-h-[420px] w-full overflow-hidden rounded-[var(--radius-card)]">
-          <MapShell
-            gps={gps}
-            boatKind={profile.kind}
-            onLocate={() => setWatching(true)}
-            onOpenSettings={() => setDrawerOpen(true)}
-          />
-
-          {/* Transient GPS error pill, bottom-centre over the map. */}
-          {watching && gpsError && (
-            <div className="absolute inset-x-0 bottom-3 z-10 flex justify-center px-16">
-              <p className="rounded-full border-2 border-ink bg-tomato-soft px-3 py-1 text-center text-xs font-semibold text-ink">
-                {gpsError}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <p className="text-xs leading-relaxed text-ink-muted">
-          Tiles from OpenStreetMap &amp; OpenSeaMap. This is the one tool here
-          that loads from the open web — those servers see an anonymous tile
-          request, never you. Your location stays on your device.
-        </p>
+    <>
+      {/* Full-bleed map. No explicit z-index so it doesn't trap a
+          stacking context — Hugo (BrandCorner, z-40) and the floating
+          controls below stay above it. */}
+      <div className="fixed inset-0 bg-cream">
+        <MapShell
+          gps={gps}
+          boatKind={profile.kind}
+          onLocate={() => setWatching(true)}
+          onOpenSettings={() => setDrawerOpen(true)}
+        />
       </div>
+
+      {/* Back to playhouse — top-left, offset right of Hugo (who lives
+          at ~left 18, ~31px wide). z-30: above the map, below Hugo. */}
+      <Link
+        href="/"
+        aria-label="Back to playhouse"
+        className="btn-chunk fixed left-16 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-cream text-lg font-bold text-ink"
+      >
+        <span aria-hidden>←</span>
+      </Link>
+
+      {/* Transient GPS error pill, bottom-centre, clear of the controls. */}
+      {watching && gpsError && (
+        <div className="fixed inset-x-0 bottom-24 z-30 flex justify-center px-20">
+          <p className="rounded-full border-2 border-ink bg-tomato-soft px-3 py-1 text-center text-xs font-semibold text-ink shadow-[2px_2px_0_#1a1812]">
+            {gpsError}
+          </p>
+        </div>
+      )}
 
       {drawerOpen && (
         <SettingsDrawer
@@ -103,7 +106,7 @@ export default function SjokortClient() {
           onClose={() => setDrawerOpen(false)}
         />
       )}
-    </ToolFrame>
+    </>
   );
 }
 
@@ -193,6 +196,12 @@ function SettingsDrawer({
           </p>
           <p className="text-sm text-ink-soft">{gpsStatus}</p>
         </div>
+
+        <p className="border-t-2 border-dashed border-ink/15 pt-4 text-xs leading-relaxed text-ink-muted">
+          Tiles from OpenStreetMap &amp; OpenSeaMap — the one tool here that
+          loads from the open web. Those servers see an anonymous tile
+          request, never you. Your location stays on your device.
+        </p>
       </div>
     </div>
   );

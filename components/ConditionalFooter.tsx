@@ -4,11 +4,14 @@ import { usePathname } from "next/navigation";
 import Footer from "@/components/Footer";
 
 /**
- * The homepage is now the map — full viewport, no scroll. The Footer
- * doesn't fit there. It still renders on every other route.
+ * Full-viewport, no-scroll routes don't have room for the Footer: the
+ * homepage swarm map and the sjökort chart both fill the screen. It
+ * still renders on every other route.
  */
+const FULL_SCREEN_ROUTES = new Set(["/", "/tools/sjokort"]);
+
 export default function ConditionalFooter() {
   const pathname = usePathname();
-  if (pathname === "/") return null;
+  if (FULL_SCREEN_ROUTES.has(pathname)) return null;
   return <Footer />;
 }

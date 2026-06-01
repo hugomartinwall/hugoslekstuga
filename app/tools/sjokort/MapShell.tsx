@@ -70,7 +70,10 @@ export function MapShell({
       });
       map.addControl(
         new ml.NavigationControl({ showCompass: false }),
-        "top-right",
+        // Bottom-right, stacking above the attribution pill — frees the
+        // top corners for the back/settings buttons in the full-screen
+        // layout.
+        "bottom-right",
       );
       map.on("load", () => {
         if (!cancelled) setReady(true);
@@ -151,12 +154,13 @@ export function MapShell({
     <>
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Settings cog — top-left (nav control owns top-right). */}
+      {/* Settings cog — top-right (top-left is Hugo + the back button
+          in the full-screen layout). */}
       <button
         type="button"
         onClick={onOpenSettings}
         aria-label="Settings"
-        className="btn-chunk absolute left-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-cream text-ink"
+        className="btn-chunk absolute right-3 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-cream text-ink"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="3" />
@@ -164,12 +168,14 @@ export function MapShell({
         </svg>
       </button>
 
-      {/* Locate / centre-on-me — bottom-left (attribution owns bottom-right). */}
+      {/* Locate / centre-on-me — bottom-left, lifted above the iOS
+          safe area (home indicator / Safari toolbar). Attribution +
+          zoom own bottom-right. */}
       <button
         type="button"
         onClick={handleLocate}
         aria-label={gps ? "Centre on my position" : "Find my position"}
-        className="btn-chunk absolute bottom-3 left-3 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-teal text-cream"
+        className="btn-chunk absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-teal text-cream"
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="7" />
