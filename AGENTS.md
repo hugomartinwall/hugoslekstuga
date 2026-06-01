@@ -116,7 +116,14 @@ The split is so each page ships its own `<title>` and `<meta description>`
    keyed `hugoslekstuga:*`.
 4. **Don't fetch live data at runtime.** Currency rates in Sum are a
    deliberate static snapshot. If a feature needs live data, the feature
-   doesn't ship.
+   doesn't ship. **One sanctioned exception:** the Sjökort tool
+   (`app/tools/sjokort/`) fetches map tiles from OpenStreetMap and
+   OpenSeaMap — a nautical chart can't be a static snapshot. The tile
+   servers see an anonymous `give me tile XYZ` request, never the user;
+   GPS position is read via the browser Geolocation API and **never
+   leaves the device** (no upload, no logging). Don't rip out these
+   fetches thinking they violate the promise — they're reviewed and
+   documented. Don't add *more* runtime fetches to other tools.
 5. **Don't quietly reword the brand voice on `/about`** — the hero
    sentence and the "things you won't find here" list. Change either
    only when explicitly asked.
@@ -137,9 +144,16 @@ rg -n 'fetch\(|gtag|analytics|googletagmanager|cdn\.|XMLHttpRequest' \
   app components lib server
 ```
 
-Only legitimate hit: `app/tools/strip/Client.tsx` reading a local
-`URL.createObjectURL` blob. Honest "no analytics" copy in Footer + About
-also matches the grep — those are documentation, not network calls.
+Legitimate hits:
+- `app/tools/strip/Client.tsx` reading a local `URL.createObjectURL` blob.
+- `app/tools/sjokort/**` — map-tile fetches (OSM + OpenSeaMap) and the
+  browser Geolocation calls. The one sanctioned runtime-fetch tool; see
+  rule 4 above. GPS never leaves the device.
+
+Honest "no analytics" copy in Footer + About also matches the grep —
+those are documentation, not network calls. When auditing, exclude the
+sjökort tool: append `--glob '!app/tools/sjokort/**'` to scope the grep
+to the tools that are supposed to be fetchless.
 
 ## Hooks + state conventions
 

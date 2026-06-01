@@ -162,6 +162,15 @@ export const tools: Tool[] = [
     color: "pink",
     emoji: "#",
   },
+  {
+    slug: "sjokort",
+    title: "Sjökort",
+    tagline: "See where you are on the water.",
+    description:
+      "A live sea chart of Stockholm and the archipelago. Pan the sjökort, switch on GPS, and a boat marker tracks your position. The one tool here that loads map tiles from the open web — your location never leaves your device.",
+    color: "teal",
+    emoji: "◎",
+  },
 
   // ---------- games ----------
 
