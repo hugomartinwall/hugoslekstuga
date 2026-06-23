@@ -1,30 +1,35 @@
 {
   "type": "FeatureCollection",
-  "note": "Hand-vetted deep-water corridors for the sjökort autorouter. Each LineString follows water known to be navigable; the bake script (scripts/bake-sjokort-graph.ts) densifies these into low-cost graph edges so common runs ride the marked channels. Coordinates are [lon, lat]. These encode local knowledge BY HAND — they are not depth-checked data. Refine in Phase D.",
+  "note": "Hand-vetted deep-water corridors for the sjokort autorouter. Each LineString follows water known to be navigable; the bake (scripts/bake-sjokort-graph.ts) snaps each vertex to the nearest water, densifies the line into low-cost graph edges, and joins it to the grid. Corridors bridge the narrow, bridge-crossed inner-city channels that a coarse grid cannot resolve (Karlberg -> Riddarfjarden -> Slussen -> Saltsjon -> Lilla Vartan, where the open-sea grid takes over) and bias common runs onto the marked fairway out to Sandhamn. Coordinates are [lon, lat]. These encode local knowledge BY HAND and are NOT depth-checked.",
   "features": [
     {
       "type": "Feature",
-      "properties": { "name": "Stockholm (Karlbergskanalen) – Sandhamn" },
+      "properties": { "name": "Stockholm (Karlbergskanalen) - Sandhamn" },
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [18.018, 59.337],
-          [18.045, 59.328],
-          [18.068, 59.324],
-          [18.090, 59.323],
-          [18.110, 59.327],
-          [18.130, 59.340],
-          [18.150, 59.360],
-          [18.190, 59.380],
-          [18.270, 59.395],
-          [18.340, 59.400],
-          [18.400, 59.410],
-          [18.470, 59.405],
+          [18.016, 59.337],
+          [18.026, 59.332],
+          [18.033, 59.327],
+          [18.047, 59.323],
+          [18.061, 59.322],
+          [18.073, 59.321],
+          [18.084, 59.323],
+          [18.098, 59.327],
+          [18.113, 59.333],
+          [18.129, 59.343],
+          [18.147, 59.353],
+          [18.168, 59.363],
+          [18.193, 59.376],
+          [18.235, 59.390],
+          [18.305, 59.401],
+          [18.385, 59.406],
+          [18.462, 59.405],
           [18.560, 59.390],
-          [18.650, 59.360],
+          [18.660, 59.356],
           [18.760, 59.320],
-          [18.850, 59.300],
-          [18.913, 59.288]
+          [18.860, 59.300],
+          [18.905, 59.290]
         ]
       }
     }

@@ -135,6 +135,67 @@ function bboxesOverlap(
   return !(a[0] > b.maxLon || a[2] < b.minLon || a[1] > b.maxLat || a[3] < b.minLat);
 }
 
+type LngLat = [number, number];
+
+/** Minimal binary min-heap (node id keyed by f-score) for the bake's fine A*. */
+class FlatHeap {
+  private n: number[] = [];
+  private k: number[] = [];
+  get size(): number {
+    return this.n.length;
+  }
+  push(node: number, key: number): void {
+    const n = this.n;
+    const k = this.k;
+    let i = n.length;
+    n.push(node);
+    k.push(key);
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (k[p] <= k[i]) break;
+      [k[p], k[i]] = [k[i], k[p]];
+      [n[p], n[i]] = [n[i], n[p]];
+      i = p;
+    }
+  }
+  pop(): number {
+    const n = this.n;
+    const k = this.k;
+    const top = n[0];
+    const ln = n.pop() as number;
+    const lk = k.pop() as number;
+    if (n.length) {
+      n[0] = ln;
+      k[0] = lk;
+      let i = 0;
+      const L = n.length;
+      for (;;) {
+        let s = i;
+        const l = 2 * i + 1;
+        const r = l + 1;
+        if (l < L && k[l] < k[s]) s = l;
+        if (r < L && k[r] < k[s]) s = r;
+        if (s === i) break;
+        [k[s], k[i]] = [k[i], k[s]];
+        [n[s], n[i]] = [n[i], n[s]];
+        i = s;
+      }
+    }
+    return top;
+  }
+}
+
+const MASK_NB8: [number, number][] = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+];
+
 // Rasterised water mask. Point-in-polygon over the full-detail coastline
 // polygons (some with 100k+ vertices) is the bake bottleneck, so instead we
 // scanline-fill every polygon into a bitmap once (even-odd per polygon, then
@@ -379,14 +440,145 @@ async function main(): Promise<void> {
     if (c < 0 || c >= mask.cols || r < 0 || r >= mask.rows) return false;
     return mask.data[r * mask.cols + c] === 1;
   }
-  // A leg is navigable only if interior sample points all stay in water
-  // (endpoints are already known water). Catches legs that clip an island.
-  function legInWater(aLon: number, aLat: number, bLon: number, bLat: number): boolean {
-    for (const f of [0.25, 0.5, 0.75]) {
-      if (!isWater(aLon + (bLon - aLon) * f, aLat + (bLat - aLat) * f)) return false;
+  // (leg/chord water checks use chordInWater, defined with the mask A* below.)
+  // Pull a hand-drawn corridor vertex onto the nearest water cell (so rough
+  // coordinates don't have to be pixel-perfect). Returns null if dry land
+  // extends past the search radius.
+  function snapToWater(lon: number, lat: number, maxRings = 9): LngLat | null {
+    const c0 = Math.floor((lon - BBOX.minLon) / mask.dLon);
+    const r0 = Math.floor((lat - BBOX.minLat) / mask.dLat);
+    if (c0 >= 0 && c0 < mask.cols && r0 >= 0 && r0 < mask.rows && mask.data[r0 * mask.cols + c0] === 1)
+      return [lon, lat];
+    for (let ring = 1; ring <= maxRings; ring++) {
+      for (let dr = -ring; dr <= ring; dr++)
+        for (let dc = -ring; dc <= ring; dc++) {
+          if (Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue;
+          const cc = c0 + dc;
+          const rr = r0 + dr;
+          if (cc < 0 || cc >= mask.cols || rr < 0 || rr >= mask.rows) continue;
+          if (mask.data[rr * mask.cols + cc] === 1)
+            return [
+              BBOX.minLon + (cc + 0.5) * mask.dLon,
+              BBOX.minLat + (rr + 0.5) * mask.dLat,
+            ];
+        }
+    }
+    return null;
+  }
+
+  // --- fine A* over the water mask, so a corridor follows real water between
+  //     its sparse via-points (bake-time only; not shipped). ---
+  const maskN = mask.cols * mask.rows;
+  const mGen = new Int32Array(maskN);
+  const mClosed = new Int32Array(maskN);
+  const mDist = new Float64Array(maskN);
+  const mCame = new Int32Array(maskN);
+  let mEpoch = 0;
+  const cellCenter = (cell: number): LngLat => {
+    const c = cell % mask.cols;
+    const r = (cell - c) / mask.cols;
+    return [BBOX.minLon + (c + 0.5) * mask.dLon, BBOX.minLat + (r + 0.5) * mask.dLat];
+  };
+  const snapCell = (lon: number, lat: number, maxRings = 14): number => {
+    const c0 = Math.floor((lon - BBOX.minLon) / mask.dLon);
+    const r0 = Math.floor((lat - BBOX.minLat) / mask.dLat);
+    for (let ring = 0; ring <= maxRings; ring++)
+      for (let dr = -ring; dr <= ring; dr++)
+        for (let dc = -ring; dc <= ring; dc++) {
+          if (ring > 0 && Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue;
+          const cc = c0 + dc;
+          const rr = r0 + dr;
+          if (cc < 0 || cc >= mask.cols || rr < 0 || rr >= mask.rows) continue;
+          if (mask.data[rr * mask.cols + cc] === 1) return rr * mask.cols + cc;
+        }
+    return -1;
+  };
+  function maskRoute(a: LngLat, b: LngLat, maxExpand = 2_500_000): LngLat[] | null {
+    const s = snapCell(a[0], a[1]);
+    const g = snapCell(b[0], b[1]);
+    if (s < 0 || g < 0) return null;
+    mEpoch++;
+    const [gLon, gLat] = cellCenter(g);
+    const heap = new FlatHeap();
+    const sC = cellCenter(s);
+    mGen[s] = mEpoch;
+    mDist[s] = 0;
+    mCame[s] = -1;
+    heap.push(s, haversineMeters(sC[0], sC[1], gLon, gLat));
+    let expanded = 0;
+    while (heap.size > 0) {
+      const u = heap.pop();
+      if (u === g) break;
+      if (mClosed[u] === mEpoch) continue;
+      mClosed[u] = mEpoch;
+      if (++expanded > maxExpand) return null;
+      const uc = u % mask.cols;
+      const ur = (u - uc) / mask.cols;
+      const [uLon, uLat] = cellCenter(u);
+      const ug = mDist[u];
+      for (const [dc, dr] of MASK_NB8) {
+        const cc = uc + dc;
+        const rr = ur + dr;
+        if (cc < 0 || cc >= mask.cols || rr < 0 || rr >= mask.rows) continue;
+        const v = rr * mask.cols + cc;
+        if (mask.data[v] !== 1) continue;
+        // No diagonal corner-cutting: a diagonal step needs both orthogonal
+        // cells to be water, else the straight chord clips a land corner.
+        if (
+          dc !== 0 &&
+          dr !== 0 &&
+          (mask.data[ur * mask.cols + cc] !== 1 || mask.data[rr * mask.cols + uc] !== 1)
+        )
+          continue;
+        const [vLon, vLat] = cellCenter(v);
+        const tentative = ug + haversineMeters(uLon, uLat, vLon, vLat);
+        if (mGen[v] !== mEpoch || tentative < mDist[v]) {
+          mGen[v] = mEpoch;
+          mDist[v] = tentative;
+          mCame[v] = u;
+          heap.push(v, tentative + haversineMeters(vLon, vLat, gLon, gLat));
+        }
+      }
+    }
+    if (mGen[g] !== mEpoch) return null;
+    const cells: number[] = [];
+    for (let cur = g; cur !== -1; cur = mCame[cur]) cells.push(cur);
+    cells.reverse();
+    return cells.map(cellCenter);
+  }
+  // Densely sample a straight chord to confirm it stays in water.
+  const chordInWater = (a: LngLat, b: LngLat): boolean => {
+    const d = haversineMeters(a[0], a[1], b[0], b[1]);
+    const steps = Math.max(3, Math.ceil(d / 30));
+    for (let i = 1; i < steps; i++) {
+      const f = i / steps;
+      if (!isWater(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)) return false;
     }
     return true;
-  }
+  };
+  // Thin the fine path to ~stepM spacing, but never let a kept chord leave
+  // water — so corridor edges don't clip corners on a bend.
+  const simplify = (path: LngLat[], stepM: number): LngLat[] => {
+    if (path.length < 2) return path;
+    const out: LngLat[] = [path[0]];
+    let anchor = 0;
+    for (let i = 1; i < path.length; i++) {
+      if (!chordInWater(path[anchor], path[i])) {
+        const keep = i - 1 > anchor ? i - 1 : i;
+        out.push(path[keep]);
+        anchor = keep;
+      } else if (
+        haversineMeters(path[anchor][0], path[anchor][1], path[i][0], path[i][1]) >= stepM
+      ) {
+        out.push(path[i]);
+        anchor = i;
+      }
+    }
+    const last = path[path.length - 1];
+    const tail = out[out.length - 1];
+    if (tail[0] !== last[0] || tail[1] !== last[1]) out.push(last);
+    return out;
+  };
 
   // ---- 3. grid nodes ----
   const dLat = SPACING_M / 111320;
@@ -440,7 +632,7 @@ async function main(): Promise<void> {
         if (nc < 0 || nc >= gCols || nr < 0 || nr >= gRows) continue;
         const v = cellNode[nr * gCols + nc];
         if (v < 0) continue;
-        if (legInWater(uLon, uLat, coords[2 * v], coords[2 * v + 1])) addEdge(u, v, 0);
+        if (chordInWater([uLon, uLat], [coords[2 * v], coords[2 * v + 1]])) addEdge(u, v, 0);
       }
     }
   const gridEdgePairs = adj.reduce((s, m) => s + m.size, 0) / 2;
@@ -459,35 +651,45 @@ async function main(): Promise<void> {
       Math.round((lon - BBOX.minLon) / dLon),
       Math.round((lat - BBOX.minLat) / dLat),
     ];
+    let corridorFallbacks = 0;
     for (const feat of fc.features) {
       if (feat.geometry.type !== "LineString") continue;
-      const pts = feat.geometry.coordinates;
+      const vias = feat.geometry.coordinates.map(
+        (p) => snapToWater(p[0], p[1]) ?? ([p[0], p[1]] as LngLat),
+      );
+      // Route each leg over the fine mask so the corridor follows real water
+      // (not a straight line that clips islands between the via-points).
+      let fine: LngLat[] = [];
+      for (let s = 0; s < vias.length - 1; s++) {
+        const seg = maskRoute(vias[s], vias[s + 1]);
+        if (!seg) corridorFallbacks++;
+        const piece = seg ?? [vias[s], vias[s + 1]];
+        fine = fine.concat(s > 0 ? piece.slice(1) : piece);
+      }
+      const line = simplify(fine, CORRIDOR_STEP_M);
       let prevNode = -1;
-      for (let s = 0; s < pts.length - 1; s++) {
-        const [aLon, aLat] = pts[s];
-        const [bLon, bLat] = pts[s + 1];
-        const steps = Math.max(1, Math.round(haversineMeters(aLon, aLat, bLon, bLat) / CORRIDOR_STEP_M));
-        for (let k = s === 0 ? 0 : 1; k <= steps; k++) {
-          const f = k / steps;
-          const lon = aLon + (bLon - aLon) * f;
-          const lat = aLat + (bLat - aLat) * f;
-          const node = addNode(lon, lat);
-          corridorNodes++;
-          if (!isWater(lon, lat)) corridorOffWater++;
-          if (prevNode >= 0) addEdge(prevNode, node, 1);
-          prevNode = node;
-          const [gc, gr] = gridCellOf(lon, lat);
-          for (let rr = gr - 1; rr <= gr + 1; rr++)
-            for (let cc = gc - 1; cc <= gc + 1; cc++) {
-              if (cc < 0 || cc >= gCols || rr < 0 || rr >= gRows) continue;
-              const gnode = cellNode[rr * gCols + cc];
-              if (gnode < 0) continue;
-              if (haversineMeters(lon, lat, coords[2 * gnode], coords[2 * gnode + 1]) <= connectRadius)
-                addEdge(node, gnode, 0);
-            }
-        }
+      for (const [lon, lat] of line) {
+        const node = addNode(lon, lat);
+        corridorNodes++;
+        if (!isWater(lon, lat)) corridorOffWater++;
+        if (prevNode >= 0) addEdge(prevNode, node, 1);
+        prevNode = node;
+        const [gc, gr] = gridCellOf(lon, lat);
+        for (let rr = gr - 1; rr <= gr + 1; rr++)
+          for (let cc = gc - 1; cc <= gc + 1; cc++) {
+            if (cc < 0 || cc >= gCols || rr < 0 || rr >= gRows) continue;
+            const gnode = cellNode[rr * gCols + cc];
+            if (gnode < 0) continue;
+            const gx = coords[2 * gnode];
+            const gy = coords[2 * gnode + 1];
+            // Only join to the grid where the connector itself stays in water.
+            if (haversineMeters(lon, lat, gx, gy) <= connectRadius && chordInWater([lon, lat], [gx, gy]))
+              addEdge(node, gnode, 0);
+          }
       }
     }
+    if (corridorFallbacks)
+      console.log(`  corridor: ${corridorFallbacks} legs fell back to straight (mask route failed)`);
   }
 
   // ---- 5. assemble CSR + serialise ----
@@ -552,7 +754,13 @@ async function main(): Promise<void> {
     for (let i = 1; i < result.coords.length; i++) {
       const [x1, y1] = result.coords[i - 1];
       const [x2, y2] = result.coords[i];
-      if (!isWater((x1 + x2) / 2, (y1 + y2) / 2)) offWater++;
+      const steps = Math.max(2, Math.ceil(haversineMeters(x1, y1, x2, y2) / 30));
+      let bad = false;
+      for (let k = 1; k < steps && !bad; k++) {
+        const f = k / steps;
+        if (!isWater(x1 + (x2 - x1) * f, y1 + (y2 - y1) * f)) bad = true;
+      }
+      if (bad) offWater++;
     }
     const straight = haversineMeters(a[0], a[1], b[0], b[1]);
     console.log(
@@ -575,6 +783,56 @@ async function main(): Promise<void> {
   console.log("--- routes ---");
   report("Karlberg→Sandhamn", KARLBERG, SANDHAMN);
   report("open-water A→B   ", OPEN_A, OPEN_B);
+
+  if (process.env.COMPONENTS) {
+    const N = loaded.nodeCount;
+    const comp = new Int32Array(N).fill(-1);
+    const sizes: number[] = [];
+    const stack: number[] = [];
+    let c = 0;
+    for (let s = 0; s < N; s++) {
+      if (comp[s] !== -1) continue;
+      comp[s] = c;
+      let size = 0;
+      stack.length = 0;
+      stack.push(s);
+      while (stack.length) {
+        const u = stack.pop() as number;
+        size++;
+        for (let e = loaded.xadj[u]; e < loaded.xadj[u + 1]; e++) {
+          const v = loaded.adj[e];
+          if (comp[v] === -1) {
+            comp[v] = c;
+            stack.push(v);
+          }
+        }
+      }
+      sizes.push(size);
+      c++;
+    }
+    const top = sizes
+      .map((s, i) => [i, s] as [number, number])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+    console.log(`--- components: ${c} total; top ${top.map(([i, s]) => `#${i}:${s}`).join(", ")} ---`);
+    const named: [string, [number, number]][] = [
+      ["Karlberg", KARLBERG],
+      ["Sandhamn", SANDHAMN],
+      ["open-A (Trälhavet)", OPEN_A],
+      ["open-B (Kanholm)", OPEN_B],
+      ["Riddarfjärden", [18.055, 59.322]],
+      ["Saltsjön", [18.085, 59.323]],
+      ["Strömmen", [18.075, 59.325]],
+      ["Vaxholm/Oxdjupet", [18.34, 59.4]],
+      ["Lilla Värtan", [18.13, 59.35]],
+    ];
+    for (const [name, p] of named) {
+      const idx = nearestNode(loaded, index, p[0], p[1]);
+      console.log(
+        `  ${name.padEnd(20)}: ${idx < 0 ? "(no node)" : `comp #${comp[idx]} (size ${sizes[comp[idx]]})`}`,
+      );
+    }
+  }
 
   if (process.env.PROBE) {
     console.log("--- probes ---");
