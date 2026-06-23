@@ -121,8 +121,13 @@ The split is so each page ships its own `<title>` and `<meta description>`
    OpenSeaMap — a nautical chart can't be a static snapshot. The tile
    servers see an anonymous `give me tile XYZ` request, never the user;
    GPS position is read via the browser Geolocation API and **never
-   leaves the device** (no upload, no logging). Don't rip out these
-   fetches thinking they violate the promise — they're reviewed and
+   leaves the device** (no upload, no logging). The autorouter adds no
+   server: the routing graph is **baked offline** (`scripts/bake-sjokort-graph.ts`,
+   from free OSM water data) and shipped as a **static asset**
+   (`public/sjokort/graph.v1.bin`); a Web Worker (`lib/sjokort/routing.worker.ts`)
+   loads that own same-origin file and runs A* in the browser, so the
+   start/destination you pick never leave the device either. Don't rip out
+   these fetches thinking they violate the promise — they're reviewed and
    documented. Don't add *more* runtime fetches to other tools.
 5. **Don't quietly reword the brand voice on `/about`** — the hero
    sentence and the "things you won't find here" list. Change either
@@ -149,11 +154,17 @@ Legitimate hits:
 - `app/tools/sjokort/**` — map-tile fetches (OSM + OpenSeaMap) and the
   browser Geolocation calls. The one sanctioned runtime-fetch tool; see
   rule 4 above. GPS never leaves the device.
+- `lib/sjokort/routing.worker.ts` — `fetch('/sjokort/graph.v1.bin')`, the
+  Web Worker loading our **own same-origin** baked routing graph (like the
+  vendored pdf.js worker). Not a third-party call.
+- `scripts/bake-sjokort-graph.ts` — fetches OSM water data, but at **author
+  time** only (build tool, never shipped). Not a runtime fetch.
 
 Honest "no analytics" copy in Footer + About also matches the grep —
 those are documentation, not network calls. When auditing, exclude the
-sjökort tool: append `--glob '!app/tools/sjokort/**'` to scope the grep
-to the tools that are supposed to be fetchless.
+sjökort tool and its lib: append `--glob '!app/tools/sjokort/**'
+--glob '!lib/sjokort/**' --glob '!scripts/**'` to scope the grep to the
+tools that are supposed to be fetchless.
 
 ## Hooks + state conventions
 

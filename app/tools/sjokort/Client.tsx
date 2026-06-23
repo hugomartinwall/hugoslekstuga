@@ -1,16 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { MapShell } from "./MapShell";
+import { createRouter, type Router } from "@/lib/sjokort/route";
+import {
+  bearingDeg,
+  compassPoint,
+  formatNm,
+  formatDuration,
+  haversineMeters,
+  METERS_PER_NM,
+} from "@/lib/geo";
 import type { BoatKind } from "@/lib/sjokort/boat-icon";
+
+type LngLat = [number, number];
 
 type BoatProfile = {
   kind: BoatKind;
-  /** cm — reserved for the routing phase (filter shallow passages). */
+  /** cm — reserved for a future draft filter (no free depth data yet). */
   draft?: number;
-  /** cm — reserved for the routing phase (filter low bridges). */
+  /** cm — reserved for a future bridge-clearance filter. */
   height?: number;
 };
 
@@ -24,6 +35,20 @@ const BOAT_KINDS: { value: BoatKind; label: string }[] = [
   { value: "custom", label: "Other" },
 ];
 
+/** Rough cruising speeds (knots) for the ETA estimate. */
+const CRUISING_KNOTS: Record<BoatKind, number> = {
+  motor: 20,
+  sail: 6,
+  kayak: 3.5,
+  custom: 12,
+};
+
+interface RouteState {
+  coords: LngLat[];
+  distanceM: number;
+  corridorLegs: number;
+}
+
 export default function SjokortClient() {
   const [profile, setProfile] = useLocalStorageState<BoatProfile>(
     PROFILE_KEY,
@@ -34,15 +59,21 @@ export default function SjokortClient() {
   const [watching, setWatching] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // GPS is gated on a user gesture (the locate button) rather than
-  // auto-prompted on load — more reliable across browsers (Safari
-  // ignores non-gesture geolocation requests) and less aggressive.
-  // Once started, watchPosition keeps a live fix until unmount.
+  // Routing.
+  const [planning, setPlanning] = useState(false);
+  const [start, setStart] = useState<LngLat | null>(null);
+  const [end, setEnd] = useState<LngLat | null>(null);
+  const [route, setRoute] = useState<RouteState | null>(null);
+  const [routing, setRouting] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const routerRef = useRef<Router | null>(null);
+  const reqRef = useRef(0);
+
+  // GPS gated on a user gesture (the locate button) — more reliable across
+  // browsers and less aggressive than an on-load prompt.
   useEffect(() => {
     if (!watching) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      // Rare no-API branch — a synchronous set is fine here; the effect
-      // exists to bridge the Geolocation API in the first place.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setGpsError("Geolocation isn't available in this browser.");
       return;
@@ -52,33 +83,101 @@ export default function SjokortClient() {
         setGps(pos);
         setGpsError(null);
       },
-      (err) => {
-        setGpsError(err.message || "Couldn't get your location.");
-      },
+      (err) => setGpsError(err.message || "Couldn't get your location."),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, [watching]);
 
-  const setKind = (kind: BoatKind) =>
-    setProfile((prev) => ({ ...prev, kind }));
+  // Spin up the routing worker once (client-only).
+  useEffect(() => {
+    const router = createRouter();
+    routerRef.current = router;
+    return () => {
+      router.dispose();
+      routerRef.current = null;
+    };
+  }, []);
+
+  // Compute a route whenever both ends are set.
+  useEffect(() => {
+    if (!start || !end || !routerRef.current) return;
+    const req = ++reqRef.current;
+    setRouting(true);
+    setRouteError(null);
+    setRoute(null);
+    routerRef.current.route(start, end).then((reply) => {
+      if (req !== reqRef.current) return; // a newer request superseded this one
+      setRouting(false);
+      if (reply.ok && reply.coords) {
+        setRoute({
+          coords: reply.coords,
+          distanceM: reply.distanceM ?? 0,
+          corridorLegs: reply.corridorLegs ?? 0,
+        });
+      } else {
+        setRouteError(reply.error ?? "unknown");
+      }
+    });
+  }, [start, end]);
+
+  const setKind = (kind: BoatKind) => setProfile((prev) => ({ ...prev, kind }));
+
+  const handleMapClick = (lngLat: LngLat) => {
+    if (!planning) return;
+    if (!start || (start && end)) {
+      // Fresh start (or restart after a completed pair).
+      setStart(lngLat);
+      setEnd(null);
+      setRoute(null);
+      setRouteError(null);
+    } else {
+      setEnd(lngLat);
+    }
+  };
+
+  const useMyPosition = () => {
+    if (!gps) {
+      setWatching(true);
+      return;
+    }
+    const here: LngLat = [gps.coords.longitude, gps.coords.latitude];
+    setStart(here);
+    setEnd(null);
+    setRoute(null);
+    setRouteError(null);
+  };
+
+  const clearRoute = () => {
+    setStart(null);
+    setEnd(null);
+    setRoute(null);
+    setRouteError(null);
+    reqRef.current++;
+  };
+
+  const closePlanning = () => {
+    setPlanning(false);
+    clearRoute();
+  };
 
   return (
     <>
-      {/* Full-bleed map. No explicit z-index so it doesn't trap a
-          stacking context — Hugo (BrandCorner, z-40) and the floating
-          controls below stay above it. */}
+      {/* Full-bleed map; no explicit z so Hugo (z-40) + controls stay above. */}
       <div className="fixed inset-0 bg-cream">
         <MapShell
           gps={gps}
           boatKind={profile.kind}
+          route={route?.coords ?? null}
+          start={start}
+          end={end}
           onLocate={() => setWatching(true)}
           onOpenSettings={() => setDrawerOpen(true)}
+          onMapClick={handleMapClick}
         />
       </div>
 
-      {/* Back to playhouse — top-left, offset right of Hugo (who lives
-          at ~left 18, ~31px wide). z-30: above the map, below Hugo. */}
+      {/* Back to playhouse — top-left, offset right of Hugo. */}
       <Link
         href="/"
         aria-label="Back to playhouse"
@@ -87,14 +186,40 @@ export default function SjokortClient() {
         <span aria-hidden>←</span>
       </Link>
 
-      {/* Transient GPS error pill, bottom-centre, clear of the controls. */}
+      {/* Transient GPS error pill. */}
       {watching && gpsError && (
-        <div className="fixed inset-x-0 bottom-24 z-30 flex justify-center px-20">
+        <div className="fixed inset-x-0 bottom-44 z-30 flex justify-center px-20">
           <p className="rounded-full border-2 border-ink bg-tomato-soft px-3 py-1 text-center text-xs font-semibold text-ink shadow-[2px_2px_0_#1a1812]">
             {gpsError}
           </p>
         </div>
       )}
+
+      {/* Route planner — bottom-centre, above the corner controls. */}
+      <div className="fixed inset-x-0 bottom-[max(5rem,calc(env(safe-area-inset-bottom)+4.75rem))] z-20 flex justify-center px-3">
+        {!planning ? (
+          <button
+            type="button"
+            onClick={() => setPlanning(true)}
+            className="btn-chunk rounded-full bg-teal px-5 py-2.5 text-sm font-bold text-cream"
+          >
+            Plan a route
+          </button>
+        ) : (
+          <RoutePanel
+            start={start}
+            end={end}
+            routing={routing}
+            route={route}
+            routeError={routeError}
+            knots={CRUISING_KNOTS[profile.kind]}
+            hasGps={!!gps}
+            onUseMyPosition={useMyPosition}
+            onClear={clearRoute}
+            onClose={closePlanning}
+          />
+        )}
+      </div>
 
       {drawerOpen && (
         <SettingsDrawer
@@ -107,6 +232,125 @@ export default function SjokortClient() {
         />
       )}
     </>
+  );
+}
+
+function RoutePanel({
+  start,
+  end,
+  routing,
+  route,
+  routeError,
+  knots,
+  hasGps,
+  onUseMyPosition,
+  onClear,
+  onClose,
+}: {
+  start: LngLat | null;
+  end: LngLat | null;
+  routing: boolean;
+  route: RouteState | null;
+  routeError: string | null;
+  knots: number;
+  hasGps: boolean;
+  onUseMyPosition: () => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  let heading: string | null = null;
+  if (route && route.coords.length >= 2) {
+    // Bearing toward the first point ~300 m ahead, so a tiny first grid step
+    // doesn't give a misleading heading.
+    const a = route.coords[0];
+    let b = route.coords[route.coords.length - 1];
+    for (let i = 1; i < route.coords.length; i++) {
+      b = route.coords[i];
+      if (haversineMeters(a[0], a[1], b[0], b[1]) > 300) break;
+    }
+    const deg = bearingDeg(a[0], a[1], b[0], b[1]);
+    heading = `${compassPoint(deg)} ${Math.round(deg)}°`;
+  }
+  const etaMin = route ? route.distanceM / ((knots * METERS_PER_NM) / 60) : 0;
+
+  const errorText = (() => {
+    switch (routeError) {
+      case "start-dry":
+        return "that start looks like it's on land — tap on water.";
+      case "end-dry":
+        return "that destination looks like it's on land — tap on water.";
+      case "no-route":
+        return "no water route between those points. they may sit in separate basins — a lake cut off from the sea, say.";
+      case null:
+        return null;
+      default:
+        return "couldn't work that route out. try again.";
+    }
+  })();
+
+  return (
+    <div className="card-chunk w-full max-w-sm rounded-[var(--radius-card)] bg-cream p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-display text-base font-extrabold tracking-tight">
+          Plan a route
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close route planner"
+          className="rounded-full border-2 border-ink bg-cream px-2 py-0.5 text-xs font-bold hover:bg-cream-deep"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="mt-2 text-sm text-ink-soft">
+        {routing ? (
+          "finding a route…"
+        ) : errorText ? (
+          <span className="text-ink">{errorText}</span>
+        ) : route ? (
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 font-semibold text-ink">
+            <span>{formatNm(route.distanceM)}</span>
+            <span>~{formatDuration(etaMin)}</span>
+            {heading && <span>heading {heading}</span>}
+          </div>
+        ) : !start ? (
+          "tap the map to drop a start."
+        ) : !end ? (
+          "now tap your destination."
+        ) : null}
+      </div>
+
+      {route && (
+        <p className="mt-2 border-t-2 border-dashed border-ink/15 pt-2 text-xs leading-relaxed text-ink-muted">
+          a suggested course — it steers around land and follows charted
+          channels where we have them, but it can&apos;t check depth. keep your
+          chart and your eyes.
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!route && !routing && (
+          <button
+            type="button"
+            onClick={onUseMyPosition}
+            className="rounded-full border-2 border-ink bg-cream px-3 py-1.5 text-xs font-bold hover:bg-teal-soft"
+          >
+            {hasGps ? "Use my position" : "Find me first"}
+          </button>
+        )}
+        {(start || route || routeError) && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-full border-2 border-ink bg-cream px-3 py-1.5 text-xs font-bold hover:bg-cream-deep"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -125,7 +369,6 @@ function SettingsDrawer({
   gpsError: string | null;
   onClose: () => void;
 }) {
-  // Close on Escape.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -144,11 +387,7 @@ function SettingsDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <div
-        className="absolute inset-0 bg-ink/30"
-        onClick={onClose}
-        aria-hidden
-      />
+      <div className="absolute inset-0 bg-ink/30" onClick={onClose} aria-hidden />
       <div className="card-chunk relative z-10 flex w-full max-w-md flex-col gap-5 rounded-t-[var(--radius-card)] bg-cream p-6 sm:rounded-[var(--radius-card)]">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-xl font-extrabold tracking-tight">
@@ -185,8 +424,7 @@ function SettingsDrawer({
             ))}
           </div>
           <p className="text-xs text-ink-muted">
-            Changes the marker on the map. Draft and height come into play
-            once routing lands.
+            Sets the marker and the cruising speed used for trip-time estimates.
           </p>
         </div>
 
@@ -199,8 +437,8 @@ function SettingsDrawer({
 
         <p className="border-t-2 border-dashed border-ink/15 pt-4 text-xs leading-relaxed text-ink-muted">
           Tiles from OpenStreetMap &amp; OpenSeaMap — the one tool here that
-          loads from the open web. Those servers see an anonymous tile
-          request, never you. Your location stays on your device.
+          loads from the open web. Those servers see an anonymous tile request,
+          never you. Your location and routes stay on your device.
         </p>
       </div>
     </div>

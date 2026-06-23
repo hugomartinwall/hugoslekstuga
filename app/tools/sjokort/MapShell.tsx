@@ -2,48 +2,88 @@
 
 import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { Map as MlMap, Marker as MlMarker } from "maplibre-gl";
+import type {
+  Map as MlMap,
+  Marker as MlMarker,
+  GeoJSONSource,
+} from "maplibre-gl";
 import { STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "@/lib/sjokort/style";
 import { boatIconSvg, type BoatKind } from "@/lib/sjokort/boat-icon";
 
 type MaplibreNs = typeof import("maplibre-gl");
+type LngLat = [number, number];
+
+/** Teardrop pin marker (start/end of a planned route). */
+function pinSvg(fill: string): string {
+  return `<svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg"><path d="M13 1C6.4 1 1 6.4 1 13c0 8.2 12 20 12 20s12-11.8 12-20C25 6.4 19.6 1 13 1z" fill="${fill}" stroke="#1a1812" stroke-width="2"/><circle cx="13" cy="13" r="4.5" fill="#fbf6ee"/></svg>`;
+}
+
+function updatePin(
+  ml: MaplibreNs,
+  map: MlMap,
+  existing: MlMarker | null,
+  coord: LngLat | null,
+  fill: string,
+): MlMarker | null {
+  if (!coord) {
+    existing?.remove();
+    return null;
+  }
+  if (existing) return existing.setLngLat(coord);
+  const el = document.createElement("div");
+  el.innerHTML = pinSvg(fill);
+  return new ml.Marker({ element: el, anchor: "bottom" }).setLngLat(coord).addTo(map);
+}
 
 /**
- * The imperative MapLibre layer. Kept separate from Client.tsx so the
- * React surface stays declarative and all the map lifecycle lives in
- * one place.
+ * The imperative MapLibre layer. Kept separate from Client.tsx so the React
+ * surface stays declarative and all the map lifecycle lives in one place.
  *
- * maplibre-gl is **dynamically imported** inside the effect — it
- * touches WebGL and `window` at module load, so it must never run on
- * the server. The static CSS import at the top is build-time only (no
- * JS executed), so it's SSR-safe. Same pattern the QR tool uses for
- * the `qrcode` library.
+ * maplibre-gl is **dynamically imported** inside the effect — it touches WebGL
+ * and `window` at module load, so it must never run on the server. The static
+ * CSS import at the top is build-time only (SSR-safe). Same pattern the QR tool
+ * uses for `qrcode`.
  *
- * The map is created once; the boat marker is created on the first GPS
- * fix and updated on every subsequent one. The first fix also flies
- * the camera to the user (once) — after that they're free to pan, and
- * tapping the locate button re-centres on demand.
+ * The map is created once; the boat marker tracks GPS, and the route line +
+ * start/end pins update as the props change.
  */
 export function MapShell({
   gps,
   boatKind,
+  route,
+  start,
+  end,
   onLocate,
   onOpenSettings,
+  onMapClick,
 }: {
   gps: GeolocationPosition | null;
   boatKind: BoatKind;
-  /** Called when the locate button is tapped — Client starts the GPS
-   *  watch (idempotent). */
+  /** Planned route polyline [lng, lat][], or null. */
+  route: LngLat[] | null;
+  start: LngLat | null;
+  end: LngLat | null;
+  /** Called when the locate button is tapped — Client starts the GPS watch. */
   onLocate: () => void;
   onOpenSettings: () => void;
+  /** A tap on the map (used to drop start / destination pins). */
+  onMapClick: (lngLat: LngLat) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const markerRef = useRef<MlMarker | null>(null);
   const markerElRef = useRef<HTMLDivElement | null>(null);
+  const startPinRef = useRef<MlMarker | null>(null);
+  const endPinRef = useRef<MlMarker | null>(null);
   const mlRef = useRef<MaplibreNs | null>(null);
   const hasCentredRef = useRef(false);
+  const onMapClickRef = useRef(onMapClick);
   const [ready, setReady] = useState(false);
+
+  // Keep the click handler current without re-running the init effect.
+  useEffect(() => {
+    onMapClickRef.current = onMapClick;
+  }, [onMapClick]);
 
   // Init map once.
   useEffect(() => {
@@ -70,12 +110,33 @@ export function MapShell({
       });
       map.addControl(
         new ml.NavigationControl({ showCompass: false }),
-        // Bottom-right, stacking above the attribution pill — frees the
-        // top corners for the back/settings buttons in the full-screen
-        // layout.
         "bottom-right",
       );
-      map.on("load", () => {
+      map.on("click", (e) => {
+        onMapClickRef.current([e.lngLat.lng, e.lngLat.lat]);
+      });
+      map.on("load", (e) => {
+        const m = e.target;
+        // Route line: ink casing under a teal stroke, so it reads on both
+        // light water and dark land/seamarks.
+        m.addSource("route", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        m.addLayer({
+          id: "route-casing",
+          type: "line",
+          source: "route",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": "#1a1812", "line-width": 6.5, "line-opacity": 0.85 },
+        });
+        m.addLayer({
+          id: "route-line",
+          type: "line",
+          source: "route",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": "#14b8a6", "line-width": 3.5 },
+        });
         if (!cancelled) setReady(true);
       });
       mapRef.current = map;
@@ -84,15 +145,18 @@ export function MapShell({
     return () => {
       cancelled = true;
       markerRef.current?.remove();
+      startPinRef.current?.remove();
+      endPinRef.current?.remove();
       markerRef.current = null;
       markerElRef.current = null;
+      startPinRef.current = null;
+      endPinRef.current = null;
       map?.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // Create / update the boat marker as GPS fixes arrive. First fix
-  // also flies the camera to the user (once).
+  // Boat marker tracks GPS; first fix flies the camera to the user (once).
   useEffect(() => {
     const ml = mlRef.current;
     const map = mapRef.current;
@@ -114,10 +178,7 @@ export function MapShell({
       el.innerHTML = boatIconSvg(boatKind);
       el.style.willChange = "transform";
       markerElRef.current = el;
-      markerRef.current = new ml.Marker({
-        element: el,
-        rotationAlignment: "map",
-      })
+      markerRef.current = new ml.Marker({ element: el, rotationAlignment: "map" })
         .setLngLat([longitude, latitude])
         .setRotation(rot)
         .addTo(map);
@@ -131,12 +192,32 @@ export function MapShell({
     }
   }, [ready, gps, boatKind]);
 
-  // Swap the icon when the boat profile changes (marker stays put).
+  // Swap the boat icon when the profile changes (marker stays put).
   useEffect(() => {
-    if (markerElRef.current) {
-      markerElRef.current.innerHTML = boatIconSvg(boatKind);
-    }
+    if (markerElRef.current) markerElRef.current.innerHTML = boatIconSvg(boatKind);
   }, [boatKind]);
+
+  // Draw / clear the route line.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const src = map.getSource("route") as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData(
+      route && route.length > 1
+        ? { type: "Feature", geometry: { type: "LineString", coordinates: route }, properties: {} }
+        : { type: "FeatureCollection", features: [] },
+    );
+  }, [ready, route]);
+
+  // Start / destination pins.
+  useEffect(() => {
+    const ml = mlRef.current;
+    const map = mapRef.current;
+    if (!ready || !ml || !map) return;
+    startPinRef.current = updatePin(ml, map, startPinRef.current, start, "#14b8a6");
+    endPinRef.current = updatePin(ml, map, endPinRef.current, end, "#ef7d57");
+  }, [ready, start, end]);
 
   const handleLocate = () => {
     onLocate();
@@ -154,8 +235,7 @@ export function MapShell({
     <>
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Settings cog — top-right (top-left is Hugo + the back button
-          in the full-screen layout). */}
+      {/* Settings cog — top-right (top-left is Hugo + the back button). */}
       <button
         type="button"
         onClick={onOpenSettings}
@@ -168,9 +248,7 @@ export function MapShell({
         </svg>
       </button>
 
-      {/* Locate / centre-on-me — bottom-left, lifted above the iOS
-          safe area (home indicator / Safari toolbar). Attribution +
-          zoom own bottom-right. */}
+      {/* Locate / centre-on-me — bottom-left, lifted above the iOS safe area. */}
       <button
         type="button"
         onClick={handleLocate}
