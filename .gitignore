@@ -39,6 +39,9 @@ yarn-error.log*
 # fly.io
 /.fly
 
+# sjökort routing-graph bake cache (OSM water polygons download + scratch)
+/.sjokort-cache
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
