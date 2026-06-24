@@ -96,6 +96,13 @@ const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const INLAND_CACHE = join(CACHE, "inland-bbox.json");
 const USE_INLAND = process.env.INLAND !== "0";
 
+// Best-effort free grund (shallows/rocks): OSM seamark hazards only. Sparse —
+// NOT complete, NOT for navigation (the official depth data is restricted/paid).
+const HAZARDS_CACHE = join(CACHE, "hazards.json");
+const GRUND_OUT = join(OUT_DIR, "grund.v1.geojson");
+const USE_HAZARDS = process.env.HAZARDS !== "0";
+const HAZARD_BUFFER_M = 40; // berth the router gives a known hazard
+
 // ---------------------------------------------------------------------------
 // Geometry helpers
 // ---------------------------------------------------------------------------
@@ -376,6 +383,9 @@ function stitchRings(parts: Ring[]): Ring[] {
 
 interface OverpassEl {
   type: string;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
   geometry?: { lat: number; lon: number }[];
   members?: { type: string; role: string; geometry?: { lat: number; lon: number }[] }[];
   tags?: Record<string, string>;
@@ -421,6 +431,79 @@ async function fetchInlandPolys(): Promise<Poly[]> {
   return polys;
 }
 
+// --- grund / hazards (Overpass) ---
+
+const OVERPASS_MIRRORS = [
+  OVERPASS_URL,
+  "https://overpass.kumi.systems/api/interpreter",
+];
+
+async function overpassJson(query: string): Promise<{ elements: OverpassEl[] }> {
+  let lastErr: unknown;
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+          "User-Agent": "hugoslekstuga-sjokort-bake/1.0 (+https://hugoslekstuga.com)",
+        },
+        body: "data=" + encodeURIComponent(query),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      return (await res.json()) as { elements: OverpassEl[] };
+    } catch (e) {
+      lastErr = e;
+      console.warn(`  overpass ${url} failed (${String(e).slice(0, 60)}) — trying next`);
+    }
+  }
+  throw lastErr;
+}
+
+interface Hazard {
+  lon: number;
+  lat: number;
+  kind: string;
+  waterLevel?: string;
+  name?: string;
+}
+
+async function fetchHazards(): Promise<Hazard[]> {
+  if (existsSync(HAZARDS_CACHE) && !process.env.REBUILD)
+    return JSON.parse(readFileSync(HAZARDS_CACHE, "utf8")) as Hazard[];
+  const { minLat, minLon, maxLat, maxLon } = BBOX;
+  const types = ["rock", "obstruction", "wreck"];
+  const body = types
+    .map((t) => `nwr["seamark:type"="${t}"](${minLat},${minLon},${maxLat},${maxLon});`)
+    .join("");
+  const q = `[out:json][timeout:300];(${body});out tags center;`;
+  console.log("· fetching OSM grund/hazards from Overpass…");
+  let json: { elements: OverpassEl[] };
+  try {
+    json = await overpassJson(q);
+  } catch (e) {
+    console.warn(`  hazard fetch failed (${String(e).slice(0, 80)}); shipping no grund`);
+    return [];
+  }
+  const hazards: Hazard[] = [];
+  for (const el of json.elements) {
+    const lon = el.lon ?? el.center?.lon;
+    const lat = el.lat ?? el.center?.lat;
+    if (typeof lon !== "number" || typeof lat !== "number") continue;
+    hazards.push({
+      lon,
+      lat,
+      kind: el.tags?.["seamark:type"] ?? "rock",
+      waterLevel: el.tags?.["seamark:rock:water_level"],
+      name: el.tags?.["seamark:name"] ?? el.tags?.name,
+    });
+  }
+  writeFileSync(HAZARDS_CACHE, JSON.stringify(hazards));
+  console.log(`  hazards: ${hazards.length} cached`);
+  return hazards;
+}
+
 // ---------------------------------------------------------------------------
 // Build
 // ---------------------------------------------------------------------------
@@ -434,6 +517,44 @@ async function main(): Promise<void> {
   console.log(`· polys: ${sea.length} sea + ${inland.length} inland`);
   const mask = buildMask(polys);
   console.log(`· water mask: ${mask.cols}×${mask.rows} @ ${MASK_CELL_M} m`);
+
+  // Best-effort grund: carve a berth around each known OSM hazard so the
+  // router avoids it, and emit a GeoJSON the chart renders. Sparse + honest.
+  const hazards = USE_HAZARDS ? await fetchHazards() : [];
+  console.log(`· hazards: ${hazards.length} OSM grund (rock/obstruction/wreck)`);
+  {
+    const rCells = Math.max(1, Math.round(HAZARD_BUFFER_M / MASK_CELL_M));
+    let carved = 0;
+    for (const h of hazards) {
+      const c0 = Math.floor((h.lon - BBOX.minLon) / mask.dLon);
+      const r0 = Math.floor((h.lat - BBOX.minLat) / mask.dLat);
+      for (let dr = -rCells; dr <= rCells; dr++)
+        for (let dc = -rCells; dc <= rCells; dc++) {
+          if (dc * dc + dr * dr > rCells * rCells) continue;
+          const cc = c0 + dc;
+          const rr = r0 + dr;
+          if (cc < 0 || cc >= mask.cols || rr < 0 || rr >= mask.rows) continue;
+          if (mask.data[rr * mask.cols + cc] === 1) {
+            mask.data[rr * mask.cols + cc] = 0;
+            carved++;
+          }
+        }
+    }
+    console.log(`  carved ${carved} mask cells (${HAZARD_BUFFER_M} m berth)`);
+    mkdirSync(OUT_DIR, { recursive: true });
+    writeFileSync(
+      GRUND_OUT,
+      JSON.stringify({
+        type: "FeatureCollection",
+        features: hazards.map((h) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [h.lon, h.lat] },
+          properties: { kind: h.kind, waterLevel: h.waterLevel ?? null, name: h.name ?? null },
+        })),
+      }),
+    );
+  }
+
   function isWater(lon: number, lat: number): boolean {
     const c = Math.floor((lon - BBOX.minLon) / mask.dLon);
     const r = Math.floor((lat - BBOX.minLat) / mask.dLat);

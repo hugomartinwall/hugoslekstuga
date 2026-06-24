@@ -123,10 +123,12 @@ The split is so each page ships its own `<title>` and `<meta description>`
    GPS position is read via the browser Geolocation API and **never
    leaves the device** (no upload, no logging). The autorouter adds no
    server: the routing graph is **baked offline** (`scripts/bake-sjokort-graph.ts`,
-   from free OSM water data) and shipped as a **static asset**
-   (`public/sjokort/graph.v1.bin`); a Web Worker (`lib/sjokort/routing.worker.ts`)
-   loads that own same-origin file and runs A* in the browser, so the
-   start/destination you pick never leave the device either. Don't rip out
+   from free OSM water + seamark-hazard data) and shipped as **static assets**
+   (`public/sjokort/graph.v1.bin` + `grund.v1.geojson`); a Web Worker
+   (`lib/sjokort/routing.worker.ts`) loads that own same-origin graph and runs
+   A* in the browser, so the start/destination you pick never leave the device
+   either. Grund (hazards) are best-effort from OpenStreetMap — incomplete,
+   labelled "not for navigation." Don't rip out
    these fetches thinking they violate the promise — they're reviewed and
    documented. Don't add *more* runtime fetches to other tools.
 5. **Don't quietly reword the brand voice on `/about`** — the hero
@@ -157,8 +159,8 @@ Legitimate hits:
 - `lib/sjokort/routing.worker.ts` — `fetch('/sjokort/graph.v1.bin')`, the
   Web Worker loading our **own same-origin** baked routing graph (like the
   vendored pdf.js worker). Not a third-party call.
-- `scripts/bake-sjokort-graph.ts` — fetches OSM water data, but at **author
-  time** only (build tool, never shipped). Not a runtime fetch.
+- `scripts/bake-sjokort-graph.ts` — fetches OSM water + seamark-hazard data,
+  but at **author time** only (build tool, never shipped). Not a runtime fetch.
 
 Honest "no analytics" copy in Footer + About also matches the grep —
 those are documentation, not network calls. When auditing, exclude the

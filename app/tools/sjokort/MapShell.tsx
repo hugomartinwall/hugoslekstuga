@@ -137,6 +137,21 @@ export function MapShell({
           layout: { "line-cap": "round", "line-join": "round" },
           paint: { "line-color": "#14b8a6", "line-width": 3.5 },
         });
+        // Grund (known hazards) — best-effort from OpenStreetMap, far from
+        // complete. Drawn on top so they're never hidden by the route.
+        m.addSource("grund", { type: "geojson", data: "/sjokort/grund.v1.geojson" });
+        m.addLayer({
+          id: "grund",
+          type: "circle",
+          source: "grund",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 2.5, 14, 5],
+            "circle-color": "#e4572e",
+            "circle-stroke-color": "#1a1812",
+            "circle-stroke-width": 1.5,
+            "circle-opacity": 0.9,
+          },
+        });
         if (!cancelled) setReady(true);
       });
       mapRef.current = map;

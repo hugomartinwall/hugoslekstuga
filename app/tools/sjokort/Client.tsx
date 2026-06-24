@@ -435,6 +435,13 @@ function SettingsDrawer({
           <p className="text-sm text-ink-soft">{gpsStatus}</p>
         </div>
 
+        <div className="rounded-[var(--radius-card)] border-2 border-ink bg-tomato-soft p-3 text-xs leading-relaxed text-ink">
+          <strong className="font-bold">Grund are incomplete.</strong> The hazard
+          marks come from OpenStreetMap — nowhere near every grund is in there
+          (it can&apos;t legally include the official depth survey). This is not
+          a depth chart. Never navigate by it; use the official sjökort.
+        </div>
+
         <p className="border-t-2 border-dashed border-ink/15 pt-4 text-xs leading-relaxed text-ink-muted">
           Tiles from OpenStreetMap &amp; OpenSeaMap — the one tool here that
           loads from the open web. Those servers see an anonymous tile request,
