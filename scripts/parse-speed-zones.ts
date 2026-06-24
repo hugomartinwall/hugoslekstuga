@@ -1,0 +1,159 @@
+/**
+ * Parse Länsstyrelsen Stockholm's sjötrafikföreskrifter (speed limits) into a
+ * data module for the sjökort tool. Author-time only (not shipped).
+ *
+ * The regulation (01FS 2001:138, omtryck 2018:48) is a ~120-page PDF; each
+ * numbered zone gives a name, a limit ("Förbud mot högre fart än X knop") and
+ * one or more WGS84 reference points. We extract the first limit + first
+ * reference point per zone as a marker. Coverage is broad but the marker is a
+ * POINT approximation of a prose-described area — verify against signage.
+ *
+ * Needs `pdftotext` (poppler) + network at author time. Run:
+ *   npx tsx scripts/parse-speed-zones.ts
+ * Emits lib/sjokort/speed-zones.generated.ts (committed). Central Stockholm
+ * (zone 233 — a complex multi-area zone) is added by hand in speed-zones.ts.
+ */
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, "..");
+const CACHE = join(ROOT, ".sjokort-cache");
+const PDF = join(CACHE, "sjotrafik.pdf");
+const TXT = join(CACHE, "sjotrafik.txt");
+const OUT = join(ROOT, "lib", "sjokort", "speed-zones.generated.ts");
+const REG_URL =
+  "https://www.lansstyrelsen.se/download/18.2887c5dd16488fe880d65fa4/1538494858083/01FS%202018%20048%20L%C3%A4nsstyrelsen%20i%20Stockholms%20l%C3%A4ns%20f%C3%B6reskrifter%20(01FS%202001138)%20om%20sj%C3%B6trafiken%20m.m.,%20utom%20vissa%20ankringsf%C3%B6rbud,%20inom%20Stockholms%20l%C3%A4n.pdf";
+
+const KNOP_WORD: Record<string, number> = {
+  tre: 3,
+  fyra: 4,
+  fem: 5,
+  sex: 6,
+  sju: 7,
+  åtta: 8,
+  nio: 9,
+  tio: 10,
+  elva: 11,
+  tolv: 12,
+};
+
+interface Zone {
+  lng: number;
+  lat: number;
+  knots: number;
+  name: string;
+}
+
+function ensureText(): string {
+  if (existsSync(TXT)) return readFileSync(TXT, "utf8");
+  mkdirSync(CACHE, { recursive: true });
+  if (!existsSync(PDF)) {
+    console.log("· downloading regulation PDF…");
+    execSync(`curl -sSL -o "${PDF}" "${REG_URL}"`, { stdio: "inherit" });
+  }
+  console.log("· pdftotext…");
+  execSync(`pdftotext -layout "${PDF}" "${TXT}"`, { stdio: "inherit" });
+  return readFileSync(TXT, "utf8");
+}
+
+/** First speed limit (word or digit) in a block. */
+function findKnots(block: string): number | null {
+  const m = block.match(
+    /(?:än|högst|till)\s+(tre|fyra|fem|sex|sju|åtta|nio|tio|elva|tolv|\d{1,2})\s*knop/i,
+  );
+  if (!m) return null;
+  const tok = m[1].toLowerCase();
+  return KNOP_WORD[tok] ?? Number(tok);
+}
+
+/** First lat (58–61°N) and first lon (16–20°E) reference point in a block. */
+function findPoint(block: string): { lat: number; lng: number } | null {
+  // Normalise OCR/format noise: l8→18, l9→19, º/o degree marks handled in regex.
+  const t = block.replace(/l(8|9)\s*[°ºo]/g, "1$1°");
+  const re = /(\d{1,2})\s*[°ºo]\s*(\d{1,2})[,.](\d{1,2})/g;
+  let lat: number | null = null;
+  let lng: number | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) {
+    const deg = Number(m[1]);
+    const min = Number(`${m[2]}.${m[3]}`);
+    const val = deg + min / 60;
+    if (lat === null && deg >= 58 && deg <= 61) lat = val;
+    else if (lng === null && deg >= 16 && deg <= 20) lng = val;
+    if (lat !== null && lng !== null) break;
+  }
+  return lat !== null && lng !== null ? { lat, lng } : null;
+}
+
+function main(): void {
+  const text = ensureText();
+  const lines = text.split("\n");
+  const zones: Zone[] = [];
+  let cur: { num: number; name: string; lines: string[] } | null = null;
+
+  const flush = () => {
+    if (!cur) return;
+    const block = cur.lines.join(" ").replace(/\s+/g, " ");
+    const knots = findKnots(block);
+    const pt = findPoint(block);
+    if (knots && pt) {
+      // Clip to the tool bbox; drop obvious mis-parses.
+      if (pt.lat >= 58.6 && pt.lat <= 60.3 && pt.lng >= 16.4 && pt.lng <= 20.3) {
+        zones.push({
+          lng: Number(pt.lng.toFixed(5)),
+          lat: Number(pt.lat.toFixed(5)),
+          knots,
+          name: cur.name.replace(/\s+/g, " ").trim(),
+        });
+      }
+    }
+    cur = null;
+  };
+
+  for (const line of lines) {
+    const h = line.match(/^\s*(\d{1,3})\.\s+(\S.*)$/);
+    if (h) {
+      flush();
+      cur = { num: Number(h[1]), name: h[2], lines: [line] };
+    } else if (cur) {
+      cur.lines.push(line);
+    }
+  }
+  flush();
+
+  // Dedup by rounded point (some zones repeat across kommun cross-references).
+  const seen = new Set<string>();
+  const unique = zones.filter((z) => {
+    const k = `${z.lng.toFixed(3)},${z.lat.toFixed(3)}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+
+  const body = unique
+    .map(
+      (z) =>
+        `  { lng: ${z.lng}, lat: ${z.lat}, knots: ${z.knots}, name: ${JSON.stringify(z.name)} },`,
+    )
+    .join("\n");
+  const out = `/**
+ * AUTO-GENERATED by scripts/parse-speed-zones.ts from Länsstyrelsen Stockholm
+ * 01FS 2001:138 (omtryck 2018:48). Do not edit by hand — re-run the parser.
+ * Each entry is the first limit + first reference point of a regulation zone
+ * (a POINT approximation of a prose-described area).
+ */
+import type { SpeedZone } from "./speed-zones";
+
+export const GENERATED_ZONES: SpeedZone[] = [
+${body}
+];
+`;
+  writeFileSync(OUT, out);
+  console.log(`parsed ${zones.length} zones → ${unique.length} unique → ${OUT}`);
+}
+
+main();

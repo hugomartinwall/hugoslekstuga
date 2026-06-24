@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { MapShell } from "./MapShell";
 import { createRouter, type Router } from "@/lib/sjokort/route";
+import { nearestZone } from "@/lib/sjokort/zones";
 import {
   bearingDeg,
   compassPoint,
@@ -69,6 +70,13 @@ export default function SjokortClient() {
   const routerRef = useRef<Router | null>(null);
   const reqRef = useRef(0);
 
+  // Speed-limit lookup (a normal map tap, when not planning a route).
+  const [speedInfo, setSpeedInfo] = useState<{
+    knots: number | null;
+    name?: string;
+    note?: string;
+  } | null>(null);
+
   // GPS gated on a user gesture (the locate button) — more reliable across
   // browsers and less aggressive than an on-load prompt.
   useEffect(() => {
@@ -124,7 +132,13 @@ export default function SjokortClient() {
   const setKind = (kind: BoatKind) => setProfile((prev) => ({ ...prev, kind }));
 
   const handleMapClick = (lngLat: LngLat) => {
-    if (!planning) return;
+    if (!planning) {
+      const hit = nearestZone(lngLat[0], lngLat[1]);
+      setSpeedInfo(
+        hit ? { knots: hit.zone.knots, name: hit.zone.name, note: hit.zone.note } : { knots: null },
+      );
+      return;
+    }
     if (!start || (start && end)) {
       // Fresh start (or restart after a completed pair).
       setStart(lngLat);
@@ -195,12 +209,43 @@ export default function SjokortClient() {
         </div>
       )}
 
+      {/* Speed-limit readout — a normal tap reports the nearest known zone. */}
+      {!planning && speedInfo && (
+        <div className="fixed inset-x-0 bottom-[max(8.75rem,calc(env(safe-area-inset-bottom)+8.5rem))] z-20 flex justify-center px-3">
+          <div className="card-chunk flex w-full max-w-sm items-center gap-3 rounded-[var(--radius-card)] bg-cream px-4 py-2.5 text-sm">
+            {speedInfo.knots != null ? (
+              <span className="font-semibold text-ink">
+                <strong className="font-extrabold">{speedInfo.knots} knop</strong> ·{" "}
+                {speedInfo.name}
+                {speedInfo.note ? ` · ${speedInfo.note}` : ""}
+              </span>
+            ) : (
+              <span className="text-ink-soft">
+                No speed zone in our data here — coverage is partial, so check
+                signage. Mind your wake.
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setSpeedInfo(null)}
+              aria-label="Dismiss"
+              className="ml-auto rounded-full border-2 border-ink bg-cream px-2 py-0.5 text-xs font-bold hover:bg-cream-deep"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Route planner — bottom-centre, above the corner controls. */}
       <div className="fixed inset-x-0 bottom-[max(5rem,calc(env(safe-area-inset-bottom)+4.75rem))] z-20 flex justify-center px-3">
         {!planning ? (
           <button
             type="button"
-            onClick={() => setPlanning(true)}
+            onClick={() => {
+              setPlanning(true);
+              setSpeedInfo(null);
+            }}
             className="btn-chunk rounded-full bg-teal px-5 py-2.5 text-sm font-bold text-cream"
           >
             Plan a route
@@ -441,6 +486,12 @@ function SettingsDrawer({
           (it can&apos;t legally include the official depth survey). This is not
           a depth chart. Never navigate by it; use the official sjökort.
         </div>
+
+        <p className="text-xs leading-relaxed text-ink-muted">
+          Tap the water (when you&apos;re not planning a route) to check the
+          speed limit. Zones come from Länsstyrelsen&apos;s regulations and are
+          partial so far — always follow posted signage.
+        </p>
 
         <p className="border-t-2 border-dashed border-ink/15 pt-4 text-xs leading-relaxed text-ink-muted">
           Tiles from OpenStreetMap &amp; OpenSeaMap — the one tool here that

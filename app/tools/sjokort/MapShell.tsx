@@ -9,6 +9,7 @@ import type {
 } from "maplibre-gl";
 import { STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "@/lib/sjokort/style";
 import { boatIconSvg, type BoatKind } from "@/lib/sjokort/boat-icon";
+import { SPEED_ZONES } from "@/lib/sjokort/speed-zones";
 
 type MaplibreNs = typeof import("maplibre-gl");
 type LngLat = [number, number];
@@ -136,6 +137,41 @@ export function MapShell({
           source: "route",
           layout: { "line-cap": "round", "line-join": "round" },
           paint: { "line-color": "#14b8a6", "line-width": 3.5 },
+        });
+        // Speed-limit zones (partial; reference points from Länsstyrelsen
+        // regs). Translucent discs coloured by limit; tap reports the limit.
+        m.addSource("speed", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: SPEED_ZONES.map((z) => ({
+              type: "Feature",
+              geometry: { type: "Point", coordinates: [z.lng, z.lat] },
+              properties: { knots: z.knots },
+            })),
+          },
+        });
+        m.addLayer({
+          id: "speed",
+          type: "circle",
+          source: "speed",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 5, 13, 11],
+            "circle-color": [
+              "step",
+              ["get", "knots"],
+              "#b91c1c",
+              5,
+              "#ea580c",
+              7,
+              "#ca8a04",
+              9,
+              "#65a30d",
+            ],
+            "circle-opacity": 0.3,
+            "circle-stroke-color": "#1a1812",
+            "circle-stroke-width": 1,
+          },
         });
         // Grund (known hazards) — best-effort from OpenStreetMap, far from
         // complete. Drawn on top so they're never hidden by the route.
