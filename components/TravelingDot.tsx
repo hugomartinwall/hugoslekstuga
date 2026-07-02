@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { CREAM_HEX } from "@/lib/colors";
+import { drawHugoSprite } from "@/lib/hugo/sprite";
 
 /**
  * The traveling dot — Hugo. Lives at the nav, leaves his post when
@@ -444,31 +444,28 @@ function resolveState(t: number, j: Journey): FrameState {
  * -----------------------------------------------------------------------*/
 
 function drawHugo(ctx: CanvasRenderingContext2D, s: FrameState) {
-  ctx.save();
-  ctx.translate(s.x, s.y);
-  ctx.rotate(s.angle);
-  ctx.fillStyle = s.color;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, s.rx, s.ry, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Eyes — drawn only during scoop pause
-  if (s.drawEyes) {
-    ctx.fillStyle = CREAM_HEX;
-    const eyeR = DOT_RADIUS_PX * 0.22;
-    const eyeGap = DOT_RADIUS_PX * 0.32;
-    // Rotate back to upright for the eyes (face-forward, regardless of body angle)
-    ctx.rotate(-s.angle);
-    // Both eyes shift together by eyeOffsetX/eyeOffsetY so Hugo can
-    // direct his gaze — e.g. look down at the tool during the scoop.
-    const ex = s.eyeOffsetX;
-    const ey = s.eyeOffsetY;
-    ctx.beginPath();
-    ctx.arc(-eyeGap + ex, ey, eyeR, 0, Math.PI * 2);
-    ctx.arc(eyeGap + ex, ey, eyeR, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
+  // The 16×16 sprite in flight. Pixel sprites don't rotate — arcade
+  // characters face their travel direction, so the body-angle becomes
+  // a horizontal flip while the squash/stretch radii carry the sense
+  // of speed. Eyes stay shut mid-flight (a determined little guy) and
+  // open at the scoop, looking wherever resolveState points them.
+  const facing = Math.cos(s.angle) < 0 ? -1 : 1;
+  drawHugoSprite(ctx, {
+    x: s.x,
+    y: s.y,
+    px: (DOT_RADIUS_PX * 2.4) / 16,
+    accent: s.color,
+    eye: s.drawEyes
+      ? {
+          open: true,
+          wide: false,
+          dx: 0,
+          dy: s.eyeOffsetY > 0.5 ? 1 : 0,
+        }
+      : { open: false, wide: false, dx: 0, dy: 0 },
+    scaleX: (s.rx / DOT_RADIUS_PX) * facing,
+    scaleY: s.ry / DOT_RADIUS_PX,
+  });
 }
 
 function drawStreak(

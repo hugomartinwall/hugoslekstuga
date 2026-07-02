@@ -51,8 +51,14 @@ export const COLOR_ORDER: ToolColor[] = [
 
 const DOT_KEY = "hugoslekstuga:dot-color";
 
-export function hexRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
+/** Parse `#rrggbb` or `rgb(r, g, b)` — flight code lerps into rgb() strings. */
+export function hexRgb(color: string): [number, number, number] {
+  if (color.startsWith("rgb")) {
+    const m = color.match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+    return [255, 110, 94];
+  }
+  const n = parseInt(color.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
