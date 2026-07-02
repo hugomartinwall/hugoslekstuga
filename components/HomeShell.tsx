@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import HugoParkour from "@/components/hugo/HugoParkour";
 
 const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
 
@@ -33,6 +34,20 @@ export default function HomeShell() {
   const [explodeTrigger, setExplodeTrigger] = useState(0);
   const [retiredName, setRetiredName] = useState<string | null>(null);
   const [powerOn, setPowerOn] = useState(false);
+  const [parkour, setParkour] = useState(false);
+
+  // The bottom hint follows the mode — attract invitation normally,
+  // controls while Hugo's parkour owns the room.
+  useEffect(() => {
+    const onStart = () => setParkour(true);
+    const onEnd = () => setParkour(false);
+    window.addEventListener("hugoslekstuga:parkour-start", onStart);
+    window.addEventListener("hugoslekstuga:parkour-end", onEnd);
+    return () => {
+      window.removeEventListener("hugoslekstuga:parkour-start", onStart);
+      window.removeEventListener("hugoslekstuga:parkour-end", onEnd);
+    };
+  }, []);
 
   // CRT power-on — the room switches on the first time this session
   // reaches the homepage, then stays warm. Reduced motion skips it
@@ -104,13 +119,19 @@ export default function HomeShell() {
         />
       )}
 
-      {/* Attract-mode hint — the arcade's standing invitation. */}
+      {/* Attract-mode hint — the arcade's standing invitation, or the
+          controls while the parkour owns the room. */}
       <p
         aria-hidden
-        className="press-blink pointer-events-none absolute inset-x-0 bottom-5 z-10 text-center font-pixel text-[10px] uppercase tracking-[0.3em] text-ink-muted"
+        className={`pointer-events-none absolute inset-x-0 bottom-5 z-10 text-center font-pixel text-[10px] uppercase tracking-[0.3em] text-ink-muted ${
+          parkour ? "" : "press-blink"
+        }`}
       >
-        press any tool
+        {parkour ? "← → move · ↑ jump · esc gives up" : "press any tool"}
       </p>
+
+      {/* The hidden game — long-press the corner Hugo to start it. */}
+      <HugoParkour />
 
       {/* Retired-tool notice: a small line at the bottom, gone in 7s. */}
       {retiredName && (
