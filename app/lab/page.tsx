@@ -10,20 +10,7 @@ type Experiment = {
  * The lab index. New prototypes get listed here so the directory is
  * scannable. Each entry is just a card-chunk link to /lab/<slug>.
  */
-const EXPERIMENTS: Experiment[] = [
-  {
-    slug: "rebrand",
-    title: "Rebrand directions",
-    blurb:
-      "Three full-skin candidates: Lördagsmorgon (cartoon cel), Nattöppet (phosphor arcade), Sommarstuga (folk cottage). Pick one; the site rebuilds around it.",
-  },
-  {
-    slug: "logo",
-    title: "Logo directions",
-    blurb:
-      "Two side-by-side: dot-as-character (the recommended bet) vs evolved mark (the foil).",
-  },
-];
+const EXPERIMENTS: Experiment[] = [];
 
 export default function LabIndex() {
   return (
@@ -38,6 +25,12 @@ export default function LabIndex() {
           production these routes return 404.
         </p>
       </header>
+
+      {EXPERIMENTS.length === 0 && (
+        <p className="mt-10 text-sm text-ink-muted">
+          The bench is clear — nothing being prototyped right now.
+        </p>
+      )}
 
       <ul className="mt-10 grid grid-cols-1 gap-3">
         {EXPERIMENTS.map((e) => (
