@@ -15,6 +15,12 @@ import {
   hydrateFromStorage,
   useHugoState,
 } from "@/lib/hugo-state";
+import { COLOR_HEX } from "@/lib/colors";
+import {
+  COLOR_ORDER,
+  drawHugoSprite,
+  spriteCanvasSize,
+} from "@/lib/hugo/sprite";
 
 const DOT_COLORS = [
   "var(--color-tomato)",
@@ -234,6 +240,12 @@ export default function BrandDot({
   const leashPosRef = useRef({ x: 0, y: 0 });
   const leashElementRef = useRef<HTMLSpanElement | null>(null);
   const leashRafRef = useRef<number>(0);
+  // The sprite canvases — Hugo's pixel body in the corner/footer and
+  // on the leash. Behaviour state stays exactly where it was; these
+  // are pure output surfaces.
+  const spriteCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const leashCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const accentHexRef = useRef<string>(COLOR_HEX.tomato);
   const longPressTimerRef = useRef<number | null>(null);
   const leashIdleTimerRef = useRef<number | null>(null);
   const placeTimerRef = useRef<number | null>(null);
@@ -855,16 +867,28 @@ export default function BrandDot({
       data-brand-dot
       data-name="hugo"
       style={{
+        position: "relative",
         display: "inline-block",
         width: "0.7em",
         height: "0.7em",
-        borderRadius: "9999px",
-        background: color,
         verticalAlign: "baseline",
         opacity: traveling || stagePresent ? 0 : 1,
         transition: "opacity 60ms linear",
       }}
-    />
+    >
+      {/* Static sprite stamp — lids down, sleeping in the footer. */}
+      <canvas
+        ref={spriteCanvasRef}
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          imageRendering: "pixelated",
+        }}
+      />
+    </span>
   ) : null;
 
   const cycle = () => {
@@ -926,11 +950,43 @@ export default function BrandDot({
     const step = () => {
       const target = leashTargetRef.current;
       const pos = leashPosRef.current;
-      pos.x += (target.x - pos.x) * LEASH_LERP;
-      pos.y += (target.y - pos.y) * LEASH_LERP;
+      const stepX = (target.x - pos.x) * LEASH_LERP;
+      const stepY = (target.y - pos.y) * LEASH_LERP;
+      pos.x += stepX;
+      pos.y += stepY;
       const el = leashElementRef.current;
       if (el) {
-        el.style.transform = `translate(${pos.x - 8}px, ${pos.y - 8}px)`;
+        el.style.transform = `translate(${pos.x - 12}px, ${pos.y - 12}px)`;
+      }
+      // Redraw the leashed sprite: feet alternate while he's actually
+      // moving (he *walks* after the cursor), eyes lead the direction.
+      const lc = leashCanvasRef.current;
+      const lctx = lc?.getContext("2d");
+      if (lc && lctx) {
+        if (lc.width < 16) {
+          const dpr = Math.min(3, window.devicePixelRatio || 1);
+          const t = spriteCanvasSize(24, dpr);
+          lc.width = t;
+          lc.height = t;
+        }
+        lctx.clearRect(0, 0, lc.width, lc.height);
+        lctx.imageSmoothingEnabled = false;
+        const moving = Math.abs(stepX) + Math.abs(stepY) > 0.6;
+        drawHugoSprite(lctx, {
+          x: lc.width / 2,
+          y: lc.height / 2,
+          px: lc.width / 16,
+          accent: accentHexRef.current,
+          eye: {
+            open: true,
+            wide: false,
+            dx: stepX > 0.4 ? 1 : stepX < -0.4 ? -1 : 0,
+            dy: stepY > 0.4 ? 1 : stepY < -0.4 ? -1 : 0,
+          },
+          feet: moving
+            ? ((Math.floor(performance.now() / 150) % 2) as 0 | 1)
+            : null,
+        });
       }
       leashRafRef.current = requestAnimationFrame(step);
     };
@@ -1187,15 +1243,77 @@ export default function BrandDot({
   const breathPeriodSec = (60 / safeBpm) * 4;
 
   // Mood-tinted halo. Subtle by default; a warmer pink when excited,
-  // a tomato edge when grumpy, soft and quiet when sleepy.
-  const moodShadow: Record<string, string> = {
-    sleepy: "0 2px 4px rgba(26, 24, 18, 0.18)",
-    calm: "0 3px 7px rgba(26, 24, 18, 0.16)",
-    curious: "0 4px 9px rgba(26, 24, 18, 0.20)",
-    excited: "0 5px 13px var(--color-pink-soft)",
-    grumpy: "0 4px 10px var(--color-tomato-soft)",
+  // a coral edge when grumpy, near-dark when sleepy. Phosphor glows
+  // now — applied as a drop-shadow filter on the sprite canvas so the
+  // halo follows Hugo's pixel silhouette, not a rounded box.
+  const moodGlow: Record<string, string> = {
+    sleepy: "drop-shadow(0 0 3px rgba(232, 242, 233, 0.05))",
+    calm: "drop-shadow(0 0 6px rgba(232, 242, 233, 0.10))",
+    curious: "drop-shadow(0 0 8px rgba(138, 240, 255, 0.24))",
+    excited: "drop-shadow(0 0 10px rgba(255, 79, 216, 0.34))",
+    grumpy: "drop-shadow(0 0 9px rgba(255, 110, 94, 0.34))",
   };
-  const dotShadow = moodShadow[moodGlobal] ?? moodShadow.calm;
+  const dotGlow = moodGlow[moodGlobal] ?? moodGlow.calm;
+
+  // ----- Sprite output ------------------------------------------------------
+  // Everything below maps the existing behaviour state onto the shared
+  // 16×16 sprite. Resting Hugo keeps his lids down; proximity (or a
+  // happy moment, or being dragged) opens the eyes — the same reveal
+  // the DOM eyes performed, now in pixels.
+  const accentHex = COLOR_HEX[COLOR_ORDER[safeIdx]];
+  const spriteEyeOpen =
+    happy || dragging || mood === "yawning"
+      ? true
+      : playingDead || mood === "dozing" || mood === "asleep"
+        ? false
+        : eyesVisible && !blinking;
+  const spriteEyeWide = happy || mood === "yawning";
+  const gazeSuppressed =
+    playingDead ||
+    happy ||
+    dragging ||
+    mood === "dozing" ||
+    mood === "asleep";
+  const spriteDx = (
+    gazeSuppressed || Math.abs(eyeGazeX) < 1.2 ? 0 : eyeGazeX < 0 ? -1 : 1
+  ) as -1 | 0 | 1;
+  const spriteDy = (
+    gazeSuppressed || Math.abs(eyeGazeY) < 1.2 ? 0 : eyeGazeY < 0 ? -1 : 1
+  ) as -1 | 0 | 1;
+
+  // Redraw the corner/footer sprite whenever a visual input changes.
+  // A 36px canvas redraw is cheaper than the DOM style writes it
+  // replaces; gaze changes arrive at rAF rate during swarm hover and
+  // this keeps up without a dedicated loop.
+  useEffect(() => {
+    // Keep the accent readable inside the leash rAF closure.
+    accentHexRef.current = accentHex;
+    const canvas = spriteCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const cssSize = canvas.getBoundingClientRect().width || 36;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const target = spriteCanvasSize(cssSize, dpr);
+    if (canvas.width !== target) {
+      canvas.width = target;
+      canvas.height = target;
+    }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
+    drawHugoSprite(ctx, {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      px: canvas.width / 16,
+      accent: accentHex,
+      eye: {
+        open: interactive ? spriteEyeOpen : false,
+        wide: spriteEyeWide,
+        dx: spriteDx,
+        dy: spriteDy,
+      },
+    });
+  }, [accentHex, interactive, spriteEyeOpen, spriteEyeWide, spriteDx, spriteDy]);
 
   // Transition selection — instant during drag, spring back on release,
   // bouncy on click, gentle ease otherwise.
@@ -1227,11 +1345,8 @@ export default function BrandDot({
             position: "fixed",
             left: 0,
             top: 0,
-            width: "16px",
-            height: "16px",
-            borderRadius: "9999px",
-            background: color,
-            boxShadow: dotShadow,
+            width: "24px",
+            height: "24px",
             pointerEvents: "none",
             zIndex: 60,
             // Initial transform — the rAF loop overrides this on its
@@ -1239,9 +1354,23 @@ export default function BrandDot({
             // is intentional; using it here avoids an off-origin
             // flash before the loop catches up.
             // eslint-disable-next-line react-hooks/refs
-            transform: `translate(${leashPosRef.current.x - 8}px, ${leashPosRef.current.y - 8}px)`,
+            transform: `translate(${leashPosRef.current.x - 12}px, ${leashPosRef.current.y - 12}px)`,
           }}
         >
+          {/* Hugo walks the leash — the rAF loop below redraws this
+              canvas each frame with alternating feet while he moves. */}
+          <canvas
+            ref={leashCanvasRef}
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              imageRendering: "pixelated",
+              filter: dotGlow,
+            }}
+          />
           {/* Spawn pop — a quick expanding ring around the leashed
               dot the moment it appears, so the leash activation is
               obviously visible. Animation runs once, then unmounts. */}
@@ -1288,11 +1417,10 @@ export default function BrandDot({
         display: "inline-block",
         width: "0.7em",
         height: "0.7em",
-        borderRadius: "9999px",
         border: "none",
         padding: 0,
         margin: 0,
-        background: color,
+        background: "transparent",
         cursor: dragging ? "grabbing" : "pointer",
         verticalAlign: "baseline",
         // A hair of breathing room so the dot doesn't kiss the 'a' of
@@ -1301,7 +1429,7 @@ export default function BrandDot({
         opacity: traveling || leashed || stagePresent ? 0 : 1,
         pointerEvents: leashed ? "none" : undefined,
         transform,
-        transition: `${transformTransition}, background 220ms ease, opacity 60ms linear`,
+        transition: `${transformTransition}, opacity 60ms linear`,
         // Idle breathing pauses during any active animation (drag,
         // spring, bounce, or happy reaction) so the dot's motion comes
         // from one coherent place at a time. Konami flip wins over
@@ -1313,8 +1441,6 @@ export default function BrandDot({
           : bouncing || dragging || springingBack || happy
             ? "none"
             : `brand-dot-breathe var(--hugo-breath-period, 3.4s) ease-in-out infinite`,
-        // Mood-tinted halo. Adds a tiny sense of "Hugo is feeling X."
-        boxShadow: dotShadow,
         // Expose BPM-derived breath period to the breathing animation
         // so it speeds/slows with Hugo's mood. The CSS variable keeps
         // the animation declarative and pauses cleanly under
@@ -1328,6 +1454,21 @@ export default function BrandDot({
         WebkitUserSelect: "none",
       }}
     >
+      {/* Hugo's pixel body. The mood halo rides the sprite's alpha via
+          drop-shadow, so it hugs the silhouette instead of a box. */}
+      <canvas
+        ref={spriteCanvasRef}
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          imageRendering: "pixelated",
+          filter: dotGlow,
+          pointerEvents: "none",
+        }}
+      />
       {/* The "annoyed huff" puff — three overlapping ink circles
           rising out of Hugo's head when he plays dead. Only mounted
           while `playingDead` is true; the CSS animation runs once and
@@ -1497,87 +1638,9 @@ export default function BrandDot({
           })}
         </span>
       )}
-      <span
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "0.12em",
-          // Sleep states force eyes visible (closed lids show as thin
-          // lines, see below); yawn forces them visible too so the
-          // pop-scale reads.
-          opacity:
-            playingDead ||
-            happy ||
-            dragging ||
-            mood === "dozing" ||
-            mood === "asleep" ||
-            mood === "yawning" ||
-            (eyesVisible && !blinking)
-              ? 1
-              : 0,
-          // Shift the whole eye-container by the gaze offset so both
-          // eyes track together toward the hovered tool. Skip when
-          // playing dead, dragging, or in a happy moment — Hugo's
-          // attention is on his current state, not the cursor. Sleep
-          // also forces the gaze neutral. Yawn pops the whole pair to
-          // 1.15× before settling back, springy curve.
-          transform:
-            playingDead ||
-            happy ||
-            dragging ||
-            mood === "dozing" ||
-            mood === "asleep"
-              ? "translate(0px, 0px)"
-              : mood === "yawning"
-              ? `translate(${eyeGazeX}px, ${eyeGazeY}px) scale(1.15)`
-              : `translate(${eyeGazeX}px, ${eyeGazeY}px)`,
-          // Fast close (blink starting) so it reads as a snap; slow
-          // open (blink ending or proximity revealing) so the gaze
-          // re-engages gently. Yawn uses a springy curve so the pop
-          // reads as a stretch-and-settle. Gaze translate eases
-          // smoothly so the eyes track a moving swarm dot fluidly.
-          transition:
-            mood === "yawning"
-              ? "opacity 220ms ease, transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1)"
-              : blinking
-              ? "opacity 60ms ease, transform 200ms ease"
-              : "opacity 220ms ease, transform 200ms ease",
-          pointerEvents: "none",
-        }}
-      >
-        <span
-          style={{
-            display: "inline-block",
-            width: "0.22em",
-            // Eyes squeeze shut into thin horizontal lines when Hugo
-            // is playing dead — height collapses, width stays.
-            height:
-              playingDead || mood === "dozing" || mood === "asleep"
-                ? "0.04em"
-                : "0.22em",
-            borderRadius: "9999px",
-            background: "var(--color-cream)",
-            transition: "height 220ms ease",
-          }}
-        />
-        <span
-          style={{
-            display: "inline-block",
-            width: "0.22em",
-            height:
-              playingDead || mood === "dozing" || mood === "asleep"
-                ? "0.04em"
-                : "0.22em",
-            borderRadius: "9999px",
-            background: "var(--color-cream)",
-            transition: "height 220ms ease",
-          }}
-        />
-      </span>
+      {/* The DOM eye spans are gone — gaze, blinks, squints and the
+          yawn all render inside the sprite canvas above, fed by the
+          same state that used to drive these styles. */}
     </button>
     {/* Hugo's room — shift+click the dot opens it. Rendered via a
         portal so it sits at the body level above the rest of the

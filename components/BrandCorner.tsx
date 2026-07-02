@@ -29,9 +29,10 @@ export default function BrandCorner() {
         left: 18,
         zIndex: 40,
         // The wrapper's font-size controls BrandDot's rendered size
-        // (it's authored as 0.7em). 44px gives a ~31px dot — big
-        // enough to read as a brand mark, small enough to stay quiet.
-        fontSize: "44px",
+        // (it's authored as 0.7em). 52px gives a ~36px sprite — the
+        // 16×16 pixel body needs a little more room than the old disc
+        // did to keep its face legible.
+        fontSize: "52px",
         lineHeight: 1,
         // The dot uses inline-block + a left margin to space itself
         // from the wordmark. We don't want that margin in the corner.
