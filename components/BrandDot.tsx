@@ -914,12 +914,15 @@ export default function BrandDot({
   };
 
   // ----- Long-press: Hugo's parkour ----------------------------------------
-  // Homepage-only, keyboard-driven (hover-capable devices). The game
-  // itself lives in components/hugo/HugoParkour.tsx; it hides this dot
-  // through the hugo-stage event while it owns the character.
+  // Homepage-only, keyboard-driven. Gated to hover + fine pointer (a
+  // mouse implies a keyboard) — the game has no touch controls and Esc
+  // is the only exit, so touch devices must never be able to start it.
+  // The game itself lives in components/hugo/HugoParkour.tsx; it hides
+  // this dot through the hugo-stage event while it owns the character.
   const startParkour = () => {
     if (window.location.pathname !== "/") return;
-    if (!window.matchMedia("(hover: hover)").matches) return;
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches)
+      return;
     hugoInteraction();
     window.dispatchEvent(new CustomEvent("hugoslekstuga:parkour-start"));
   };

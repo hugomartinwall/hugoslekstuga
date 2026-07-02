@@ -37,6 +37,10 @@ const PLAYER_HALF = 14; // half-width of the ~28px sprite body
 const SPRITE_PX = 2; // canvas px per sprite cell (crisp at DPR)
 const DOOR_W = 26;
 const DOOR_H = 34;
+// Spawn = where the corner Hugo lives; the beam drops him in there.
+const SPAWN_X = 46;
+const SPAWN_Y = 46;
+const BEAM_FRAMES = 26;
 
 type Platform = { x: number; y: number; r: number; slug: string };
 
@@ -106,24 +110,64 @@ export default function HugoParkour() {
     if (!canvas || !ctx) return;
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-
     const accent = readAccent();
-    const floorY = h - 10;
-    // The door hangs high, off-center — reachable only by chaining
-    // jumps across whatever the swarm happens to offer on the way up.
-    const doorX = Math.round(w * 0.62);
-    const doorY = Math.max(72, h * 0.12);
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    let w = 0;
+    let h = 0;
+    let floorY = 0;
+    let doorX = 0;
+    let doorY = 0;
+
+    // The door hangs high, wherever the ceiling has room. Search and
+    // About are anchored up there (swarm nodes tagged $search/$about),
+    // so the run reads their live positions and hangs the door at the
+    // midpoint of the widest clear gap — also keeping clear of the
+    // corner Hugo (left) and the DO-NOT-PRESS button (right). The old
+    // fixed 62% spot sat on the About label whenever the swarm and the
+    // constant disagreed about whose stretch of ceiling it was.
+    const placeDoor = () => {
+      const xs = readPlatforms()
+        .filter((p) => p.slug.startsWith("$"))
+        .map((p) => p.x)
+        .filter((x) => x > 0 && x < w)
+        .sort((a, b) => a - b);
+      const edges = [90, ...xs, w - 110];
+      let mid = w * 0.5;
+      let best = 0;
+      for (let i = 1; i < edges.length; i++) {
+        const gap = edges[i] - edges[i - 1];
+        if (gap > best) {
+          best = gap;
+          mid = (edges[i] + edges[i - 1]) / 2;
+        }
+      }
+      doorX = Math.round(mid);
+      doorY = Math.max(72, h * 0.12);
+    };
+
+    // Sized against the live viewport — resizing mid-run re-lays the
+    // room (canvas backing store, floor, door) instead of stretching
+    // a stale frame.
+    const layout = () => {
+      w = window.innerWidth;
+      h = window.innerHeight;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      floorY = h - 10;
+      placeDoor();
+    };
+    layout();
+    window.addEventListener("resize", layout);
 
     // Spawn where the corner Hugo lives; gravity does the intro.
     const player = {
-      x: 46,
-      y: 46,
+      x: SPAWN_X,
+      y: SPAWN_Y,
       vx: 0,
       vy: 0,
       facing: 1,
@@ -173,12 +217,13 @@ export default function HugoParkour() {
 
       if (respawnRef.current) {
         respawnRef.current = false;
-        player.x = 46;
-        player.y = 46;
+        player.x = SPAWN_X;
+        player.y = SPAWN_Y;
         player.vx = 0;
         player.vy = 0;
         player.stand = null;
         player.grounded = false;
+        frame = 0; // replay the spawn beam
       }
 
       if (!wonRef.current) {
@@ -313,6 +358,21 @@ export default function HugoParkour() {
       ctx.textAlign = "center";
       ctx.fillText("THE EXIT", doorX, doorY + DOOR_H + 14);
 
+      // Spawn beam — Hugo is beamed into the room: a thin phosphor
+      // column over the spawn point that flickers and fades while he
+      // drops out of it. Skipped under reduced motion.
+      if (!reducedMotion && frame <= BEAM_FRAMES && !wonRef.current) {
+        const fade = 1 - frame / BEAM_FRAMES;
+        const flicker = frame % 4 < 2 ? 1 : 0.55;
+        const a = 0.4 * fade * flicker;
+        const bottom = Math.min(player.y + 16, floorY);
+        ctx.fillStyle = withAlpha(accent, a);
+        ctx.fillRect(SPAWN_X - 3, 0, 6, bottom);
+        ctx.fillStyle = withAlpha(accent, a * 0.4);
+        ctx.fillRect(SPAWN_X - 7, 0, 4, bottom);
+        ctx.fillRect(SPAWN_X + 3, 0, 4, bottom);
+      }
+
       // Hugo.
       const running =
         player.grounded && Math.abs(player.vx) > 0.6 && !wonRef.current;
@@ -346,6 +406,7 @@ export default function HugoParkour() {
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("resize", layout);
     };
      
   }, [active]);

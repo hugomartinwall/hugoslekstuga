@@ -214,17 +214,26 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 
 ## Hugo's Parkour
 
-Long-press the corner Hugo on `/` (hover-capable devices) and the room
-grows gravity: `components/hugo/HugoParkour.tsx` is a full-viewport
-canvas platformer where the drifting swarm orbs are moving platforms.
-It reads orb positions per-frame from the DOM (`data-slug` / `data-r`
-attributes ToolMap puts on each `<g>`) — a read-only bridge, no shared
-state. Physics: gravity, run/air control, variable-height jump, coyote
-time, jump buffering; standing on an orb carries you with its drift.
-THE EXIT door near the top ends the run with a win panel whose keycap
+Long-press the corner Hugo on `/` and the room grows gravity:
+`components/hugo/HugoParkour.tsx` is a full-viewport canvas platformer
+where the drifting swarm orbs are moving platforms. It reads orb
+positions per-frame from the DOM (`data-slug` / `data-r` attributes
+ToolMap puts on each `<g>`) — a read-only bridge, no shared state.
+Physics: gravity, run/air control, variable-height jump, coyote time,
+jump buffering; standing on an orb carries you with its drift. THE
+EXIT door hangs from the top edge at the midpoint of the widest gap
+between the `$search` / `$about` anchors (read live at run start and
+on resize), so it never parks on a nav label. A short spawn beam
+drops Hugo in (skipped under reduced motion). The win panel's keycap
 links to **https://getlegacies.com/beta** (Hugo's day job — a plain
 outbound `<a>`, the only external link the game adds; privacy rules
 intact). Esc quits.
+
+**Desktop-only, deliberately.** The trigger is gated to
+`(hover: hover) and (pointer: fine)` — the game has no touch controls
+and Esc is the only exit. Any future affordance that hints at it
+(e.g. a "hold me" whisper) must share that gate so touch users are
+never teased with a game they can't play.
 
 ## Advice — Hugo's flagship
 
