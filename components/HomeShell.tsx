@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import SurpriseButton from "@/components/SurpriseButton";
 
 const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
 
@@ -123,11 +122,10 @@ export default function HomeShell() {
         </div>
       )}
 
-      {/* Top-right: explode + surprise balls. */}
-      <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-start gap-2 sm:right-6 sm:top-6">
-        <div className="pointer-events-auto flex items-center gap-2">
+      {/* Top-right: the one forbidden button. */}
+      <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-start sm:right-6 sm:top-6">
+        <div className="pointer-events-auto">
           <ExplodeButton onClick={() => setExplodeTrigger((t) => t + 1)} />
-          <SurpriseButton />
         </div>
       </div>
     </div>
@@ -136,9 +134,9 @@ export default function HomeShell() {
 
 /**
  * The big red arcade button. Every cabinet has one, every cabinet
- * labels it DO NOT PRESS, and everyone presses it. Icon ✸ (heavy
- * eight-pointed star) reads as "burst". A quick scale-pulse on click
- * gives the button a satisfying "thunk" while the dots fly outward.
+ * labels it DO NOT PRESS, and everyone presses it. A square coral
+ * keycap in a dark housing plate with the warning in small print —
+ * the honest arcade form of the thing.
  */
 function ExplodeButton({ onClick }: { onClick: () => void }) {
   const [pulsing, setPulsing] = useState(false);
@@ -156,15 +154,26 @@ function ExplodeButton({ onClick }: { onClick: () => void }) {
       onClick={handle}
       aria-label="Do not press (explodes the map)"
       title="DO NOT PRESS"
-      className="btn-chunk relative flex h-14 w-14 items-center justify-center rounded-full bg-tomato font-display text-2xl font-extrabold text-cream transition-transform disabled:cursor-progress sm:h-16 sm:w-16 sm:text-3xl"
+      className="notch-sm flex flex-col items-center gap-1.5 border border-line bg-cream-deep px-3 pb-2 pt-3"
       style={{
-        transform: pulsing ? "scale(1.25)" : undefined,
+        transform: pulsing ? "scale(1.12)" : undefined,
         transition: pulsing
           ? "transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)"
           : "transform 220ms ease",
       }}
     >
-      <span aria-hidden>✸</span>
+      <span
+        aria-hidden
+        className="btn-chunk flex h-10 w-10 items-center justify-center bg-tomato font-display text-xl text-cream"
+      >
+        ✸
+      </span>
+      <span
+        aria-hidden
+        className="font-pixel text-[8px] uppercase tracking-[0.18em] text-ink-muted"
+      >
+        do not press
+      </span>
     </button>
   );
 }

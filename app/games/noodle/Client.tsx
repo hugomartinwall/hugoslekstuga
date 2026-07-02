@@ -953,7 +953,7 @@ function Lobby({
       </label>
       <button
         type="submit"
-        className="btn-chunk self-start rounded-[var(--radius-button)] bg-green px-6 py-3 font-display text-base font-extrabold text-cream"
+        className="btn-chunk self-start rounded-[var(--radius-button)] bg-pink px-6 py-3 font-display text-base font-extrabold text-cream"
       >
         Wiggle in
       </button>
@@ -1093,14 +1093,14 @@ function DeadOverlay({
           <button
             type="button"
             onClick={onRespawn}
-            className="btn-chunk rounded-[var(--radius-button)] bg-green px-5 py-2 font-display text-sm font-extrabold text-cream"
+            className="btn-chunk rounded-[var(--radius-button)] bg-pink px-5 py-2 font-display text-sm font-extrabold text-cream"
           >
             Wiggle again
           </button>
           <button
             type="button"
             onClick={onShare}
-            className="rounded-full border border-line bg-cream-deep px-4 py-2 text-sm font-bold transition-colors hover:bg-green-soft"
+            className="rounded-full border border-line bg-cream-deep px-4 py-2 text-sm font-bold transition-colors hover:bg-pink-soft"
           >
             {copied ? "Copied" : "Share score"}
           </button>

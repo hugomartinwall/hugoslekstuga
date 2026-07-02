@@ -945,7 +945,7 @@ export default function SudokuClient() {
             <button
               type="button"
               onClick={togglePause}
-              className="card-chunk absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] bg-pink-soft text-center"
+              className="card-chunk absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] bg-purple-soft text-center"
               aria-label="Resume"
             >
               <p className="font-display text-3xl font-extrabold tracking-tight">
@@ -1131,8 +1131,8 @@ function DifficultyPicker({
               onClick={() => onChoose(o.d)}
               className={`card-chunk flex items-center justify-between gap-4 rounded-[var(--radius-card)] px-5 py-4 text-left transition-colors ${
                 active
-                  ? "bg-pink text-cream"
-                  : "bg-cream-deep text-ink hover:bg-pink-soft"
+                  ? "bg-purple text-cream"
+                  : "bg-cream-deep text-ink hover:bg-purple-soft"
               }`}
             >
               <div className="flex flex-col">
@@ -1189,7 +1189,7 @@ function DifficultyPicker({
       <button
         type="button"
         onClick={() => onStart(chosen)}
-        className="btn-chunk self-start rounded-[var(--radius-button)] bg-pink px-6 py-3 font-display text-base font-extrabold text-cream"
+        className="btn-chunk self-start rounded-[var(--radius-button)] bg-purple px-6 py-3 font-display text-base font-extrabold text-cream"
       >
         Start
       </button>
@@ -1390,17 +1390,17 @@ function Board({
         // "fixed by the puzzle".
         //
         // A subtle but real bug used to live here: when you selected
-        // an empty cell, bg-pink + text-pink rendered placed digits
-        // as pink-on-pink (camouflaged) until you clicked elsewhere.
+        // an empty cell, bg-purple + text-purple rendered placed digits
+        // as purple-on-purple (camouflaged) until you clicked elsewhere.
         // The fix is the `holdsUserValue` branch — once the focused
         // cell holds a user-placed digit, the bg flips to ink and the
         // text to cream so placement is impossible to miss.
         const holdsUserValue = cell.v !== 0 && !cell.given;
         let bg = cell.given ? "bg-cream-deep" : "bg-cream";
-        if (inHighlight) bg = cell.given ? "bg-pink-soft/60" : "bg-pink-soft/50";
-        if (noteHighlight) bg = "bg-pink-soft/70";
-        if (sameValue) bg = "bg-pink-soft";
-        if (isSelected) bg = holdsUserValue ? "bg-ink" : "bg-pink";
+        if (inHighlight) bg = cell.given ? "bg-purple-soft/60" : "bg-purple-soft/50";
+        if (noteHighlight) bg = "bg-purple-soft/70";
+        if (sameValue) bg = "bg-purple-soft";
+        if (isSelected) bg = holdsUserValue ? "bg-ink" : "bg-purple";
         if (conflict) bg = "bg-tomato-soft";
 
         // Borders: a uniform 2px reservation per cell so widths stay
@@ -1423,13 +1423,13 @@ function Board({
             ? "border-b-2 border-b-ink"
             : "border-b-2 border-b-ink/15";
 
-        // Text colour: ink for the puzzle's given clues, pink for the
+        // Text colour: ink for the puzzle's given clues, purple for the
         // player's marks (so they read as "I placed this"). Conflict
-        // beats pink — a bright tomato digit on tomato-soft makes the
+        // beats purple — a bright tomato digit on tomato-soft makes the
         // wrong cell loud, even unselected. When the cell is the
         // focused one AND holds a user-placed digit, the background
         // went to ink (phosphor) — flip the digit to cream (room dark)
-        // so it pops. A selected GIVEN cell sits on bright bg-pink, so
+        // so it pops. A selected GIVEN cell sits on bright bg-purple, so
         // its clue flips to cream too (accents want dark text); the
         // conflict guard keeps it ink on the tomato-soft override.
         const textCol = cell.given
@@ -1440,7 +1440,7 @@ function Board({
             ? "text-tomato"
             : isSelected && holdsUserValue
               ? "text-cream"
-              : "text-pink";
+              : "text-purple";
 
         // Inset ink ring marks the selected cell. Layered as a ring
         // (not a border) so it sits on top of the grid's per-cell
@@ -1509,13 +1509,13 @@ function NotesGrid({
   onAccent,
 }: {
   notes: number;
-  /** If set, render the matching digit in pink so the eye finds it
+  /** If set, render the matching digit in purple so the eye finds it
    *  inside the 3×3 pencil grid. Companion to the same-digit
    *  background tint on the cell itself. */
   highlight?: number;
   /** True when the host cell is selected — its background is bright
-   *  bg-pink, so the pencil marks flip to room-dark cream (light
-   *  ink-soft and bright pink both vanish against the magenta). */
+   *  bg-purple, so the pencil marks flip to room-dark cream (light
+   *  ink-soft and bright purple both vanish against the magenta). */
   onAccent?: boolean;
 }) {
   return (
@@ -1540,7 +1540,7 @@ function NotesGrid({
           <span
             key={v}
             className={`flex items-center justify-center font-display font-bold ${
-              isHighlight ? (onAccent ? "text-cream" : "text-pink") : ""
+              isHighlight ? (onAccent ? "text-cream" : "text-purple") : ""
             }`}
           >
             {present ? v : ""}
@@ -1595,8 +1595,8 @@ function NumberPad({
                 done
                   ? "bg-cream-deep text-ink-muted opacity-50"
                   : notesMode
-                    ? "bg-pink-soft text-ink"
-                    : "bg-pink text-cream"
+                    ? "bg-purple-soft text-ink"
+                    : "bg-purple text-cream"
               }`}
               aria-label={
                 done
@@ -1609,7 +1609,7 @@ function NumberPad({
                   the button — meta-info that doesn't compete with the
                   digit itself. Follows the key's text colour: dark
                   cream on the bright magenta key, light ink on the
-                  dark pink-soft notes-mode key. Hidden when done (the
+                  dark purple-soft notes-mode key. Hidden when done (the
                   greyed-out button already says "all placed"). */}
               {!done && (
                 <span
@@ -1729,7 +1729,7 @@ function WinPanel({
   onNewGame: () => void;
 }) {
   return (
-    <div className="card-chunk fade-rise relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-pink p-6 text-center">
+    <div className="card-chunk fade-rise relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-purple p-6 text-center">
       <p className="font-display text-3xl font-extrabold tracking-tight text-cream">
         {daily ? "Today, done." : "Solved."}
       </p>

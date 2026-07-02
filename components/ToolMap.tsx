@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
 import { pathFor } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
-import { pixelDisc, withAlpha } from "@/lib/hugo/sprite";
+import { drawCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
 import { clamp } from "@/lib/math";
 
 /**
@@ -291,6 +291,9 @@ export default function ToolMap({
   const hoveredRef = useRef<string | null>(null);
   /** Same mirroring for the click-bounce, read by the trail painter. */
   const bouncingRef = useRef<string | null>(null);
+  /** True while Hugo's parkour is running — orbs become platforms:
+   *  clicks don't navigate and the idle play-fetch stays quiet. */
+  const parkourRef = useRef(false);
   /** The phosphor screen — a canvas under the SVG. The orbs' visible
    *  bodies (glow + pixel-stepped core) are painted here every frame
    *  over a translucent dark wash instead of a clear, so motion smears
@@ -340,6 +343,17 @@ export default function ToolMap({
   useEffect(() => {
     bouncingRef.current = bouncingSlug;
   }, [bouncingSlug]);
+
+  useEffect(() => {
+    const onStart = () => (parkourRef.current = true);
+    const onEnd = () => (parkourRef.current = false);
+    window.addEventListener("hugoslekstuga:parkour-start", onStart);
+    window.addEventListener("hugoslekstuga:parkour-end", onEnd);
+    return () => {
+      window.removeEventListener("hugoslekstuga:parkour-start", onStart);
+      window.removeEventListener("hugoslekstuga:parkour-end", onEnd);
+    };
+  }, []);
 
   // Declared above its first caller so the react-hooks compiler-aware
   // lint rule (variable-accessed-before-declared) is happy.
@@ -506,6 +520,7 @@ export default function ToolMap({
       if (
         !document.hidden &&
         !traveling &&
+        !parkourRef.current &&
         nowT > cooldownUntil &&
         nowT - lastActivity > IDLE_MS
       ) {
@@ -578,7 +593,7 @@ export default function ToolMap({
       if (reduceMotionRef.current) {
         ctx.clearRect(0, 0, size.w, size.h);
       } else {
-        ctx.fillStyle = "rgba(7, 8, 15, 0.24)";
+        ctx.fillStyle = "rgba(7, 8, 15, 0.5)";
         ctx.fillRect(0, 0, size.w, size.h);
       }
       const hov = hoveredRef.current || dragRef.current?.slug || null;
@@ -601,7 +616,13 @@ export default function ToolMap({
         grad.addColorStop(1, withAlpha(color, 0));
         ctx.fillStyle = grad;
         ctx.fillRect(n.x - glowR, n.y - glowR, glowR * 2, glowR * 2);
-        pixelDisc(ctx, n.x, n.y, r, color);
+        if (isGame) {
+          // Games are machines, not orbs — a mini cabinet with its
+          // marquee and screen glowing in the game family's magenta.
+          drawCabinet(ctx, n.x, n.y, 3 * scale, color);
+        } else {
+          pixelDisc(ctx, n.x, n.y, r, color);
+        }
       }
       ctx.globalAlpha = 1;
     };
@@ -850,6 +871,8 @@ export default function ToolMap({
    */
   const commitNavigation = useCallback(
     (slug: string) => {
+      // Mid-parkour the orbs are platforms, not links.
+      if (parkourRef.current) return;
       const node = nodeBySlug.current.get(slug);
       if (!node) return;
       setBouncingSlug(slug);
@@ -1029,8 +1052,8 @@ export default function ToolMap({
             const bounceScale = isBouncing ? 1.3 : 1;
             const scale = baseScale * hoverScale * bounceScale;
             // Games (munch, noodle) are a different category of thing
-            // — render them bigger with a pulsing outer ring so they
-            // read as games at a glance without needing a legend.
+            // — the canvas paints them as mini arcade cabinets instead
+            // of orbs, so they read as machines at a glance.
             const isGame = n.tool.slug === "munch" || n.tool.slug === "noodle";
             const r = isGame ? NODE_R * 1.5 : NODE_R;
             const labelY = isGame ? r + 18 : LABEL_OFFSET;
@@ -1052,6 +1075,8 @@ export default function ToolMap({
                 tabIndex={0}
                 role="button"
                 aria-label={`Open ${n.tool.title}`}
+                data-slug={n.tool.slug}
+                data-r={r}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
@@ -1059,47 +1084,24 @@ export default function ToolMap({
                   }
                 }}
               >
-                {/* Munch's pulsing live-multiplayer ring (under the
-                    shadow so it radiates outward without lifting). */}
-                {isGame && (
-                  <circle
-                    cx={0}
-                    cy={0}
-                    r={r}
-                    fill="none"
-                    stroke={color}
-                    strokeWidth={2}
-                    opacity={0.55}
-                  >
-                    <animate
-                      attributeName="r"
-                      values={`${r};${r * 1.55}`}
-                      dur="1.8s"
-                      repeatCount="indefinite"
-                    />
-                    <animate
-                      attributeName="opacity"
-                      values="0.55;0"
-                      dur="1.8s"
-                      repeatCount="indefinite"
-                    />
-                  </circle>
-                )}
                 {/* Transparent hit-target — the visible body (glow +
-                    pixel-stepped core) is painted on the canvas below,
-                    where its motion can smear into phosphor trails.
-                    The class gives keyboard focus a visible ring. */}
+                    pixel core, or the cabinet for games) is painted on
+                    the canvas below, where motion smears into phosphor
+                    trails. The class gives keyboard focus a ring. */}
                 <circle r={r} fill="transparent" className="swarm-hit" />
-                <text
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize={emojiSize}
-                  fill={preferredTextHex(n.tool.color)}
-                  pointerEvents="none"
-                  style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}
-                >
-                  {n.tool.emoji}
-                </text>
+                {/* Games show a screen instead of a glyph. */}
+                {!isGame && (
+                  <text
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={emojiSize}
+                    fill={preferredTextHex(n.tool.color)}
+                    pointerEvents="none"
+                    style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}
+                  >
+                    {n.tool.emoji}
+                  </text>
+                )}
                 {/* Always-visible name label below the dot */}
                 <text
                   y={labelY}

@@ -235,6 +235,48 @@ export function drawHugoSprite(
   ctx.restore();
 }
 
+/**
+ * A mini arcade cabinet — how the two multiplayer games appear on the
+ * homepage map (tools are orbs; games are machines you walk up to).
+ * 19×21 cells, centred on (cx, cy). Ported from the lab prototype.
+ */
+export function drawCabinet(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  cell: number,
+  accent: string,
+) {
+  const s = cell;
+  const cw = 19 * s;
+  const ch = 21 * s;
+  const x = cx - cw / 2;
+  const y = cy - ch / 2;
+  // Body + right bezel shadow
+  ctx.fillStyle = "#1e2136";
+  ctx.fillRect(x, y, cw, ch);
+  ctx.fillStyle = "#12141f";
+  ctx.fillRect(x + cw - 2 * s, y, 2 * s, ch);
+  // Marquee strip in the game's accent
+  ctx.fillStyle = accent;
+  ctx.fillRect(x + s, y + s, cw - 2 * s, 2 * s);
+  // Screen: dark glass, accent glow, two "player" pixels
+  ctx.fillStyle = "#07080f";
+  ctx.fillRect(x + 2 * s, y + 4 * s, cw - 4 * s, 8 * s);
+  ctx.fillStyle = withAlpha(accent, 0.2);
+  ctx.fillRect(x + 3 * s, y + 5 * s, cw - 6 * s, 6 * s);
+  ctx.fillStyle = accent;
+  ctx.fillRect(x + 5 * s, y + 7 * s, 2 * s, 2 * s);
+  ctx.fillRect(x + 11 * s, y + 8 * s, 2 * s, 2 * s);
+  // Control deck + two button LEDs
+  ctx.fillStyle = "#262b47";
+  ctx.fillRect(x + s, y + 13 * s, cw - 2 * s, 2 * s);
+  ctx.fillStyle = "#ff4fd8";
+  ctx.fillRect(x + 4 * s, y + 13 * s + 1, s, s);
+  ctx.fillStyle = "#35e0ff";
+  ctx.fillRect(x + 7 * s, y + 13 * s + 1, s, s);
+}
+
 /** Chunky pixel-stepped disc for the attract-mode orbs (3px cells). */
 export function pixelDisc(
   ctx: CanvasRenderingContext2D,

@@ -78,7 +78,7 @@ export const tools: Tool[] = [
     tagline: "Nine by nine. No noise.",
     description:
       "Generate a fresh Sudoku at the difficulty you want, then sit with it. Notes mode for pencil marks, gentle conflict highlighting, a quiet timer, and your puzzle resumes where you left it. No ads, no streaks chasing you for tomorrow.",
-    color: "pink",
+    color: "purple",
     emoji: "#",
   },
   {
@@ -99,7 +99,7 @@ export const tools: Tool[] = [
     tagline: "The bigger the better.",
     description:
       "Real-time multiplayer on a single shared map. Eat the dots, eat the smaller players, dodge the bigger ones. Press space to fire half of yourself forward as a weapon. No accounts, no chat, just one shared room.",
-    color: "purple",
+    color: "pink",
     emoji: "◉",
   },
   {
@@ -108,7 +108,7 @@ export const tools: Tool[] = [
     tagline: "Eat dots. Don't get bumped.",
     description:
       "Real-time multiplayer snake. You move forward at all times — aim with the mouse or your finger, eat dots to grow, hit another snake's body and you die. Hold space to boost (costs length). One shared room, pasta-named bots fill it when you're alone.",
-    color: "green",
+    color: "pink",
     emoji: "~",
   },
 ];
