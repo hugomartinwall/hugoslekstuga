@@ -1,25 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { COLOR_HEX, CREAM_HEX, INK_HEX } from "@/lib/colors";
-import type { ToolColor } from "@/lib/tools";
+import { COLOR_HEX } from "@/lib/colors";
 import { useHugoState } from "@/lib/hugo-state";
+import {
+  DEFAULT_EYE_STATE,
+  drawHugoSprite,
+  readAccent,
+  spriteCanvasSize,
+  subscribeAccent,
+  withAlpha,
+  type EyeState,
+} from "@/lib/hugo/sprite";
 
 /**
- * Stage Hugo — the character at full size, as a 16×16 pixel sprite
- * (the Nattöppet player-character form), canvas-rendered with
- * nearest-neighbour crispness.
+ * Stage Hugo — the character at full size, drawn from the shared
+ * sprite (lib/hugo/sprite.ts) so he is pixel-identical to the corner
+ * dot and the flight renderer, just bigger.
  *
- * This is Hugo's first page-level embodiment: where a page mounts a
- * stage, the corner BrandDot yields (via the `hugoslekstuga:hugo-stage`
- * event) so there's one Hugo on screen at a time. The Advice page is
- * his home; other pages may host him later.
+ * Where a page mounts a stage, the corner BrandDot yields (via the
+ * `hugoslekstuga:hugo-stage` event) so there's one Hugo on screen at
+ * a time. The Advice page is his home; other pages may host him later.
  *
- * The sprite wears the same persisted colour as the nav dot
- * (`hugoslekstuga:dot-color`) — it's the same character, bigger.
- * Mood (from lib/hugo-state) shapes blink cadence and bob speed;
- * the `pose` prop lets the host page direct him (thinking before an
- * advice draw, delivering after, declining when over-asked).
+ * Mood (from lib/hugo-state) shapes blink cadence and bob speed; the
+ * `pose` prop lets the host page direct him (thinking before an advice
+ * draw, delivering after, declining when over-asked).
  */
 
 export type HugoPose =
@@ -28,75 +33,6 @@ export type HugoPose =
   | "delivering"
   | "declining"
   | "celebrating";
-
-const DOT_KEY = "hugoslekstuga:dot-color";
-/** Same order BrandDot cycles through — index-compatible. */
-const COLOR_ORDER: ToolColor[] = [
-  "tomato",
-  "blue",
-  "yellow",
-  "pink",
-  "green",
-  "purple",
-  "orange",
-  "teal",
-];
-
-/* 16×16 body mask. '.' empty, 'X' body, 's' shade, 'f' feet. */
-const BODY_ROWS = [
-  "................",
-  ".....XXXXXX.....",
-  "...XXXXXXXXXX...",
-  "..XXXXXXXXXXXX..",
-  "..XXXXXXXXXXXX..",
-  ".XXXXXXXXXXXXXX.",
-  ".XXXXXXXXXXXXXX.",
-  ".XXXXXXXXXXXXXX.",
-  ".XXXXXXXXXXXXXX.",
-  ".XXXXXXXXXXXXXX.",
-  "..XXXXXXXXXXss..",
-  "..XXXXXXXXXsss..",
-  "...XXXXXXXsss...",
-  "....XXXXXXss....",
-  "....ff....ff....",
-  "................",
-];
-
-/** Blend a hex colour toward black by `amount` (0..1) for the shade pixels. */
-function darken(hex: string, amount: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.round(((n >> 16) & 255) * (1 - amount));
-  const g = Math.round(((n >> 8) & 255) * (1 - amount));
-  const b = Math.round((n & 255) * (1 - amount));
-  return `rgb(${r} ${g} ${b})`;
-}
-
-type EyeState = {
-  open: boolean;
-  wide: boolean;
-  dx: -1 | 0 | 1;
-  dy: -1 | 0 | 1;
-};
-
-/** The nav dot's persisted colour — same character, bigger. */
-function readAccent(): string {
-  try {
-    const idx = Number(window.localStorage.getItem(DOT_KEY) ?? "0");
-    const color =
-      COLOR_ORDER[
-        Number.isFinite(idx) && idx >= 0 && idx < COLOR_ORDER.length ? idx : 0
-      ];
-    return COLOR_HEX[color];
-  } catch {
-    return COLOR_HEX.tomato;
-  }
-}
-
-/** Storage events double as cross-tab colour sync. */
-function subscribeAccent(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  return () => window.removeEventListener("storage", onChange);
-}
 
 export default function HugoStage({
   pose,
@@ -119,7 +55,7 @@ export default function HugoStage({
   const reducedRef = useRef(false);
 
   // Mutable render inputs — drawn on demand, no React re-render per frame.
-  const eyeRef = useRef<EyeState>({ open: true, wide: false, dx: 0, dy: 0 });
+  const eyeRef = useRef<EyeState>({ ...DEFAULT_EYE_STATE });
   const bobRef = useRef(0);
   const sparkleRef = useRef(0);
   const poseRef = useRef<HugoPose>(pose);
@@ -156,72 +92,32 @@ export default function HugoStage({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const px = Math.max(2, Math.floor(canvas.width / 16));
+    const px = Math.max(1, Math.floor(canvas.width / 16));
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.imageSmoothingEnabled = false;
 
     const p = poseRef.current;
-    const body = accentRef.current;
-    const shade = darken(accentRef.current, 0.28);
-    const bobY =
-      reducedRef.current || p === "declining" ? (p === "declining" ? 1 : 0) : bobRef.current;
-
-    // Body
-    for (let y = 0; y < 16; y++) {
-      for (let x = 0; x < 16; x++) {
-        const c = BODY_ROWS[y][x];
-        if (c === ".") continue;
-        ctx.fillStyle = c === "X" ? body : shade;
-        ctx.fillRect(x * px, (y + bobY) * px, px, px);
-      }
-    }
-
-    // Eyes — whites 2×3 at (4,5) and (10,5); pupils 1×2 inside.
     const e = eyeRef.current;
-    const open = p === "declining" ? false : e.open;
-    const eyeTop = 5 + bobY + (e.wide || p === "celebrating" ? -1 : 0);
-    const eyeH = e.wide || p === "celebrating" ? 4 : 3;
-    for (const ex of [4, 10]) {
-      if (!open) {
-        ctx.fillStyle = CREAM_HEX;
-        ctx.fillRect(ex * px, (7 + bobY) * px, 2 * px, px);
-        continue;
-      }
-      ctx.fillStyle = INK_HEX;
-      ctx.fillRect(ex * px, eyeTop * px, 2 * px, eyeH * px);
-      ctx.fillStyle = CREAM_HEX;
-      const pupilX = ex + (e.dx === -1 ? 0 : e.dx === 1 ? 1 : 0.5);
-      const pupilY = eyeTop + 1 + (e.dy === -1 ? -1 : e.dy === 1 ? 1 : 0);
-      ctx.fillRect(
-        Math.round(pupilX * px),
-        Math.max(eyeTop, pupilY) * px,
-        px,
-        2 * px,
-      );
-    }
-
-    // Celebration sparkles — four accent pixels orbiting the head.
-    if (p === "celebrating") {
-      const phase = sparkleRef.current % 2;
-      ctx.fillStyle = INK_HEX;
-      const spots =
-        phase === 0
-          ? [
-              [2, 1],
-              [13, 2],
-              [1, 8],
-              [14, 7],
-            ]
-          : [
-              [3, 0],
-              [12, 0],
-              [0, 5],
-              [15, 5],
-            ];
-      for (const [sx, sy] of spots) {
-        ctx.fillRect(sx * px, (sy + bobY) * px, px, px);
-      }
-    }
+    drawHugoSprite(ctx, {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      px,
+      accent: accentRef.current,
+      eye: {
+        ...e,
+        open: p === "declining" ? false : e.open,
+        wide: e.wide || p === "celebrating",
+      },
+      // A little shuffle when he hands the line over.
+      feet: p === "delivering" ? ((bobRef.current % 2) as 0 | 1) : null,
+      bobY:
+        reducedRef.current || p === "declining"
+          ? p === "declining"
+            ? 1
+            : 0
+          : bobRef.current,
+      sparklePhase: p === "celebrating" ? sparkleRef.current : null,
+    });
   }
 
   // Bob + blink + pose-driven eye behaviour. Interval-driven (no rAF —
@@ -233,9 +129,8 @@ export default function HugoStage({
     reducedRef.current = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    // Integer pixel size for crisp edges; devicePixelRatio-aware.
     const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const target = Math.floor((size * dpr) / 16) * 16;
+    const target = spriteCanvasSize(size, dpr);
     canvas.width = target;
     canvas.height = target;
     draw();
@@ -349,7 +244,7 @@ export default function HugoStage({
           width: size,
           height: size,
           imageRendering: "pixelated",
-          filter: `drop-shadow(0 0 14px ${accent}44) drop-shadow(0 0 36px ${accent}22)`,
+          filter: `drop-shadow(0 0 14px ${withAlpha(accent, 0.27)}) drop-shadow(0 0 36px ${withAlpha(accent, 0.13)})`,
         }}
       />
     </button>
