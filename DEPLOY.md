@@ -10,7 +10,7 @@ is strictly the operational view.
 
 | Surface | Host | URL |
 |---|---|---|
-| Static site (16 tools + 2 games + about) | Vercel | https://hugoslekstuga.com |
+| Static site (8 tools + 2 games + about) | Vercel | https://hugoslekstuga.com |
 | Munch + Noodle WebSocket server | Fly.io (Stockholm `arn`) | https://hugoslekstuga-munch.fly.dev |
 | Source | GitHub (public) | https://github.com/hugomartinwall/hugoslekstuga |
 

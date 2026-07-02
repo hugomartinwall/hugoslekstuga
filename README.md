@@ -22,7 +22,7 @@ without it.
 ## Stack
 
 - Next.js 16 + React 19 + Tailwind v4 + TypeScript
-- 18 single-purpose tools at `app/tools/<slug>/page.tsx`
+- 8 single-purpose tools at `app/tools/<slug>/page.tsx`
 - Two real-time multiplayer games at `app/games/{munch,noodle}/page.tsx`,
   sharing one WebSocket server at `server/index.ts` (routes `/munch` +
   `/noodle` to per-game handlers under `server/munch/` and `server/noodle/`)
@@ -35,7 +35,7 @@ without it.
 1. **One thing, well.** If a tool grows, it splits.
 2. **Your device, your data.** No uploads, no accounts, no analytics.
 3. **Open a tab, use it, close it.** No onboarding, no settings.
-4. **A bit of personality.** Bold colours, chunky shadows, a small wink.
+4. **A bit of personality.** Phosphor colours, pixel corners, a small wink.
 
 The one exception to (2) is the multiplayer games (Munch + Noodle), which
 connect to a small WebSocket server so other players can see your blob /
