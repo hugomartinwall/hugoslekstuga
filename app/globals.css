@@ -198,6 +198,17 @@ body {
   border-color: var(--color-ink-muted);
 }
 
+/* The attract-mode invitation on the homepage — a hard arcade blink,
+   no fade. steps(1) so it snaps like a marquee bulb. */
+@keyframes press-blink {
+  0%, 62% { opacity: 1; }
+  63%, 100% { opacity: 0; }
+}
+
+.press-blink {
+  animation: press-blink 1.6s steps(1, end) infinite;
+}
+
 /* Subtle fade for advice swap, etc. */
 @keyframes fade-rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -466,6 +477,7 @@ body {
   .fade-rise,
   .featured-in,
   .pulse-dot,
+  .press-blink,
   .card-arrive,
   .hugo-tantrum,
   .sudoku-placed,

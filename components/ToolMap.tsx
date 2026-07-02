@@ -967,8 +967,8 @@ export default function ToolMap({
                     />
                   </circle>
                 )}
-                {/* Solid drop shadow */}
-                <circle cx={0} cy={SHADOW_DY} r={r} fill={INK_HEX} opacity={0.85} />
+                {/* Phosphor pool — the orb's own light caught on the floor */}
+                <circle cx={0} cy={SHADOW_DY} r={r} fill={color} opacity={0.22} />
                 <circle
                   r={r}
                   fill={color}
@@ -989,13 +989,13 @@ export default function ToolMap({
                 <text
                   y={labelY}
                   textAnchor="middle"
-                  fontSize={isGame ? 14 : 13}
+                  fontSize={isGame ? 11 : 10}
                   fill={INK_HEX}
                   pointerEvents="none"
                   style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 800,
-                    letterSpacing: isGame ? "0.04em" : "-0.01em",
+                    fontFamily: "var(--font-pixel)",
+                    fontWeight: isGame ? 700 : 400,
+                    letterSpacing: "0.08em",
                     textTransform: isGame ? "uppercase" : undefined,
                   }}
                 >

@@ -76,10 +76,18 @@ export default function HomeShell() {
         <ToolMap fullBleed explodeTrigger={explodeTrigger} />
       </div>
 
+      {/* Attract-mode hint — the arcade's standing invitation. */}
+      <p
+        aria-hidden
+        className="press-blink pointer-events-none absolute inset-x-0 bottom-5 z-10 text-center font-pixel text-[10px] uppercase tracking-[0.3em] text-ink-muted"
+      >
+        press any tool
+      </p>
+
       {/* Retired-tool notice: a small line at the bottom, gone in 7s. */}
       {retiredName && (
         <div className="fade-rise pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
-          <p className="notch-sm border border-line bg-cream-deep px-4 py-2 text-center text-sm text-ink-soft">
+          <p className="notch-sm border border-line bg-cream-deep px-4 py-2 text-center text-sm text-ink-soft" style={{ marginBottom: 28 }}>
             Hugo put {retiredName} away. The toys he still plays with are all
             here.
           </p>
@@ -98,10 +106,10 @@ export default function HomeShell() {
 }
 
 /**
- * Pink ball matching the Surprise yellow ball — same dimensions, same
- * chunky shadow. Icon ✸ (heavy eight-pointed star) reads as "burst".
- * A quick scale-pulse on click gives the button a satisfying "thunk"
- * while the dots fly outward.
+ * The big red arcade button. Every cabinet has one, every cabinet
+ * labels it DO NOT PRESS, and everyone presses it. Icon ✸ (heavy
+ * eight-pointed star) reads as "burst". A quick scale-pulse on click
+ * gives the button a satisfying "thunk" while the dots fly outward.
  */
 function ExplodeButton({ onClick }: { onClick: () => void }) {
   const [pulsing, setPulsing] = useState(false);
@@ -117,9 +125,9 @@ function ExplodeButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={handle}
-      aria-label="Explode the map"
-      title="Explode"
-      className="btn-chunk relative flex h-14 w-14 items-center justify-center rounded-full bg-pink font-display text-2xl font-extrabold text-cream transition-transform disabled:cursor-progress sm:h-16 sm:w-16 sm:text-3xl"
+      aria-label="Do not press (explodes the map)"
+      title="DO NOT PRESS"
+      className="btn-chunk relative flex h-14 w-14 items-center justify-center rounded-full bg-tomato font-display text-2xl font-extrabold text-cream transition-transform disabled:cursor-progress sm:h-16 sm:w-16 sm:text-3xl"
       style={{
         transform: pulsing ? "scale(1.25)" : undefined,
         transition: pulsing
