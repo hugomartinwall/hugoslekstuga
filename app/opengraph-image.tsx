@@ -7,7 +7,7 @@ export const alt = "hugoslekstuga";
 
 /**
  * OG / share-card image — the wordmark with the brand dot beside it,
- * centred on cream. The dot has two tiny cream eyes so the social
+ * centred on the room dark. The dot has two tiny room-dark eyes so the social
  * preview wears the *character* face of the identity, not just the
  * shape. (Live, the eyes only appear when a cursor passes near the
  * nav dot; on a static share-card the face is the introduction.)
@@ -25,8 +25,8 @@ export default async function OGImage() {
         style={{
           width: "100%",
           height: "100%",
-          background: "#fbf6ee",
-          color: "#1a1812",
+          background: "#0b0c14",
+          color: "#e8f2e9",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -49,7 +49,7 @@ export default async function OGImage() {
               width: dotSize,
               height: dotSize,
               borderRadius: 9999,
-              background: "#ff5a3c",
+              background: "#ff6e5e",
               marginLeft: 18,
               marginBottom: 14,
               display: "flex",
@@ -63,7 +63,7 @@ export default async function OGImage() {
                 width: eyeSize,
                 height: eyeSize,
                 borderRadius: 9999,
-                background: "#fbf6ee",
+                background: "#0b0c14",
               }}
             />
             <div
@@ -71,7 +71,7 @@ export default async function OGImage() {
                 width: eyeSize,
                 height: eyeSize,
                 borderRadius: 9999,
-                background: "#fbf6ee",
+                background: "#0b0c14",
               }}
             />
           </div>

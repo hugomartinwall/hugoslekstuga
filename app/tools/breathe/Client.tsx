@@ -5,6 +5,7 @@ import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { hugoMoodEvent } from "@/lib/hugo-state";
+import { CREAM_HEX, INK_HEX } from "@/lib/colors";
 
 type PhaseName = "in" | "hold-in" | "out" | "hold-out";
 
@@ -315,7 +316,7 @@ export default function BreathePage() {
     : computeScale(phase.name, phaseProgress);
   const circleScale = reduceMotion ? 1 : 0.5 + scale * 0.5;
   const textOnDark = reduceMotion || circleScale > 0.7;
-  const textColor = textOnDark ? "#fbf6ee" : "#1a1812";
+  const textColor = textOnDark ? CREAM_HEX : INK_HEX;
 
   const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));

@@ -11,6 +11,7 @@ import BrandDot from "@/components/BrandDot";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { clamp } from "@/lib/math";
+import { COLOR_HEX, CREAM_HEX, INK_HEX } from "@/lib/colors";
 import {
   centroidOf,
   radiusForMass,
@@ -216,7 +217,7 @@ export default function MunchPage() {
                 x: c.x,
                 y: c.y,
                 baseR: radiusForMass(c.mass) + 6,
-                color: selfRef.current?.color ?? "#9333ea",
+                color: selfRef.current?.color ?? COLOR_HEX.purple,
                 bornAt: now,
               });
             }
@@ -928,7 +929,7 @@ function drawScene(
   const h = canvas.height / dpr;
 
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#fbf6ee";
+  ctx.fillStyle = CREAM_HEX;
   ctx.fillRect(0, 0, w, h);
 
   if (!cur) return;
@@ -960,7 +961,7 @@ function drawScene(
   });
 
   // World grid lines.
-  ctx.strokeStyle = "#1a181210";
+  ctx.strokeStyle = INK_HEX + "10";
   ctx.lineWidth = 1;
   const gridStep = 100;
   const left = myCx - w / 2 / scale;
@@ -985,7 +986,7 @@ function drawScene(
   }
 
   // World bounds.
-  ctx.strokeStyle = "#1a1812";
+  ctx.strokeStyle = INK_HEX;
   ctx.lineWidth = 4;
   const tl = toScreen(0, 0);
   const br = toScreen(WORLD_SIZE, WORLD_SIZE);
@@ -1025,7 +1026,7 @@ function drawScene(
 
   // Self last so own cells render on top of others overlapping. Color &
   // name come from the welcome message.
-  const myColor = self?.color ?? "#9333ea";
+  const myColor = self?.color ?? COLOR_HEX.purple;
   const myName = self?.name ?? "you";
   // Per-cell interpolation for self too.
   const prevSelfCellMap = new Map<number, CellView>();
@@ -1107,7 +1108,7 @@ function drawCell(
   ctx.fillStyle = color;
   ctx.fill();
   ctx.lineWidth = isSelf ? 3 : 2;
-  ctx.strokeStyle = "#1a1812";
+  ctx.strokeStyle = INK_HEX;
   ctx.stroke();
 
   // Cooldown arc — drawn just outside the cell border, depleting from
@@ -1139,8 +1140,8 @@ function drawCell(
       ctx.font = makeFont(font);
     }
     ctx.lineWidth = Math.max(2, font * 0.18);
-    ctx.strokeStyle = "#1a1812";
-    ctx.fillStyle = "#fbf6ee";
+    ctx.strokeStyle = INK_HEX;
+    ctx.fillStyle = CREAM_HEX;
     ctx.strokeText(label, x, y);
     ctx.fillText(label, x, y);
   }

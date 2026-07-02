@@ -1,20 +1,30 @@
 import type { Metadata } from "next";
-import { Geist, Bricolage_Grotesque } from "next/font/google";
+import { Chivo_Mono, Jersey_15, Silkscreen } from "next/font/google";
 import BrandCorner from "@/components/BrandCorner";
 import ConditionalFooter from "@/components/ConditionalFooter";
 import { SearchPalette, SearchProvider } from "@/components/Search";
 import TravelingDot from "@/components/TravelingDot";
 import "./globals.css";
 
-const sans = Geist({
+/* Nattöppet type: Jersey 15 does the shouting (big display only),
+   Silkscreen handles the small print (micro-labels, badges), and
+   Chivo Mono carries the body copy — quiet, technical, comfortable
+   in the dark. The three never share a line. */
+const sans = Chivo_Mono({
   variable: "--font-sans",
   subsets: ["latin"],
 });
 
-const display = Bricolage_Grotesque({
+const display = Jersey_15({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "700", "800"],
+  weight: "400",
+});
+
+const pixel = Silkscreen({
+  variable: "--font-pixel",
+  subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 /** Tagline reused across all description fields and the JSON-LD —
@@ -104,7 +114,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${sans.variable} ${display.variable} h-full antialiased`}
+      className={`${sans.variable} ${display.variable} ${pixel.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-cream text-ink">
         <script

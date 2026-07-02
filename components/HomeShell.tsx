@@ -79,7 +79,7 @@ export default function HomeShell() {
       {/* Retired-tool notice: a small line at the bottom, gone in 7s. */}
       {retiredName && (
         <div className="fade-rise pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
-          <p className="rounded-full border-2 border-ink bg-cream px-4 py-2 text-center text-sm text-ink-soft shadow-[var(--shadow-chunk-sm)]">
+          <p className="notch-sm border border-line bg-cream-deep px-4 py-2 text-center text-sm text-ink-soft">
             Hugo put {retiredName} away. The toys he still plays with are all
             here.
           </p>

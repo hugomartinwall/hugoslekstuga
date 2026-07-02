@@ -106,7 +106,7 @@ export default function ToolFrame({
       >
         <div className="flex items-center gap-4">
           <div
-            className={`flex h-14 w-14 items-center justify-center rounded-full border-2 border-ink ${bgClass(tool.color)} text-2xl`}
+            className={`flex h-14 w-14 items-center justify-center rounded-full border-2 border-ink ${bgClass(tool.color)} text-2xl text-cream`}
             aria-hidden
           >
             {tool.emoji}

@@ -14,20 +14,14 @@ import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { fileToWheelThumbnail } from "@/lib/roll/image";
+import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
 
 const STORAGE_KEY = "hugoslekstuga:roll:options";
 const RECENT_KEY = "hugoslekstuga:roll:recent";
 
-const SLICE_COLORS = [
-  { fill: "#ff5a3c", text: "#fbf6ee" }, // tomato
-  { fill: "#ffc233", text: "#1a1812" }, // yellow
-  { fill: "#4f66f2", text: "#fbf6ee" }, // blue
-  { fill: "#ff7ab2", text: "#1a1812" }, // pink
-  { fill: "#2bb37c", text: "#fbf6ee" }, // green
-  { fill: "#9333ea", text: "#fbf6ee" }, // purple
-  { fill: "#fb923c", text: "#fbf6ee" }, // orange
-  { fill: "#14b8a6", text: "#fbf6ee" }, // teal
-];
+const SLICE_COLORS = (
+  ["tomato", "yellow", "blue", "pink", "green", "purple", "orange", "teal"] as const
+).map((c) => ({ fill: COLOR_HEX[c], text: preferredTextHex(c) }));
 
 const SAMPLE_LABELS = ["Indian", "Italian", "Sushi", "Tacos", "Cook at home"];
 
@@ -462,7 +456,7 @@ export default function RollPage() {
                 cy="200"
                 r="186"
                 fill="none"
-                stroke="#1a1812"
+                stroke={INK_HEX}
                 strokeWidth="6"
               />
               <g
@@ -476,7 +470,7 @@ export default function RollPage() {
                 }}
               >
                 {validEntries.length === 0 && (
-                  <circle cx="200" cy="200" r="180" fill="#fbf6ee" />
+                  <circle cx="200" cy="200" r="180" fill={CREAM_HEX} />
                 )}
                 {validEntries.map((entry, i) => (
                   <Slice
@@ -495,8 +489,8 @@ export default function RollPage() {
               {/* Pointer */}
               <polygon
                 points="200,8 184,40 216,40"
-                fill="#1a1812"
-                stroke="#fbf6ee"
+                fill={INK_HEX}
+                stroke={CREAM_HEX}
                 strokeWidth="2"
                 strokeLinejoin="round"
               />
@@ -505,8 +499,8 @@ export default function RollPage() {
                 cx="200"
                 cy="200"
                 r="22"
-                fill="#fbf6ee"
-                stroke="#1a1812"
+                fill={CREAM_HEX}
+                stroke={INK_HEX}
                 strokeWidth="4"
               />
               {/* Confetti — drawn over everything except the cap. The
@@ -523,7 +517,7 @@ export default function RollPage() {
                     cy={p.y}
                     r={p.size * Math.max(0, p.life)}
                     fill={p.color}
-                    stroke="#1a1812"
+                    stroke={INK_HEX}
                     strokeWidth={1}
                     opacity={Math.max(0, p.life)}
                   />
@@ -867,8 +861,8 @@ function Slice({
             fontFamily="var(--font-display)"
             fontWeight="800"
             fontSize="22"
-            fill={hasImage ? "#fbf6ee" : color.text}
-            stroke={hasImage ? "#1a1812" : undefined}
+            fill={hasImage ? CREAM_HEX : color.text}
+            stroke={hasImage ? INK_HEX : undefined}
             strokeWidth={hasImage ? labelStrokeWidth : undefined}
             strokeLinejoin="round"
             paintOrder={hasImage ? "stroke" : undefined}
@@ -918,7 +912,7 @@ function Slice({
   return (
     <g>
       {!hasImage && (
-        <path d={path} fill={color.fill} stroke="#1a1812" strokeWidth="2" />
+        <path d={path} fill={color.fill} stroke={INK_HEX} strokeWidth="2" />
       )}
       {hasImage && (
         <>
@@ -947,7 +941,7 @@ function Slice({
               reads as a coloured spinner. Sits between image and
               outline so the ink border stays crisp on top. */}
           <path d={path} fill={color.fill} opacity={TINT_OPACITY} />
-          <path d={path} fill="none" stroke="#1a1812" strokeWidth="2" />
+          <path d={path} fill="none" stroke={INK_HEX} strokeWidth="2" />
         </>
       )}
       {label.trim().length > 0 && (
@@ -957,8 +951,8 @@ function Slice({
           fontFamily="var(--font-display)"
           fontWeight="800"
           fontSize={fontSize}
-          fill={hasImage ? "#fbf6ee" : color.text}
-          stroke={hasImage ? "#1a1812" : undefined}
+          fill={hasImage ? CREAM_HEX : color.text}
+          stroke={hasImage ? INK_HEX : undefined}
           strokeWidth={hasImage ? labelStrokeWidth : undefined}
           strokeLinejoin="round"
           paintOrder={hasImage ? "stroke" : undefined}

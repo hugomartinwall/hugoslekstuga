@@ -11,7 +11,7 @@ export default function ToolCard({ tool }: { tool: Tool }) {
     >
       <div className="flex items-start justify-between">
         <div
-          className={`flex h-12 w-12 items-center justify-center rounded-full border-2 border-ink ${bgClass(tool.color)} text-2xl text-ink`}
+          className={`flex h-12 w-12 items-center justify-center rounded-full border-2 border-ink ${bgClass(tool.color)} text-2xl text-cream`}
           aria-hidden
         >
           {tool.emoji}

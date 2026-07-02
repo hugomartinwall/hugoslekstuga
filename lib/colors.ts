@@ -11,35 +11,49 @@ import type { ToolColor } from "./tools";
  * scanner happy.
  */
 
-/** Raw hex codes. Mirrors @theme in app/globals.css. */
+/**
+ * The two neutrals as literals, for canvas/SVG code that can't read CSS
+ * variables. Mirrors --color-ink / --color-cream in @theme. "Cream" is a
+ * historical name — it means "the page surface", whatever the skin says
+ * that is; "ink" means "the text colour on it". In Nattöppet the surface
+ * is room-dark and the ink is phosphor.
+ */
+export const INK_HEX = "#e8f2e9";
+export const CREAM_HEX = "#0b0c14";
+
+/** Raw hex codes, phosphor edition. Mirrors @theme in app/globals.css. */
 export const COLOR_HEX: Record<ToolColor, string> = {
-  tomato: "#ff5a3c",
-  blue: "#4f66f2",
-  yellow: "#ffc233",
-  pink: "#ff7ab2",
-  green: "#2bb37c",
-  purple: "#9333ea",
-  orange: "#fb923c",
-  teal: "#14b8a6",
+  tomato: "#ff6e5e", // coral
+  blue: "#35e0ff", // cyan
+  yellow: "#d8ff3d", // acid
+  pink: "#ff4fd8", // magenta
+  green: "#3df08a", // mint
+  purple: "#a78bff", // violet
+  orange: "#ffb13d", // amber
+  teal: "#8af0ff", // ice
 };
 
-/** Soft variants. Mirrors --color-{name}-soft tokens. */
+/** Soft variants — dark accent-tinted surfaces. Mirrors --color-{name}-soft. */
 export const COLOR_HEX_SOFT: Record<ToolColor, string> = {
-  tomato: "#ffd5cc",
-  blue: "#d6dcfc",
-  yellow: "#ffeec2",
-  pink: "#ffd6e7",
-  green: "#c8eedc",
-  purple: "#ead8fc",
-  orange: "#fee0c2",
-  teal: "#c2f0e9",
+  tomato: "#3a252f",
+  blue: "#1a3749",
+  yellow: "#343c2a",
+  pink: "#3a2042",
+  green: "#1b3a36",
+  purple: "#2c2a49",
+  orange: "#3a302a",
+  teal: "#283a49",
 };
 
-/** Yellow and pink want ink text on top of them; the other six want cream. */
-const NEEDS_INK = new Set<ToolColor>(["yellow", "pink"]);
+/**
+ * Every phosphor accent is bright enough to want the room-dark text on
+ * top ("cream" = the page surface = room dark). The set is kept so a
+ * future skin can flip individual accents back.
+ */
+const NEEDS_INK = new Set<ToolColor>([]);
 
-export function preferredTextHex(c: ToolColor): "#1a1812" | "#fbf6ee" {
-  return NEEDS_INK.has(c) ? "#1a1812" : "#fbf6ee";
+export function preferredTextHex(c: ToolColor): "#e8f2e9" | "#0b0c14" {
+  return NEEDS_INK.has(c) ? "#e8f2e9" : "#0b0c14";
 }
 
 export function preferredTextClass(c: ToolColor): "text-ink" | "text-cream" {

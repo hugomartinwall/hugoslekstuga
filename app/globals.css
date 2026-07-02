@@ -2,90 +2,200 @@
 
 /* ----------------------------------------------------------------------------
    hugoslekstuga — design tokens
+
+   NATTÖPPET: the playhouse after dark. A tiny neighborhood arcade that
+   never closes — warm phosphor on room-dark, dithered surfaces, stepped
+   pixel corners, quantized motion. Token NAMES are historical ("cream"
+   means "the page surface", "ink" means "the text on it") so the whole
+   site re-skins by re-valuing, not renaming.
    ---------------------------------------------------------------------------- */
 
 @theme {
-  --color-cream: #fbf6ee;
-  --color-cream-deep: #f5ecdb;
-  --color-ink: #1a1812;
-  --color-ink-soft: #4a463d;
-  --color-ink-muted: #8a857a;
+  --color-cream: #0b0c14; /* room dark — the page surface */
+  --color-cream-deep: #151726; /* cabinet surface — cards, wells */
+  --color-ink: #e8f2e9; /* phosphor-tinted text */
+  --color-ink-soft: #b9c3cf;
+  --color-ink-muted: #8e97a8;
+  --color-panel: #1e2136; /* raised panel */
+  --color-line: rgba(232, 242, 233, 0.16); /* hairline frames */
 
-  --color-tomato: #ff5a3c;
-  --color-tomato-soft: #ffd5cc;
-  --color-blue: #4f66f2;
-  --color-blue-soft: #d6dcfc;
-  --color-yellow: #ffc233;
-  --color-yellow-soft: #ffeec2;
-  --color-pink: #ff7ab2;
-  --color-pink-soft: #ffd6e7;
-  --color-green: #2bb37c;
-  --color-green-soft: #c8eedc;
-  --color-purple: #9333ea;
-  --color-purple-soft: #ead8fc;
-  --color-orange: #fb923c;
-  --color-orange-soft: #fee0c2;
-  --color-teal: #14b8a6;
-  --color-teal-soft: #c2f0e9;
+  /* The eight accents, phosphor edition. Names are stable; hues moved. */
+  --color-tomato: #ff6e5e; /* coral */
+  --color-tomato-soft: #3a252f;
+  --color-blue: #35e0ff; /* cyan */
+  --color-blue-soft: #1a3749;
+  --color-yellow: #d8ff3d; /* acid */
+  --color-yellow-soft: #343c2a;
+  --color-pink: #ff4fd8; /* magenta */
+  --color-pink-soft: #3a2042;
+  --color-green: #3df08a; /* mint */
+  --color-green-soft: #1b3a36;
+  --color-purple: #a78bff; /* violet */
+  --color-purple-soft: #2c2a49;
+  --color-orange: #ffb13d; /* amber */
+  --color-orange-soft: #3a302a;
+  --color-teal: #8af0ff; /* ice */
+  --color-teal-soft: #283a49;
 
-  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), ui-monospace, monospace;
+  --font-sans: var(--font-sans), ui-monospace, monospace;
+  --font-pixel: var(--font-pixel), ui-monospace, monospace;
 
-  --radius-card: 1.25rem;
-  --radius-button: 999px;
+  /* Corners are stepped, not rounded — radius zeroed, notches below. */
+  --radius-card: 0px;
+  --radius-button: 0px;
 
-  --shadow-chunk: 0 4px 0 0 var(--color-ink);
-  --shadow-chunk-sm: 0 2px 0 0 var(--color-ink);
+  --shadow-chunk: 0 4px 0 0 #05060c;
+  --shadow-chunk-sm: 0 2px 0 0 #05060c;
+}
+
+/* Non-theme plumbing: pixel-notched corners + the Bayer dither tile.
+   The notches are clip-path polygons (8px steps for cards, 4px for
+   buttons/chips); the dither is a tiled 8×8 SVG at whisper opacity. */
+:root {
+  --notch: polygon(
+    0 8px,
+    4px 8px,
+    4px 4px,
+    8px 4px,
+    8px 0,
+    calc(100% - 8px) 0,
+    calc(100% - 8px) 4px,
+    calc(100% - 4px) 4px,
+    calc(100% - 4px) 8px,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 4px) calc(100% - 8px),
+    calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 8px) calc(100% - 4px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    8px calc(100% - 4px),
+    4px calc(100% - 4px),
+    4px calc(100% - 8px),
+    0 calc(100% - 8px)
+  );
+  --notch-sm: polygon(
+    0 4px,
+    2px 4px,
+    2px 2px,
+    4px 2px,
+    4px 0,
+    calc(100% - 4px) 0,
+    calc(100% - 4px) 2px,
+    calc(100% - 2px) 2px,
+    calc(100% - 2px) 4px,
+    100% 4px,
+    100% calc(100% - 4px),
+    calc(100% - 2px) calc(100% - 4px),
+    calc(100% - 2px) calc(100% - 2px),
+    calc(100% - 4px) calc(100% - 2px),
+    calc(100% - 4px) 100%,
+    4px 100%,
+    4px calc(100% - 2px),
+    2px calc(100% - 2px),
+    2px calc(100% - 4px),
+    0 calc(100% - 4px)
+  );
+  --dither: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 0h1v1H0zM2 0h1v1H2zM4 0h1v1H4zM2 2h1v1H2zM6 2h1v1H6zM0 4h1v1H0zM4 4h1v1H4zM6 4h1v1H6zM2 6h1v1H2zM6 6h1v1H6z' fill='%23E8F2E9' fill-opacity='0.045'/%3E%3C/svg%3E");
 }
 
 /* ----------------------------------------------------------------------------
    base styles
    ---------------------------------------------------------------------------- */
 
-html, body {
+html,
+body {
   background: var(--color-cream);
   color: var(--color-ink);
 }
 
 body {
   font-family: var(--font-sans);
+  background-image: var(--dither);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: var(--color-yellow);
-  color: var(--color-ink);
+  background: var(--color-pink);
+  color: var(--color-cream);
 }
 
-/* Buttons get a chunky, "playhouse" shadow on hover */
+/* Jersey 15 ships exactly one weight (400) and hates synthetic bold and
+   negative tracking. This unlayered rule outranks the layered Tailwind
+   utilities, so every existing `font-display font-extrabold tracking-tight`
+   call site renders the pixel face correctly without a markup sweep. */
+.font-display {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* Phosphor bloom for headings and hero numbers. Uses currentColor so it
+   works under any text-{accent} class. Budget: ~2 glowing elements per
+   viewport — restraint is the craft. */
+.text-glow {
+  text-shadow:
+    0 0 8px color-mix(in srgb, currentColor 45%, transparent),
+    0 0 26px color-mix(in srgb, currentColor 28%, transparent),
+    0 0 64px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+/* Stepped-corner helpers for one-off surfaces. */
+.notch {
+  clip-path: var(--notch);
+}
+.notch-sm {
+  clip-path: var(--notch-sm);
+}
+
+/* Buttons are arcade keycaps: bevelled inset shadows, a hairline frame
+   for the dark-on-dark case, hard 2px press-down on :active. The accent
+   fill (bg-*) and readable text colour come from the markup, exactly as
+   before the re-skin. */
 .btn-chunk {
-  border: 2px solid var(--color-ink);
-  box-shadow: var(--shadow-chunk);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  border: 0;
+  clip-path: var(--notch-sm);
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 242, 233, 0.14),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.38),
+    inset 0 2px 0 rgba(255, 255, 255, 0.22);
+  transition:
+    transform 120ms steps(2, jump-end),
+    filter 120ms steps(2, jump-end);
 }
 
 .btn-chunk:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 0 5px 0 0 var(--color-ink);
+  transform: translateY(-2px);
+  filter: brightness(1.12);
 }
 
 .btn-chunk:active {
-  transform: translate(2px, 2px);
-  box-shadow: 0 0 0 0 var(--color-ink);
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 242, 233, 0.14),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    inset 0 0 12px rgba(255, 255, 255, 0.28);
+  filter: brightness(1.06);
 }
 
-/* Card hover for tool tiles */
+/* Cards are raised cabinet panels: hairline phosphor frame, stepped
+   corners, a soft inward dusk. Hover lifts one notch and brightens the
+   frame — no gray shadows anywhere in the building. */
 .card-chunk {
-  border: 2px solid var(--color-ink);
-  box-shadow: var(--shadow-chunk);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  border: 1px solid var(--color-line);
+  clip-path: var(--notch);
+  background-image: var(--dither);
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.35);
+  transition:
+    transform 160ms steps(2, jump-end),
+    border-color 160ms steps(2, jump-end);
 }
 
 .card-chunk:hover {
-  transform: translate(-2px, -2px);
-  box-shadow: 0 6px 0 0 var(--color-ink);
+  transform: translateY(-2px);
+  border-color: var(--color-ink-muted);
 }
 
 /* Subtle fade for advice swap, etc. */
@@ -148,9 +258,9 @@ body {
  * TravelingDot canvas, etc.) shake with everything else — Hugo's
  * tantrum doesn't leave any UI behind.
  *
- * Pairs with a quick warm tint on the cream background so the screen
- * briefly flushes "rage red" before settling. 500 ms total, snappy
- * cubic-bezier so it reads as a single sharp tremor.
+ * Pairs with a quick warm tint on the room-dark background so the
+ * screen briefly flushes "rage red" before settling. 500 ms total,
+ * snappy cubic-bezier so it reads as a single sharp tremor.
  */
 @keyframes hugo-tantrum {
   0%   { transform: translate(0, 0) rotate(0); }
@@ -243,9 +353,8 @@ body {
 
 /* Sudoku hint pulse. Fires once on the cell the hint button just
  * revealed so the player's eye lands on the change instead of having
- * to scan the whole grid. Yellow-soft hold then fade — keeps a hint
- * visually distinct from a placement (pink/ink) or a row completion
- * (green). */
+ * to scan the whole grid. Acid-soft hold then fade — keeps a hint
+ * visually distinct from a placement or a row completion. */
 @keyframes sudoku-hint-pulse {
   0%   { background-color: var(--color-yellow-soft); }
   40%  { background-color: var(--color-yellow-soft); }
@@ -258,11 +367,10 @@ body {
 
 /* Sudoku completion flash. Fires on every cell of a row, column, or
  * 3×3 box the moment it transitions from incomplete to all-correct.
- * The cell briefly tints green-soft (matches the Stretch / Focus
- * accent green) then fades back to whatever Tailwind class is
- * already painting its background. Visual win moment without
- * spoiling the puzzle. Two-stop: hold the green for the first 35%
- * so the tint is unmistakable, then fade for the remainder. */
+ * The cell briefly tints mint-soft then fades back to whatever
+ * Tailwind class is already painting its background. Visual win
+ * moment without spoiling the puzzle. Two-stop: hold the tint for the
+ * first 35% so it's unmistakable, then fade for the remainder. */
 @keyframes sudoku-completed-flash {
   0%   { background-color: var(--color-green-soft); }
   35%  { background-color: var(--color-green-soft); }
@@ -344,15 +452,15 @@ body {
   will-change: transform, opacity;
 }
 
-/* Visible focus that fits the playful palette */
+/* Visible focus that reads in the dark — a crisp cyan line, no radius. */
 :where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
-  outline: 3px solid var(--color-blue);
+  outline: 2px solid var(--color-blue);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 /* Honour the OS-level "reduce motion" preference for the named keyframes
-   and the chunk-shadow micro-animations. The map's wobble is gated in JS
+   and the chunk micro-animations. The map's wobble is gated in JS
    (ToolMap.tsx, reduceMotionRef); this rule completes the coverage. */
 @media (prefers-reduced-motion: reduce) {
   .fade-rise,

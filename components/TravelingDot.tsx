@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { CREAM_HEX } from "@/lib/colors";
 
 /**
  * The traveling dot — Hugo. Lives at the nav, leaves his post when
@@ -453,7 +454,7 @@ function drawHugo(ctx: CanvasRenderingContext2D, s: FrameState) {
 
   // Eyes — drawn only during scoop pause
   if (s.drawEyes) {
-    ctx.fillStyle = "#fbf6ee"; // cream
+    ctx.fillStyle = CREAM_HEX;
     const eyeR = DOT_RADIUS_PX * 0.22;
     const eyeGap = DOT_RADIUS_PX * 0.32;
     // Rotate back to upright for the eyes (face-forward, regardless of body angle)

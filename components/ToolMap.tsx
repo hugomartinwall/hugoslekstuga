@@ -10,7 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
 import { pathFor } from "@/lib/clusters";
-import { COLOR_HEX, preferredTextHex } from "@/lib/colors";
+import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
 import { clamp } from "@/lib/math";
 
 /**
@@ -968,11 +968,11 @@ export default function ToolMap({
                   </circle>
                 )}
                 {/* Solid drop shadow */}
-                <circle cx={0} cy={SHADOW_DY} r={r} fill="#1a1812" opacity={0.85} />
+                <circle cx={0} cy={SHADOW_DY} r={r} fill={INK_HEX} opacity={0.85} />
                 <circle
                   r={r}
                   fill={color}
-                  stroke="#1a1812"
+                  stroke={INK_HEX}
                   strokeWidth={isHovered ? 3 : isGame ? 3 : 2}
                 />
                 <text
@@ -990,7 +990,7 @@ export default function ToolMap({
                   y={labelY}
                   textAnchor="middle"
                   fontSize={isGame ? 14 : 13}
-                  fill="#1a1812"
+                  fill={INK_HEX}
                   pointerEvents="none"
                   style={{
                     fontFamily: "var(--font-display)",
@@ -1015,7 +1015,7 @@ export default function ToolMap({
               cy={p.y}
               r={p.size * Math.max(0, p.life)}
               fill={p.color}
-              stroke={p.kind === "click" ? "#1a1812" : "none"}
+              stroke={p.kind === "click" ? INK_HEX : "none"}
               strokeWidth={p.kind === "click" ? 1 : 0}
               opacity={Math.max(0, p.life)}
             />
@@ -1061,7 +1061,7 @@ function emitSparkle(particles: Particle[], x: number, y: number) {
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       life: 0.85,
-      color: "#fbf6ee",
+      color: CREAM_HEX,
       size: 2.5 + Math.random() * 1.5,
       kind: "sparkle",
     });

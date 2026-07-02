@@ -30,8 +30,9 @@ import { COLOR_HEX, COLOR_HEX_SOFT } from "@/lib/colors";
 
 export const OG_SIZE = { width: 1200, height: 630 } as const;
 
-const INK = "#1a1812";
-const CREAM = "#fbf6ee";
+const INK = "#e8f2e9";
+const CREAM = "#0b0c14";
+const SHADOW = "#05060c";
 
 export function renderToolOG(slug: string): ImageResponse {
   const tool = findTool(slug);
@@ -97,10 +98,10 @@ export function renderToolOG(slug: string): ImageResponse {
             borderRadius: 9999,
             background: accent,
             border: `6px solid ${INK}`,
-            boxShadow: `0 10px 0 0 ${INK}`,
+            boxShadow: `0 10px 0 0 ${SHADOW}`,
             fontSize: 150,
             fontWeight: 900,
-            color: INK,
+            color: CREAM,
             lineHeight: 1,
             marginBottom: 52,
           }}

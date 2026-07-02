@@ -6,6 +6,7 @@ import BrandDot from "@/components/BrandDot";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { clamp } from "@/lib/math";
+import { CREAM_HEX, INK_HEX } from "@/lib/colors";
 import {
   BOOST_SPEED,
   HEAD_RADIUS,
@@ -1539,7 +1540,7 @@ function drawHead(
     // on the dark world.
     ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
     ctx.shadowBlur = 4;
-    ctx.fillStyle = "#fbf6ee";
+    ctx.fillStyle = CREAM_HEX;
     ctx.fillText(label, sx, sy - r - 6);
     ctx.shadowBlur = 0;
   }
@@ -1599,7 +1600,7 @@ function drawEyes(
 
   // Whites — ellipse whose perpendicular-to-heading radius scales
   // with openness. Major axis (eyeR) lies along the heading.
-  ctx.fillStyle = "#fbf6ee";
+  ctx.fillStyle = CREAM_HEX;
   ctx.strokeStyle = rim;
   ctx.lineWidth = 1;
   const eyeRy = eyeR * openness;
@@ -1615,7 +1616,7 @@ function drawEyes(
   // tracks where the snake is going. Squish with the lid.
   const pFwd = eyeR * 0.4;
   const pupilRy = pupilR * openness;
-  ctx.fillStyle = "#1a1812";
+  ctx.fillStyle = INK_HEX;
   ctx.beginPath();
   ctx.ellipse(lx + fx * pFwd, ly + fy * pFwd, pupilR, pupilRy, heading, 0, Math.PI * 2);
   ctx.fill();
@@ -1723,7 +1724,7 @@ function drawMinimap(
     ctx.beginPath();
     ctx.arc(mx, my, 4, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#fbf6ee";
+    ctx.strokeStyle = CREAM_HEX;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }

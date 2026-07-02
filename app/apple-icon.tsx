@@ -7,13 +7,13 @@ export const contentType = "image/png";
 /**
  * Apple touch icon. iOS home-screen icon shown when a user adds
  * hugoslekstuga.com to their Home Screen via Safari. Rendered as the
- * canonical static Hugo lockup — tomato disc with chunky ink border,
- * two cream eyes on cream background.
+ * canonical static Hugo lockup — coral disc with a phosphor ring,
+ * two room-dark eyes on the room-dark background.
  *
  * Proportions match `app/opengraph-image.tsx` so the favicon, this
  * touch icon, and the OG share image all read as the same character:
  * eye diameter is 18% of dot diameter, edge gap is 12% of dot
- * diameter. Tomato is the canonical static colour — the live
+ * diameter. Coral is the canonical static colour — the live
  * `BrandDot` cycles through eight accents, but caches (search
  * engines, OS icon caches) need a stable choice.
  *
@@ -35,7 +35,7 @@ export default function AppleIcon() {
         style={{
           width: "100%",
           height: "100%",
-          background: "#fbf6ee",
+          background: "#0b0c14",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -46,8 +46,8 @@ export default function AppleIcon() {
             width: DOT,
             height: DOT,
             borderRadius: 9999,
-            background: "#ff5a3c",
-            border: `${BORDER}px solid #1a1812`,
+            background: "#ff6e5e",
+            border: `${BORDER}px solid #e8f2e9`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -59,7 +59,7 @@ export default function AppleIcon() {
               width: EYE,
               height: EYE,
               borderRadius: 9999,
-              background: "#fbf6ee",
+              background: "#0b0c14",
             }}
           />
           <div
@@ -67,7 +67,7 @@ export default function AppleIcon() {
               width: EYE,
               height: EYE,
               borderRadius: 9999,
-              background: "#fbf6ee",
+              background: "#0b0c14",
             }}
           />
         </div>
