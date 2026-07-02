@@ -209,6 +209,57 @@ body {
   animation: press-blink 1.6s steps(1, end) infinite;
 }
 
+/* CRT power-on: the screen snaps from a bright horizontal line to the
+   full room in five hard steps. Applied to the homepage map wrapper
+   once per session. From the winning lab prototype. */
+@keyframes crt-on {
+  0% { transform: scaleY(0.02); filter: brightness(4); }
+  45% { transform: scaleY(0.02); filter: brightness(6); }
+  65% { transform: scaleY(1); filter: brightness(1.6); }
+  80% { transform: scaleY(1); filter: brightness(1); opacity: 0.35; }
+  100% { transform: scaleY(1); filter: brightness(1); opacity: 1; }
+}
+
+.crt-on {
+  animation: crt-on 0.34s steps(5, jump-none) both;
+}
+
+/* Whisper-subtle scanlines over the homepage room. 1px on, 2px off,
+   2% phosphor — felt more than seen. */
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(232, 242, 233, 0.02) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+/* One-frame room flicker when the DO NOT PRESS button is pressed —
+   the cabinet takes the hit. */
+@keyframes screen-flicker {
+  0% { opacity: 0.22; }
+  50% { opacity: 0; }
+  75% { opacity: 0.1; }
+  100% { opacity: 0; }
+}
+
+.screen-flicker {
+  background: var(--color-ink);
+  animation: screen-flicker 180ms steps(2, jump-none) forwards;
+}
+
+/* Keyboard focus for the swarm's transparent hit-circles — the orb
+   body lives on the canvas below, so the ring is drawn in SVG. */
+g:focus-visible > .swarm-hit {
+  stroke: var(--color-blue);
+  stroke-width: 2;
+}
+
 /* Subtle fade for advice swap, etc. */
 @keyframes fade-rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -478,6 +529,8 @@ body {
   .featured-in,
   .pulse-dot,
   .press-blink,
+  .crt-on,
+  .screen-flicker,
   .card-arrive,
   .hugo-tantrum,
   .sudoku-placed,

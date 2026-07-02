@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
 import { pathFor } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
+import { pixelDisc, withAlpha } from "@/lib/hugo/sprite";
 import { clamp } from "@/lib/math";
 
 /**
@@ -96,7 +97,6 @@ type Ripple = {
 };
 
 const NODE_R = 26;
-const SHADOW_DY = 4;
 const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
 // Physics — like dropping things into water.
 //
@@ -283,6 +283,15 @@ export default function ToolMap({
   /** Mirror of `hovered` state into a ref so the rAF loop can read it
    *  without becoming a function of state-changing closures. */
   const hoveredRef = useRef<string | null>(null);
+  /** Same mirroring for the click-bounce, read by the trail painter. */
+  const bouncingRef = useRef<string | null>(null);
+  /** The phosphor screen — a canvas under the SVG. The orbs' visible
+   *  bodies (glow + pixel-stepped core) are painted here every frame
+   *  over a translucent dark wash instead of a clear, so motion smears
+   *  into decaying trails: the attract-mode look from the lab
+   *  prototype. The SVG above keeps hit-targets, emoji, labels, rings
+   *  and all interaction — zero behaviour moved. */
+  const trailCanvasRef = useRef<HTMLCanvasElement | null>(null);
   /** Tracks whether the last frame had a tool active (hovered or
    *  dragged) so we know when to dispatch the null event signalling
    *  end-of-hover to BrandDot. */
@@ -291,9 +300,13 @@ export default function ToolMap({
   useLayoutEffect(() => {
     if (!containerRef.current) return;
     const measure = () => {
-      const r = containerRef.current!.getBoundingClientRect();
-      const w = Math.max(MIN_W, r.width);
-      const h = Math.max(MIN_H, r.height);
+      // Layout size, not getBoundingClientRect — the homepage's CRT
+      // power-on scales an ancestor (scaleY 0.02) right as the initial
+      // ResizeObserver callback lands, and gBCR includes transforms.
+      // offsetWidth/Height are transform-immune.
+      const el = containerRef.current!;
+      const w = Math.max(MIN_W, el.offsetWidth);
+      const h = Math.max(MIN_H, el.offsetHeight);
       setSize({ w, h });
     };
     measure();
@@ -301,6 +314,26 @@ export default function ToolMap({
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, []);
+
+  // Keep the trail canvas matched to the layout size. A resize resets
+  // the persistence buffer (full clear) — same as the lab prototype.
+  // DPR capped at 2: this canvas repaints full-viewport every frame.
+  useLayoutEffect(() => {
+    const canvas = trailCanvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(size.w * dpr);
+    canvas.height = Math.round(size.h * dpr);
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size.w, size.h);
+    }
+  }, [size]);
+
+  useEffect(() => {
+    bouncingRef.current = bouncingSlug;
+  }, [bouncingSlug]);
 
   // Declared above its first caller so the react-hooks compiler-aware
   // lint rule (variable-accessed-before-declared) is happy.
@@ -525,6 +558,48 @@ export default function ToolMap({
   useEffect(() => {
     if (!initializedRef.current) return;
     let raf = 0;
+
+    // The phosphor pass. Runs right after physics: wash the screen
+    // with a translucent dark rect (the decay — old light fades
+    // instead of vanishing), then paint every orb's glow and
+    // pixel-stepped core at its fresh position. Movement therefore
+    // smears. Under reduced motion the wash becomes a full clear:
+    // same orbs, no trails, nothing animates that shouldn't.
+    const paintTrails = (nowTs: number) => {
+      const canvas = trailCanvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (!canvas || !ctx) return;
+      if (reduceMotionRef.current) {
+        ctx.clearRect(0, 0, size.w, size.h);
+      } else {
+        ctx.fillStyle = "rgba(7, 8, 15, 0.24)";
+        ctx.fillRect(0, 0, size.w, size.h);
+      }
+      const hov = hoveredRef.current || dragRef.current?.slug || null;
+      for (const n of nodesRef.current) {
+        const entrance = getEntrance(n, nowTs);
+        if (entrance <= 0.02) continue;
+        const isGame = n.tool.slug === "munch" || n.tool.slug === "noodle";
+        const isHov = hov === n.tool.slug;
+        const scale =
+          entrance *
+          (isHov ? 1.08 : 1) *
+          (bouncingRef.current === n.tool.slug ? 1.3 : 1);
+        const r = (isGame ? NODE_R * 1.5 : NODE_R) * scale;
+        const color = COLOR_HEX[n.tool.color];
+        ctx.globalAlpha = hov !== null && !isHov ? 0.55 : 1;
+        // Bloom — the hover feedback lives here now.
+        const glowR = r * (isHov ? 4.2 : 3.4);
+        const grad = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, glowR);
+        grad.addColorStop(0, withAlpha(color, isHov ? 0.38 : 0.3));
+        grad.addColorStop(1, withAlpha(color, 0));
+        ctx.fillStyle = grad;
+        ctx.fillRect(n.x - glowR, n.y - glowR, glowR * 2, glowR * 2);
+        pixelDisc(ctx, n.x, n.y, r, color);
+      }
+      ctx.globalAlpha = 1;
+    };
+
     const loop = () => {
       // Smooth-drag: chase the pointer target at a fixed cadence so the
       // node moves at one pixel-rate regardless of how often pointermove
@@ -544,6 +619,9 @@ export default function ToolMap({
         performance.now() - explodeAtRef.current < EXPLODE_WINDOW_MS;
       const vCap = inExplode ? EXPLODE_MAX_V : MAX_V;
       step(nodesRef.current, size.w, size.h, wobbleAmplitude, vCap);
+
+      // Paint the phosphor screen from the freshly stepped positions.
+      paintTrails(performance.now());
 
       // Particles.
       const ps = particlesRef.current;
@@ -866,6 +944,15 @@ export default function ToolMap({
         fullBleed ? undefined : { height: "min(80vh, 720px)", minHeight: "480px" }
       }
     >
+      {/* The phosphor screen — orb bodies, glow, and their decay
+          trails live here (painted by the rAF loop). Sits under the
+          SVG so every hit-target, label and ripple stays interactive. */}
+      <canvas
+        ref={trailCanvasRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{ width: size.w, height: size.h }}
+      />
       <svg
         width={size.w}
         height={size.h}
@@ -873,7 +960,7 @@ export default function ToolMap({
         onPointerLeave={onCanvasPointerLeave}
         onPointerUp={onSvgPointerUp}
         onPointerCancel={onSvgPointerUp}
-        style={{ touchAction: "none", userSelect: "none" }}
+        style={{ touchAction: "none", userSelect: "none", position: "relative" }}
       >
         {/* Click ripples */}
         <g pointerEvents="none">
@@ -967,14 +1054,11 @@ export default function ToolMap({
                     />
                   </circle>
                 )}
-                {/* Phosphor pool — the orb's own light caught on the floor */}
-                <circle cx={0} cy={SHADOW_DY} r={r} fill={color} opacity={0.22} />
-                <circle
-                  r={r}
-                  fill={color}
-                  stroke={INK_HEX}
-                  strokeWidth={isHovered ? 3 : isGame ? 3 : 2}
-                />
+                {/* Transparent hit-target — the visible body (glow +
+                    pixel-stepped core) is painted on the canvas below,
+                    where its motion can smear into phosphor trails.
+                    The class gives keyboard focus a visible ring. */}
+                <circle r={r} fill="transparent" className="swarm-hit" />
                 <text
                   textAnchor="middle"
                   dominantBaseline="central"

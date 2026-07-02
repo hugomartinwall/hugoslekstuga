@@ -33,6 +33,22 @@ const RETIRED_NAMES: Record<string, string> = {
 export default function HomeShell() {
   const [explodeTrigger, setExplodeTrigger] = useState(0);
   const [retiredName, setRetiredName] = useState<string | null>(null);
+  const [powerOn, setPowerOn] = useState(false);
+
+  // CRT power-on — the room switches on the first time this session
+  // reaches the homepage, then stays warm. Reduced motion skips it
+  // (the keyframe is also gated in globals.css).
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    try {
+      if (window.sessionStorage.getItem("hugoslekstuga:crt-on")) return;
+      window.sessionStorage.setItem("hugoslekstuga:crt-on", "1");
+    } catch {
+      return;
+    }
+    const tid = window.setTimeout(() => setPowerOn(true), 30);
+    return () => window.clearTimeout(tid);
+  }, []);
 
   // A bookmark to a retired tool redirects here with ?retired=<slug>.
   // Acknowledge the loss once, then clean the URL so refreshes stay quiet.
@@ -56,7 +72,11 @@ export default function HomeShell() {
   }, []);
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden">
+    <div
+      className={`scanlines relative h-dvh w-full overflow-hidden ${
+        powerOn ? "crt-on" : ""
+      }`}
+    >
       {/* Visually-hidden page heading + intro. The homepage UI is
           almost entirely an SVG map, so the crawler and screen
           readers would otherwise see an empty page. This is the
@@ -75,6 +95,15 @@ export default function HomeShell() {
       <div className="absolute inset-0">
         <ToolMap fullBleed explodeTrigger={explodeTrigger} />
       </div>
+
+      {/* The room takes the hit when the forbidden button is pressed. */}
+      {explodeTrigger > 0 && (
+        <div
+          key={explodeTrigger}
+          aria-hidden
+          className="screen-flicker pointer-events-none absolute inset-0 z-20"
+        />
+      )}
 
       {/* Attract-mode hint — the arcade's standing invitation. */}
       <p
