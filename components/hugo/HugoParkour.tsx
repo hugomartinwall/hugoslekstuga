@@ -28,9 +28,11 @@ import {
 const GRAVITY = 0.55;
 const RUN_ACCEL = 0.5;
 const AIR_ACCEL = 0.3;
-const MAX_RUN = 4.2;
+const MAX_RUN = 3.4;
 const FRICTION = 0.82;
-const JUMP_V = -10.5;
+const JUMP_V = -12;
+/** The second (air) jump is a touch softer than the first. */
+const AIR_JUMP_SCALE = 0.92;
 const COYOTE_FRAMES = 7;
 const JUMP_BUFFER_FRAMES = 7;
 const PLAYER_HALF = 14; // half-width of the ~28px sprite body
@@ -174,6 +176,7 @@ export default function HugoParkour() {
       grounded: false,
       coyote: 0,
       jumpBuffer: 0,
+      airJump: true,
       squash: 0,
       stand: null as null | { slug: string; lastX: number; lastY: number },
     };
@@ -223,6 +226,7 @@ export default function HugoParkour() {
         player.vy = 0;
         player.stand = null;
         player.grounded = false;
+        player.airJump = true;
         frame = 0; // replay the spawn beam
       }
 
@@ -260,13 +264,18 @@ export default function HugoParkour() {
           player.vx *= FRICTION;
         }
 
-        // Jumping — buffered, with coyote frames off ledges.
-        if (player.grounded) player.coyote = COYOTE_FRAMES;
-        else if (player.coyote > 0) player.coyote -= 1;
+        // Jumping — buffered, with coyote frames off ledges, plus one
+        // air jump (recharged on landing) so a mistimed orb isn't fatal.
+        if (player.grounded) {
+          player.coyote = COYOTE_FRAMES;
+          player.airJump = true;
+        } else if (player.coyote > 0) player.coyote -= 1;
         if (player.jumpBuffer > 0) {
           player.jumpBuffer -= 1;
-          if (player.coyote > 0) {
-            player.vy = JUMP_V;
+          const fromGround = player.coyote > 0;
+          if (fromGround || player.airJump) {
+            if (!fromGround) player.airJump = false;
+            player.vy = fromGround ? JUMP_V : JUMP_V * AIR_JUMP_SCALE;
             player.grounded = false;
             player.stand = null;
             player.coyote = 0;
