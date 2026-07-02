@@ -254,7 +254,15 @@ body {
 }
 
 /* Keyboard focus for the swarm's transparent hit-circles — the orb
-   body lives on the canvas below, so the ring is drawn in SVG. */
+   body lives on the canvas below, so the ring is drawn in SVG. The
+   default rectangular outline never fits a round orb; suppress it and
+   let the circle stroke carry keyboard feedback instead. Pointer
+   interaction blurs the node on pointerdown (ToolMap), so mouse
+   clicks leave no "chosen" ring at all. */
+svg g[role="button"]:focus,
+svg g[role="button"]:focus-visible {
+  outline: none;
+}
 g:focus-visible > .swarm-hit {
   stroke: var(--color-blue);
   stroke-width: 2;

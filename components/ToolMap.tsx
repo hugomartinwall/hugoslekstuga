@@ -46,6 +46,8 @@ type Node = {
   vy: number;
   pinned: boolean;
   phase: number;
+  /** Wander heading for the attract-mode drift (lazily seeded). */
+  heading?: number;
   entranceStart: number;
   hasSparkled: boolean;
   dragVx: number;
@@ -167,6 +169,10 @@ const DAMPING = 0.92;
  *  enough to register as a bounce, soft enough not to feel rubbery. */
 const BOUNCE_DAMPING = 0.45;
 const WOBBLE_FORCE = 0.012;
+/** Attract-mode drift: constant gentle wander so the orbs never sit
+ *  still — the lab prototype's motion (slow patrol, soft turns). */
+const DRIFT_SPEED = 0.35;
+const DRIFT_TURN = 0.1;
 const WOBBLE_RATE = 0.0005;
 const ENTRANCE_DURATION = 480;
 const ENTRANCE_STAGGER = 40;
@@ -589,7 +595,7 @@ export default function ToolMap({
         const color = COLOR_HEX[n.tool.color];
         ctx.globalAlpha = hov !== null && !isHov ? 0.55 : 1;
         // Bloom — the hover feedback lives here now.
-        const glowR = r * (isHov ? 4.2 : 3.4);
+        const glowR = r * (isHov ? 2.2 : 1.8);
         const grad = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, glowR);
         grad.addColorStop(0, withAlpha(color, isHov ? 0.38 : 0.3));
         grad.addColorStop(1, withAlpha(color, 0));
@@ -610,6 +616,28 @@ export default function ToolMap({
         if (dragNode) {
           dragNode.x += (drag.targetX - dragNode.x) * DRAG_LERP;
           dragNode.y += (drag.targetY - dragNode.y) * DRAG_LERP;
+        }
+      }
+
+      // Attract-mode drift — every free orb patrols the room at a slow
+      // constant speed with a softly wandering heading, bouncing its
+      // heading off the walls. This is what keeps the screen alive
+      // (and the phosphor trails fed) even when nobody's touching it.
+      if (!reduceMotionRef.current) {
+        for (const n of nodesRef.current) {
+          if (n.pinned || n.role) continue;
+          let heading = n.heading ?? n.phase * Math.PI * 2;
+          heading += (Math.random() - 0.5) * DRIFT_TURN;
+          n.x += Math.cos(heading) * DRIFT_SPEED;
+          n.y += Math.sin(heading) * DRIFT_SPEED;
+          const m = NODE_R + 12;
+          if ((n.x < m && Math.cos(heading) < 0) || (n.x > size.w - m && Math.cos(heading) > 0)) {
+            heading = Math.PI - heading;
+          }
+          if ((n.y < m && Math.sin(heading) < 0) || (n.y > size.h - m && Math.sin(heading) > 0)) {
+            heading = -heading;
+          }
+          n.heading = heading;
         }
       }
 
@@ -749,6 +777,9 @@ export default function ToolMap({
       try {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
       } catch {}
+      // Pointer interaction must never leave a "chosen" focus ring on
+      // the node — that's keyboard feedback (Tab draws it via CSS).
+      (e.currentTarget as SVGGElement).blur?.();
       dragRef.current = {
         slug,
         pointerId: e.pointerId,
