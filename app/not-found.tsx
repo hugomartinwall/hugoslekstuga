@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 // A small selection of tools to suggest as starting points.
-const SUGGESTED = ["advice", "convert", "qr", "focus", "breathe", "roll"];
+const SUGGESTED = ["advice", "sudoku", "roll", "focus", "breathe", "strip"];
 
 export default function NotFound() {
   const suggested = SUGGESTED.map((slug) =>

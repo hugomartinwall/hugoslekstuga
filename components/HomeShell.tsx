@@ -1,10 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import SurpriseButton from "@/components/SurpriseButton";
 
 const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
+
+/** Names for toys that no longer exist — only used by the retired notice. */
+const RETIRED_NAMES: Record<string, string> = {
+  case: "the case converter",
+  cleantext: "the text cleaner",
+  convert: "the document converter",
+  diff: "the diff",
+  pdf: "the PDF tool",
+  qr: "the QR maker",
+  read: "the text analyser",
+  typing: "the typing test",
+  stretch: "the stretch guide",
+};
 
 /**
  * The homepage IS the map.
@@ -19,6 +32,28 @@ const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
  */
 export default function HomeShell() {
   const [explodeTrigger, setExplodeTrigger] = useState(0);
+  const [retiredName, setRetiredName] = useState<string | null>(null);
+
+  // A bookmark to a retired tool redirects here with ?retired=<slug>.
+  // Acknowledge the loss once, then clean the URL so refreshes stay quiet.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("retired");
+    if (!slug) return;
+    const name = RETIRED_NAMES[slug];
+    if (name) {
+      // Let the map settle before the notice fades in.
+      window.setTimeout(() => setRetiredName(name), 600);
+      window.setTimeout(() => setRetiredName(null), 7600);
+    }
+    params.delete("retired");
+    const rest = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (rest ? `?${rest}` : ""),
+    );
+  }, []);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden">
@@ -40,6 +75,16 @@ export default function HomeShell() {
       <div className="absolute inset-0">
         <ToolMap fullBleed explodeTrigger={explodeTrigger} />
       </div>
+
+      {/* Retired-tool notice: a small line at the bottom, gone in 7s. */}
+      {retiredName && (
+        <div className="fade-rise pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
+          <p className="rounded-full border-2 border-ink bg-cream px-4 py-2 text-center text-sm text-ink-soft shadow-[var(--shadow-chunk-sm)]">
+            Hugo put {retiredName} away. The toys he still plays with are all
+            here.
+          </p>
+        </div>
+      )}
 
       {/* Top-right: explode + surprise balls. */}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-start gap-2 sm:right-6 sm:top-6">

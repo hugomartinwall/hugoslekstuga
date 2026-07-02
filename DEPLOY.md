@@ -107,9 +107,9 @@ wake, `flyctl machine restart <id>`.
    `hugo@oogywawa.se` is the actual safety net.
 2. **Final QA pass.**
    - Walk the homepage swarm at 375px viewport (iPhone SE size) and
-     ~5 of the kept tools. Mobile inputs (Convert drop zone, Strip
-     image drop, PDF picker, etc.) need a real-touch sanity check.
-   - Run Lighthouse on `/`, `/tools/convert`, `/tools/pdf`,
+     ~5 of the kept tools. Mobile inputs (Strip image drop, Roll
+     entry editor, etc.) need a real-touch sanity check.
+   - Run Lighthouse on `/`, `/tools/strip`, `/tools/sudoku`,
      `/games/munch`. Target ≥90 a11y, ≥90 perf.
 
 ## When something breaks

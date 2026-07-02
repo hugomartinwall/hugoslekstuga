@@ -114,9 +114,8 @@ The split is so each page ships its own `<title>` and `<meta description>`
    is the brand.
 3. **Don't add auth or cloud sync.** Persistent state lives in `localStorage`
    keyed `hugoslekstuga:*`.
-4. **Don't fetch live data at runtime.** Currency rates in Sum are a
-   deliberate static snapshot. If a feature needs live data, the feature
-   doesn't ship. **One sanctioned exception:** the Sjökort tool
+4. **Don't fetch live data at runtime.** If a feature needs live data,
+   the feature doesn't ship. **One sanctioned exception:** the Sjökort tool
    (`app/tools/sjokort/`) fetches map tiles from OpenStreetMap and
    OpenSeaMap — a nautical chart can't be a static snapshot. The tile
    servers see an anonymous `give me tile XYZ` request, never the user;
@@ -157,8 +156,8 @@ Legitimate hits:
   browser Geolocation calls. The one sanctioned runtime-fetch tool; see
   rule 4 above. GPS never leaves the device.
 - `lib/sjokort/routing.worker.ts` — `fetch('/sjokort/graph.v1.bin')`, the
-  Web Worker loading our **own same-origin** baked routing graph (like the
-  vendored pdf.js worker). Not a third-party call.
+  Web Worker loading our **own same-origin** baked routing graph. Not a
+  third-party call.
 - `scripts/bake-sjokort-graph.ts` — fetches OSM water + seamark-hazard data,
   but at **author time** only (build tool, never shipped). Not a runtime fetch.
 
@@ -242,9 +241,8 @@ for the curious DevTools visitor. Use the name in code conversation so
 
 - Dispatch `hugoslekstuga:hugo-happy` to trigger his celebration
   state (eyes wide + coloured-sparkle puff). Fires when a Sudoku
-  puzzle is solved, when a Focus session completes naturally, when
-  a Stretch routine finishes, and when Typing hits a new personal
-  best. Keep the bar high — it should mean something each time.
+  puzzle is solved and when a Focus session completes naturally.
+  Keep the bar high — it should mean something each time.
 - Dispatch `hugoslekstuga:dot-travel` with `{ fromX, fromY, toX,
   toY, color, navColor, duration }` to make him fly from one screen
   point to another. ToolMap uses this for the swarm→nav fetch-and-
