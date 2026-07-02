@@ -149,6 +149,10 @@ export default function BrandDot({
   // the root layout draws Hugo during this window; we hide the real
   // nav dot so there aren't two dots stacked on top of each other.
   const [traveling, setTraveling] = useState(false);
+  // True while a page-level HugoStage owns the character (e.g. the
+  // Advice page renders him large, center-stage). Same one-Hugo-at-a-
+  // time rule as travel: the corner/footer dots yield the screen.
+  const [stagePresent, setStagePresent] = useState(false);
   // True for the ~100ms an idle blink lasts. Only fires while eyes are
   // already visible; adds a beat of life so a held-open gaze doesn't
   // feel like a statue.
@@ -377,11 +381,19 @@ export default function BrandDot({
       setTraveling(detail.traveling);
     };
     window.addEventListener("hugoslekstuga:hugo-traveling", onTraveling);
-    return () =>
+    const onStage = (e: Event) => {
+      const detail = (e as CustomEvent<{ present: boolean }>).detail;
+      if (!detail) return;
+      setStagePresent(detail.present);
+    };
+    window.addEventListener("hugoslekstuga:hugo-stage", onStage);
+    return () => {
       window.removeEventListener(
         "hugoslekstuga:hugo-traveling",
         onTraveling,
       );
+      window.removeEventListener("hugoslekstuga:hugo-stage", onStage);
+    };
   }, []);
 
   // Clear the easter-egg timers on unmount so a navigation away
@@ -849,7 +861,7 @@ export default function BrandDot({
         borderRadius: "9999px",
         background: color,
         verticalAlign: "baseline",
-        opacity: traveling ? 0 : 1,
+        opacity: traveling || stagePresent ? 0 : 1,
         transition: "opacity 60ms linear",
       }}
     />
@@ -1034,7 +1046,7 @@ export default function BrandDot({
   // capture means we keep receiving move/up events even if the
   // cursor wanders off Hugo.
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (playingDead || traveling) return;
+    if (playingDead || traveling || stagePresent) return;
     if (leashed) {
       // Long-press while leashed unleashes immediately. Skip the rest
       // of the drag/click flow so the button doesn't also try to cycle.
@@ -1286,7 +1298,7 @@ export default function BrandDot({
         // A hair of breathing room so the dot doesn't kiss the 'a' of
         // the wordmark. Em-based so it scales with font size.
         marginLeft: "0.16em",
-        opacity: traveling || leashed ? 0 : 1,
+        opacity: traveling || leashed || stagePresent ? 0 : 1,
         pointerEvents: leashed ? "none" : undefined,
         transform,
         transition: `${transformTransition}, background 220ms ease, opacity 60ms linear`,
