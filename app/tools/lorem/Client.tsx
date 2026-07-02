@@ -404,7 +404,7 @@ export default function LoremPage() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-3">
+        <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
               Length
@@ -457,7 +457,7 @@ export default function LoremPage() {
           <button
             type="button"
             onClick={() => generateOutput()}
-            className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-5 py-2 font-display text-base font-extrabold"
+            className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-5 py-2 font-display text-base font-extrabold text-cream"
           >
             Generate ↻
           </button>
@@ -471,7 +471,7 @@ export default function LoremPage() {
           </button>
         </div>
 
-        <article className="card-chunk flex flex-col gap-4 rounded-[var(--radius-card)] bg-cream p-5 sm:p-6">
+        <article className="card-chunk flex flex-col gap-4 rounded-[var(--radius-card)] bg-cream-deep p-5 sm:p-6">
           {!output ? (
             <p className="text-sm text-ink-muted">
               Hit generate to fill the page.

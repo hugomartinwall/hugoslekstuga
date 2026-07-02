@@ -203,7 +203,7 @@ export default function SjokortClient() {
       {/* Transient GPS error pill. */}
       {watching && gpsError && (
         <div className="fixed inset-x-0 bottom-44 z-30 flex justify-center px-20">
-          <p className="rounded-full border-2 border-ink bg-tomato-soft px-3 py-1 text-center text-xs font-semibold text-ink shadow-[2px_2px_0_#1a1812]">
+          <p className="rounded-full border-2 border-ink bg-tomato-soft px-3 py-1 text-center text-xs font-semibold text-ink">
             {gpsError}
           </p>
         </div>
@@ -432,7 +432,9 @@ function SettingsDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <div className="absolute inset-0 bg-ink/30" onClick={onClose} aria-hidden />
+      {/* Dark scrim (not the site's bg-ink haze): ink is light now, and the
+          map under it is light tiles — it needs dimming, not brightening. */}
+      <div className="absolute inset-0 bg-cream/60" onClick={onClose} aria-hidden />
       <div className="card-chunk relative z-10 flex w-full max-w-md flex-col gap-5 rounded-t-[var(--radius-card)] bg-cream p-6 sm:rounded-[var(--radius-card)]">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-xl font-extrabold tracking-tight">

@@ -802,7 +802,7 @@ export default function NoodleClient() {
         {isDebug && (
           <div
             aria-hidden
-            className="pointer-events-none absolute bottom-3 left-3 rounded bg-ink/80 px-2 py-1 font-mono text-[11px] text-cream"
+            className="pointer-events-none absolute bottom-3 left-3 rounded bg-panel/90 px-2 py-1 font-mono text-[11px] text-ink"
           >
             rtt {rtt == null ? "—" : `${rtt}ms`}
           </div>
@@ -823,7 +823,7 @@ export default function NoodleClient() {
           />
         )}
         {phase === "connecting" && (
-          <p className="card-chunk rounded-[var(--radius-card)] bg-cream p-6 text-center font-display text-lg font-bold">
+          <p className="card-chunk rounded-[var(--radius-card)] bg-cream-deep p-6 text-center font-display text-lg font-bold">
             …connecting to the noodle…
           </p>
         )}
@@ -882,7 +882,7 @@ function QueueWait({ position, total }: { position: number; total: number }) {
     prevPosRef.current = position;
   }, [position]);
   return (
-    <div className="card-chunk flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-cream p-6 text-center">
+    <div className="card-chunk flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-cream-deep p-6 text-center">
       <p className="font-display text-2xl font-extrabold tracking-tight">
         The room is full
       </p>
@@ -927,7 +927,7 @@ function Lobby({
   return (
     <form
       onSubmit={onSubmit}
-      className="card-chunk flex flex-col gap-4 rounded-[var(--radius-card)] bg-cream p-6"
+      className="card-chunk flex flex-col gap-4 rounded-[var(--radius-card)] bg-cream-deep p-6"
     >
       <p className="font-display text-2xl font-extrabold">Eat dots. Don&rsquo;t get bumped.</p>
       <p className="text-sm text-ink-soft">
@@ -947,7 +947,7 @@ function Lobby({
           onChange={(e) => setName(e.target.value)}
           placeholder="anon-3792"
           maxLength={16}
-          className="card-chunk rounded-[var(--radius-card)] bg-cream-deep px-4 py-2 font-display text-lg font-bold focus:outline-none"
+          className="card-chunk rounded-[var(--radius-card)] bg-cream px-4 py-2 font-display text-lg font-bold focus:outline-none"
           autoFocus
         />
       </label>
@@ -995,7 +995,7 @@ function Hud({
 }) {
   return (
     <div className="pointer-events-none absolute right-3 top-3 flex flex-col items-end gap-2">
-      <div className="pointer-events-auto card-chunk min-w-[160px] rounded-[var(--radius-card)] bg-cream/95 p-2 text-xs">
+      <div className="pointer-events-auto card-chunk min-w-[160px] rounded-[var(--radius-card)] bg-cream-deep/95 p-2 text-xs">
         <p className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
           Top
         </p>
@@ -1015,13 +1015,13 @@ function Hud({
           )}
         </ol>
       </div>
-      <div className="pointer-events-auto rounded-full border-2 border-ink bg-cream px-3 py-1 font-mono text-xs">
+      <div className="pointer-events-auto rounded-full border border-line bg-cream-deep px-3 py-1 font-mono text-xs">
         you: <span className="font-bold tabular-nums">{myLength}</span>
       </div>
       <button
         type="button"
         onClick={onLeave}
-        className="pointer-events-auto rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold transition-colors hover:bg-tomato-soft"
+        className="pointer-events-auto rounded-full border border-line bg-cream-deep px-3 py-1 text-xs font-bold transition-colors hover:bg-tomato-soft"
       >
         Leave
       </button>
@@ -1080,8 +1080,8 @@ function DeadOverlay({
   copied: boolean;
 }) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-ink/70 p-4">
-      <div className="card-chunk flex max-w-md flex-col items-center gap-3 rounded-[var(--radius-card)] bg-cream p-6 text-center">
+    <div className="absolute inset-0 flex items-center justify-center bg-cream/70 p-4">
+      <div className="card-chunk flex max-w-md flex-col items-center gap-3 rounded-[var(--radius-card)] bg-cream-deep p-6 text-center">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Bumped{killer ? ` by ${killer}` : ""}
         </p>
@@ -1100,14 +1100,14 @@ function DeadOverlay({
           <button
             type="button"
             onClick={onShare}
-            className="rounded-full border-2 border-ink bg-cream px-4 py-2 text-sm font-bold transition-colors hover:bg-green-soft"
+            className="rounded-full border border-line bg-cream-deep px-4 py-2 text-sm font-bold transition-colors hover:bg-green-soft"
           >
             {copied ? "Copied" : "Share score"}
           </button>
           <button
             type="button"
             onClick={onLeave}
-            className="rounded-full border-2 border-ink bg-cream px-4 py-2 text-sm font-bold transition-colors hover:bg-cream-deep"
+            className="rounded-full border border-line bg-cream-deep px-4 py-2 text-sm font-bold transition-colors hover:bg-panel"
           >
             Leave
           </button>
@@ -1123,7 +1123,7 @@ function DeadOverlay({
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
+    <kbd className="rounded border border-line bg-cream px-1.5 py-0.5 font-mono text-[11px] uppercase">
       {children}
     </kbd>
   );
@@ -1535,19 +1535,20 @@ function drawHead(
       font -= 1;
       ctx.font = `${font.toFixed(1)}px ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif`;
     }
-    // Soft dark drop-shadow so cream text reads against any body
+    // Soft dark drop-shadow so light text reads against any body
     // colour underneath. Faster than a real stroke and more legible
-    // on the dark world.
+    // on the dark world. INK_HEX (phosphor) — the label floats above
+    // the head, mostly over the dark field, so it must be light.
     ctx.shadowColor = "rgba(0, 0, 0, 0.85)";
     ctx.shadowBlur = 4;
-    ctx.fillStyle = CREAM_HEX;
+    ctx.fillStyle = INK_HEX;
     ctx.fillText(label, sx, sy - r - 6);
     ctx.shadowBlur = 0;
   }
 }
 
-/** Two beady eyes, oriented along the heading. White whites with
- *  ink pupils. Pupils sit slightly forward of the centre so the
+/** Two beady eyes, oriented along the heading. Light phosphor whites
+ *  with dark pupils. Pupils sit slightly forward of the centre so the
  *  snake looks like it's looking where it's going. The whole eye
  *  squishes vertically (perpendicular to the heading) for blinks —
  *  openness ∈ [0, 1] where 0 is fully closed and 1 fully open. */
@@ -1600,7 +1601,9 @@ function drawEyes(
 
   // Whites — ellipse whose perpendicular-to-heading radius scales
   // with openness. Major axis (eyeR) lies along the heading.
-  ctx.fillStyle = CREAM_HEX;
+  // INK_HEX = the light neutral in this skin, so whites stay light
+  // against the bright body colour.
+  ctx.fillStyle = INK_HEX;
   ctx.strokeStyle = rim;
   ctx.lineWidth = 1;
   const eyeRy = eyeR * openness;
@@ -1614,9 +1617,10 @@ function drawEyes(
   ctx.stroke();
   // Pupils — pushed forward in the heading direction so the gaze
   // tracks where the snake is going. Squish with the lid.
+  // CREAM_HEX = the dark neutral, so pupils read dark on the whites.
   const pFwd = eyeR * 0.4;
   const pupilRy = pupilR * openness;
-  ctx.fillStyle = INK_HEX;
+  ctx.fillStyle = CREAM_HEX;
   ctx.beginPath();
   ctx.ellipse(lx + fx * pFwd, ly + fy * pFwd, pupilR, pupilRy, heading, 0, Math.PI * 2);
   ctx.fill();
@@ -1716,7 +1720,8 @@ function drawMinimap(
   ctx.lineWidth = 1;
   ctx.strokeRect(rectX, rectY, rectW, rectH);
 
-  // Self dot — bigger, in own colour, with a cream rim so it pops.
+  // Self dot — bigger, in own colour, with a light phosphor rim so it
+  // pops against the dark minimap panel.
   if (self && localSelf && localSelf.alive) {
     const mx = left + localSelf.head.x * worldScale;
     const my = top + localSelf.head.y * worldScale;
@@ -1724,7 +1729,7 @@ function drawMinimap(
     ctx.beginPath();
     ctx.arc(mx, my, 4, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = CREAM_HEX;
+    ctx.strokeStyle = INK_HEX;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }

@@ -474,7 +474,7 @@ function Setup({
           value={intention}
           onChange={(e) => setIntention(e.target.value)}
           placeholder="Write the email, sketch the page, read chapter three…"
-          className="card-chunk rounded-[var(--radius-card)] bg-cream px-4 py-3 font-display text-lg font-medium text-ink placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:text-ink-muted focus:outline-none"
+          className="card-chunk rounded-[var(--radius-card)] bg-cream-deep px-4 py-3 font-display text-lg font-medium text-ink placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:text-ink-muted focus:outline-none"
         />
       </div>
 
@@ -656,7 +656,7 @@ function Running({
 
       <div className="flex flex-col items-center gap-3">
         <div
-          className={`card-chunk relative rounded-full bg-cream transition-opacity ${
+          className={`card-chunk relative rounded-full bg-cream-deep transition-opacity ${
             paused ? "opacity-60" : ""
           } ${breathing ? "focus-breathe" : ""}`}
           style={{ width: "min(80vw, 320px)", aspectRatio: "1" }}
@@ -679,7 +679,7 @@ function Running({
               className="transition-[stroke-dashoffset] duration-200 ease-linear"
             />
           </svg>
-          <p className="absolute inset-0 flex items-center justify-center font-display text-6xl font-extrabold leading-none tracking-tight tabular-nums sm:text-7xl">
+          <p className="text-glow absolute inset-0 flex items-center justify-center font-display text-6xl font-extrabold leading-none tracking-tight tabular-nums sm:text-7xl">
             {formatClock(remainingSec)}
           </p>
         </div>
@@ -712,7 +712,7 @@ function Running({
           type="button"
           onClick={handleStopClick}
           className={`btn-chunk rounded-[var(--radius-button)] px-7 py-4 font-display text-base font-extrabold transition-colors sm:px-6 sm:py-3 ${
-            stopArmed ? "bg-pink text-ink" : "bg-cream"
+            stopArmed ? "bg-pink text-cream" : "bg-cream"
           }`}
         >
           {stopArmed ? "Tap again to stop" : "Stop"}

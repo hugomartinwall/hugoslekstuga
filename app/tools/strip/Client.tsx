@@ -296,7 +296,7 @@ export default function StripPage() {
         <label
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
-          className="card-chunk flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border-dashed bg-cream p-6 text-center transition-colors hover:bg-tomato-soft"
+          className="card-chunk flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border-dashed bg-cream-deep p-6 text-center transition-colors hover:bg-tomato-soft"
         >
           <span className="font-display text-base font-extrabold">
             Drop or paste an image
@@ -328,12 +328,12 @@ export default function StripPage() {
         )}
 
         {imageUrl && (
-          <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-cream p-4 sm:flex-row sm:items-start">
+          <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-cream-deep p-4 sm:flex-row sm:items-start">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl}
               alt={filename}
-              className="max-h-48 rounded-md border-2 border-ink"
+              className="max-h-48 rounded-md border border-line"
             />
             <div className="flex-1 text-sm">
               <p className="font-mono text-xs text-ink-muted">{filename}</p>
@@ -382,7 +382,7 @@ export default function StripPage() {
         )}
 
         {imageUrl && (
-          <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border-2 border-dashed border-ink bg-cream-deep p-3">
+          <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-dashed border-ink-muted bg-cream-deep p-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                 Format
@@ -397,7 +397,7 @@ export default function StripPage() {
                     className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
                       active
                         ? "bg-tomato text-cream"
-                        : "bg-cream hover:bg-tomato-soft"
+                        : "bg-cream-deep hover:bg-tomato-soft"
                     }`}
                   >
                     {opt.label}
@@ -440,7 +440,7 @@ export default function StripPage() {
               <button
                 type="button"
                 onClick={downloadStripped}
-                className="btn-chunk rounded-[var(--radius-button)] bg-cream px-5 py-2 font-display text-sm font-extrabold"
+                className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-5 py-2 font-display text-sm font-extrabold"
               >
                 Download clean ({Math.ceil(stripped.size / 1024)} KB)
               </button>
@@ -459,7 +459,7 @@ export default function StripPage() {
                 <img
                   src={imageUrl}
                   alt="before"
-                  className="max-h-40 w-full rounded-md border-2 border-ink object-contain"
+                  className="max-h-40 w-full rounded-md border border-line object-contain"
                 />
                 <span className="text-[10px] text-ink-muted">
                   {Math.ceil(originalSize / 1024).toLocaleString()} KB ·{" "}
@@ -474,7 +474,7 @@ export default function StripPage() {
                 <img
                   src={stripped.url}
                   alt="after"
-                  className="max-h-40 w-full rounded-md border-2 border-ink object-contain"
+                  className="max-h-40 w-full rounded-md border border-line object-contain"
                 />
                 <span className="text-[10px] text-ink-muted">
                   {Math.ceil(stripped.size / 1024).toLocaleString()} KB ·{" "}

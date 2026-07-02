@@ -326,7 +326,7 @@ export default function BreathePage() {
     <ToolFrame tool={tool}>
       {running && settings.dim && (
         <div
-          className="fixed inset-0 z-30 bg-ink/60"
+          className="fixed inset-0 z-30 bg-cream/70"
           aria-hidden
           style={{ pointerEvents: "none" }}
         />

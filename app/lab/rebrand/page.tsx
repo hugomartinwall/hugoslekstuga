@@ -18,38 +18,18 @@ type Direction = {
 };
 
 /**
- * Compare index for the three full-rebrand candidates. Each links to a
- * self-contained prototype route: specimen strip, mini-homepage
- * vignette, a skinned Focus panel (identical mock content across all
- * three, so the A/B is honest), and a live mini-Hugo.
+ * Rebrand A/B — decided. Nattöppet won (2026-07-02) and is rolling out
+ * across the shipped site; the losing prototypes (Lördagsmorgon,
+ * Sommarstuga) were deleted per the lab lifecycle rule — they live on
+ * in git history at commit 37d4360. The winner's route stays as the
+ * reference implementation until the rollout lands, then this whole
+ * /lab/rebrand tree goes too.
  */
 const DIRECTIONS: Direction[] = [
   {
-    slug: "lordagsmorgon",
-    name: "Lördagsmorgon",
-    subtitle: "Saturday-morning cel",
-    concept:
-      "The UI is a hand-animated cartoon: boiling ink outlines, 12fps squash-and-stretch, halftone shadows, motion smears and dust puffs.",
-    hugo: "A drawn ink circle with stick limbs — he walks, sprints, stretches like taffy.",
-    homepage:
-      "Recess: the swarm survives as bouncing cel balls on a playground that draws itself in.",
-    swatches: [
-      "#F5402C",
-      "#2B5DF5",
-      "#FFC800",
-      "#FF4F9A",
-      "#2FB25B",
-      "#7A3FF2",
-      "#FF7A1A",
-      "#29B6E8",
-    ],
-    swatchBg: "#DDF1FA",
-    swatchText: "#17233B",
-  },
-  {
     slug: "nattoppet",
     name: "Nattöppet",
-    subtitle: "Phosphor arcade",
+    subtitle: "Phosphor arcade — THE WINNER",
     concept:
       "The lekstuga after dark: a tiny arcade open all night. Dark-only, warm phosphor glow, dithered gradients, quantized sprite motion, CRT power-on.",
     hugo: "A 16×16 pixel sprite — the player character. Arrow keys walk him around.",
@@ -67,28 +47,6 @@ const DIRECTIONS: Direction[] = [
     ],
     swatchBg: "#0B0C14",
     swatchText: "#E8F2E9",
-  },
-  {
-    slug: "sommarstuga",
-    name: "Sommarstuga",
-    subtitle: "Folk-pop cottage",
-    concept:
-      "Lekstuga taken literally: a little red cottage rendered as mid-century Swedish graphic design. No dark mode — painted rooms; every route floods its own wall colour.",
-    hugo: "A tomte — the dot under a falu-red hat. Shy: peeks from trim, tidies while you're away.",
-    homepage:
-      "The cottage facade: tools are white-trim windows that light up warm on hover.",
-    swatches: [
-      "#B3402E",
-      "#274E8D",
-      "#33684B",
-      "#D9A441",
-      "#8FA3B0",
-      "#C2455C",
-      "#2E4B42",
-      "#E8A13C",
-    ],
-    swatchBg: "#F7F3E8",
-    swatchText: "#23201A",
   },
 ];
 

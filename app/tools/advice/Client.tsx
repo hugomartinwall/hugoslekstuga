@@ -72,7 +72,7 @@ export default function AdvicePage() {
           {current === null ? (
             <p className="max-w-md font-display text-2xl font-medium leading-snug text-ink-soft sm:text-3xl">
               Press the button.{" "}
-              <span className="text-yellow-700">One advice at a time.</span>
+              <span className="text-yellow">One advice at a time.</span>
             </p>
           ) : (
             <p className="max-w-2xl font-display text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-4xl md:text-5xl">
@@ -85,7 +85,7 @@ export default function AdvicePage() {
           <button
             type="button"
             onClick={draw}
-            className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-8 py-4 font-display text-lg font-extrabold tracking-tight sm:text-xl"
+            className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-8 py-4 font-display text-lg font-extrabold tracking-tight text-cream sm:text-xl"
           >
             {current === null ? "Give me one good advice" : "Give me another"}
           </button>

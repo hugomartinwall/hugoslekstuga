@@ -397,7 +397,7 @@ export default function RollPage() {
           <button
             type="button"
             onClick={addEntry}
-            className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink"
+            className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink"
           >
             + Add option
           </button>
@@ -420,13 +420,13 @@ export default function RollPage() {
                   onChange={(e) => setBulkPasteText(e.target.value)}
                   rows={5}
                   placeholder="Paste one option per line and click Add all."
-                  className="card-chunk min-h-[8rem] rounded-[var(--radius-card)] bg-cream px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
+                  className="card-chunk min-h-[8rem] rounded-[var(--radius-card)] bg-cream-deep px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={applyBulkPaste}
                   disabled={bulkPasteText.trim() === ""}
-                  className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                  className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Add all
                 </button>
@@ -562,7 +562,7 @@ export default function RollPage() {
                   {recent.slice(1).map((w, i) => (
                     <li
                       key={`${w}-${i}`}
-                      className="rounded-full border-2 border-ink bg-cream px-2 py-0.5 text-xs font-semibold"
+                      className="rounded-full border border-line bg-cream-deep px-2 py-0.5 text-xs font-semibold"
                     >
                       {w}
                     </li>
@@ -700,7 +700,7 @@ function EntryRow({
               type="button"
               onClick={onClearImage}
               aria-label="Clear image"
-              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-ink bg-cream text-[10px] font-bold leading-none text-ink hover:bg-tomato-soft"
+              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-ink bg-cream-deep text-[10px] font-bold leading-none text-ink hover:bg-tomato-soft"
             >
               ×
             </button>
@@ -720,14 +720,14 @@ function EntryRow({
           onChange={(e) => onLabelChange(e.target.value)}
           onPaste={handlePaste}
           placeholder="An option"
-          className="card-chunk min-w-0 flex-1 rounded-[var(--radius-card)] bg-cream px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
+          className="card-chunk min-w-0 flex-1 rounded-[var(--radius-card)] bg-cream-deep px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
         />
 
         <button
           type="button"
           onClick={onDelete}
           aria-label="Remove option"
-          className="shrink-0 rounded-full border-2 border-ink bg-cream px-2 py-1 text-xs font-bold hover:bg-tomato-soft"
+          className="shrink-0 rounded-full border-2 border-ink bg-cream-deep px-2 py-1 text-xs font-bold hover:bg-tomato-soft"
         >
           ✕
         </button>

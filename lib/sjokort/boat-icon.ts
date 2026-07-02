@@ -4,16 +4,20 @@
  * viewBox); the marker is then rotated to the GPS heading so the bow
  * points where you're going.
  *
- * Teal fill + a heavy ink outline so the marker reads clearly against
- * a busy nautical chart, with a cream bow dot as a direction hint.
- * Brand colours (teal #14b8a6, ink #1a1812, cream #fbf6ee).
+ * Teal fill + a heavy dark outline so the marker reads clearly against
+ * a busy nautical chart, with a light bow dot as a direction hint.
+ *
+ * These are MAP-ANCHORED literals, not the live brand tokens: the marker
+ * sits on light OSM/OpenSeaMap raster tiles, so it keeps dark-on-light
+ * chart semantics regardless of the site skin. Don't swap in the arcade
+ * palette (ice #8af0ff washes out on pale water; the new "cream" is dark).
  */
 
 export type BoatKind = "motor" | "sail" | "kayak" | "custom";
 
-const TEAL = "#14b8a6";
-const INK = "#1a1812";
-const CREAM = "#fbf6ee";
+const TEAL = "#14b8a6"; // deep teal hull — visible on pale water
+const INK = "#1a1812"; // dark outline on light tiles
+const CREAM = "#fbf6ee"; // light chart-paper fill
 
 /** Shared hull outline (pointed bow up, rounded stern). */
 const HULL = "M18 2 C25 10 25 26 18 34 C11 26 11 10 18 2 Z";

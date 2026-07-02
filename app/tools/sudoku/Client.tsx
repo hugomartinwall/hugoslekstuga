@@ -1097,26 +1097,26 @@ function DifficultyPicker({
       <button
         type="button"
         onClick={onStartDaily}
-        className="card-chunk flex items-center justify-between gap-4 rounded-[var(--radius-card)] bg-yellow px-5 py-4 text-left transition-colors hover:bg-yellow-soft"
+        className="card-chunk flex items-center justify-between gap-4 rounded-[var(--radius-card)] bg-yellow px-5 py-4 text-left text-cream"
       >
         <div className="flex flex-col">
-          <span className="flex items-center gap-2 font-display text-lg font-extrabold tracking-tight text-ink">
+          <span className="flex items-center gap-2 font-display text-lg font-extrabold tracking-tight text-cream">
             Today&rsquo;s puzzle
             {todaySolved && (
               <span
                 aria-label="Solved today"
                 title="You already solved today's puzzle"
-                className="rounded-full border-2 border-ink bg-cream px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink"
+                className="rounded-full border-2 border-ink bg-cream px-2 py-0.5 font-pixel text-[10px] uppercase tracking-wide text-ink"
               >
                 Solved ✓
               </span>
             )}
           </span>
-          <span className="text-xs text-ink/80">
+          <span className="text-xs text-cream/80">
             Same medium puzzle for everyone today · {todayKey}
           </span>
         </div>
-        <span aria-hidden className="font-display text-2xl font-extrabold text-ink">
+        <span aria-hidden className="font-display text-2xl font-extrabold text-cream">
           →
         </span>
       </button>
@@ -1130,7 +1130,9 @@ function DifficultyPicker({
               type="button"
               onClick={() => onChoose(o.d)}
               className={`card-chunk flex items-center justify-between gap-4 rounded-[var(--radius-card)] px-5 py-4 text-left transition-colors ${
-                active ? "bg-pink" : "bg-cream hover:bg-pink-soft"
+                active
+                  ? "bg-pink text-cream"
+                  : "bg-cream-deep text-ink hover:bg-pink-soft"
               }`}
             >
               <div className="flex flex-col">
@@ -1138,15 +1140,17 @@ function DifficultyPicker({
                   {o.label}
                 </span>
                 <span
-                  className={`text-xs ${active ? "text-ink/80" : "text-ink-soft"}`}
+                  className={`text-xs ${active ? "text-cream/80" : "text-ink-soft"}`}
                 >
                   {o.sub}
                 </span>
               </div>
               <span
                 aria-hidden
-                className={`h-4 w-4 rounded-full border-2 border-ink ${
-                  active ? "bg-cream" : "bg-transparent"
+                className={`h-4 w-4 rounded-full border-2 ${
+                  active
+                    ? "border-cream bg-cream"
+                    : "border-ink bg-transparent"
                 }`}
               />
             </button>
@@ -1161,7 +1165,7 @@ function DifficultyPicker({
         onClick={() => onChangeStrict(!strict)}
         aria-pressed={strict}
         className={`flex items-center justify-between gap-3 rounded-full border-2 border-dashed border-ink-muted px-4 py-2.5 text-left transition-colors ${
-          strict ? "bg-tomato-soft" : "bg-cream-deep hover:bg-cream"
+          strict ? "bg-tomato-soft" : "bg-cream-deep hover:bg-panel"
         }`}
       >
         <div className="flex flex-col">
@@ -1185,7 +1189,7 @@ function DifficultyPicker({
       <button
         type="button"
         onClick={() => onStart(chosen)}
-        className="btn-chunk self-start rounded-[var(--radius-button)] bg-pink px-6 py-3 font-display text-base font-extrabold text-ink"
+        className="btn-chunk self-start rounded-[var(--radius-button)] bg-pink px-6 py-3 font-display text-base font-extrabold text-cream"
       >
         Start
       </button>
@@ -1258,21 +1262,38 @@ function Stat({
   value,
   mono,
   muted,
+  onAccent,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   muted?: boolean;
+  /** True when the stat sits on a bright accent surface (the win
+   *  panel's magenta card) — every accent wants room-dark text, so
+   *  the ink/phosphor palette flips to cream. */
+  onAccent?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+      <span
+        className={`font-pixel text-[10px] uppercase tracking-wider ${
+          onAccent ? "text-cream/70" : "text-ink-muted"
+        }`}
+      >
         {label}
       </span>
       <span
         className={`font-display text-lg font-extrabold tracking-tight ${
           mono ? "tabular-nums" : ""
-        } ${muted ? "text-ink-muted" : "text-ink"}`}
+        } ${
+          muted
+            ? onAccent
+              ? "text-cream/70"
+              : "text-ink-muted"
+            : onAccent
+              ? "text-cream"
+              : "text-ink"
+        }`}
       >
         {value}
       </span>
@@ -1404,12 +1425,17 @@ function Board({
 
         // Text colour: ink for the puzzle's given clues, pink for the
         // player's marks (so they read as "I placed this"). Conflict
-        // beats pink — a dark tomato digit on tomato-soft makes the
+        // beats pink — a bright tomato digit on tomato-soft makes the
         // wrong cell loud, even unselected. When the cell is the
         // focused one AND holds a user-placed digit, the background
-        // went to ink — flip the digit to cream so it pops.
+        // went to ink (phosphor) — flip the digit to cream (room dark)
+        // so it pops. A selected GIVEN cell sits on bright bg-pink, so
+        // its clue flips to cream too (accents want dark text); the
+        // conflict guard keeps it ink on the tomato-soft override.
         const textCol = cell.given
-          ? "text-ink"
+          ? isSelected && !conflict
+            ? "text-cream"
+            : "text-ink"
           : conflict
             ? "text-tomato"
             : isSelected && holdsUserValue
@@ -1467,6 +1493,7 @@ function Board({
               <NotesGrid
                 notes={cell.notes}
                 highlight={selectedValue || undefined}
+                onAccent={isSelected}
               />
             ) : null}
           </button>
@@ -1479,16 +1506,21 @@ function Board({
 function NotesGrid({
   notes,
   highlight,
+  onAccent,
 }: {
   notes: number;
   /** If set, render the matching digit in pink so the eye finds it
    *  inside the 3×3 pencil grid. Companion to the same-digit
    *  background tint on the cell itself. */
   highlight?: number;
+  /** True when the host cell is selected — its background is bright
+   *  bg-pink, so the pencil marks flip to room-dark cream (light
+   *  ink-soft and bright pink both vanish against the magenta). */
+  onAccent?: boolean;
 }) {
   return (
     <span
-      className="grid h-full w-full text-ink-soft"
+      className={`grid h-full w-full ${onAccent ? "text-cream/80" : "text-ink-soft"}`}
       style={{
         gridTemplateColumns: "repeat(3, 1fr)",
         gridTemplateRows: "repeat(3, 1fr)",
@@ -1508,7 +1540,7 @@ function NotesGrid({
           <span
             key={v}
             className={`flex items-center justify-center font-display font-bold ${
-              isHighlight ? "text-pink" : ""
+              isHighlight ? (onAccent ? "text-cream" : "text-pink") : ""
             }`}
           >
             {present ? v : ""}
@@ -1564,7 +1596,7 @@ function NumberPad({
                   ? "bg-cream-deep text-ink-muted opacity-50"
                   : notesMode
                     ? "bg-pink-soft text-ink"
-                    : "bg-pink text-ink"
+                    : "bg-pink text-cream"
               }`}
               aria-label={
                 done
@@ -1573,14 +1605,18 @@ function NumberPad({
               }
             >
               {v}
-              {/* Remaining-count badge. Tiny ink-on-muted pip in the
-                  top-right of the button — meta-info that doesn't
-                  compete with the digit itself. Hidden when done (the
+              {/* Remaining-count badge. Tiny pip in the top-right of
+                  the button — meta-info that doesn't compete with the
+                  digit itself. Follows the key's text colour: dark
+                  cream on the bright magenta key, light ink on the
+                  dark pink-soft notes-mode key. Hidden when done (the
                   greyed-out button already says "all placed"). */}
               {!done && (
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute right-1 top-1 text-[10px] font-bold leading-none tabular-nums text-ink/60"
+                  className={`pointer-events-none absolute right-1 top-1 text-[10px] font-bold leading-none tabular-nums ${
+                    notesMode ? "text-ink/60" : "text-cream/60"
+                  }`}
                 >
                   {remaining}
                 </span>
@@ -1596,7 +1632,7 @@ function NumberPad({
           disabled={disabled}
           aria-pressed={notesMode}
           className={`btn-chunk rounded-[var(--radius-button)] px-4 py-2 text-sm font-display font-extrabold ${
-            notesMode ? "bg-ink text-cream" : "bg-cream text-ink"
+            notesMode ? "bg-ink text-cream" : "bg-cream-deep text-ink"
           }`}
         >
           {notesMode ? "Notes: on" : "Notes: off"}
@@ -1605,7 +1641,7 @@ function NumberPad({
           type="button"
           onClick={onErase}
           disabled={disabled}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-50"
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-50"
         >
           Erase
         </button>
@@ -1613,7 +1649,7 @@ function NumberPad({
           type="button"
           onClick={onUndo}
           disabled={disabled || !canUndo}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
         >
           Undo
         </button>
@@ -1621,7 +1657,7 @@ function NumberPad({
           type="button"
           onClick={onHint}
           disabled={disabled || !canHint}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
         >
           Hint
         </button>
@@ -1630,7 +1666,7 @@ function NumberPad({
           onClick={onPause}
           aria-pressed={paused}
           className={`btn-chunk rounded-[var(--radius-button)] px-4 py-2 text-sm font-display font-extrabold ${
-            paused ? "bg-ink text-cream" : "bg-cream text-ink"
+            paused ? "bg-ink text-cream" : "bg-cream-deep text-ink"
           }`}
         >
           {paused ? "Resume" : "Pause"}
@@ -1655,14 +1691,14 @@ function Controls({
       <button
         type="button"
         onClick={onNewGame}
-        className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink"
+        className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink"
       >
         New puzzle
       </button>
       <button
         type="button"
         onClick={onRestart}
-        className="btn-chunk rounded-[var(--radius-button)] bg-cream px-4 py-2 text-sm font-display font-extrabold text-ink"
+        className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink"
       >
         Restart this one
       </button>
@@ -1694,16 +1730,16 @@ function WinPanel({
 }) {
   return (
     <div className="card-chunk fade-rise relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-pink p-6 text-center">
-      <p className="font-display text-3xl font-extrabold tracking-tight text-ink">
+      <p className="font-display text-3xl font-extrabold tracking-tight text-cream">
         {daily ? "Today, done." : "Solved."}
       </p>
       {daily && (
-        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold uppercase tracking-wider text-ink">
+        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 font-pixel text-xs uppercase tracking-wider text-ink">
           Today&rsquo;s puzzle · {daily}
         </p>
       )}
       {isNewBest && (
-        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold uppercase tracking-wider text-ink">
+        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 font-pixel text-xs uppercase tracking-wider text-ink">
           New personal best
         </p>
       )}
@@ -1711,23 +1747,31 @@ function WinPanel({
         <Stat
           label="Difficulty"
           value={daily ? "Today" : titleCase(difficulty)}
+          onAccent
         />
-        <Stat label="Time" value={formatDuration(elapsed)} mono />
+        <Stat label="Time" value={formatDuration(elapsed)} mono onAccent />
         <Stat
           label="Mistakes"
           value={String(mistakes)}
           mono
           muted={mistakes === 0}
+          onAccent
         />
         {hintsUsed > 0 && (
-          <Stat label="Hints" value={String(hintsUsed)} mono />
+          <Stat label="Hints" value={String(hintsUsed)} mono onAccent />
         )}
         {bestTime !== undefined && !isNewBest && !daily && (
-          <Stat label="Best" value={formatDuration(bestTime)} mono muted />
+          <Stat
+            label="Best"
+            value={formatDuration(bestTime)}
+            mono
+            muted
+            onAccent
+          />
         )}
       </div>
       {hintsUsed > 0 && (
-        <p className="max-w-xs text-[11px] text-ink/70">
+        <p className="max-w-xs text-[11px] text-cream/70">
           Best-time records are reserved for runs with no hints — keep
           trying.
         </p>
@@ -1774,7 +1818,7 @@ function LossPanel({
         <button
           type="button"
           onClick={onNewGame}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-5 py-2 text-sm font-display font-extrabold text-ink"
+          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-5 py-2 text-sm font-display font-extrabold text-ink"
         >
           New puzzle
         </button>

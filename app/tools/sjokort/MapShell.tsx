@@ -14,9 +14,21 @@ import { SPEED_ZONES } from "@/lib/sjokort/speed-zones";
 type MaplibreNs = typeof import("maplibre-gl");
 type LngLat = [number, number];
 
+/**
+ * Map-anchored palette. Everything below draws ON the third-party
+ * OSM/OpenSeaMap raster tiles, which are light — so these keep
+ * dark-ink-on-light-chart semantics regardless of the site skin.
+ * Do NOT swap them for the live brand tokens: the arcade ice teal
+ * (#8af0ff) washes out against pale water tiles.
+ */
+const MAP_INK = "#1a1812"; // dark outline / route casing on light tiles
+const MAP_PAPER = "#fbf6ee"; // light fill (pin core)
+const MAP_TEAL = "#14b8a6"; // deep teal — route line + start pin
+const MAP_CORAL = "#ef7d57"; // destination pin
+
 /** Teardrop pin marker (start/end of a planned route). */
 function pinSvg(fill: string): string {
-  return `<svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg"><path d="M13 1C6.4 1 1 6.4 1 13c0 8.2 12 20 12 20s12-11.8 12-20C25 6.4 19.6 1 13 1z" fill="${fill}" stroke="#1a1812" stroke-width="2"/><circle cx="13" cy="13" r="4.5" fill="#fbf6ee"/></svg>`;
+  return `<svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg"><path d="M13 1C6.4 1 1 6.4 1 13c0 8.2 12 20 12 20s12-11.8 12-20C25 6.4 19.6 1 13 1z" fill="${fill}" stroke="${MAP_INK}" stroke-width="2"/><circle cx="13" cy="13" r="4.5" fill="${MAP_PAPER}"/></svg>`;
 }
 
 function updatePin(
@@ -118,8 +130,8 @@ export function MapShell({
       });
       map.on("load", (e) => {
         const m = e.target;
-        // Route line: ink casing under a teal stroke, so it reads on both
-        // light water and dark land/seamarks.
+        // Route line: dark casing under a deep-teal stroke, so it reads on
+        // both light water and dark land/seamarks (map-anchored colours).
         m.addSource("route", {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
@@ -129,17 +141,18 @@ export function MapShell({
           type: "line",
           source: "route",
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": "#1a1812", "line-width": 6.5, "line-opacity": 0.85 },
+          paint: { "line-color": MAP_INK, "line-width": 6.5, "line-opacity": 0.85 },
         });
         m.addLayer({
           id: "route-line",
           type: "line",
           source: "route",
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": "#14b8a6", "line-width": 3.5 },
+          paint: { "line-color": MAP_TEAL, "line-width": 3.5 },
         });
         // Speed-limit zones (partial; reference points from Länsstyrelsen
         // regs). Translucent discs coloured by limit; tap reports the limit.
+        // Step colours are traffic-light semantics on light tiles — map-anchored.
         m.addSource("speed", {
           type: "geojson",
           data: {
@@ -169,7 +182,7 @@ export function MapShell({
               "#65a30d",
             ],
             "circle-opacity": 0.3,
-            "circle-stroke-color": "#1a1812",
+            "circle-stroke-color": MAP_INK,
             "circle-stroke-width": 1,
           },
         });
@@ -182,8 +195,8 @@ export function MapShell({
           source: "grund",
           paint: {
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 2.5, 14, 5],
-            "circle-color": "#e4572e",
-            "circle-stroke-color": "#1a1812",
+            "circle-color": "#e4572e", // danger orange on light tiles — map-anchored
+            "circle-stroke-color": MAP_INK,
             "circle-stroke-width": 1.5,
             "circle-opacity": 0.9,
           },
@@ -266,8 +279,8 @@ export function MapShell({
     const ml = mlRef.current;
     const map = mapRef.current;
     if (!ready || !ml || !map) return;
-    startPinRef.current = updatePin(ml, map, startPinRef.current, start, "#14b8a6");
-    endPinRef.current = updatePin(ml, map, endPinRef.current, end, "#ef7d57");
+    startPinRef.current = updatePin(ml, map, startPinRef.current, start, MAP_TEAL);
+    endPinRef.current = updatePin(ml, map, endPinRef.current, end, MAP_CORAL);
   }, [ready, start, end]);
 
   const handleLocate = () => {
