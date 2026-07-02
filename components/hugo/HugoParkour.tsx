@@ -440,7 +440,7 @@ export default function HugoParkour() {
               YOU MADE IT.
             </p>
             <p className="text-sm leading-relaxed text-ink-soft">
-              The room was practice. The real quest is Hugo&rsquo;s day job.
+              Enjoy early access to Legacies.
             </p>
             <a
               href="https://getlegacies.com/beta"
