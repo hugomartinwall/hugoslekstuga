@@ -12,6 +12,12 @@ type Experiment = {
  */
 const EXPERIMENTS: Experiment[] = [
   {
+    slug: "rebrand",
+    title: "Rebrand directions",
+    blurb:
+      "Three full-skin candidates: Lördagsmorgon (cartoon cel), Nattöppet (phosphor arcade), Sommarstuga (folk cottage). Pick one; the site rebuilds around it.",
+  },
+  {
     slug: "logo",
     title: "Logo directions",
     blurb:
