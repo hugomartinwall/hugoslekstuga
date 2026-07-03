@@ -64,6 +64,15 @@ export const tools: Tool[] = [
     emoji: "⊘",
   },
   {
+    slug: "pixla",
+    title: "Pixla",
+    tagline: "Drop a photo, get a sprite.",
+    description:
+      "Drag in any image and watch it collapse into chunky pixels. Pick a palette, tune the grid, flip on dithering, download a crisp PNG. Nothing is uploaded — it all happens in your tab.",
+    color: "tomato",
+    emoji: "▦",
+  },
+  {
     slug: "lorem",
     title: "Lorem",
     tagline: "Placeholder text, with personality.",
