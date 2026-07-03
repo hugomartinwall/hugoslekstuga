@@ -7,6 +7,7 @@ import {
   readAccent,
   withAlpha,
 } from "@/lib/hugo/sprite";
+import { getWordmarkLetters } from "@/lib/wordmark-bridge";
 
 /**
  * Hugo's parkour — the homepage's hidden game.
@@ -43,6 +44,12 @@ const DOOR_H = 34;
 const SPAWN_X = 46;
 const SPAWN_Y = 46;
 const BEAM_FRAMES = 26;
+/** The marquee's letters are solid ground too — mid-room terrain the
+ *  swarm's repel zone keeps clear of orbs. Flip off to defer if a
+ *  playtest says the level reads worse with them. */
+const LETTER_PLATFORMS = true;
+/** Synthetic slug prefix for standing on a wordmark letter. */
+const LETTER_SLUG = "#L";
 
 type Platform = { x: number; y: number; r: number; slug: string };
 
@@ -232,7 +239,20 @@ export default function HugoParkour() {
 
       if (!wonRef.current) {
         // Ride the platform we're standing on (they drift).
-        if (player.stand) {
+        if (player.stand && player.stand.slug.startsWith(LETTER_SLUG)) {
+          // Wordmark letters are static — no drift to ride, just a
+          // flat top to stay pinned to until we walk off the edge.
+          const idx = Number(player.stand.slug.slice(LETTER_SLUG.length));
+          const l = LETTER_PLATFORMS
+            ? getWordmarkLetters().find((q) => q.index === idx)
+            : undefined;
+          if (l && Math.abs(player.x - (l.x + l.w / 2)) <= l.w / 2 + 4) {
+            player.y = l.y - 16;
+          } else {
+            player.stand = null;
+            player.grounded = false;
+          }
+        } else if (player.stand) {
           const p = platforms.find((q) => q.slug === player.stand!.slug);
           if (p) {
             player.x += p.x - player.stand.lastX;
@@ -304,6 +324,26 @@ export default function HugoParkour() {
                 player.grounded = true;
                 player.squash = 6;
                 player.stand = { slug: p.slug, lastX: p.x, lastY: p.y };
+                break;
+              }
+            }
+          }
+
+          // One-way landings on the marquee's letters — flat tops.
+          if (LETTER_PLATFORMS && player.vy > 0 && !player.stand) {
+            for (const l of getWordmarkLetters()) {
+              if (player.x < l.x - 4 || player.x > l.x + l.w + 4) continue;
+              const surface = l.y - 16;
+              if (prevY <= surface && player.y >= surface) {
+                player.y = surface;
+                player.vy = 0;
+                player.grounded = true;
+                player.squash = 6;
+                player.stand = {
+                  slug: `${LETTER_SLUG}${l.index}`,
+                  lastX: l.x,
+                  lastY: l.y,
+                };
                 break;
               }
             }
