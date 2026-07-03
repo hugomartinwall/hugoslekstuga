@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import HugoParkour from "@/components/hugo/HugoParkour";
+import PixelWordmark from "@/components/PixelWordmark";
 
 const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
 
@@ -35,6 +36,40 @@ export default function HomeShell() {
   const [retiredName, setRetiredName] = useState<string | null>(null);
   const [powerOn, setPowerOn] = useState(false);
   const [parkour, setParkour] = useState(false);
+  /** Bottom edge of the marquee (viewport px) — the attract hint sits
+   *  just under it, completing the logo + PRESS START composition. */
+  const [markBottom, setMarkBottom] = useState<number | null>(null);
+  /** Tagline of the swarm orb under the cursor — whispered along the
+   *  bottom edge. Kept after hover ends so the fade-out has text. */
+  const [whisper, setWhisper] = useState<string | null>(null);
+  const [whisperOn, setWhisperOn] = useState(false);
+
+  // The marquee publishes its layout whenever it (re)draws; the swarm
+  // broadcasts which orb the cursor is on. Both feed small bits of
+  // page chrome here.
+  useEffect(() => {
+    const onLayout = (e: Event) => {
+      const detail = (e as CustomEvent<{ bottom: number } | null>).detail;
+      setMarkBottom(detail ? detail.bottom : null);
+    };
+    const onHover = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{ tagline?: string } | null>
+      ).detail;
+      if (detail?.tagline) {
+        setWhisper(detail.tagline);
+        setWhisperOn(true);
+      } else {
+        setWhisperOn(false);
+      }
+    };
+    window.addEventListener("hugoslekstuga:wordmark-layout", onLayout);
+    window.addEventListener("hugoslekstuga:tool-hover", onHover);
+    return () => {
+      window.removeEventListener("hugoslekstuga:wordmark-layout", onLayout);
+      window.removeEventListener("hugoslekstuga:tool-hover", onHover);
+    };
+  }, []);
 
   // The bottom hint follows the mode — attract invitation normally,
   // controls while Hugo's parkour owns the room.
@@ -110,6 +145,11 @@ export default function HomeShell() {
         <ToolMap fullBleed explodeTrigger={explodeTrigger} />
       </div>
 
+      {/* The marquee — HUGOS LEKSTUGA as phosphor pixels, centred in
+          the swarm. Pointer-transparent; sits above the map's trail
+          canvas, below every overlay. */}
+      <PixelWordmark powerOn={powerOn} />
+
       {/* The room takes the hit when the forbidden button is pressed. */}
       {explodeTrigger > 0 && (
         <div
@@ -119,15 +159,34 @@ export default function HomeShell() {
         />
       )}
 
-      {/* Attract-mode hint — the arcade's standing invitation, or the
-          controls while the parkour owns the room. */}
+      {/* Attract-mode hint — the arcade's standing invitation, blinking
+          right under the marquee (the PRESS START idiom). While the
+          parkour owns the room it drops to the bottom edge and shows
+          the controls instead. */}
       <p
         aria-hidden
-        className={`pointer-events-none absolute inset-x-0 bottom-5 z-10 text-center font-pixel text-[10px] uppercase tracking-[0.3em] text-ink-muted ${
-          parkour ? "" : "press-blink"
+        className={`pointer-events-none absolute inset-x-0 z-10 text-center font-pixel text-[10px] uppercase tracking-[0.3em] text-ink-muted ${
+          parkour ? "bottom-5" : "press-blink"
         }`}
+        style={
+          parkour
+            ? undefined
+            : markBottom !== null
+              ? { top: markBottom + 22 }
+              : { bottom: 20 }
+        }
       >
         {parkour ? "← → move · ↑ jump · esc gives up" : "press any tool"}
+      </p>
+
+      {/* Hover whisper — the hovered orb's tagline, murmured along
+          the bottom edge the hint vacated. */}
+      <p
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-5 z-10 text-center font-pixel text-[10px] uppercase tracking-[0.24em] text-ink-muted transition-opacity duration-300"
+        style={{ opacity: whisperOn && !parkour ? 0.85 : 0 }}
+      >
+        {whisper}
       </p>
 
       {/* The hidden game — long-press the corner Hugo to start it. */}

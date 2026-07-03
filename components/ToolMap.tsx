@@ -12,6 +12,7 @@ import { tools, type Tool } from "@/lib/tools";
 import { pathFor } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
 import { drawCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
+import { getWordmarkRect, type WordmarkRect } from "@/lib/wordmark-bridge";
 import { clamp } from "@/lib/math";
 
 /**
@@ -202,6 +203,9 @@ const EXPLODE_SPEED_MIN = 48;
 const EXPLODE_SPEED_MAX = 78;
 const MIN_W = 320;
 const MIN_H = 480;
+/** Clearance kept between orb centres and the marquee's rect so the
+ *  wordmark stays legible — node radius + label breathing room. */
+const WORDMARK_PAD = NODE_R + 26;
 
 /** The eight nav-dot colours in the same order BrandDot stores them
  *  in. Reading the persisted index from localStorage and looking up
@@ -644,6 +648,10 @@ export default function ToolMap({
       // constant speed with a softly wandering heading, bouncing its
       // heading off the walls. This is what keeps the screen alive
       // (and the phosphor trails fed) even when nobody's touching it.
+      // On the homepage the marquee publishes its rect (viewport ==
+      // canvas coords there); patrols that wander into it get their
+      // heading steered back out so they don't park on the title.
+      const avoid = getWordmarkRect();
       if (!reduceMotionRef.current) {
         for (const n of nodesRef.current) {
           if (n.pinned || n.role) continue;
@@ -658,6 +666,20 @@ export default function ToolMap({
           if ((n.y < m && Math.sin(heading) < 0) || (n.y > size.h - m && Math.sin(heading) > 0)) {
             heading = -heading;
           }
+          if (
+            avoid &&
+            n.x > avoid.x - WORDMARK_PAD &&
+            n.x < avoid.x + avoid.w + WORDMARK_PAD &&
+            n.y > avoid.y - WORDMARK_PAD &&
+            n.y < avoid.y + avoid.h + WORDMARK_PAD
+          ) {
+            heading =
+              Math.atan2(
+                n.y - (avoid.y + avoid.h / 2),
+                n.x - (avoid.x + avoid.w / 2),
+              ) +
+              (Math.random() - 0.5) * 0.4;
+          }
           n.heading = heading;
         }
       }
@@ -667,7 +689,7 @@ export default function ToolMap({
         explodeAtRef.current > 0 &&
         performance.now() - explodeAtRef.current < EXPLODE_WINDOW_MS;
       const vCap = inExplode ? EXPLODE_MAX_V : MAX_V;
-      step(nodesRef.current, size.w, size.h, wobbleAmplitude, vCap);
+      step(nodesRef.current, size.w, size.h, wobbleAmplitude, vCap, avoid);
 
       // Paint the phosphor screen from the freshly stepped positions.
       paintTrails(performance.now());
@@ -721,7 +743,14 @@ export default function ToolMap({
           const rect = containerRef.current.getBoundingClientRect();
           window.dispatchEvent(
             new CustomEvent("hugoslekstuga:tool-hover", {
-              detail: { x: rect.left + node.x, y: rect.top + node.y },
+              detail: {
+                x: rect.left + node.x,
+                y: rect.top + node.y,
+                // Additive — BrandDot's gaze only reads x/y; HomeShell
+                // whispers the tagline along the bottom edge.
+                slug: node.tool.slug,
+                tagline: node.tool.tagline,
+              },
             }),
           );
           wasToolActiveRef.current = true;
@@ -1253,6 +1282,7 @@ function step(
   height: number,
   wobbleAmp: number,
   vCap: number,
+  avoid: WordmarkRect | null,
 ): number {
   if (nodes.length === 0) return 0;
   const now = performance.now();
@@ -1319,6 +1349,27 @@ function step(
       if (wobbleAmp > 0) {
         n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
         n.vy += Math.cos(wobbleT * 1.3 + n.phase * 1.7) * wobbleAmp;
+      }
+      // Marquee avoidance — a soft push out of the wordmark's rect
+      // along the nearest edge, stronger the deeper the orb sits.
+      // Avoidance, not a wall: drags and explode bursts pass through.
+      if (avoid) {
+        const ax = avoid.x - WORDMARK_PAD;
+        const ay = avoid.y - WORDMARK_PAD;
+        const ax2 = avoid.x + avoid.w + WORDMARK_PAD;
+        const ay2 = avoid.y + avoid.h + WORDMARK_PAD;
+        if (n.x > ax && n.x < ax2 && n.y > ay && n.y < ay2) {
+          const dL = n.x - ax;
+          const dR = ax2 - n.x;
+          const dT = n.y - ay;
+          const dB = ay2 - n.y;
+          const m = Math.min(dL, dR, dT, dB);
+          const push = 0.05 + 0.1 * Math.min(1, m / 80);
+          if (m === dL) n.vx -= push;
+          else if (m === dR) n.vx += push;
+          else if (m === dT) n.vy -= push;
+          else n.vy += push;
+        }
       }
     }
     n.vx *= DAMPING;
