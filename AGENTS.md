@@ -78,8 +78,9 @@ same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
-**8 tools + 2 games** survived the 2026-07-02 curation cull: advice,
-breathe, focus, lorem, roll, sjokort, strip, sudoku + munch, noodle.
+**9 tools + 2 games**: advice, breathe, focus, lorem, pixla, roll,
+sjokort, strip, sudoku + munch, noodle. (8 tools survived the
+2026-07-02 curation cull; pixla joined 2026-07-03.)
 The retired slugs (case, cleantext, convert, diff, pdf, qr, read,
 typing, stretch) 308-redirect to `/?retired=<slug>` in `next.config.ts`
 — HomeShell greets the broken bookmark with a quip. Don't reuse a
@@ -207,7 +208,8 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 | `hugo-traveling` | `{ traveling: boolean }` | Fired by TravelingDot mid-trip; BrandDot + ToolMap listen so there's one Hugo on screen. |
 | `dot-arrived` | — | TravelingDot landed on a tool page; ToolFrame times its entrance off it. |
 | `dot-nudge-target` | `{ x, y } \| null` | ToolMap tells TravelingDot where the clicked orb's landing spot is. |
-| `tool-hover` | `{ x, y } \| null` (rAF-rate) | ToolMap broadcasts the hovered orb; BrandDot's eyes track it. |
+| `tool-hover` | `{ x, y, slug, tagline } \| null` (rAF-rate) | ToolMap broadcasts the hovered orb; BrandDot's eyes track x/y, HomeShell whispers the tagline along the bottom edge. |
+| `wordmark-layout` | `{ bottom } \| null` | PixelWordmark published a fresh layout; HomeShell parks the attract hint just under the marquee. |
 | `parkour-start` / `parkour-end` | — | A parkour run begins/ends. BrandDot dispatches start on long-press; ToolMap suppresses click-nav + idle fetch during a run; HomeShell swaps the bottom hint. |
 | `open-search` | — | Opens the ⌘K palette. |
 | `storage-write` | (internal) | Fired by `use-local-storage-state` for same-tab sync. Not a Hugo event — don't dispatch it yourself. |
@@ -270,6 +272,23 @@ Clicking an orb dispatches `dot-travel` (Hugo fetches the tool).
 HomeShell adds the once-per-session CRT power-on (`sessionStorage`
 `hugoslekstuga:crt-on`), `.scanlines`, and the square DO-NOT-PRESS
 keycap (the explode button).
+
+**The marquee** — `components/PixelWordmark.tsx` draws HUGOS LEKSTUGA
+centred in the swarm as quantized phosphor pixels (Jersey 15 sampled
+once to an offscreen canvas — `ctx.font` can't read CSS vars, so the
+concrete family is resolved off a `font-display` probe span, gated on
+`document.fonts`). Letters ignite left→right after power-on, shimmer
+at rest, flicker like a tired neon sign, shove aside near the cursor
+(snapped to the grid), and blip when clicked. The canvas is
+pointer-transparent; it listens on `window` and hit-tests itself.
+Base cell rects never animate — they're published through
+`lib/wordmark-bridge.ts` (viewport coords, setter + read-only
+getters): ToolMap's `step()` reads the block rect to drift orbs out
+of the title, HugoParkour reads the per-letter rects as flat one-way
+platforms (behind its `LETTER_PLATFORMS` const). The blinking "press
+any tool" hint sits under the marquee (positioned via the
+`wordmark-layout` event); the hovered orb's tagline whispers along
+the bottom edge. Reduced motion = one static, fully-lit draw.
 
 **Measurement rule:** ToolMap must measure its box with
 `offsetWidth`/`offsetHeight`, **never** `getBoundingClientRect` — the
