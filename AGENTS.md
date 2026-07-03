@@ -71,10 +71,15 @@ in-memory; two machines = two `Game` singletons = players split across
 sessions. Set with `flyctl scale count 1`. Documented in `fly.toml`.
 Don't scale up unless we move state out of process (Redis, etc).
 
-The on-`/about` brand voice now lives in two pieces: the hero sentence
-("…where I release things I made for fun.") and the *Things you won't
-find here* strikethrough list. Both carry the wink — treat them the
-same way as the rules: don't quietly reword without asking.
+The on-`/about` brand voice was rewritten 2026-07-04 (Hugo asked for
+sharper wit) and now lives in two pieces: the hero ("An arcade with
+no coin slot.") and the *Things you won't find here* **dead cabinets**
+— eight unpowered pixel arcade machines (labels + taped-on notes in
+`app/about/Client.tsx`, e.g. VENTURE CAPITAL / "didn't fit through
+the door"). The joke is diegetic: hover a cabinet and it tries to
+wake in its would-have-been accent, then dies. Both pieces carry the
+wink — treat them the same way as the rules: don't quietly reword
+without asking.
 
 ## The catalogue
 
@@ -322,8 +327,8 @@ whole layout.
    (The parkour win panel's outbound link to getlegacies.com/beta is an
    `<a>`, not a fetch — also sanctioned.)
 5. **Don't quietly reword the brand voice on `/about`** — the hero
-   sentence and the "things you won't find here" list. Change either
-   only when explicitly asked.
+   sentence and the dead-cabinet labels/notes. Change either only
+   when explicitly asked.
 6. **Don't introduce another CSS framework.** Tailwind + the `card-chunk` /
    `btn-chunk` shadow language is the system.
 7. **Don't add new server features.** Munch + Noodle are the only
