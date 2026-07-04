@@ -21,13 +21,11 @@ import {
 import {
   drawBackdrop,
   drawBeam,
-  drawDoor,
+  drawGoal,
   drawHomeReplicas,
   drawTerrain,
   makeDither,
   BEAM_STEPS,
-  DOOR_H,
-  DOOR_W,
   type OrbSnapshot,
 } from "@/lib/hugo/parkour/render";
 import { getWordmarkLetters } from "@/lib/wordmark-bridge";
@@ -37,21 +35,24 @@ import { getWordmarkLetters } from "@/lib/wordmark-bridge";
  *
  * Long-press the corner Hugo and the room grows gravity: he drops to
  * the floor of the arcade and the drifting tool orbs become moving
- * platforms. Arrow keys (or WASD) run and jump. Somewhere near the
- * ceiling hangs a glowing door — chain jumps across the swarm to
- * reach it. The prize behind the door is the honest one: a link to
- * Legacies, Hugo's day job.
+ * platforms. Arrow keys (or WASD) run and jump — and the homepage is
+ * only the first screen. Past the right edge the arcade's back rooms
+ * continue for several authored screens (see lib/hugo/parkour/
+ * level.ts) until the prize at the end of the world: LIVE FOREVER,
+ * a humming neon monument that doubles as the honest pitch — a link
+ * to Legacies, Hugo's day job. Falling into a pit restarts the whole
+ * run; the ending is earned.
  *
- * The platforms are read straight from the live swarm each step
- * (ToolMap tags every node <g> with data-slug/data-r), so the level
- * IS the homepage — drifting, explodable, never the same twice.
- * ToolMap suppresses click-navigation and idle fetches while the
- * game owns the room; the corner dot yields via hugo-stage.
+ * Screen 0's platforms are read straight from the live swarm each
+ * step (ToolMap tags every node <g> with data-slug/data-r), so the
+ * level IS the homepage — drifting, explodable, never the same
+ * twice. ToolMap suppresses click-navigation and idle fetches while
+ * the game owns the room; the corner dot yields via hugo-stage.
  *
- * The simulation itself lives in lib/hugo/parkour/physics.ts; the
- * canvas painters in lib/hugo/parkour/render.ts. This component is
- * the shell: events, input, the fixed-timestep loop, DOM reads, and
- * the win overlay.
+ * The simulation lives in lib/hugo/parkour/physics.ts, the authored
+ * world in level.ts, the canvas painters in render.ts. This
+ * component is the shell: events, input, the fixed-timestep loop,
+ * DOM reads, and the win overlay.
  */
 
 const SPRITE_PX = 2; // canvas px per sprite cell (crisp at DPR)
@@ -174,8 +175,6 @@ export default function HugoParkour() {
     let w = 0;
     let h = 0;
     let floorY = 0;
-    let doorX = 0;
-    let doorY = 0;
     // The authored world extends past screen 0's right edge; worldW
     // comes from the baked level.
     let worldW = 0;
@@ -186,36 +185,9 @@ export default function HugoParkour() {
     let backdropAlpha = 0;
     let lastOrbs: OrbSnapshot[] = [];
 
-    // The door hangs high, wherever the ceiling has room. Search and
-    // About are anchored up there (swarm nodes tagged $search/$about),
-    // so the run reads their live positions and hangs the door at the
-    // midpoint of the widest clear gap — also keeping clear of the
-    // corner Hugo (left) and the DO-NOT-PRESS button (right). The old
-    // fixed 62% spot sat on the About label whenever the swarm and the
-    // constant disagreed about whose stretch of ceiling it was.
-    const placeDoor = () => {
-      const xs = readPlatforms()
-        .filter((p) => p.slug.startsWith("$"))
-        .map((p) => p.x)
-        .filter((x) => x > 0 && x < w)
-        .sort((a, b) => a - b);
-      const edges = [90, ...xs, w - 110];
-      let mid = w * 0.5;
-      let best = 0;
-      for (let i = 1; i < edges.length; i++) {
-        const gap = edges[i] - edges[i - 1];
-        if (gap > best) {
-          best = gap;
-          mid = (edges[i] + edges[i - 1]) / 2;
-        }
-      }
-      doorX = Math.round(mid);
-      doorY = Math.max(72, h * 0.12);
-    };
-
     // Sized against the live viewport — resizing mid-run re-lays the
-    // room (canvas backing store, floor, door) instead of stretching
-    // a stale frame.
+    // room (canvas backing store, floor, level bake) instead of
+    // stretching a stale frame.
     const layout = () => {
       w = window.innerWidth;
       h = window.innerHeight;
@@ -227,7 +199,6 @@ export default function HugoParkour() {
       level = buildLevel(w, floorY);
       worldW = level.worldW;
       camera.x = Math.max(0, Math.min(worldW - w, camera.x));
-      placeDoor();
     };
     layout();
     window.addEventListener("resize", layout);
@@ -342,11 +313,13 @@ export default function HugoParkour() {
           respawnRef.current = true;
         }
 
-        // The door.
+        // LIVE FOREVER — walk into the sign and the run is won.
+        const g = level.goal;
         if (
-          Math.abs(player.x - doorX) < DOOR_W / 2 + 8 &&
-          player.y > doorY - 10 &&
-          player.y < doorY + DOOR_H
+          player.x > g.x - 6 &&
+          player.x < g.x + g.w + 6 &&
+          player.y > g.y - 6 &&
+          player.y < g.y + g.h + 10
         ) {
           wonRef.current = true;
           setWon(true);
@@ -376,7 +349,7 @@ export default function HugoParkour() {
 
       drawTerrain(ctx, level, tick, camX, w, h, !reducedMotion);
 
-      drawDoor(ctx, doorX, doorY);
+      drawGoal(ctx, level.goal, tick, !reducedMotion);
 
       if (!reducedMotion && tick <= BEAM_STEPS && !wonRef.current) {
         drawBeam(ctx, SPAWN_X, Math.min(ry + 16, floorY), accent, tick);
@@ -461,10 +434,10 @@ export default function HugoParkour() {
         >
           <div className="notch flex max-w-sm flex-col items-center gap-4 border border-line bg-cream-deep px-8 py-8 text-center">
             <p className="text-glow font-display text-4xl text-green">
-              YOU MADE IT.
+              LIVE FOREVER.
             </p>
             <p className="text-sm leading-relaxed text-ink-soft">
-              Enjoy early access to Legacies.
+              You earned it. Enjoy early access to Legacies.
             </p>
             <a
               href="https://getlegacies.com/beta"
