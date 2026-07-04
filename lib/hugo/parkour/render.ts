@@ -6,8 +6,8 @@
  * the caller has already applied any world→screen transform.
  */
 
-import { COLOR_HEX } from "@/lib/colors";
-import { drawCabinet, withAlpha } from "@/lib/hugo/sprite";
+import { COLOR_HEX, CREAM_HEX } from "@/lib/colors";
+import { drawCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
 import { moverPos, type Level } from "./level";
 
 /** Label ink for canvas captions — matches the map labels. */
@@ -104,6 +104,86 @@ export function pixelText(
       }
     }
   }
+}
+
+/* ── the backdrop + screen-0 replicas ───────────────────────────────
+ * The game canvas floats transparently over the homepage DOM. As Hugo
+ * nears screen 0's right edge, the canvas fades in an opaque
+ * room-dark backdrop and paints replicas of the orbs/letters at the
+ * SAME coordinates the collision uses — the room hands itself over to
+ * the canvas with no visible seam, and then the camera is free. */
+
+/** The Bayer dither from globals.css `--dither`, as a canvas pattern:
+ *  8×8 tile, ink pixels at 4.5%. Built once per run. */
+export function makeDither(
+  ctx: CanvasRenderingContext2D,
+): CanvasPattern | null {
+  const tile = document.createElement("canvas");
+  tile.width = 8;
+  tile.height = 8;
+  const tc = tile.getContext("2d");
+  if (!tc) return null;
+  tc.fillStyle = withAlpha(INKISH, 0.045);
+  const dots: [number, number][] = [
+    [0, 0], [2, 0], [4, 0], [2, 2], [6, 2],
+    [0, 4], [4, 4], [6, 4], [2, 6], [6, 6],
+  ];
+  for (const [x, y] of dots) tc.fillRect(x, y, 1, 1);
+  return ctx.createPattern(tile, "repeat");
+}
+
+/** Room-dark cover over the whole viewport (screen space — call it
+ *  BEFORE the world transform), with the site's dither whisper and a
+ *  faint phosphor floor line so the ground reads through the fade. */
+export function drawBackdrop(
+  ctx: CanvasRenderingContext2D,
+  alpha: number,
+  w: number,
+  h: number,
+  floorY: number,
+  dither: CanvasPattern | null,
+): void {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = CREAM_HEX;
+  ctx.fillRect(0, 0, w, h);
+  if (dither) {
+    ctx.fillStyle = dither;
+    ctx.fillRect(0, 0, w, h);
+  }
+  ctx.fillStyle = withAlpha(INKISH, 0.16);
+  ctx.fillRect(0, floorY, w, 2);
+  ctx.restore();
+}
+
+export type OrbSnapshot = { slug: string; x: number; y: number; r: number };
+export type LetterSnapshot = { x: number; y: number; w: number; h: number };
+
+/** Canvas stand-ins for the homepage terrain while the backdrop hides
+ *  the real DOM. Same coordinates as the collision surfaces, drawn as
+ *  dim phosphor — the room going to sleep behind you. */
+export function drawHomeReplicas(
+  ctx: CanvasRenderingContext2D,
+  alpha: number,
+  orbs: OrbSnapshot[],
+  letters: LetterSnapshot[],
+): void {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (const o of orbs) {
+    if (o.slug === "munch" || o.slug === "noodle") {
+      drawCabinet(ctx, o.x, o.y, (o.r * 2) / 21, withAlpha(COLOR_HEX.pink, 0.55));
+    } else {
+      pixelDisc(ctx, o.x, o.y, o.r, withAlpha(INKISH, 0.28));
+    }
+  }
+  ctx.fillStyle = withAlpha(INKISH, 0.22);
+  for (const l of letters) {
+    ctx.fillRect(l.x, l.y, l.w, l.h);
+  }
+  ctx.restore();
 }
 
 /* ── terrain ──────────────────────────────────────────────────────── */

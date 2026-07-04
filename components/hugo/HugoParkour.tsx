@@ -19,12 +19,16 @@ import {
   type Level,
 } from "@/lib/hugo/parkour/level";
 import {
+  drawBackdrop,
   drawBeam,
   drawDoor,
+  drawHomeReplicas,
   drawTerrain,
+  makeDither,
   BEAM_STEPS,
   DOOR_H,
   DOOR_W,
+  type OrbSnapshot,
 } from "@/lib/hugo/parkour/render";
 import { getWordmarkLetters } from "@/lib/wordmark-bridge";
 
@@ -60,6 +64,10 @@ const SPAWN_Y = 46;
 const LETTER_PLATFORMS = true;
 /** Synthetic surface-id prefix for standing on a wordmark letter. */
 const LETTER_SLUG = "#L";
+/** The last stretch of screen 0: entering it fades the canvas
+ *  backdrop over the live homepage; crossing the edge frees the
+ *  camera. Walking back reverses the whole handover. */
+const FADE_ZONE = 220;
 
 type Platform = { x: number; y: number; r: number; slug: string };
 
@@ -87,9 +95,13 @@ function readPlatforms(): Platform[] {
 /** Everything Hugo can stand on this step, in landing-priority order:
  *  swarm orbs, wordmark letters, patrolling movers, then the authored
  *  level (floors, ledges, cabinet tops). */
-function collectSurfaces(level: Level, tick: number): Surface[] {
+function collectSurfaces(
+  orbs: Platform[],
+  level: Level,
+  tick: number,
+): Surface[] {
   const out: Surface[] = [];
-  for (const p of readPlatforms()) {
+  for (const p of orbs) {
     out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
   }
   if (LETTER_PLATFORMS) {
@@ -154,6 +166,7 @@ export default function HugoParkour() {
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const accent = readAccent();
+    const dither = makeDither(ctx);
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -168,6 +181,10 @@ export default function HugoParkour() {
     let worldW = 0;
     let level: Level = buildLevel(1, 1); // replaced in layout()
     const camera = { x: 0 };
+    // Screen-0 handover state — see FADE_ZONE.
+    let homeLatch = true;
+    let backdropAlpha = 0;
+    let lastOrbs: OrbSnapshot[] = [];
 
     // The door hangs high, wherever the ceiling has room. Search and
     // About are anchored up there (swarm nodes tagged $search/$about),
@@ -266,7 +283,9 @@ export default function HugoParkour() {
 
     const simulate = () => {
       tick += 1;
-      const surfaces = collectSurfaces(level, tick);
+      const orbs = readPlatforms();
+      lastOrbs = orbs;
+      const surfaces = collectSurfaces(orbs, level, tick);
 
       if (respawnRef.current) {
         respawnRef.current = false;
@@ -279,6 +298,8 @@ export default function HugoParkour() {
         player.airJump = true;
         tick = 0; // replay the spawn beam
         camera.x = 0;
+        homeLatch = true;
+        backdropAlpha = 0;
         // A respawn is a teleport — don't sweep the sprite across the
         // room interpolating from where he died.
         prevPos.x = player.x;
@@ -294,7 +315,25 @@ export default function HugoParkour() {
           minX: PLAYER_HALF,
           maxX: worldW - PLAYER_HALF,
         });
-        updateCamera(camera, player.x, w, worldW, reducedMotion);
+
+        // The screen-0 handover. While latched the camera is pinned
+        // home and the backdrop tracks Hugo's approach to the edge;
+        // crossing it frees the camera (the catch-up ease reads as
+        // "leaving home"). Walking back reverses everything once the
+        // camera has come home too.
+        if (homeLatch) {
+          camera.x = 0;
+          backdropAlpha = reducedMotion
+            ? player.x >= w
+              ? 1
+              : 0
+            : Math.max(0, Math.min(1, (player.x - (w - FADE_ZONE)) / FADE_ZONE));
+          if (player.x >= w) homeLatch = false;
+        } else {
+          backdropAlpha = 1;
+          updateCamera(camera, player.x, w, worldW, reducedMotion);
+          if (player.x < w - FADE_ZONE && camera.x < 1) homeLatch = true;
+        }
 
         // The pit rule: fall past the kill line and the run is over —
         // no checkpoints, LIVE FOREVER is earned. The respawn beam
@@ -323,10 +362,17 @@ export default function HugoParkour() {
     const draw = (rx: number, ry: number, camX: number) => {
       ctx.clearRect(0, 0, w, h);
 
+      // Screen-space cover over the homepage DOM (see FADE_ZONE).
+      drawBackdrop(ctx, backdropAlpha, w, h, floorY, dither);
+
       // World → screen: everything below draws in world coordinates.
       // Rounded so pixel art never lands on half pixels.
       ctx.save();
       ctx.translate(-Math.round(camX), 0);
+
+      // Screen 0's terrain replicas — same coords as the collision,
+      // so the DOM→canvas handover has no seam.
+      drawHomeReplicas(ctx, backdropAlpha, lastOrbs, getWordmarkLetters());
 
       drawTerrain(ctx, level, tick, camX, w, h, !reducedMotion);
 
