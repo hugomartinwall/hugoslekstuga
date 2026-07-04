@@ -129,17 +129,20 @@ export const CAM_LERP = 0.1;
 
 /** Per-step camera follow. `snap` (reduced motion / teleports) jumps
  *  straight to the target instead of easing. Clamped to the world, so
- *  while worldW === viewW the camera provably never moves. */
+ *  while worldW === viewW the camera provably never moves. `anchor`
+ *  overrides where the player sits on screen — the moped passes
+ *  MOPED_CAM_ANCHOR for more forward view at speed. */
 export function updateCamera(
   camera: { x: number },
   playerX: number,
   viewW: number,
   worldW: number,
   snap: boolean,
+  anchor: number = CAM_ANCHOR,
 ): void {
   const target = Math.max(
     0,
-    Math.min(worldW - viewW, playerX - viewW * CAM_ANCHOR),
+    Math.min(worldW - viewW, playerX - viewW * anchor),
   );
   if (snap) camera.x = target;
   else camera.x += (target - camera.x) * CAM_LERP;

@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { drawHugoSprite, readAccent } from "@/lib/hugo/sprite";
+import { drawHugoSprite, drawMopedHugo, readAccent } from "@/lib/hugo/sprite";
 import {
   createPlayer,
+  stepMoped,
   stepPlayer,
   updateCamera,
   JUMP_BUFFER_STEPS,
   MAX_SIM_STEPS,
+  MOPED_CAM_ANCHOR,
+  MOPED_MAX,
   PLAYER_HALF,
   STEP_MS,
   type InputState,
@@ -18,11 +21,14 @@ import {
   moverSurfaces,
   type Level,
 } from "@/lib/hugo/parkour/level";
+import { buildLevel2 } from "@/lib/hugo/parkour/level2";
 import {
   drawBackdrop,
   drawBeam,
   drawGoal,
+  drawHeadlight,
   drawHomeReplicas,
+  drawLevelCard,
   drawTerrain,
   makeDither,
   BEAM_STEPS,
@@ -66,6 +72,13 @@ const LETTER_SLUG = "#L";
  *  backdrop over the live homepage; crossing the edge frees the
  *  camera. Walking back reverses the whole handover. */
 const FADE_ZONE = 220;
+/** The NEXT LEVEL transition timeline, in simulation steps: beam-out
+ *  and fade to black, the LEVEL 2 card, swap, fade back in. Reduced
+ *  motion holds the card as a static frame, then cuts. */
+const TRANS_FADE_IN = 30;
+const TRANS_SWAP = 120;
+const TRANS_END = 150;
+const TRANS_RM_END = 60;
 
 type Platform = { x: number; y: number; r: number; slug: string };
 
@@ -102,7 +115,7 @@ function collectSurfaces(
   for (const p of orbs) {
     out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
   }
-  if (LETTER_PLATFORMS) {
+  if (LETTER_PLATFORMS && level.homeScreen) {
     for (const l of getWordmarkLetters()) {
       out.push({
         kind: "rect",
@@ -125,11 +138,15 @@ export default function HugoParkour() {
   const wonRef = useRef(false);
   const respawnRef = useRef(false);
   const runSeedRef = useRef(0);
+  /** Which level the run is in. A ref — the loop reads it, and only
+   *  the win panel needs React state. */
+  const levelIdRef = useRef<1 | 2>(1);
 
   useEffect(() => {
     const onStart = () => {
       wonRef.current = false;
       setWon(false);
+      levelIdRef.current = 1;
       runSeedRef.current += 1;
       setActive(true);
       window.dispatchEvent(
@@ -181,6 +198,17 @@ export default function HugoParkour() {
     let homeLatch = true;
     let backdropAlpha = 0;
     let lastOrbs: OrbSnapshot[] = [];
+    // The NEXT LEVEL transition — see the TRANS_* timeline.
+    let phase: "play" | "transition" = "play";
+    let transStep = 0;
+
+    const rebuild = () => {
+      level =
+        levelIdRef.current === 1 ? buildLevel(w, floorY) : buildLevel2(w, floorY);
+      worldW = level.worldW;
+      homeLatch = level.homeScreen;
+      backdropAlpha = level.homeScreen ? 0 : 1;
+    };
 
     // Sized against the live viewport — resizing mid-run re-lays the
     // room (canvas backing store, floor, level bake) instead of
@@ -193,8 +221,10 @@ export default function HugoParkour() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
       floorY = h - 10;
-      level = buildLevel(w, floorY);
-      worldW = level.worldW;
+      const keepFade = backdropAlpha;
+      rebuild();
+      // A mid-run resize shouldn't reset the handover fade.
+      if (level.homeScreen) backdropAlpha = keepFade;
       camera.x = Math.max(0, Math.min(worldW - w, camera.x));
     };
     layout();
@@ -250,47 +280,81 @@ export default function HugoParkour() {
     // states and look better stepped.
     const prevPos = { x: player.x, y: player.y, camX: camera.x };
 
+    /** Teleport to the current level's spawn with everything reset —
+     *  used by death respawns, "again", and the level swap. */
+    const spawnIntoLevel = () => {
+      rebuild();
+      player.x = level.spawn.x;
+      player.y = level.spawn.y;
+      player.vx = 0;
+      player.vy = 0;
+      player.stand = null;
+      player.grounded = false;
+      player.airJump = true;
+      tick = 0; // replay the spawn beam; movers restart deterministically
+      camera.x = 0;
+      // A spawn is a teleport — don't sweep the sprite across the
+      // room interpolating from wherever he was.
+      prevPos.x = player.x;
+      prevPos.y = player.y;
+      prevPos.camX = camera.x;
+    };
+
     const simulate = () => {
+      // The NEXT LEVEL card owns time while it plays; the world
+      // stands still underneath (tick frozen, no physics).
+      if (phase === "transition") {
+        transStep += 1;
+        const swapAt = reducedMotion ? TRANS_RM_END : TRANS_SWAP;
+        const endAt = reducedMotion ? TRANS_RM_END : TRANS_END;
+        if (transStep === swapAt) {
+          levelIdRef.current = 2;
+          spawnIntoLevel();
+        }
+        if (transStep >= endAt) phase = "play";
+        return;
+      }
+
       tick += 1;
-      const orbs = readPlatforms();
+      const orbs = level.homeScreen ? readPlatforms() : [];
       lastOrbs = orbs;
       const surfaces = collectSurfaces(orbs, level, tick);
 
       if (respawnRef.current) {
         respawnRef.current = false;
-        player.x = level.spawn.x;
-        player.y = level.spawn.y;
-        player.vx = 0;
-        player.vy = 0;
-        player.stand = null;
-        player.grounded = false;
-        player.airJump = true;
-        tick = 0; // replay the spawn beam
-        camera.x = 0;
-        homeLatch = true;
-        backdropAlpha = 0;
-        // A respawn is a teleport — don't sweep the sprite across the
-        // room interpolating from where he died.
-        prevPos.x = player.x;
-        prevPos.y = player.y;
-        prevPos.camX = camera.x;
+        spawnIntoLevel();
       }
 
       if (!wonRef.current) {
-        stepPlayer(player, input, surfaces, {
+        const world = {
           // The floor is level surfaces now (its gaps are the pits);
           // the old catch-all clamp must never fire.
           floorY: Number.POSITIVE_INFINITY,
           minX: PLAYER_HALF,
           maxX: worldW - PLAYER_HALF,
-        });
+        };
+        if (level.mechanic === "moped") {
+          stepMoped(player, input, surfaces, world);
+        } else {
+          stepPlayer(player, input, surfaces, world);
+        }
 
-        // The screen-0 handover. While latched the camera is pinned
-        // home and the backdrop tracks Hugo's approach to the edge;
-        // crossing it frees the camera (the catch-up ease reads as
-        // "leaving home"). Walking back reverses everything once the
-        // camera has come home too.
-        if (homeLatch) {
+        // The screen-0 handover (level 1 only). While latched the
+        // camera is pinned home and the backdrop tracks Hugo's
+        // approach to the edge; crossing it frees the camera (the
+        // catch-up ease reads as "leaving home"). Walking back
+        // reverses everything once the camera has come home too.
+        if (!level.homeScreen) {
+          backdropAlpha = 1;
+          updateCamera(
+            camera,
+            player.x,
+            w,
+            worldW,
+            reducedMotion,
+            level.mechanic === "moped" ? MOPED_CAM_ANCHOR : undefined,
+          );
+        } else if (homeLatch) {
           camera.x = 0;
           backdropAlpha = reducedMotion
             ? player.x >= w
@@ -304,14 +368,16 @@ export default function HugoParkour() {
           if (player.x < w - FADE_ZONE && camera.x < 1) homeLatch = true;
         }
 
-        // The pit rule: fall past the kill line and the run is over —
-        // no checkpoints, LIVE FOREVER is earned. The respawn beam
-        // replays from the very start.
+        // The pit rule: fall past the kill line and this level's run
+        // is over — NEXT LEVEL is the game's only checkpoint. The
+        // respawn beam replays from the level's start.
         if (player.y > level.killY) {
           respawnRef.current = true;
         }
 
-        // LIVE FOREVER — walk into the sign and the run is won.
+        // The monument. Final goal (LIVE FOREVER) wins the game;
+        // otherwise (NEXT LEVEL) the card takes over and the city
+        // waits on the other side.
         const g = level.goal;
         if (
           player.x > g.x - 6 &&
@@ -319,9 +385,16 @@ export default function HugoParkour() {
           player.y > g.y - 6 &&
           player.y < g.y + g.h + 10
         ) {
-          wonRef.current = true;
-          setWon(true);
-          window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+          if (g.final) {
+            wonRef.current = true;
+            setWon(true);
+            window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
+          } else {
+            phase = "transition";
+            transStep = 0;
+            player.vx = 0;
+            player.vy = 0;
+          }
         }
       }
 
@@ -343,7 +416,9 @@ export default function HugoParkour() {
 
       // Screen 0's terrain replicas — same coords as the collision,
       // so the DOM→canvas handover has no seam.
-      drawHomeReplicas(ctx, backdropAlpha, lastOrbs, getWordmarkLetters());
+      if (level.homeScreen) {
+        drawHomeReplicas(ctx, backdropAlpha, lastOrbs, getWordmarkLetters());
+      }
 
       drawTerrain(ctx, level, tick, camX, w, h, !reducedMotion);
 
@@ -353,32 +428,97 @@ export default function HugoParkour() {
         drawBeam(ctx, level.spawn.x, Math.min(ry + 16, floorY), accent, tick);
       }
 
-      // Hugo.
-      const running =
-        player.grounded && Math.abs(player.vx) > 0.6 && !wonRef.current;
+      // Beam-out: the reverse beam swallows Hugo as the card fades in.
+      if (!reducedMotion && phase === "transition" && transStep < TRANS_FADE_IN) {
+        const t = Math.max(
+          1,
+          BEAM_STEPS - Math.floor((transStep / TRANS_FADE_IN) * BEAM_STEPS),
+        );
+        drawBeam(ctx, rx, Math.min(ry + 16, floorY), accent, t);
+      }
+
+      // Hugo — on foot or in the saddle.
       const squashY = 1 - player.squash * 0.02;
-      drawHugoSprite(ctx, {
-        x: rx,
-        y: ry,
-        px: SPRITE_PX,
-        accent,
-        eye: {
-          open: true,
-          wide: wonRef.current,
-          dx: player.facing === 1 ? 1 : -1,
-          dy: player.vy < -1 ? -1 : player.vy > 3 ? 1 : 0,
-        },
-        feet: player.grounded
-          ? running
-            ? (((tick >> 3) % 2) as 0 | 1)
-            : 0
-          : 1,
-        scaleX: player.facing * (2 - squashY),
-        scaleY: squashY,
-        sparklePhase: wonRef.current ? tick >> 3 : null,
-      });
+      const eye = {
+        open: true,
+        wide: wonRef.current,
+        dx: (player.facing === 1 ? 1 : -1) as 1 | -1,
+        dy: (player.vy < -1 ? -1 : player.vy > 3 ? 1 : 0) as -1 | 0 | 1,
+      };
+      if (level.mechanic === "moped") {
+        drawHeadlight(
+          ctx,
+          rx + 15 * player.facing,
+          ry + 6,
+          player.facing,
+          reducedMotion ? 4 : Math.abs(player.vx),
+        );
+        const pitch = !player.grounded
+          ? 0
+          : input.right && player.vx < MOPED_MAX - 0.05
+            ? 1
+            : input.left && player.vx > 0.3
+              ? -1
+              : 0;
+        drawMopedHugo(ctx, {
+          x: rx,
+          y: ry,
+          px: SPRITE_PX,
+          accent,
+          facing: player.facing,
+          wheelPhase: ((Math.abs(player.vx) > 0.5 ? (tick >> 2) % 2 : 0) as
+            | 0
+            | 1),
+          pitch: pitch as -1 | 0 | 1,
+          eye,
+          scaleX: 2 - squashY,
+          scaleY: squashY,
+          sparklePhase: wonRef.current ? tick >> 3 : null,
+        });
+      } else {
+        const running =
+          player.grounded && Math.abs(player.vx) > 0.6 && !wonRef.current;
+        drawHugoSprite(ctx, {
+          x: rx,
+          y: ry,
+          px: SPRITE_PX,
+          accent,
+          eye,
+          feet: player.grounded
+            ? running
+              ? (((tick >> 3) % 2) as 0 | 1)
+              : 0
+            : 1,
+          scaleX: player.facing * (2 - squashY),
+          scaleY: squashY,
+          sparklePhase: wonRef.current ? tick >> 3 : null,
+        });
+      }
 
       ctx.restore();
+
+      // The between-levels card, over everything, in screen space.
+      if (phase === "transition") {
+        const overlay = reducedMotion
+          ? 1
+          : transStep < TRANS_FADE_IN
+            ? transStep / TRANS_FADE_IN
+            : transStep <= TRANS_SWAP
+              ? 1
+              : Math.max(
+                  0,
+                  1 - (transStep - TRANS_SWAP) / (TRANS_END - TRANS_SWAP),
+                );
+        drawLevelCard(
+          ctx,
+          w,
+          h,
+          overlay,
+          reducedMotion || transStep >= TRANS_FADE_IN,
+          transStep,
+          !reducedMotion,
+        );
+      }
     };
 
     // Fixed-timestep loop — physics advances in 60Hz steps however
@@ -452,6 +592,7 @@ export default function HugoParkour() {
               <button
                 type="button"
                 onClick={() => {
+                  levelIdRef.current = 1; // a fresh run starts at home
                   respawnRef.current = true;
                   wonRef.current = false;
                   setWon(false);

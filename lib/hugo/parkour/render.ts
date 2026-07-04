@@ -502,6 +502,51 @@ export function drawTerrain(
 
 const CAB_DRAW_CELL = 5; // must match level.ts CAB_CELL
 
+/** The between-levels card: black overlay + "LEVEL 2 / THE RIDE
+ *  HOME" in quantized phosphor, with the marquee's tired-neon
+ *  flicker. Screen space — call it after the world transform is
+ *  restored. `overlay` is the black alpha; `showCard` gates the
+ *  words. */
+export function drawLevelCard(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  overlay: number,
+  showCard: boolean,
+  tick: number,
+  animate: boolean,
+): void {
+  if (overlay <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = overlay;
+  ctx.fillStyle = "#07080f";
+  ctx.fillRect(0, 0, w, h);
+  if (showCard) {
+    const flick = animate && (tick >> 1) % 24 === 0 ? 0.5 : 1;
+    const big = "LEVEL 2";
+    const small = "THE RIDE HOME";
+    const bigW = pixelTextWidth(big, 6);
+    const smallW = pixelTextWidth(small, 3);
+    pixelText(
+      ctx,
+      big,
+      (w - bigW) / 2,
+      h / 2 - 34,
+      6,
+      withAlpha(COLOR_HEX.green, flick),
+    );
+    pixelText(
+      ctx,
+      small,
+      (w - smallW) / 2,
+      h / 2 + 14,
+      3,
+      withAlpha(INKISH, 0.55 * flick),
+    );
+  }
+  ctx.restore();
+}
+
 /** The moped's headlight — a soft wedge thrown forward onto the dark
  *  street, longer at speed so velocity is readable at a glance.
  *  World lighting, not part of the sprite. Under reduced motion the

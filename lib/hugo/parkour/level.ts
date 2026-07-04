@@ -222,16 +222,18 @@ export function buildLevel(w: number, floorY: number): Level {
     wy: floorY - ("yUp" in d ? d.yUp : 0),
   }));
 
-  // The goal monument — centred on the final roof.
+  // The goal monument — centred on the final roof. Magenta, like
+  // another arcade machine pointing deeper in: touching it doesn't
+  // win, it opens the city (level 2, "the ride home").
   const goal = {
     x: x0 + 4810 - 70,
     y: floorY - 260 - 96,
     w: 140,
     h: 96,
-    big: "LIVE",
-    small: "FOREVER",
-    color: "green" as ToolColor,
-    final: true,
+    big: "NEXT",
+    small: "LEVEL",
+    color: "pink" as ToolColor,
+    final: false,
   };
 
   return {
