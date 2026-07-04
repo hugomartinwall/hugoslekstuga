@@ -4,7 +4,7 @@ import Client from "./Client";
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Hugo builds small browser toys in the off-hours. The ones worth keeping end up here — plugged in, open all night.",
+    "lekstuga (n., Swedish): a small house where children play. Also: this. Potentially useful stuff.",
 };
 
 export default function AboutPage() {
