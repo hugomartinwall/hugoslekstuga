@@ -72,14 +72,19 @@ sessions. Set with `flyctl scale count 1`. Documented in `fly.toml`.
 Don't scale up unless we move state out of process (Redis, etc).
 
 The on-`/about` brand voice was rewritten 2026-07-04 (Hugo asked for
-sharper wit) and now lives in two pieces: the hero ("An arcade with
-no coin slot.") and the *Things you won't find here* **dead cabinets**
-— eight unpowered pixel arcade machines (labels + taped-on notes in
-`app/about/Client.tsx`, e.g. VENTURE CAPITAL / "didn't fit through
-the door"). The joke is diegetic: hover a cabinet and it tries to
-wake in its would-have-been accent, then dies. Both pieces carry the
-wink — treat them the same way as the rules: don't quietly reword
-without asking.
+sharper wit, then asked for lekstuga over arcade). It now lives in
+three pieces in `app/about/Client.tsx`: the **dictionary-entry hero**
+("lekstuga · noun · Swedish — 1. a small house where children play
+2. this"), Hugo's own subhead ("potentially useful stuff." — his
+line, echoing the footer), and the *Things you won't find here*
+**dust silhouettes** — eight dashed pixel outlines on a toy shelf,
+the spots the absent things would occupy (labels + taped notes, e.g.
+VENTURE CAPITAL / "didn't fit through the door"). Hover one and it
+dimly tries to materialize in its would-have-been accent, then
+dissolves. The silhouette glyphs are page art and deliberately do
+NOT reuse the map's cabinet motif — this page stays visually unique.
+All three pieces carry the wink — treat them the same way as the
+rules: don't quietly reword without asking.
 
 ## The catalogue
 
@@ -326,8 +331,9 @@ whole layout.
    documented. Don't add *more* runtime fetches to other tools.
    (The parkour win panel's outbound link to getlegacies.com/beta is an
    `<a>`, not a fetch — also sanctioned.)
-5. **Don't quietly reword the brand voice on `/about`** — the hero
-   sentence and the dead-cabinet labels/notes. Change either only
+5. **Don't quietly reword the brand voice on `/about`** — the
+   dictionary-entry hero, the "potentially useful stuff." subhead,
+   and the dust-silhouette labels/notes. Change any of them only
    when explicitly asked.
 6. **Don't introduce another CSS framework.** Tailwind + the `card-chunk` /
    `btn-chunk` shadow language is the system.
