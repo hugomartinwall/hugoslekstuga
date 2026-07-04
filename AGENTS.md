@@ -230,47 +230,60 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 
 Long-press the corner Hugo on `/` and the room grows gravity — and
 since 2026-07-04 the homepage is only the **first screen** of a
-right-scrolling adventure ("closing time at the arcade"). Four
-modules:
+two-level adventure. Level 1 on foot ("closing time at the arcade"),
+level 2 on a **moped** ("the ride home"). Five modules:
 
 - `components/hugo/HugoParkour.tsx` — the React shell: events, input,
-  the fixed-timestep loop, DOM reads, the win overlay.
+  the fixed-timestep loop, DOM reads, level switching, the NEXT LEVEL
+  transition, the win overlay.
 - `lib/hugo/parkour/physics.ts` — the simulation. Pure step functions
-  over a unified `Surface` type (orb = curved top that drifts and
-  carries, rect = flat top; the ride/land code doesn't care which).
+  over a unified `Surface` type (orb = curved drifting top, rect =
+  flat top, ramp = sloped top that launches `vy = -k·vx` off its
+  lip). Two sibling steppers: `stepPlayer` (on foot) and `stepMoped`
+  (momentum: slow throttle to 7.5px/step, 125px braking distance,
+  ONE fixed-height jump, no air jump, drive-onto mounting).
   **Everything is tuned at 60 steps/sec**; the loop simulates on that
   fixed clock (accumulator, catch-up capped, render interpolated
   between steps) so a 120Hz display gets the same game — never step
   physics per rAF.
-- `lib/hugo/parkour/level.ts` — the authored world, in floor-anchored
-  px baked against the live viewport at run start. Zones: behind the
-  marquee → cabinet graveyard (the retired tools' dead cabinets as a
-  climbing wall) → the vents → neon rooftop. Movers are deterministic
-  sine patrols keyed off the step counter, so respawns replay
-  identically. The file documents measured jump guardrails (max
-  single gap 135px, double 240px, step-up 110px) — respect them,
-  deaths restart the run.
+- `lib/hugo/parkour/level.ts` — level 1, floor-anchored px baked
+  against the live viewport at run start. Zones: behind the marquee →
+  cabinet graveyard → the vents → neon rooftop, ending at **NEXT
+  LEVEL** (magenta monument, `goal.final: false`). On-foot guardrails
+  in the header (single gap ≤135px, double ≤240px, step-up ≤110px).
+- `lib/hugo/parkour/level2.ts` — level 2, the phosphor city at night:
+  the alley → full-throttle boulevard canals → the brake-early
+  construction site → the big kicker onto the highway (safe lower
+  lane with its own kicker) → the harbor (barge, pontoon, and the
+  pier where **LIVE FOREVER** hums, `final: true`). Fully authored —
+  no DOM reads, no homepage handover. Moped guardrails in the header
+  (jump reach 117→285px by speed tier, kicker carry ~340 at full vs
+  ~200 at half — gaps are authored per speed tier; min platform 60px).
 - `lib/hugo/parkour/render.ts` — canvas painters: terrain, decos, a
-  hand-rolled 3×5 pixel font, the spawn beam, and the goal.
+  hand-rolled 3×5 pixel font (caps + the digit 2), the beam, the
+  parameterized goal monument, the LEVEL 2 card, the headlight cone.
+
+Hugo rides via `drawMopedHugo` in `lib/hugo/sprite.ts` (the one
+sprite module — pitch is whole-cell offsets, never rotation).
 
 Screen 0 still reads the drifting swarm orbs per-step from the DOM
 (`data-slug` / `data-r` on ToolMap's `<g>`s) and the wordmark letters
 from `lib/wordmark-bridge.ts` — the level IS the homepage until you
-leave it. The camera is latched at zero while Hugo is home; entering
-the last 220px fades an opaque room-dark backdrop over the live DOM
-while canvas replicas of the orbs/letters fade in at identical
-coordinates (no seam), then the camera unlatches and follows. Walking
-back reverses it.
+leave it (camera latched, 220px crossfade handover to canvas
+replicas at identical coords, reversible). Touching NEXT LEVEL plays
+a reverse beam + title card, then sets Hugo down astride the moped
+at street level; ticks reset per level entry so movers and the beam
+replay deterministically.
 
-The goal is **LIVE FOREVER** — a glowing mint monument on the final
-rooftop; touching it wins, fires `hugo-happy` (still rare), and the
-panel's keycap links to **https://getlegacies.com/beta** (Hugo's day
-job — a plain outbound `<a>`, the only external link the game adds;
-privacy rules intact). **Falling into a pit restarts the whole run**
-— no checkpoints, Hugo's call; keep every jump readable. A short
-spawn beam drops Hugo in (skipped under reduced motion; reduced
-motion also snaps the camera and switches the backdrop instantly).
-Esc quits from anywhere.
+**Death rule: dying restarts the current level — reaching the city
+is the game's only checkpoint.** Keep every hazard readable. LIVE
+FOREVER (end of level 2) is the only thing that wins: it fires
+`hugo-happy` (still rare) and the panel's keycap links to
+**https://getlegacies.com/beta** (Hugo's day job — a plain outbound
+`<a>`, the only external link the game adds; privacy rules intact).
+"again" restarts from level 1. Reduced motion: no beams, snap
+camera, instant backdrop, the LEVEL 2 card holds as a static frame
+then cuts. Esc quits from anywhere, including mid-transition.
 
 **Desktop-only, deliberately.** The trigger is gated to
 `(hover: hover) and (pointer: fine)` — the game has no touch controls
