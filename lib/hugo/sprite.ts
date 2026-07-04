@@ -277,6 +277,112 @@ export function drawCabinet(
   ctx.fillRect(x + 7 * s, y + 13 * s + 1, s, s);
 }
 
+export type MopedDrawOptions = {
+  /** The player's centre (same anchor drawHugoSprite uses) — the
+   *  moped hangs below it so the wheels meet the ground the physics
+   *  stands on (centre + 8 cells). */
+  x: number;
+  y: number;
+  /** Device pixels per cell — pass the same px as the rider. */
+  px: number;
+  accent: string;
+  facing: 1 | -1;
+  /** Alternating spoke frame while rolling. */
+  wheelPhase: 0 | 1;
+  /** -1 braking (nose dips), +1 accelerating (nose lifts). Integer
+   *  cell offsets — never rotation, pixels stay crisp. */
+  pitch: -1 | 0 | 1;
+};
+
+/**
+ * Hugo's moped — level 2's ride. Dark frame with the rider's accent
+ * as trim (same one-character rule as everything else: his colour
+ * travels with him). Drawn facing right; `facing` mirrors.
+ */
+export function drawMoped(
+  ctx: CanvasRenderingContext2D,
+  o: MopedDrawOptions,
+): void {
+  const { x, y, px, accent, facing, wheelPhase, pitch } = o;
+  const gy = y + 8 * px; // ground line under the player centre
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(facing, 1);
+  ctx.translate(-x, -y);
+
+  const tire = "#1e2136";
+  const tireShade = "#12141f";
+  const body = "#262b47";
+  const lift = -pitch * px; // nose offset: +accel lifts, -brake dips
+
+  const wheel = (cx: number, cy: number) => {
+    // 6-cell pixel wheel: stepped rim + hub + one spoke pixel that
+    // alternates with wheelPhase so rolling reads at a glance.
+    ctx.fillStyle = tire;
+    ctx.fillRect(cx - 3 * px, cy - 2 * px, 6 * px, 4 * px);
+    ctx.fillRect(cx - 2 * px, cy - 3 * px, 4 * px, 6 * px);
+    ctx.fillStyle = tireShade;
+    ctx.fillRect(cx - 3 * px, cy + px, 6 * px, px);
+    ctx.fillStyle = accent;
+    ctx.fillRect(cx - px, cy - px, 2 * px, 2 * px); // hub
+    ctx.fillStyle = "#e8f2e9";
+    const s = wheelPhase === 0 ? [cx + px, cy - 2 * px] : [cx - 2 * px, cy + px];
+    ctx.fillRect(s[0], s[1], px, px); // the spoke glint
+  };
+
+  // Rear wheel sits level; the front takes the pitch offset.
+  wheel(x - 7 * px, gy - 3 * px);
+  wheel(x + 7 * px, gy - 3 * px + lift);
+
+  // Deck + engine block.
+  const deckY = gy - 6 * px;
+  ctx.fillStyle = body;
+  ctx.fillRect(x - 6 * px, deckY, 12 * px, 2 * px);
+  ctx.fillRect(x - 2 * px, deckY + 2 * px, 4 * px, 2 * px);
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - 6 * px, deckY, 12 * px, px); // trim stripe
+
+  // Seat (rear) — where Hugo sits.
+  ctx.fillStyle = tire;
+  ctx.fillRect(x - 5 * px, deckY - 2 * px, 4 * px, 2 * px);
+
+  // Steering column + handlebar + headlight (front assembly, lifts
+  // and dips with pitch).
+  ctx.fillStyle = body;
+  ctx.fillRect(x + 4 * px, deckY - px + lift, 2 * px, 3 * px);
+  ctx.fillRect(x + 5 * px, deckY - 3 * px + lift, 2 * px, 3 * px);
+  ctx.fillStyle = tire;
+  ctx.fillRect(x + 4 * px, deckY - 4 * px + lift, 4 * px, px); // handlebar
+  ctx.fillStyle = "#f6f1c5";
+  ctx.fillRect(x + 7 * px, deckY - 3 * px + lift, px, px); // headlight
+
+  ctx.restore();
+}
+
+/**
+ * The composed rider: moped underneath, Hugo perched on the seat
+ * (feet hidden — they're on the pegs). One entry point so the game
+ * never assembles the pair by hand.
+ */
+export function drawMopedHugo(
+  ctx: CanvasRenderingContext2D,
+  o: MopedDrawOptions & Omit<SpriteDrawOptions, "x" | "y" | "px" | "accent">,
+): void {
+  drawMoped(ctx, o);
+  drawHugoSprite(ctx, {
+    x: o.x - 2 * o.px * o.facing,
+    y: o.y - 4 * o.px + (o.pitch === 1 ? -o.px : 0),
+    px: o.px,
+    accent: o.accent,
+    eye: o.eye,
+    feet: null,
+    scaleX: (o.scaleX ?? 1) * o.facing,
+    scaleY: o.scaleY,
+    sparklePhase: o.sparklePhase,
+  });
+}
+
 /** Chunky pixel-stepped disc for the attract-mode orbs (3px cells). */
 export function pixelDisc(
   ctx: CanvasRenderingContext2D,
