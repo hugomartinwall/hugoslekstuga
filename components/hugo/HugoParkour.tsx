@@ -389,7 +389,10 @@ export default function HugoParkour() {
     let last = performance.now();
     let acc = 0;
     const loop = (now: number) => {
-      acc = Math.min(acc + (now - last), STEP_MS * MAX_SIM_STEPS);
+      // Clamped both ways: a stall can't teleport (max), and a
+      // non-monotonic timestamp can't push acc negative and wedge
+      // the sim into a long apparent freeze (min).
+      acc = Math.max(0, Math.min(acc + (now - last), STEP_MS * MAX_SIM_STEPS));
       last = now;
       while (acc >= STEP_MS) {
         prevPos.x = player.x;
