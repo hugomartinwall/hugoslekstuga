@@ -1,12 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { COLOR_HEX } from "@/lib/colors";
+import { drawHugoSprite, readAccent } from "@/lib/hugo/sprite";
 import {
-  drawHugoSprite,
-  readAccent,
-  withAlpha,
-} from "@/lib/hugo/sprite";
+  createPlayer,
+  stepPlayer,
+  JUMP_BUFFER_STEPS,
+  MAX_SIM_STEPS,
+  PLAYER_HALF,
+  STEP_MS,
+  type InputState,
+  type Surface,
+} from "@/lib/hugo/parkour/physics";
+import {
+  drawBeam,
+  drawDoor,
+  BEAM_STEPS,
+  DOOR_H,
+  DOOR_W,
+} from "@/lib/hugo/parkour/render";
 import { getWordmarkLetters } from "@/lib/wordmark-bridge";
 
 /**
@@ -19,52 +31,27 @@ import { getWordmarkLetters } from "@/lib/wordmark-bridge";
  * reach it. The prize behind the door is the honest one: a link to
  * Legacies, Hugo's day job.
  *
- * The platforms are read straight from the live swarm each frame
+ * The platforms are read straight from the live swarm each step
  * (ToolMap tags every node <g> with data-slug/data-r), so the level
  * IS the homepage — drifting, explodable, never the same twice.
  * ToolMap suppresses click-navigation and idle fetches while the
  * game owns the room; the corner dot yields via hugo-stage.
+ *
+ * The simulation itself lives in lib/hugo/parkour/physics.ts; the
+ * canvas painters in lib/hugo/parkour/render.ts. This component is
+ * the shell: events, input, the fixed-timestep loop, DOM reads, and
+ * the win overlay.
  */
 
-const GRAVITY = 0.55;
-/** Ground acceleration — top speed in ~10 steps (~0.17s). Tuned down
- *  from 0.5: reaching MAX_RUN in 7 steps read as binary on/off. */
-const RUN_ACCEL = 0.34;
-/** Turnaround acceleration when input opposes travel — stronger than
- *  RUN_ACCEL so direction changes stay crisp despite the softer ramp. */
-const SKID_ACCEL = 0.6;
-const AIR_ACCEL = 0.3;
-/** Gentle horizontal decay while airborne with no input, so flying
- *  off a fast-drifting orb doesn't feel launched on rails. */
-const AIR_DRAG = 0.985;
-const MAX_RUN = 3.4;
-const FRICTION = 0.82;
-const JUMP_V = -12;
-/** The second (air) jump is a touch softer than the first. */
-const AIR_JUMP_SCALE = 0.92;
-const COYOTE_FRAMES = 7;
-const JUMP_BUFFER_FRAMES = 7;
-/** Simulation cadence. Every per-step constant in this file was tuned
- *  at 60 steps/sec back when the loop ran once per rAF — on a 120Hz
- *  panel that meant the whole game played at double speed. The loop
- *  now simulates on this fixed clock and only *draws* at rAF rate. */
-const STEP_MS = 1000 / 60;
-/** Cap on catch-up steps after a stall (tab switch, long frame) so
- *  Hugo resumes where he paused instead of teleporting. */
-const MAX_SIM_STEPS = 3;
-const PLAYER_HALF = 14; // half-width of the ~28px sprite body
 const SPRITE_PX = 2; // canvas px per sprite cell (crisp at DPR)
-const DOOR_W = 26;
-const DOOR_H = 34;
 // Spawn = where the corner Hugo lives; the beam drops him in there.
 const SPAWN_X = 46;
 const SPAWN_Y = 46;
-const BEAM_FRAMES = 26;
 /** The marquee's letters are solid ground too — mid-room terrain the
  *  swarm's repel zone keeps clear of orbs. Flip off to defer if a
  *  playtest says the level reads worse with them. */
 const LETTER_PLATFORMS = true;
-/** Synthetic slug prefix for standing on a wordmark letter. */
+/** Synthetic surface-id prefix for standing on a wordmark letter. */
 const LETTER_SLUG = "#L";
 
 type Platform = { x: number; y: number; r: number; slug: string };
@@ -86,6 +73,27 @@ function readPlatforms(): Platform[] {
       r: Number(g.getAttribute("data-r") || 26),
       slug: g.getAttribute("data-slug") || "",
     });
+  }
+  return out;
+}
+
+/** Everything Hugo can stand on this step, in landing-priority order:
+ *  swarm orbs first, then the wordmark letters. */
+function collectSurfaces(): Surface[] {
+  const out: Surface[] = [];
+  for (const p of readPlatforms()) {
+    out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
+  }
+  if (LETTER_PLATFORMS) {
+    for (const l of getWordmarkLetters()) {
+      out.push({
+        kind: "rect",
+        id: `${LETTER_SLUG}${l.index}`,
+        x: l.x,
+        y: l.y,
+        w: l.w,
+      });
+    }
   }
   return out;
 }
@@ -127,7 +135,7 @@ export default function HugoParkour() {
     );
   };
 
-  // The run itself — physics, input, drawing. Restarts per run seed.
+  // The run itself — input, the loop, drawing. Restarts per run seed.
   useEffect(() => {
     if (!active) return;
     const canvas = canvasRef.current;
@@ -190,20 +198,13 @@ export default function HugoParkour() {
     window.addEventListener("resize", layout);
 
     // Spawn where the corner Hugo lives; gravity does the intro.
-    const player = {
-      x: SPAWN_X,
-      y: SPAWN_Y,
-      vx: 0,
-      vy: 0,
-      facing: 1,
-      grounded: false,
-      coyote: 0,
-      jumpBuffer: 0,
-      airJump: true,
-      squash: 0,
-      stand: null as null | { slug: string; lastX: number; lastY: number },
+    const player = createPlayer(SPAWN_X, SPAWN_Y);
+    const input: InputState = {
+      left: false,
+      right: false,
+      upHeld: false,
+      jumpCut: false,
     };
-    const input = { left: false, right: false, upHeld: false, jumpCut: false };
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -215,7 +216,7 @@ export default function HugoParkour() {
       if (e.key === "ArrowLeft" || e.key === "a") input.left = true;
       else if (e.key === "ArrowRight" || e.key === "d") input.right = true;
       else if (e.key === "ArrowUp" || e.key === "w" || e.key === " ") {
-        if (!input.upHeld) player.jumpBuffer = JUMP_BUFFER_FRAMES;
+        if (!input.upHeld) player.jumpBuffer = JUMP_BUFFER_STEPS;
         input.upHeld = true;
       } else {
         return;
@@ -247,7 +248,7 @@ export default function HugoParkour() {
 
     const simulate = () => {
       tick += 1;
-      const platforms = readPlatforms();
+      const surfaces = collectSurfaces();
 
       if (respawnRef.current) {
         respawnRef.current = false;
@@ -265,145 +266,12 @@ export default function HugoParkour() {
         prevPos.y = player.y;
       }
 
-      if (input.jumpCut) {
-        input.jumpCut = false;
-        if (player.vy < -3) player.vy *= 0.5;
-      }
-
       if (!wonRef.current) {
-        // Ride the platform we're standing on (they drift).
-        if (player.stand && player.stand.slug.startsWith(LETTER_SLUG)) {
-          // Wordmark letters are static — no drift to ride, just a
-          // flat top to stay pinned to until we walk off the edge.
-          const idx = Number(player.stand.slug.slice(LETTER_SLUG.length));
-          const l = LETTER_PLATFORMS
-            ? getWordmarkLetters().find((q) => q.index === idx)
-            : undefined;
-          if (l && Math.abs(player.x - (l.x + l.w / 2)) <= l.w / 2 + 4) {
-            player.y = l.y - 16;
-          } else {
-            player.stand = null;
-            player.grounded = false;
-          }
-        } else if (player.stand) {
-          const p = platforms.find((q) => q.slug === player.stand!.slug);
-          if (p) {
-            player.x += p.x - player.stand.lastX;
-            player.y += p.y - player.stand.lastY;
-            player.stand.lastX = p.x;
-            player.stand.lastY = p.y;
-            const dx = player.x - p.x;
-            if (Math.abs(dx) > p.r * 0.95) {
-              player.stand = null;
-              player.grounded = false;
-            } else {
-              player.y = p.y - Math.sqrt(Math.max(0, p.r * p.r - dx * dx)) - 16;
-            }
-          } else {
-            player.stand = null;
-            player.grounded = false;
-          }
-        }
-
-        // Horizontal control.
-        const dir = input.left ? -1 : input.right ? 1 : 0;
-        if (dir !== 0) {
-          const skidding = player.grounded && player.vx * dir < 0;
-          const accel = skidding
-            ? SKID_ACCEL
-            : player.grounded
-              ? RUN_ACCEL
-              : AIR_ACCEL;
-          player.vx = Math.max(
-            -MAX_RUN,
-            Math.min(MAX_RUN, player.vx + accel * dir),
-          );
-          player.facing = dir;
-        } else if (player.grounded) {
-          player.vx *= FRICTION;
-        } else {
-          player.vx *= AIR_DRAG;
-        }
-
-        // Jumping — buffered, with coyote frames off ledges, plus one
-        // air jump (recharged on landing) so a mistimed orb isn't fatal.
-        if (player.grounded) {
-          player.coyote = COYOTE_FRAMES;
-          player.airJump = true;
-        } else if (player.coyote > 0) player.coyote -= 1;
-        if (player.jumpBuffer > 0) {
-          player.jumpBuffer -= 1;
-          const fromGround = player.coyote > 0;
-          if (fromGround || player.airJump) {
-            if (!fromGround) player.airJump = false;
-            player.vy = fromGround ? JUMP_V : JUMP_V * AIR_JUMP_SCALE;
-            player.grounded = false;
-            player.stand = null;
-            player.coyote = 0;
-            player.jumpBuffer = 0;
-            player.squash = -6; // stretch up
-          }
-        }
-
-        // Gravity + integrate.
-        if (!player.stand) {
-          player.vy = Math.min(14, player.vy + GRAVITY);
-          const prevY = player.y;
-          player.x += player.vx;
-          player.y += player.vy;
-
-          // One-way landings on the top arc of any orb/cabinet.
-          if (player.vy > 0) {
-            for (const p of platforms) {
-              const dx = player.x - p.x;
-              if (Math.abs(dx) > p.r * 0.95) continue;
-              const surface =
-                p.y - Math.sqrt(Math.max(0, p.r * p.r - dx * dx)) - 16;
-              if (prevY <= surface && player.y >= surface) {
-                player.y = surface;
-                player.vy = 0;
-                player.grounded = true;
-                player.squash = 6;
-                player.stand = { slug: p.slug, lastX: p.x, lastY: p.y };
-                break;
-              }
-            }
-          }
-
-          // One-way landings on the marquee's letters — flat tops.
-          if (LETTER_PLATFORMS && player.vy > 0 && !player.stand) {
-            for (const l of getWordmarkLetters()) {
-              if (player.x < l.x - 4 || player.x > l.x + l.w + 4) continue;
-              const surface = l.y - 16;
-              if (prevY <= surface && player.y >= surface) {
-                player.y = surface;
-                player.vy = 0;
-                player.grounded = true;
-                player.squash = 6;
-                player.stand = {
-                  slug: `${LETTER_SLUG}${l.index}`,
-                  lastX: l.x,
-                  lastY: l.y,
-                };
-                break;
-              }
-            }
-          }
-
-          // Floor + walls.
-          if (player.y >= floorY - 16) {
-            player.y = floorY - 16;
-            if (player.vy > 2) player.squash = 6;
-            player.vy = 0;
-            player.grounded = true;
-          } else if (!player.stand) {
-            player.grounded = false;
-          }
-          player.x = Math.max(PLAYER_HALF, Math.min(w - PLAYER_HALF, player.x));
-        } else {
-          player.x += player.vx;
-          player.x = Math.max(PLAYER_HALF, Math.min(w - PLAYER_HALF, player.x));
-        }
+        stepPlayer(player, input, surfaces, {
+          floorY,
+          minX: PLAYER_HALF,
+          maxX: w - PLAYER_HALF,
+        });
 
         // The door.
         if (
@@ -425,43 +293,10 @@ export default function HugoParkour() {
     const draw = (rx: number, ry: number) => {
       ctx.clearRect(0, 0, w, h);
 
-      // Door: magenta frame, dark glass, mint knob, phosphor halo.
-      const doorGlow = ctx.createRadialGradient(
-        doorX,
-        doorY + DOOR_H / 2,
-        2,
-        doorX,
-        doorY + DOOR_H / 2,
-        70,
-      );
-      doorGlow.addColorStop(0, withAlpha(COLOR_HEX.pink, 0.35));
-      doorGlow.addColorStop(1, withAlpha(COLOR_HEX.pink, 0));
-      ctx.fillStyle = doorGlow;
-      ctx.fillRect(doorX - 70, doorY + DOOR_H / 2 - 70, 140, 140);
-      ctx.fillStyle = COLOR_HEX.pink;
-      ctx.fillRect(doorX - DOOR_W / 2, doorY, DOOR_W, DOOR_H);
-      ctx.fillStyle = "#07080f";
-      ctx.fillRect(doorX - DOOR_W / 2 + 4, doorY + 4, DOOR_W - 8, DOOR_H - 8);
-      ctx.fillStyle = COLOR_HEX.green;
-      ctx.fillRect(doorX + DOOR_W / 2 - 9, doorY + DOOR_H / 2 - 2, 4, 4);
-      ctx.fillStyle = INKISH;
-      ctx.font = "9px var(--font-pixel), monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("THE EXIT", doorX, doorY + DOOR_H + 14);
+      drawDoor(ctx, doorX, doorY);
 
-      // Spawn beam — Hugo is beamed into the room: a thin phosphor
-      // column over the spawn point that flickers and fades while he
-      // drops out of it. Skipped under reduced motion.
-      if (!reducedMotion && tick <= BEAM_FRAMES && !wonRef.current) {
-        const fade = 1 - tick / BEAM_FRAMES;
-        const flicker = tick % 4 < 2 ? 1 : 0.55;
-        const a = 0.4 * fade * flicker;
-        const bottom = Math.min(ry + 16, floorY);
-        ctx.fillStyle = withAlpha(accent, a);
-        ctx.fillRect(SPAWN_X - 3, 0, 6, bottom);
-        ctx.fillStyle = withAlpha(accent, a * 0.4);
-        ctx.fillRect(SPAWN_X - 7, 0, 4, bottom);
-        ctx.fillRect(SPAWN_X + 3, 0, 4, bottom);
+      if (!reducedMotion && tick <= BEAM_STEPS && !wonRef.current) {
+        drawBeam(ctx, SPAWN_X, Math.min(ry + 16, floorY), accent, tick);
       }
 
       // Hugo.
@@ -519,7 +354,7 @@ export default function HugoParkour() {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("resize", layout);
     };
-     
+
   }, [active]);
 
   if (!active) return null;
@@ -578,6 +413,3 @@ export default function HugoParkour() {
     </div>
   );
 }
-
-/** Label ink for the door caption — matches the map labels. */
-const INKISH = "#e8f2e9";
