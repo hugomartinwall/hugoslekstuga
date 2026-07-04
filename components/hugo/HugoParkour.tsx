@@ -14,8 +14,14 @@ import {
   type Surface,
 } from "@/lib/hugo/parkour/physics";
 import {
+  buildLevel,
+  moverSurfaces,
+  type Level,
+} from "@/lib/hugo/parkour/level";
+import {
   drawBeam,
   drawDoor,
+  drawTerrain,
   BEAM_STEPS,
   DOOR_H,
   DOOR_W,
@@ -79,8 +85,9 @@ function readPlatforms(): Platform[] {
 }
 
 /** Everything Hugo can stand on this step, in landing-priority order:
- *  swarm orbs first, then the wordmark letters. */
-function collectSurfaces(): Surface[] {
+ *  swarm orbs, wordmark letters, patrolling movers, then the authored
+ *  level (floors, ledges, cabinet tops). */
+function collectSurfaces(level: Level, tick: number): Surface[] {
   const out: Surface[] = [];
   for (const p of readPlatforms()) {
     out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
@@ -96,6 +103,8 @@ function collectSurfaces(): Surface[] {
       });
     }
   }
+  out.push(...moverSurfaces(level, tick));
+  out.push(...level.surfaces);
   return out;
 }
 
@@ -154,9 +163,10 @@ export default function HugoParkour() {
     let floorY = 0;
     let doorX = 0;
     let doorY = 0;
-    // World width — screen 0 today; the authored level extends this
-    // past the right edge. While worldW === w the camera never moves.
+    // The authored world extends past screen 0's right edge; worldW
+    // comes from the baked level.
     let worldW = 0;
+    let level: Level = buildLevel(1, 1); // replaced in layout()
     const camera = { x: 0 };
 
     // The door hangs high, wherever the ceiling has room. Search and
@@ -197,7 +207,8 @@ export default function HugoParkour() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
       floorY = h - 10;
-      worldW = w;
+      level = buildLevel(w, floorY);
+      worldW = level.worldW;
       camera.x = Math.max(0, Math.min(worldW - w, camera.x));
       placeDoor();
     };
@@ -255,7 +266,7 @@ export default function HugoParkour() {
 
     const simulate = () => {
       tick += 1;
-      const surfaces = collectSurfaces();
+      const surfaces = collectSurfaces(level, tick);
 
       if (respawnRef.current) {
         respawnRef.current = false;
@@ -277,11 +288,20 @@ export default function HugoParkour() {
 
       if (!wonRef.current) {
         stepPlayer(player, input, surfaces, {
-          floorY,
+          // The floor is level surfaces now (its gaps are the pits);
+          // the old catch-all clamp must never fire.
+          floorY: Number.POSITIVE_INFINITY,
           minX: PLAYER_HALF,
           maxX: worldW - PLAYER_HALF,
         });
         updateCamera(camera, player.x, w, worldW, reducedMotion);
+
+        // The pit rule: fall past the kill line and the run is over —
+        // no checkpoints, LIVE FOREVER is earned. The respawn beam
+        // replays from the very start.
+        if (player.y > level.killY) {
+          respawnRef.current = true;
+        }
 
         // The door.
         if (
@@ -307,6 +327,8 @@ export default function HugoParkour() {
       // Rounded so pixel art never lands on half pixels.
       ctx.save();
       ctx.translate(-Math.round(camX), 0);
+
+      drawTerrain(ctx, level, tick, camX, w, h, !reducedMotion);
 
       drawDoor(ctx, doorX, doorY);
 
