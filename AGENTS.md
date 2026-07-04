@@ -228,20 +228,49 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 
 ## Hugo's Parkour
 
-Long-press the corner Hugo on `/` and the room grows gravity:
-`components/hugo/HugoParkour.tsx` is a full-viewport canvas platformer
-where the drifting swarm orbs are moving platforms. It reads orb
-positions per-frame from the DOM (`data-slug` / `data-r` attributes
-ToolMap puts on each `<g>`) — a read-only bridge, no shared state.
-Physics: gravity, run/air control, variable-height jump, coyote time,
-jump buffering; standing on an orb carries you with its drift. THE
-EXIT door hangs from the top edge at the midpoint of the widest gap
-between the `$search` / `$about` anchors (read live at run start and
-on resize), so it never parks on a nav label. A short spawn beam
-drops Hugo in (skipped under reduced motion). The win panel's keycap
-links to **https://getlegacies.com/beta** (Hugo's day job — a plain
-outbound `<a>`, the only external link the game adds; privacy rules
-intact). Esc quits.
+Long-press the corner Hugo on `/` and the room grows gravity — and
+since 2026-07-04 the homepage is only the **first screen** of a
+right-scrolling adventure ("closing time at the arcade"). Four
+modules:
+
+- `components/hugo/HugoParkour.tsx` — the React shell: events, input,
+  the fixed-timestep loop, DOM reads, the win overlay.
+- `lib/hugo/parkour/physics.ts` — the simulation. Pure step functions
+  over a unified `Surface` type (orb = curved top that drifts and
+  carries, rect = flat top; the ride/land code doesn't care which).
+  **Everything is tuned at 60 steps/sec**; the loop simulates on that
+  fixed clock (accumulator, catch-up capped, render interpolated
+  between steps) so a 120Hz display gets the same game — never step
+  physics per rAF.
+- `lib/hugo/parkour/level.ts` — the authored world, in floor-anchored
+  px baked against the live viewport at run start. Zones: behind the
+  marquee → cabinet graveyard (the retired tools' dead cabinets as a
+  climbing wall) → the vents → neon rooftop. Movers are deterministic
+  sine patrols keyed off the step counter, so respawns replay
+  identically. The file documents measured jump guardrails (max
+  single gap 135px, double 240px, step-up 110px) — respect them,
+  deaths restart the run.
+- `lib/hugo/parkour/render.ts` — canvas painters: terrain, decos, a
+  hand-rolled 3×5 pixel font, the spawn beam, and the goal.
+
+Screen 0 still reads the drifting swarm orbs per-step from the DOM
+(`data-slug` / `data-r` on ToolMap's `<g>`s) and the wordmark letters
+from `lib/wordmark-bridge.ts` — the level IS the homepage until you
+leave it. The camera is latched at zero while Hugo is home; entering
+the last 220px fades an opaque room-dark backdrop over the live DOM
+while canvas replicas of the orbs/letters fade in at identical
+coordinates (no seam), then the camera unlatches and follows. Walking
+back reverses it.
+
+The goal is **LIVE FOREVER** — a glowing mint monument on the final
+rooftop; touching it wins, fires `hugo-happy` (still rare), and the
+panel's keycap links to **https://getlegacies.com/beta** (Hugo's day
+job — a plain outbound `<a>`, the only external link the game adds;
+privacy rules intact). **Falling into a pit restarts the whole run**
+— no checkpoints, Hugo's call; keep every jump readable. A short
+spawn beam drops Hugo in (skipped under reduced motion; reduced
+motion also snaps the camera and switches the backdrop instantly).
+Esc quits from anywhere.
 
 **Desktop-only, deliberately.** The trigger is gated to
 `(hover: hover) and (pointer: fine)` — the game has no touch controls
