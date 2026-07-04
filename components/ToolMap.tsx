@@ -204,8 +204,28 @@ const EXPLODE_SPEED_MAX = 78;
 const MIN_W = 320;
 const MIN_H = 480;
 /** Clearance kept between orb centres and the marquee's rect so the
- *  wordmark stays legible — node radius + label breathing room. */
+ *  wordmark stays legible — node radius + label breathing room. That's
+ *  the desktop value: on narrow canvases the marquee spans nearly the
+ *  whole room, so the pad shrinks toward WORDMARK_PAD_MIN and the
+ *  avoidance turns porous — orbs may drift behind the title (the
+ *  wordmark canvas paints above the map, so they slide under it). */
 const WORDMARK_PAD = NODE_R + 26;
+const WORDMARK_PAD_MIN = 8;
+/** Below this canvas width the avoidance goes porous: shrunken pad,
+ *  halved push, no drift-heading deflection. */
+const WORDMARK_NARROW_W = 768;
+function wordmarkPad(width: number): number {
+  if (width >= WORDMARK_NARROW_W) return WORDMARK_PAD;
+  const t = Math.max(0, (width - MIN_W) / (WORDMARK_NARROW_W - MIN_W));
+  return WORDMARK_PAD_MIN + (WORDMARK_PAD - WORDMARK_PAD_MIN) * t;
+}
+
+/** Physics radius per node — munch/noodle render as 1.5× arcade
+ *  cabinets, so walls and clamps must honour the bigger footprint. */
+function nodeRadius(n: Node): number {
+  const isGame = n.tool.slug === "munch" || n.tool.slug === "noodle";
+  return isGame ? NODE_R * 1.5 : NODE_R;
+}
 
 /** The eight nav-dot colours in the same order BrandDot stores them
  *  in. Reading the persisted index from localStorage and looking up
@@ -652,6 +672,8 @@ export default function ToolMap({
       // canvas coords there); patrols that wander into it get their
       // heading steered back out so they don't park on the title.
       const avoid = getWordmarkRect();
+      const pad = wordmarkPad(size.w);
+      const narrow = size.w < WORDMARK_NARROW_W;
       if (!reduceMotionRef.current) {
         for (const n of nodesRef.current) {
           if (n.pinned || n.role) continue;
@@ -666,12 +688,16 @@ export default function ToolMap({
           if ((n.y < m && Math.sin(heading) < 0) || (n.y > size.h - m && Math.sin(heading) > 0)) {
             heading = -heading;
           }
+          // Narrow canvases skip the deflection entirely — the pushed
+          // pad in step() is enough, and patrols may cross behind the
+          // marquee instead of pinning against its band.
           if (
+            !narrow &&
             avoid &&
-            n.x > avoid.x - WORDMARK_PAD &&
-            n.x < avoid.x + avoid.w + WORDMARK_PAD &&
-            n.y > avoid.y - WORDMARK_PAD &&
-            n.y < avoid.y + avoid.h + WORDMARK_PAD
+            n.x > avoid.x - pad &&
+            n.x < avoid.x + avoid.w + pad &&
+            n.y > avoid.y - pad &&
+            n.y < avoid.y + avoid.h + pad
           ) {
             heading =
               Math.atan2(
@@ -689,7 +715,7 @@ export default function ToolMap({
         explodeAtRef.current > 0 &&
         performance.now() - explodeAtRef.current < EXPLODE_WINDOW_MS;
       const vCap = inExplode ? EXPLODE_MAX_V : MAX_V;
-      step(nodesRef.current, size.w, size.h, wobbleAmplitude, vCap, avoid);
+      step(nodesRef.current, size.w, size.h, wobbleAmplitude, vCap, avoid, pad);
 
       // Paint the phosphor screen from the freshly stepped positions.
       paintTrails(performance.now());
@@ -1283,6 +1309,7 @@ function step(
   wobbleAmp: number,
   vCap: number,
   avoid: WordmarkRect | null,
+  pad: number,
 ): number {
   if (nodes.length === 0) return 0;
   const now = performance.now();
@@ -1354,17 +1381,19 @@ function step(
       // along the nearest edge, stronger the deeper the orb sits.
       // Avoidance, not a wall: drags and explode bursts pass through.
       if (avoid) {
-        const ax = avoid.x - WORDMARK_PAD;
-        const ay = avoid.y - WORDMARK_PAD;
-        const ax2 = avoid.x + avoid.w + WORDMARK_PAD;
-        const ay2 = avoid.y + avoid.h + WORDMARK_PAD;
+        const ax = avoid.x - pad;
+        const ay = avoid.y - pad;
+        const ax2 = avoid.x + avoid.w + pad;
+        const ay2 = avoid.y + avoid.h + pad;
         if (n.x > ax && n.x < ax2 && n.y > ay && n.y < ay2) {
           const dL = n.x - ax;
           const dR = ax2 - n.x;
           const dT = n.y - ay;
           const dB = ay2 - n.y;
           const m = Math.min(dL, dR, dT, dB);
-          const push = 0.05 + 0.1 * Math.min(1, m / 80);
+          // Narrow canvases get half the shove — porous, not a fence.
+          const porous = width < WORDMARK_NARROW_W ? 0.5 : 1;
+          const push = (0.05 + 0.1 * Math.min(1, m / 80)) * porous;
           if (m === dL) n.vx -= push;
           else if (m === dR) n.vx += push;
           else if (m === dT) n.vy -= push;
@@ -1384,9 +1413,10 @@ function step(
     // The `vx < 0` checks make sure we only invert on impact, never
     // re-bounce a node that gravity is already pulling away from
     // the wall.
-    const left = NODE_R + 4;
-    const right = width - NODE_R - 4;
-    const top = NODE_R + 4;
+    const r = nodeRadius(n);
+    const left = r + 4;
+    const right = width - r - 4;
+    const top = r + 4;
     // Extra bottom room so labels aren't clipped.
     const bottom = height - LABEL_OFFSET - 12;
     if (n.x < left) {
