@@ -27,8 +27,16 @@ import { getWordmarkLetters } from "@/lib/wordmark-bridge";
  */
 
 const GRAVITY = 0.55;
-const RUN_ACCEL = 0.5;
+/** Ground acceleration — top speed in ~10 steps (~0.17s). Tuned down
+ *  from 0.5: reaching MAX_RUN in 7 steps read as binary on/off. */
+const RUN_ACCEL = 0.34;
+/** Turnaround acceleration when input opposes travel — stronger than
+ *  RUN_ACCEL so direction changes stay crisp despite the softer ramp. */
+const SKID_ACCEL = 0.6;
 const AIR_ACCEL = 0.3;
+/** Gentle horizontal decay while airborne with no input, so flying
+ *  off a fast-drifting orb doesn't feel launched on rails. */
+const AIR_DRAG = 0.985;
 const MAX_RUN = 3.4;
 const FRICTION = 0.82;
 const JUMP_V = -12;
@@ -298,15 +306,23 @@ export default function HugoParkour() {
         }
 
         // Horizontal control.
-        const accel = player.grounded ? RUN_ACCEL : AIR_ACCEL;
-        if (input.left) {
-          player.vx = Math.max(-MAX_RUN, player.vx - accel);
-          player.facing = -1;
-        } else if (input.right) {
-          player.vx = Math.min(MAX_RUN, player.vx + accel);
-          player.facing = 1;
+        const dir = input.left ? -1 : input.right ? 1 : 0;
+        if (dir !== 0) {
+          const skidding = player.grounded && player.vx * dir < 0;
+          const accel = skidding
+            ? SKID_ACCEL
+            : player.grounded
+              ? RUN_ACCEL
+              : AIR_ACCEL;
+          player.vx = Math.max(
+            -MAX_RUN,
+            Math.min(MAX_RUN, player.vx + accel * dir),
+          );
+          player.facing = dir;
         } else if (player.grounded) {
           player.vx *= FRICTION;
+        } else {
+          player.vx *= AIR_DRAG;
         }
 
         // Jumping — buffered, with coyote frames off ledges, plus one
