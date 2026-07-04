@@ -71,20 +71,22 @@ in-memory; two machines = two `Game` singletons = players split across
 sessions. Set with `flyctl scale count 1`. Documented in `fly.toml`.
 Don't scale up unless we move state out of process (Redis, etc).
 
-The on-`/about` brand voice was rewritten 2026-07-04 (Hugo asked for
-sharper wit, then asked for lekstuga over arcade). It now lives in
-three pieces in `app/about/Client.tsx`: the **dictionary-entry hero**
-("lekstuga · noun · Swedish — 1. a small house where children play
-2. this"), Hugo's own subhead ("potentially useful stuff." — his
-line, echoing the footer), and the *Things you won't find here*
-**dust silhouettes** — eight dashed pixel outlines on a toy shelf,
-the spots the absent things would occupy (labels + taped notes, e.g.
+The on-`/about` brand voice was rewritten 2026-07-04 (Hugo's notes,
+two rounds). It lives in three pieces in `app/about/Client.tsx`: the
+**dictionary-entry hero** ("about" eyebrow → "lekstuga" → "noun ·
+swedish · [lek·stoo·ga]", no definitions — the word stands alone),
+the **"potentially useful." keycap** (Hugo's line, echoing the
+footer: "potentially" is a pressable btn-chunk that blips through
+HEDGES — occasionally/technically/allegedly/… — while "useful."
+stays put), and the *Things you won't find here* **dust
+silhouettes** — eight dashed pixel outlines on a toy shelf, the
+spots the absent things would occupy (labels + taped notes, e.g.
 VENTURE CAPITAL / "didn't fit through the door"). Hover one and it
 dimly tries to materialize in its would-have-been accent, then
-dissolves. The silhouette glyphs are page art and deliberately do
-NOT reuse the map's cabinet motif — this page stays visually unique.
-All three pieces carry the wink — treat them the same way as the
-rules: don't quietly reword without asking.
+dissolves. The silhouettes and the keycap are page art — they
+deliberately do NOT reuse the map's motifs; this page stays
+visually unique. All three pieces carry the wink — treat them the
+same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
@@ -332,9 +334,9 @@ whole layout.
    (The parkour win panel's outbound link to getlegacies.com/beta is an
    `<a>`, not a fetch — also sanctioned.)
 5. **Don't quietly reword the brand voice on `/about`** — the
-   dictionary-entry hero, the "potentially useful stuff." subhead,
-   and the dust-silhouette labels/notes. Change any of them only
-   when explicitly asked.
+   dictionary-entry hero, the "potentially useful." keycap (and its
+   HEDGES rotation), and the dust-silhouette labels/notes. Change
+   any of them only when explicitly asked.
 6. **Don't introduce another CSS framework.** Tailwind + the `card-chunk` /
    `btn-chunk` shadow language is the system.
 7. **Don't add new server features.** Munch + Noodle are the only

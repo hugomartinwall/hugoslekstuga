@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { COLOR_HEX, INK_HEX } from "@/lib/colors";
 import { withAlpha } from "@/lib/hugo/sprite";
@@ -317,6 +317,73 @@ function DustSilhouette({ item, index }: { item: Absent; index: number }) {
   );
 }
 
+/** The adverbs Hugo is willing to stand behind, in rotation. */
+const HEDGES = [
+  "potentially",
+  "occasionally",
+  "technically",
+  "allegedly",
+  "theoretically",
+  "barely",
+];
+
+/**
+ * "potentially useful." — the site's whole pitch, as hardware.
+ * "potentially" is an arcade keycap: press it and the word blips
+ * (a CRT scanline collapse, the site's own power idiom) into the
+ * next hedge Hugo would also sign off on. "useful." never moves.
+ */
+function PotentiallyUseful() {
+  const [hedge, setHedge] = useState(0);
+  const [blip, setBlip] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const cycle = () => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setHedge((n) => (n + 1) % HEDGES.length);
+      return;
+    }
+    if (blip) return;
+    setBlip(true);
+    timerRef.current = window.setTimeout(() => {
+      setHedge((n) => (n + 1) % HEDGES.length);
+      setBlip(false);
+    }, 100);
+  };
+
+  return (
+    <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 font-display text-2xl sm:text-3xl">
+      <button
+        type="button"
+        onClick={cycle}
+        aria-label="try another adverb"
+        title="press it"
+        className="btn-chunk bg-cream-deep px-3 py-1 text-ink"
+      >
+        <span
+          aria-hidden={blip}
+          className="inline-block transition-transform duration-100"
+          style={{
+            transform: blip ? "scaleY(0.08)" : "scaleY(1)",
+            transformOrigin: "center",
+          }}
+        >
+          {HEDGES[hedge]}
+        </span>
+      </button>
+      <span className="text-glow">
+        useful<span className="text-tomato">.</span>
+      </span>
+    </p>
+  );
+}
+
 export default function AboutPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
@@ -335,37 +402,23 @@ export default function AboutPage() {
 
       {/* The dictionary entry — defining the word is the about. */}
       <header className="flex flex-col gap-3">
+        <p className="font-pixel text-[10px] uppercase tracking-[0.3em] text-ink-muted">
+          about
+        </p>
         <h1 className="text-glow font-display text-6xl leading-none sm:text-7xl">
           lekstuga
         </h1>
         <p className="font-pixel text-[10px] uppercase tracking-[0.2em] text-ink-muted">
           noun · swedish · [lek·stoo·ga]
         </p>
-        <ol className="mt-2 flex max-w-xl flex-col gap-1 font-mono text-base text-ink-soft sm:text-lg">
-          <li>
-            <span className="mr-2 text-ink-muted">1.</span>a small house
-            where children play
-          </li>
-          <li>
-            <span className="mr-2 text-ink-muted">2.</span>
-            <span className="font-semibold text-ink">this</span>
-          </li>
-        </ol>
-        <p className="mt-3 font-mono text-sm text-ink-muted">
-          potentially useful stuff<span className="text-tomato">.</span>
-        </p>
+        <PotentiallyUseful />
       </header>
 
       {/* The shelf */}
       <section className="mt-14">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-display text-2xl sm:text-3xl">
-            Things you won&rsquo;t find here
-          </h2>
-          <p className="font-pixel text-[9px] uppercase tracking-[0.2em] text-ink-muted">
-            never installed · not coming soon
-          </p>
-        </div>
+        <h2 className="font-display text-2xl sm:text-3xl">
+          Things you won&rsquo;t find here
+        </h2>
         <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
           {ABSENT.map((item, i) => (
             <DustSilhouette key={item.label} item={item} index={i} />
