@@ -15,24 +15,34 @@ export const INKISH = "#e8f2e9";
 
 export const BEAM_STEPS = 26;
 
-/** The prize at the end of the world: a humming neon monument that
- *  says LIVE FOREVER — a sign the marquee out front would respect.
- *  Mint glow, slow pulse (static under reduced motion), stray
- *  sparkle pixels. Touching it wins the run. */
+/** A goal monument: a humming neon sign the marquee out front would
+ *  respect. Reads its words and colour from the level's goal (LIVE
+ *  FOREVER in mint at the true ending; NEXT LEVEL in magenta at a
+ *  level boundary). Glow pulses slowly (static under reduced
+ *  motion), stray sparkle pixels drift off the top. */
 export function drawGoal(
   ctx: CanvasRenderingContext2D,
-  goal: { x: number; y: number; w: number; h: number },
+  goal: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    big: string;
+    small: string;
+    color: keyof typeof COLOR_HEX;
+  },
   tick: number,
   animate: boolean,
 ): void {
+  const hex = COLOR_HEX[goal.color];
   const cx = goal.x + goal.w / 2;
   const cy = goal.y + goal.h / 2 - 8;
   const pulse = animate ? 0.3 + 0.1 * Math.sin(tick / 24) : 0.35;
 
   // Halo.
   const glow = ctx.createRadialGradient(cx, cy, 4, cx, cy, 130);
-  glow.addColorStop(0, withAlpha(COLOR_HEX.green, pulse));
-  glow.addColorStop(1, withAlpha(COLOR_HEX.green, 0));
+  glow.addColorStop(0, withAlpha(hex, pulse));
+  glow.addColorStop(1, withAlpha(hex, 0));
   ctx.fillStyle = glow;
   ctx.fillRect(cx - 130, cy - 130, 260, 260);
 
@@ -42,26 +52,24 @@ export function drawGoal(
   ctx.fillStyle = withAlpha(INKISH, 0.2);
   ctx.fillRect(cx - 22, goal.y + goal.h - 26, 44, 2);
 
-  // Sign panel: dark glass in a mint frame.
+  // Sign panel: dark glass in an accent frame.
   const pw = goal.w;
   const ph = goal.h - 26;
-  ctx.fillStyle = COLOR_HEX.green;
+  ctx.fillStyle = hex;
   ctx.fillRect(goal.x, goal.y, pw, ph);
   ctx.fillStyle = "#07080f";
   ctx.fillRect(goal.x + 4, goal.y + 4, pw - 8, ph - 8);
 
-  // The words, quantized phosphor. LIVE big, FOREVER wide beneath.
+  // The words, quantized phosphor. Big on top, small wide beneath.
   const flick = animate && (tick >> 2) % 32 === 0 ? 0.55 : 1;
-  const live = "LIVE";
-  const forever = "FOREVER";
-  const liveW = pixelTextWidth(live, 5);
-  const foreverW = pixelTextWidth(forever, 3);
-  pixelText(ctx, live, cx - liveW / 2, goal.y + 14, 5, withAlpha(COLOR_HEX.green, flick));
-  pixelText(ctx, forever, cx - foreverW / 2, goal.y + 46, 3, withAlpha(COLOR_HEX.green, 0.85 * flick));
+  const bigW = pixelTextWidth(goal.big, 5);
+  const smallW = pixelTextWidth(goal.small, 3);
+  pixelText(ctx, goal.big, cx - bigW / 2, goal.y + 14, 5, withAlpha(hex, flick));
+  pixelText(ctx, goal.small, cx - smallW / 2, goal.y + 46, 3, withAlpha(hex, 0.85 * flick));
 
   // Stray sparkles drifting off the sign.
   if (animate) {
-    ctx.fillStyle = withAlpha(COLOR_HEX.green, 0.7);
+    ctx.fillStyle = withAlpha(hex, 0.7);
     for (let i = 0; i < 3; i++) {
       const t = (tick / 3 + i * 47) % 90;
       const sx = cx - 40 + ((i * 53 + 13) % 80);
@@ -86,6 +94,7 @@ const GLYPHS: Record<string, number[]> = {
   G: [0b011, 0b100, 0b101, 0b101, 0b011],
   H: [0b101, 0b101, 0b111, 0b101, 0b101],
   I: [0b111, 0b010, 0b010, 0b010, 0b111],
+  "2": [0b110, 0b001, 0b010, 0b100, 0b111],
   K: [0b101, 0b101, 0b110, 0b101, 0b101],
   L: [0b100, 0b100, 0b100, 0b100, 0b111],
   M: [0b101, 0b111, 0b111, 0b101, 0b101],

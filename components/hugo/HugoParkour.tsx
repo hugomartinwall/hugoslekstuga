@@ -56,9 +56,6 @@ import { getWordmarkLetters } from "@/lib/wordmark-bridge";
  */
 
 const SPRITE_PX = 2; // canvas px per sprite cell (crisp at DPR)
-// Spawn = where the corner Hugo lives; the beam drops him in there.
-const SPAWN_X = 46;
-const SPAWN_Y = 46;
 /** The marquee's letters are solid ground too — mid-room terrain the
  *  swarm's repel zone keeps clear of orbs. Flip off to defer if a
  *  playtest says the level reads worse with them. */
@@ -203,8 +200,9 @@ export default function HugoParkour() {
     layout();
     window.addEventListener("resize", layout);
 
-    // Spawn where the corner Hugo lives; gravity does the intro.
-    const player = createPlayer(SPAWN_X, SPAWN_Y);
+    // The level owns its spawn (level 1: where the corner Hugo
+    // lives; gravity does the intro).
+    const player = createPlayer(level.spawn.x, level.spawn.y);
     const input: InputState = {
       left: false,
       right: false,
@@ -260,8 +258,8 @@ export default function HugoParkour() {
 
       if (respawnRef.current) {
         respawnRef.current = false;
-        player.x = SPAWN_X;
-        player.y = SPAWN_Y;
+        player.x = level.spawn.x;
+        player.y = level.spawn.y;
         player.vx = 0;
         player.vy = 0;
         player.stand = null;
@@ -352,7 +350,7 @@ export default function HugoParkour() {
       drawGoal(ctx, level.goal, tick, !reducedMotion);
 
       if (!reducedMotion && tick <= BEAM_STEPS && !wonRef.current) {
-        drawBeam(ctx, SPAWN_X, Math.min(ry + 16, floorY), accent, tick);
+        drawBeam(ctx, level.spawn.x, Math.min(ry + 16, floorY), accent, tick);
       }
 
       // Hugo.

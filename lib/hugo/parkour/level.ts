@@ -34,6 +34,20 @@ export const KILL_DEPTH = 140;
 type Span = { x: number; w: number };
 type Ledge = { id: string; x: number; yUp: number; w: number };
 
+export type LevelMechanic = "foot" | "moped";
+
+/** An authored ramp (level-2 vocabulary): ascends left→right from a
+ *  base top `yUp` to a lip at `yUp + rise`; `k` is the launch factor
+ *  (see physics.ts RAMP_MIN_LAUNCH / RAMP_MAX_VY). */
+export type RampSpec = {
+  id: string;
+  x: number;
+  yUp: number;
+  w: number;
+  rise: number;
+  k: number;
+};
+
 export type MoverSpec = {
   id: string;
   /** Patrol centre. */
@@ -136,12 +150,33 @@ const DECOS: Deco[] = [
 export type Level = {
   worldW: number;
   killY: number;
+  /** Which step function drives the player. */
+  mechanic: LevelMechanic;
+  /** Where a run of this level begins (and respawns). */
+  spawn: { x: number; y: number };
+  /** True only for level 1: the live homepage is the first screen
+   *  (swarm orbs + wordmark letters as terrain, camera latched,
+   *  crossfade handover). Levels without it are fully authored and
+   *  never touch the DOM. */
+  homeScreen: boolean;
   /** Static standables in landing-priority order (after orbs+letters). */
   surfaces: Surface[];
   movers: (MoverSpec & { baseX: number; baseY: number })[];
+  ramps: (RampSpec & { wx: number; baseY: number })[];
   decos: (Deco & { wx: number; wy: number })[];
   cabinets: (CabinetStack & { wx: number; topY: number })[];
-  goal: { x: number; y: number; w: number; h: number };
+  goal: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    /** Monument copy: the big word and the small word beneath. */
+    big: string;
+    small: string;
+    color: ToolColor;
+    /** True = touching it wins the game; false = it advances a level. */
+    final: boolean;
+  };
   floorY: number;
   /** Baked floor spans for terrain drawing. */
   floorSpans: { x: number; w: number }[];
@@ -183,19 +218,28 @@ export function buildLevel(w: number, floorY: number): Level {
     wy: floorY - ("yUp" in d ? d.yUp : 0),
   }));
 
-  // LIVE FOREVER — centred on the final roof.
+  // The goal monument — centred on the final roof.
   const goal = {
     x: x0 + 4810 - 70,
     y: floorY - 260 - 96,
     w: 140,
     h: 96,
+    big: "LIVE",
+    small: "FOREVER",
+    color: "green" as ToolColor,
+    final: true,
   };
 
   return {
     worldW: w + LEVEL_LENGTH,
     killY: floorY + KILL_DEPTH,
+    mechanic: "foot",
+    // Spawn = where the corner Hugo lives; gravity does the intro.
+    spawn: { x: 46, y: 46 },
+    homeScreen: true,
     surfaces,
     movers,
+    ramps: [],
     decos,
     cabinets,
     goal,
