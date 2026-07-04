@@ -230,6 +230,12 @@ export default function HugoParkour() {
 
     let raf = 0;
     let tick = 0;
+    // Where the player was at the previous simulation step — the draw
+    // interpolates between this and the live position so displays
+    // faster than the 60Hz sim still get one-frame-smooth motion.
+    // Only position interpolates; squash/facing/feet are pixel-art
+    // states and look better stepped.
+    const prevPos = { x: player.x, y: player.y };
 
     const simulate = () => {
       tick += 1;
@@ -245,6 +251,10 @@ export default function HugoParkour() {
         player.grounded = false;
         player.airJump = true;
         tick = 0; // replay the spawn beam
+        // A respawn is a teleport — don't sweep the sprite across the
+        // room interpolating from where he died.
+        prevPos.x = player.x;
+        prevPos.y = player.y;
       }
 
       if (input.jumpCut) {
@@ -396,7 +406,7 @@ export default function HugoParkour() {
       }
     };
 
-    const draw = () => {
+    const draw = (rx: number, ry: number) => {
       ctx.clearRect(0, 0, w, h);
 
       // Door: magenta frame, dark glass, mint knob, phosphor halo.
@@ -430,7 +440,7 @@ export default function HugoParkour() {
         const fade = 1 - tick / BEAM_FRAMES;
         const flicker = tick % 4 < 2 ? 1 : 0.55;
         const a = 0.4 * fade * flicker;
-        const bottom = Math.min(player.y + 16, floorY);
+        const bottom = Math.min(ry + 16, floorY);
         ctx.fillStyle = withAlpha(accent, a);
         ctx.fillRect(SPAWN_X - 3, 0, 6, bottom);
         ctx.fillStyle = withAlpha(accent, a * 0.4);
@@ -443,8 +453,8 @@ export default function HugoParkour() {
         player.grounded && Math.abs(player.vx) > 0.6 && !wonRef.current;
       const squashY = 1 - player.squash * 0.02;
       drawHugoSprite(ctx, {
-        x: player.x,
-        y: player.y,
+        x: rx,
+        y: ry,
         px: SPRITE_PX,
         accent,
         eye: {
@@ -473,10 +483,16 @@ export default function HugoParkour() {
       acc = Math.min(acc + (now - last), STEP_MS * MAX_SIM_STEPS);
       last = now;
       while (acc >= STEP_MS) {
+        prevPos.x = player.x;
+        prevPos.y = player.y;
         simulate();
         acc -= STEP_MS;
       }
-      draw();
+      const a = acc / STEP_MS;
+      draw(
+        prevPos.x + (player.x - prevPos.x) * a,
+        prevPos.y + (player.y - prevPos.y) * a,
+      );
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
