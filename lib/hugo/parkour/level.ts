@@ -70,7 +70,11 @@ export type Deco =
   | { kind: "fan"; x: number; yUp: number; r: number }
   | { kind: "duct"; x: number; w: number; yUp: number }
   | { kind: "skyline"; x: number; w: number }
-  | { kind: "label"; x: number; yUp: number; text: string; color: ToolColor };
+  | { kind: "label"; x: number; yUp: number; text: string; color: ToolColor }
+  // level-2 street dressing
+  | { kind: "streetlight"; x: number; yUp: number }
+  | { kind: "parkedcar"; x: number; yUp: number }
+  | { kind: "water"; x: number; yUp: number; w: number };
 
 /** A climbable stack of retired arcade cabinets: solid top + visuals. */
 type CabinetStack = { id: string; x: number; yUp: number; stack: number; slugs: string[] };

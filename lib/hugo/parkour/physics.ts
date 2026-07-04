@@ -64,6 +64,10 @@ export const MOPED_JUMP_V = -10.5;
 export const MOPED_COYOTE = 5;
 /** Below this speed a ramp lip is just a ledge — no launch. */
 export const RAMP_MIN_LAUNCH = 2.5;
+/** How much higher a surface may sit and still be driven onto —
+ *  covers a ramp's per-step rise (≤ ~4px at full throttle) and
+ *  seam-level floor joins, but never a real ledge. */
+export const MOUNT_STEP = 10;
 /** Clamp on ramp launch velocity. */
 export const RAMP_MAX_VY = 13;
 /** Camera anchor while riding — further left than on foot so full
@@ -305,6 +309,29 @@ export function stepMoped(
   } else {
     player.x += player.vx;
     player.x = Math.max(world.minX, Math.min(world.maxX, player.x));
+
+    // Mount what the wheels drive onto: a surface whose top at the
+    // new x sits level with us or a whisker higher (a ramp rising
+    // from the street, a seam between floor spans). On foot this
+    // never mattered — at moped speed it's how you get on a ramp
+    // without jumping. Highest qualifying top wins.
+    let bestTop: number | null = null;
+    let bestS: Surface | null = null;
+    for (const s of surfaces) {
+      if (s.id === player.stand.id) continue;
+      const top = standY(s, player.x);
+      if (top === null) continue;
+      if (top <= player.y + 0.5 && top >= player.y - MOUNT_STEP) {
+        if (bestTop === null || top < bestTop) {
+          bestTop = top;
+          bestS = s;
+        }
+      }
+    }
+    if (bestS && bestTop !== null && bestTop < player.y + 0.5) {
+      player.stand = { id: bestS.id, lastX: bestS.x, lastY: bestS.y };
+      player.y = bestTop;
+    }
   }
 }
 

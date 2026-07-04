@@ -370,6 +370,76 @@ export function drawTerrain(
         );
         break;
       }
+      case "streetlight": {
+        if (!visible(d.wx - 90, 180)) break;
+        // Pole, head, and a soft cone of acid light onto the street.
+        const top = d.wy - 150;
+        const pool = ctx.createRadialGradient(d.wx, d.wy, 4, d.wx, d.wy, 90);
+        pool.addColorStop(0, withAlpha(COLOR_HEX.yellow, 0.09));
+        pool.addColorStop(1, withAlpha(COLOR_HEX.yellow, 0));
+        ctx.fillStyle = pool;
+        ctx.fillRect(d.wx - 90, d.wy - 90, 180, 90);
+        ctx.fillStyle = "#1c2133";
+        ctx.fillRect(d.wx - 2, top, 4, 150);
+        ctx.fillRect(d.wx - 2, top, 16, 4);
+        ctx.fillStyle = withAlpha(COLOR_HEX.yellow, 0.85);
+        ctx.fillRect(d.wx + 10, top + 4, 6, 4);
+        break;
+      }
+      case "parkedcar": {
+        if (!visible(d.wx - 50, 100)) break;
+        // A sleeping car: dark slab, stepped roof, two dim windows.
+        ctx.fillStyle = "#12141f";
+        ctx.fillRect(d.wx - 46, d.wy - 22, 92, 22);
+        ctx.fillRect(d.wx - 30, d.wy - 34, 56, 12);
+        ctx.fillStyle = withAlpha(INKISH, 0.08);
+        ctx.fillRect(d.wx - 24, d.wy - 31, 20, 8);
+        ctx.fillRect(d.wx + 2, d.wy - 31, 18, 8);
+        ctx.fillStyle = "#1e2136";
+        ctx.fillRect(d.wx - 34, d.wy - 6, 12, 6);
+        ctx.fillRect(d.wx + 22, d.wy - 6, 12, 6);
+        break;
+      }
+      case "water": {
+        if (!visible(d.wx, d.w)) break;
+        // Black water in the pit: two rows of drifting wave dashes.
+        const drift = animate ? (tick / 6) % 28 : 0;
+        ctx.fillStyle = withAlpha(COLOR_HEX.blue, 0.22);
+        for (let row = 0; row < 2; row++) {
+          const wy = d.wy + 26 + row * 16;
+          for (
+            let x = d.wx - 28 + drift + row * 9;
+            x < d.wx + d.w;
+            x += 28
+          ) {
+            const seg = Math.min(12, d.wx + d.w - x);
+            if (x >= d.wx && seg > 2) ctx.fillRect(x, wy, seg, 2);
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // Ramps — pixel-staircase wedges with a phosphor lip along the
+  // slope. Drawn with the floors (they're street furniture).
+  for (const r of level.ramps) {
+    if (!visible(r.wx, r.w)) continue;
+    const steps = Math.max(3, Math.round(r.rise / 8));
+    ctx.fillStyle = PANEL;
+    for (let i = 1; i <= steps; i++) {
+      const sw = (r.w / steps) * i;
+      const sh = (r.rise / steps) * i;
+      ctx.fillRect(r.wx + r.w - sw, r.baseY - sh, sw, sh);
+    }
+    ctx.fillStyle = withAlpha(COLOR_HEX.orange, 0.6);
+    for (let i = 0; i < steps; i++) {
+      ctx.fillRect(
+        r.wx + (r.w / steps) * i,
+        r.baseY - (r.rise / steps) * (i + 1),
+        r.w / steps,
+        2,
+      );
     }
   }
 
@@ -431,6 +501,31 @@ export function drawTerrain(
 }
 
 const CAB_DRAW_CELL = 5; // must match level.ts CAB_CELL
+
+/** The moped's headlight — a soft wedge thrown forward onto the dark
+ *  street, longer at speed so velocity is readable at a glance.
+ *  World lighting, not part of the sprite. Under reduced motion the
+ *  caller passes a fixed mid speed so the length doesn't animate. */
+export function drawHeadlight(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  facing: 1 | -1,
+  speed: number,
+): void {
+  const len = (120 + 22 * Math.abs(speed)) * facing;
+  const grad = ctx.createLinearGradient(x, y, x + len, y);
+  grad.addColorStop(0, withAlpha(COLOR_HEX.yellow, 0.12));
+  grad.addColorStop(1, withAlpha(COLOR_HEX.yellow, 0));
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(x, y - 3);
+  ctx.lineTo(x + len, y - 16);
+  ctx.lineTo(x + len, y + 22);
+  ctx.lineTo(x, y + 5);
+  ctx.closePath();
+  ctx.fill();
+}
 
 /** Spawn beam — Hugo is beamed in: a thin phosphor column over the
  *  spawn point that flickers and fades while he drops out of it. The
