@@ -36,6 +36,14 @@ const JUMP_V = -12;
 const AIR_JUMP_SCALE = 0.92;
 const COYOTE_FRAMES = 7;
 const JUMP_BUFFER_FRAMES = 7;
+/** Simulation cadence. Every per-step constant in this file was tuned
+ *  at 60 steps/sec back when the loop ran once per rAF — on a 120Hz
+ *  panel that meant the whole game played at double speed. The loop
+ *  now simulates on this fixed clock and only *draws* at rAF rate. */
+const STEP_MS = 1000 / 60;
+/** Cap on catch-up steps after a stall (tab switch, long frame) so
+ *  Hugo resumes where he paused instead of teleporting. */
+const MAX_SIM_STEPS = 3;
 const PLAYER_HALF = 14; // half-width of the ~28px sprite body
 const SPRITE_PX = 2; // canvas px per sprite cell (crisp at DPR)
 const DOOR_W = 26;
@@ -187,7 +195,7 @@ export default function HugoParkour() {
       squash: 0,
       stand: null as null | { slug: string; lastX: number; lastY: number },
     };
-    const input = { left: false, right: false, upHeld: false };
+    const input = { left: false, right: false, upHeld: false, jumpCut: false };
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -211,18 +219,20 @@ export default function HugoParkour() {
       else if (e.key === "ArrowRight" || e.key === "d") input.right = false;
       else if (e.key === "ArrowUp" || e.key === "w" || e.key === " ") {
         input.upHeld = false;
-        // Variable jump height: let go early, jump shorter.
-        if (player.vy < -3) player.vy *= 0.5;
+        // Variable jump height: let go early, jump shorter. Consumed
+        // by the next simulation step so the cut is the same strength
+        // wherever inside a frame the keyup lands.
+        input.jumpCut = true;
       }
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
 
     let raf = 0;
-    let frame = 0;
+    let tick = 0;
 
-    const stepAndDraw = () => {
-      frame += 1;
+    const simulate = () => {
+      tick += 1;
       const platforms = readPlatforms();
 
       if (respawnRef.current) {
@@ -234,7 +244,12 @@ export default function HugoParkour() {
         player.stand = null;
         player.grounded = false;
         player.airJump = true;
-        frame = 0; // replay the spawn beam
+        tick = 0; // replay the spawn beam
+      }
+
+      if (input.jumpCut) {
+        input.jumpCut = false;
+        if (player.vy < -3) player.vy *= 0.5;
       }
 
       if (!wonRef.current) {
@@ -379,8 +394,9 @@ export default function HugoParkour() {
       if (player.squash !== 0) {
         player.squash += player.squash > 0 ? -1 : 1;
       }
+    };
 
-      // ---- draw ----
+    const draw = () => {
       ctx.clearRect(0, 0, w, h);
 
       // Door: magenta frame, dark glass, mint knob, phosphor halo.
@@ -410,9 +426,9 @@ export default function HugoParkour() {
       // Spawn beam — Hugo is beamed into the room: a thin phosphor
       // column over the spawn point that flickers and fades while he
       // drops out of it. Skipped under reduced motion.
-      if (!reducedMotion && frame <= BEAM_FRAMES && !wonRef.current) {
-        const fade = 1 - frame / BEAM_FRAMES;
-        const flicker = frame % 4 < 2 ? 1 : 0.55;
+      if (!reducedMotion && tick <= BEAM_FRAMES && !wonRef.current) {
+        const fade = 1 - tick / BEAM_FRAMES;
+        const flicker = tick % 4 < 2 ? 1 : 0.55;
         const a = 0.4 * fade * flicker;
         const bottom = Math.min(player.y + 16, floorY);
         ctx.fillStyle = withAlpha(accent, a);
@@ -439,17 +455,31 @@ export default function HugoParkour() {
         },
         feet: player.grounded
           ? running
-            ? (((frame >> 3) % 2) as 0 | 1)
+            ? (((tick >> 3) % 2) as 0 | 1)
             : 0
           : 1,
         scaleX: player.facing * (2 - squashY),
         scaleY: squashY,
-        sparklePhase: wonRef.current ? frame >> 3 : null,
+        sparklePhase: wonRef.current ? tick >> 3 : null,
       });
-
-      raf = requestAnimationFrame(stepAndDraw);
     };
-    raf = requestAnimationFrame(stepAndDraw);
+
+    // Fixed-timestep loop — physics advances in 60Hz steps however
+    // often the display asks for frames, so a 120Hz panel gets the
+    // same game as a 60Hz one (just drawn more often).
+    let last = performance.now();
+    let acc = 0;
+    const loop = (now: number) => {
+      acc = Math.min(acc + (now - last), STEP_MS * MAX_SIM_STEPS);
+      last = now;
+      while (acc >= STEP_MS) {
+        simulate();
+        acc -= STEP_MS;
+      }
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
 
     return () => {
       cancelAnimationFrame(raf);
