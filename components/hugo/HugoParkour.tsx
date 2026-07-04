@@ -5,6 +5,7 @@ import { drawHugoSprite, readAccent } from "@/lib/hugo/sprite";
 import {
   createPlayer,
   stepPlayer,
+  updateCamera,
   JUMP_BUFFER_STEPS,
   MAX_SIM_STEPS,
   PLAYER_HALF,
@@ -153,6 +154,10 @@ export default function HugoParkour() {
     let floorY = 0;
     let doorX = 0;
     let doorY = 0;
+    // World width — screen 0 today; the authored level extends this
+    // past the right edge. While worldW === w the camera never moves.
+    let worldW = 0;
+    const camera = { x: 0 };
 
     // The door hangs high, wherever the ceiling has room. Search and
     // About are anchored up there (swarm nodes tagged $search/$about),
@@ -192,6 +197,8 @@ export default function HugoParkour() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
       floorY = h - 10;
+      worldW = w;
+      camera.x = Math.max(0, Math.min(worldW - w, camera.x));
       placeDoor();
     };
     layout();
@@ -244,7 +251,7 @@ export default function HugoParkour() {
     // faster than the 60Hz sim still get one-frame-smooth motion.
     // Only position interpolates; squash/facing/feet are pixel-art
     // states and look better stepped.
-    const prevPos = { x: player.x, y: player.y };
+    const prevPos = { x: player.x, y: player.y, camX: camera.x };
 
     const simulate = () => {
       tick += 1;
@@ -260,18 +267,21 @@ export default function HugoParkour() {
         player.grounded = false;
         player.airJump = true;
         tick = 0; // replay the spawn beam
+        camera.x = 0;
         // A respawn is a teleport — don't sweep the sprite across the
         // room interpolating from where he died.
         prevPos.x = player.x;
         prevPos.y = player.y;
+        prevPos.camX = camera.x;
       }
 
       if (!wonRef.current) {
         stepPlayer(player, input, surfaces, {
           floorY,
           minX: PLAYER_HALF,
-          maxX: w - PLAYER_HALF,
+          maxX: worldW - PLAYER_HALF,
         });
+        updateCamera(camera, player.x, w, worldW, reducedMotion);
 
         // The door.
         if (
@@ -290,8 +300,13 @@ export default function HugoParkour() {
       }
     };
 
-    const draw = (rx: number, ry: number) => {
+    const draw = (rx: number, ry: number, camX: number) => {
       ctx.clearRect(0, 0, w, h);
+
+      // World → screen: everything below draws in world coordinates.
+      // Rounded so pixel art never lands on half pixels.
+      ctx.save();
+      ctx.translate(-Math.round(camX), 0);
 
       drawDoor(ctx, doorX, doorY);
 
@@ -323,6 +338,8 @@ export default function HugoParkour() {
         scaleY: squashY,
         sparklePhase: wonRef.current ? tick >> 3 : null,
       });
+
+      ctx.restore();
     };
 
     // Fixed-timestep loop — physics advances in 60Hz steps however
@@ -336,6 +353,7 @@ export default function HugoParkour() {
       while (acc >= STEP_MS) {
         prevPos.x = player.x;
         prevPos.y = player.y;
+        prevPos.camX = camera.x;
         simulate();
         acc -= STEP_MS;
       }
@@ -343,6 +361,7 @@ export default function HugoParkour() {
       draw(
         prevPos.x + (player.x - prevPos.x) * a,
         prevPos.y + (player.y - prevPos.y) * a,
+        prevPos.camX + (camera.x - prevPos.camX) * a,
       );
       raf = requestAnimationFrame(loop);
     };

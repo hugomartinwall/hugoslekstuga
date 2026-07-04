@@ -71,6 +71,30 @@ export type WorldBounds = {
   maxX: number;
 };
 
+/** Where Hugo sits on screen while the camera follows — left of
+ *  centre, so a right-scroller gets forward view for free. */
+export const CAM_ANCHOR = 0.42;
+/** Exponential follow factor per step. */
+export const CAM_LERP = 0.1;
+
+/** Per-step camera follow. `snap` (reduced motion / teleports) jumps
+ *  straight to the target instead of easing. Clamped to the world, so
+ *  while worldW === viewW the camera provably never moves. */
+export function updateCamera(
+  camera: { x: number },
+  playerX: number,
+  viewW: number,
+  worldW: number,
+  snap: boolean,
+): void {
+  const target = Math.max(
+    0,
+    Math.min(worldW - viewW, playerX - viewW * CAM_ANCHOR),
+  );
+  if (snap) camera.x = target;
+  else camera.x += (target - camera.x) * CAM_LERP;
+}
+
 export function createPlayer(x: number, y: number): PlayerState {
   return {
     x,
