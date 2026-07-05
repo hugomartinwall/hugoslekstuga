@@ -163,14 +163,14 @@ export function buildLevel2(w: number, floorY: number): Level {
     wy: floorY - ("yUp" in d ? d.yUp : 0),
   }));
 
-  // LIVE FOREVER — at the end of the pier, over black water.
+  // YOU'RE INVITED — at the end of the pier, over black water.
   const goal = {
     x: 7860 - 70,
     y: floorY - 96,
     w: 140,
     h: 96,
-    big: "LIVE",
-    small: "FOREVER",
+    big: "YOU'RE",
+    small: "INVITED",
     color: "green" as ToolColor,
     final: true,
   };

@@ -44,7 +44,7 @@ import { getWordmarkLetters } from "@/lib/wordmark-bridge";
  * platforms. Arrow keys (or WASD) run and jump — and the homepage is
  * only the first screen. Past the right edge the arcade's back rooms
  * continue for several authored screens (see lib/hugo/parkour/
- * level.ts) until the prize at the end of the world: LIVE FOREVER,
+ * level.ts) until the prize at the end of the world: YOU'RE INVITED,
  * a humming neon monument that doubles as the honest pitch — a link
  * to Legacies, Hugo's day job. Falling into a pit restarts the whole
  * run; the ending is earned.
@@ -375,7 +375,7 @@ export default function HugoParkour() {
           respawnRef.current = true;
         }
 
-        // The monument. Final goal (LIVE FOREVER) wins the game;
+        // The monument. Final goal (YOU'RE INVITED) wins the game;
         // otherwise (NEXT LEVEL) the card takes over and the city
         // waits on the other side.
         const g = level.goal;
@@ -575,10 +575,10 @@ export default function HugoParkour() {
         >
           <div className="notch flex max-w-sm flex-col items-center gap-4 border border-line bg-cream-deep px-8 py-8 text-center">
             <p className="text-glow font-display text-4xl text-green">
-              LIVE FOREVER.
+              YOU&apos;RE INVITED.
             </p>
             <p className="text-sm leading-relaxed text-ink-soft">
-              You earned it. Enjoy early access to Legacies.
+              Enjoy early access to Legacies.
             </p>
             <a
               href="https://getlegacies.com/beta"

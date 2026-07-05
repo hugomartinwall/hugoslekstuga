@@ -255,7 +255,7 @@ level 2 on a **moped** ("the ride home"). Five modules:
   the alley → full-throttle boulevard canals → the brake-early
   construction site → the big kicker onto the highway (safe lower
   lane with its own kicker) → the harbor (barge, pontoon, and the
-  pier where **LIVE FOREVER** hums, `final: true`). Fully authored —
+  pier where **YOU'RE INVITED** hums, `final: true`). Fully authored —
   no DOM reads, no homepage handover. Moped guardrails in the header
   (jump reach 117→285px by speed tier, kicker carry ~340 at full vs
   ~200 at half — gaps are authored per speed tier; min platform 60px).
@@ -276,8 +276,8 @@ at street level; ticks reset per level entry so movers and the beam
 replay deterministically.
 
 **Death rule: dying restarts the current level — reaching the city
-is the game's only checkpoint.** Keep every hazard readable. LIVE
-FOREVER (end of level 2) is the only thing that wins: it fires
+is the game's only checkpoint.** Keep every hazard readable. YOU'RE
+INVITED (end of level 2) is the only thing that wins: it fires
 `hugo-happy` (still rare) and the panel's keycap links to
 **https://getlegacies.com/beta** (Hugo's day job — a plain outbound
 `<a>`, the only external link the game adds; privacy rules intact).

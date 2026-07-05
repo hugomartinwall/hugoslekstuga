@@ -16,8 +16,8 @@ export const INKISH = "#e8f2e9";
 export const BEAM_STEPS = 26;
 
 /** A goal monument: a humming neon sign the marquee out front would
- *  respect. Reads its words and colour from the level's goal (LIVE
- *  FOREVER in mint at the true ending; NEXT LEVEL in magenta at a
+ *  respect. Reads its words and colour from the level's goal (YOU'RE
+ *  INVITED in mint at the true ending; NEXT LEVEL in magenta at a
  *  level boundary). Glow pulses slowly (static under reduced
  *  motion), stray sparkle pixels drift off the top. */
 export function drawGoal(
@@ -108,6 +108,7 @@ const GLYPHS: Record<string, number[]> = {
   V: [0b101, 0b101, 0b101, 0b101, 0b010],
   X: [0b101, 0b101, 0b010, 0b101, 0b101],
   Y: [0b101, 0b101, 0b010, 0b010, 0b010],
+  "'": [0b010, 0b010, 0b000, 0b000, 0b000],
   " ": [0, 0, 0, 0, 0],
 };
 
