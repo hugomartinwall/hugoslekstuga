@@ -2,21 +2,23 @@
  * Hugo's parkour — the authored world. "Closing time at the arcade."
  *
  * Screen 0 is the live homepage (swarm orbs + wordmark letters); past
- * its right edge the arcade's back rooms continue for ~4 screens:
+ * its right edge the arcade's back rooms continue for ~5 screens:
  *
- *   1. behind the marquee   — girders and easy gaps, teaches the rhythm
+ *   1. behind the marquee   — girders and tight gaps, teaches the rhythm
  *   2. the cabinet graveyard — retired tools stacked as a climbing wall
  *   3. the vents             — fan pits and a lifting grate
- *   4. the neon rooftop      — signage-letter jumps, the earned finale
+ *   4. the service ducts     — piston platforms over the lava trench
+ *   5. the neon rooftop      — signage-letter jumps, the earned finale
  *
- * and at the end: LIVE FOREVER.
+ * and at the end: NEXT LEVEL.
  *
- * AUTHORING RULES (measured against lib/hugo/parkour/physics.ts —
- * deaths restart the whole run, so every jump must be readable and
- * fair):
- *   - jump apex ............. 125px  → max step-up 110px
- *   - single running jump ... 146px  → max single gap 135px
- *   - best double jump ...... 279px  → max double gap 240px (use once)
+ * AUTHORING RULES (measured empirically by scripts/playtest-parkour.ts
+ * against lib/hugo/parkour/physics.ts — re-run it after any physics
+ * change. Deaths restart the whole run, so every jump must be readable
+ * and fair):
+ *   - jump apex ............. 126px  → max step-up 110px
+ *   - single running jump ... clears 156px → max single gap 140px
+ *   - best double jump ...... clears 288px → max double gap 245px (use once)
  *
  * Units: `x` is px past screen 0's right edge; `yUp` is px above the
  * floor line (positive up) and always names a platform TOP. buildLevel
@@ -27,9 +29,11 @@ import type { Surface } from "./physics";
 import type { ToolColor } from "@/lib/tools";
 
 /** Total authored px past screen 0. */
-export const LEVEL_LENGTH = 5000;
-/** Fall this far below the floor line and the run is over. */
-export const KILL_DEPTH = 140;
+export const LEVEL_LENGTH = 6500;
+/** Sink this far into a pit hazard (lava, water) and the run is
+ *  over — shallow enough that death reads as touching the hazard,
+ *  not as falling off the world. */
+export const KILL_DEPTH = 30;
 
 type Span = { x: number; w: number };
 type Ledge = { id: string; x: number; yUp: number; w: number };
@@ -73,8 +77,51 @@ export type Deco =
   | { kind: "label"; x: number; yUp: number; text: string; color: ToolColor }
   // level-2 street dressing
   | { kind: "streetlight"; x: number; yUp: number }
-  | { kind: "parkedcar"; x: number; yUp: number }
-  | { kind: "water"; x: number; yUp: number; w: number };
+  | { kind: "parkedcar"; x: number; yUp: number };
+
+/** A pit hazard filling a gap between floor spans — derived, never
+ *  authored (see deriveHazards). Both kinds kill on contact via the
+ *  killY line; they differ only in what the painter makes of them. */
+export type HazardSpan = { x: number; w: number; kind: "lava" | "water" };
+
+/** Every gap between floor spans (plus the trailing gap to `end`) is
+ *  a pit hazard: lava, unless a water zone claims it. Zones split
+ *  gaps mid-span — a pit can drain from lava into water (the tunnel
+ *  mouth in level 2 does). Derived at build time so re-authored
+ *  floors can never leave an invisible pit behind. */
+export function deriveHazards(
+  spans: { x: number; w: number }[],
+  start: number,
+  end: number,
+  waterZones: { x: number; w: number }[] = [],
+): HazardSpan[] {
+  const sorted = [...spans].sort((a, b) => a.x - b.x);
+  const gaps: { x: number; w: number }[] = [];
+  let edge = start;
+  for (const s of sorted) {
+    if (s.x > edge) gaps.push({ x: edge, w: s.x - edge });
+    edge = Math.max(edge, s.x + s.w);
+  }
+  if (edge < end) gaps.push({ x: edge, w: end - edge });
+
+  const out: HazardSpan[] = [];
+  for (const g of gaps) {
+    let x = g.x;
+    const gEnd = g.x + g.w;
+    const zones = waterZones
+      .filter((z) => z.x < gEnd && z.x + z.w > g.x)
+      .sort((a, b) => a.x - b.x);
+    for (const z of zones) {
+      const zEnd = Math.min(gEnd, z.x + z.w);
+      const zStart = Math.max(x, z.x);
+      if (zStart > x) out.push({ x, w: zStart - x, kind: "lava" });
+      if (zEnd > zStart) out.push({ x: zStart, w: zEnd - zStart, kind: "water" });
+      x = Math.max(x, zEnd);
+    }
+    if (x < gEnd) out.push({ x, w: gEnd - x, kind: "lava" });
+  }
+  return out;
+}
 
 /** A climbable stack of retired arcade cabinets: solid top + visuals. */
 type CabinetStack = { id: string; x: number; yUp: number; stack: number; slugs: string[] };
@@ -82,40 +129,54 @@ type CabinetStack = { id: string; x: number; yUp: number; stack: number; slugs: 
 const CAB_CELL = 5; // drawCabinet cell → 95×105px per cabinet
 
 // ── Zone 1 · behind the marquee (0–1500) ──────────────────────────
-// Three pits widening 100 → 120 → 135; girders overhead as flavour
-// hops; a hanging cable-platform patrols over the last (widest) gap
-// as an aid for the cautious.
+// Three lava pits widening 120 → 128 → 133; girders overhead as
+// flavour hops; a hanging cable-platform patrols over the last
+// (widest) gap as an aid for the cautious.
 // ── Zone 2 · the cabinet graveyard (1500–2620) ────────────────────
 // The trench. Stacked dead cabinets climb 100px at a time, then a
 // dolly patrols the long gap to the ledge. Missing it is the run.
 // ── Zone 3 · the vents (2620–3740) ────────────────────────────────
 // Fan pits on a tightening rhythm, then the grate lifts you to the
-// roof. The floor runs under the grate — missing it is safe.
-// ── Zone 4 · the neon rooftop (3740–5000) ─────────────────────────
-// Signage-letter platforms over the street, then the one authored
-// double-jump gap onto the final roof. LIVE FOREVER hums at the end.
+// ducts. The floor runs under the grate — missing it is safe.
+// ── Zone 4 · the service ducts (3740–5100) ────────────────────────
+// The last stretch of back-of-house: narrow duct ledges and two
+// antiphase piston platforms over one long lava trench. Board the
+// first piston, transfer at the crossover — there is no floor again
+// until the credits.
+// ── Zone 5 · the neon rooftop (5100–6500) ─────────────────────────
+// Signage-letter platforms over the lava, then the one authored
+// double-jump gap onto the final roof. NEXT LEVEL hums at the end.
 
 /** Floor segments (tops at the floor line). The home floor
  *  [0, w+240] is added by buildLevel. Gaps between spans are pits. */
 const FLOORS: Span[] = [
-  { x: 340, w: 260 }, //  340–600   (gap 100 before)
-  { x: 720, w: 260 }, //  720–980   (gap 120 before)
-  { x: 1105, w: 675 }, // 1105–1780 (gap 125 before, cable aid above)
+  { x: 360, w: 240 }, //  360–600   (gap 120 before)
+  { x: 728, w: 252 }, //  728–980   (gap 128 before)
+  { x: 1113, w: 667 }, // 1113–1780 (gap 133 before, cable aid above)
   { x: 2620, w: 440 }, // 2620–3060 (after the trench)
-  { x: 3175, w: 155 }, // 3175–3330 (fan pit 115 before)
+  { x: 3188, w: 142 }, // 3188–3330 (fan pit 128 before)
   { x: 3460, w: 280 }, // 3460–3740 (fan pit 130 before; runs under the grate)
 ];
 
 /** Static platforms. */
 const LEDGES: Ledge[] = [
-  { id: "girder-a", x: 470, yUp: 96, w: 130 },
-  { id: "girder-b", x: 640, yUp: 192, w: 120 },
+  { id: "girder-a", x: 470, yUp: 96, w: 110 },
+  { id: "girder-b", x: 640, yUp: 192, w: 100 },
   { id: "trench-out", x: 2470, yUp: 260, w: 150 },
-  { id: "roof-in", x: 3740, yUp: 280, w: 160 },
-  { id: "sign-l", x: 3990, yUp: 330, w: 70 },
-  { id: "sign-e", x: 4165, yUp: 300, w: 70 },
-  { id: "sign-k", x: 4345, yUp: 350, w: 70 },
-  { id: "roof-final", x: 4625, yUp: 260, w: 375 },
+  // the service ducts — see the piston movers for the middle stretch.
+  // Mover hops are short (≤80px): you board and leave them from a
+  // near-standstill, and a cold jump only carries ~85px.
+  { id: "duct-in", x: 3740, yUp: 220, w: 140 },
+  { id: "duct-a", x: 4010, yUp: 240, w: 90 },
+  { id: "duct-b", x: 4230, yUp: 230, w: 80 },
+  { id: "duct-out", x: 4620, yUp: 250, w: 120 },
+  { id: "duct-exit", x: 4870, yUp: 260, w: 100 },
+  // the rooftop
+  { id: "roof-in", x: 5100, yUp: 280, w: 140 },
+  { id: "sign-l", x: 5360, yUp: 330, w: 60 },
+  { id: "sign-e", x: 5535, yUp: 300, w: 60 },
+  { id: "sign-k", x: 5715, yUp: 350, w: 60 },
+  { id: "roof-final", x: 6000, yUp: 260, w: 500 },
 ];
 
 /** The graveyard climbing wall — solid tops AND cabinet visuals. */
@@ -127,12 +188,16 @@ const CABINETS: CabinetStack[] = [
 
 const MOVERS: MoverSpec[] = [
   // Hanging cable platform over zone 1's widest gap.
-  { id: "cable", x: 1047, yUp: 130, w: 70, axis: "y", range: 130, period: 300, phase: 0.25 },
+  { id: "cable", x: 1047, yUp: 130, w: 70, axis: "y", range: 150, period: 260, phase: 0.25 },
   // The graveyard dolly — the only way across the trench.
-  { id: "dolly", x: 2350, yUp: 300, w: 90, axis: "x", range: 160, period: 380, phase: 0 },
-  // The vent grate — lifts from the floor to the rooftop. Patrols
-  // low (easy hop on) and dwells long enough to board comfortably.
-  { id: "grate", x: 3660, yUp: 160, w: 80, axis: "y", range: 240, period: 460, phase: 0.5 },
+  { id: "dolly", x: 2350, yUp: 300, w: 78, axis: "x", range: 160, period: 330, phase: 0 },
+  // The vent grate — lifts from the floor up to the service ducts.
+  // Patrols low (easy hop on) with just enough dwell to board.
+  { id: "grate", x: 3660, yUp: 160, w: 80, axis: "y", range: 240, period: 420, phase: 0.5 },
+  // The duct pistons — antiphase pair over the lava trench. Ride one
+  // up, cross to the other as they trade places.
+  { id: "piston-a", x: 4390, yUp: 230, w: 70, axis: "y", range: 120, period: 240, phase: 0 },
+  { id: "piston-b", x: 4520, yUp: 230, w: 70, axis: "y", range: 120, period: 240, phase: 0.5 },
 ];
 
 const DECOS: Deco[] = [
@@ -143,11 +208,14 @@ const DECOS: Deco[] = [
   { kind: "deadcab", x: 1930, yUp: -30, cell: 4, slug: "typing" },
   { kind: "deadcab", x: 2075, yUp: -44, cell: 4, slug: "stretch" },
   { kind: "label", x: 1700, yUp: 190, text: "RETIRED", color: "purple" },
-  { kind: "duct", x: 2620, w: 1120, yUp: 430 },
-  { kind: "fan", x: 3117, yUp: -34, r: 44 },
-  { kind: "fan", x: 3395, yUp: -34, r: 44 },
+  // The vent fans sit half-sunk in their lava pits now — raised so
+  // the blades still read over the glow.
+  { kind: "duct", x: 2620, w: 2510, yUp: 430 },
+  { kind: "fan", x: 3124, yUp: 10, r: 44 },
+  { kind: "fan", x: 3395, yUp: 10, r: 44 },
   { kind: "label", x: 3200, yUp: 120, text: "MIND THE FANS", color: "blue" },
-  { kind: "skyline", x: 3780, w: 1220 },
+  { kind: "label", x: 4400, yUp: 180, text: "SERVICE", color: "purple" },
+  { kind: "skyline", x: 5150, w: 1350 },
 ];
 
 /** Everything baked to absolute world coordinates for one run. */
@@ -184,6 +252,8 @@ export type Level = {
   floorY: number;
   /** Baked floor spans for terrain drawing. */
   floorSpans: { x: number; w: number }[];
+  /** Pit hazards filling every floor gap — derived, see deriveHazards. */
+  hazards: HazardSpan[];
 };
 
 export function buildLevel(w: number, floorY: number): Level {
@@ -226,7 +296,7 @@ export function buildLevel(w: number, floorY: number): Level {
   // another arcade machine pointing deeper in: touching it doesn't
   // win, it opens the city (level 2, "the ride home").
   const goal = {
-    x: x0 + 4810 - 70,
+    x: x0 + 6250 - 70,
     y: floorY - 260 - 96,
     w: 140,
     h: 96,
@@ -236,8 +306,9 @@ export function buildLevel(w: number, floorY: number): Level {
     final: false,
   };
 
+  const worldW = w + LEVEL_LENGTH;
   return {
-    worldW: w + LEVEL_LENGTH,
+    worldW,
     killY: floorY + KILL_DEPTH,
     mechanic: "foot",
     // Spawn = where the corner Hugo lives; gravity does the intro.
@@ -251,6 +322,9 @@ export function buildLevel(w: number, floorY: number): Level {
     goal,
     floorY,
     floorSpans,
+    // All lava here — the trailing gap makes the whole street under
+    // the ducts and the rooftop one long lake, on purpose.
+    hazards: deriveHazards(floorSpans, 0, worldW),
   };
 }
 

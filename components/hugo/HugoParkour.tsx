@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { drawHugoSprite, drawMopedHugo, readAccent } from "@/lib/hugo/sprite";
+import {
+  drawHugoSprite,
+  drawMopedHugo,
+  readAccent,
+  withAlpha,
+} from "@/lib/hugo/sprite";
+import { COLOR_HEX } from "@/lib/colors";
 import {
   createPlayer,
   stepMoped,
@@ -29,6 +35,7 @@ import {
   drawHeadlight,
   drawHomeReplicas,
   drawLevelCard,
+  drawSizzle,
   drawTerrain,
   makeDither,
   BEAM_STEPS,
@@ -79,6 +86,11 @@ const TRANS_FADE_IN = 30;
 const TRANS_SWAP = 120;
 const TRANS_END = 150;
 const TRANS_RM_END = 60;
+/** The lava/water death beat, in simulation steps: Hugo vanishes at
+ *  the sink point, the sizzle burst plays, then the respawn beam.
+ *  Reduced motion skips the burst and cuts almost straight back. */
+const DEATH_STEPS = 36;
+const DEATH_RM_STEPS = 8;
 
 type Platform = { x: number; y: number; r: number; slug: string };
 
@@ -199,8 +211,12 @@ export default function HugoParkour() {
     let backdropAlpha = 0;
     let lastOrbs: OrbSnapshot[] = [];
     // The NEXT LEVEL transition — see the TRANS_* timeline.
-    let phase: "play" | "transition" = "play";
+    let phase: "play" | "transition" | "death" = "play";
     let transStep = 0;
+    // The death beat — where Hugo sank and into what.
+    let deathStep = 0;
+    const deathPos = { x: 0, y: 0 };
+    let deathKind: "lava" | "water" = "lava";
 
     const rebuild = () => {
       level =
@@ -315,6 +331,18 @@ export default function HugoParkour() {
         return;
       }
 
+      // The death beat mirrors the transition: world frozen (tick not
+      // advanced) while the sizzle plays, then the respawn — which
+      // resets tick to 0, so movers and lava replay deterministically.
+      if (phase === "death") {
+        deathStep += 1;
+        if (deathStep >= (reducedMotion ? DEATH_RM_STEPS : DEATH_STEPS)) {
+          spawnIntoLevel();
+          phase = "play";
+        }
+        return;
+      }
+
       tick += 1;
       const orbs = level.homeScreen ? readPlatforms() : [];
       lastOrbs = orbs;
@@ -368,11 +396,21 @@ export default function HugoParkour() {
           if (player.x < w - FADE_ZONE && camera.x < 1) homeLatch = true;
         }
 
-        // The pit rule: fall past the kill line and this level's run
-        // is over — NEXT LEVEL is the game's only checkpoint. The
-        // respawn beam replays from the level's start.
+        // The pit rule: sink into a hazard past the kill line and this
+        // level's run is over — NEXT LEVEL is the game's only
+        // checkpoint. The sizzle plays where he sank, then the respawn
+        // beam replays from the level's start.
         if (player.y > level.killY) {
-          respawnRef.current = true;
+          phase = "death";
+          deathStep = 0;
+          deathPos.x = player.x;
+          deathPos.y = player.y;
+          deathKind =
+            level.hazards.find(
+              (z) => player.x >= z.x && player.x <= z.x + z.w,
+            )?.kind ?? "lava";
+          player.vx = 0;
+          player.vy = 0;
         }
 
         // The monument. Final goal (YOU'RE INVITED) wins the game;
@@ -435,6 +473,28 @@ export default function HugoParkour() {
           BEAM_STEPS - Math.floor((transStep / TRANS_FADE_IN) * BEAM_STEPS),
         );
         drawBeam(ctx, rx, Math.min(ry + 16, floorY), accent, t);
+      }
+
+      // The death beat: Hugo is gone; the hazard spits embers where
+      // he sank. (Reduced motion skips it — the cut is near-instant.)
+      if (phase === "death") {
+        drawSizzle(
+          ctx,
+          deathPos.x,
+          deathPos.y,
+          deathStep,
+          deathKind,
+          !reducedMotion,
+        );
+        ctx.restore();
+        if (!reducedMotion && deathStep < 4) {
+          ctx.fillStyle = withAlpha(
+            deathKind === "lava" ? COLOR_HEX.tomato : COLOR_HEX.blue,
+            0.25,
+          );
+          ctx.fillRect(0, 0, w, h);
+        }
+        return;
       }
 
       // Hugo — on foot or in the saddle.

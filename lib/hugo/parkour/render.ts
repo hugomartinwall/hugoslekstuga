@@ -225,6 +225,178 @@ export function drawHomeReplicas(
 const PANEL = "#10131f";
 const PANEL_EDGE = "#1c2133";
 
+/** How far below the floor line a pit hazard's surface sits. Small on
+ *  purpose: floorY hugs the viewport bottom, so anything deeper would
+ *  push the surface off screen — the hazard must read at and ABOVE
+ *  the floor line (glow, crust, embers), not in the pit body. The
+ *  kill line (level KILL_DEPTH) is deeper — sinking to the chest is
+ *  what ends the run. */
+const HAZARD_SURFACE = 4;
+
+/** A lava-filled pit: molten body, upward glow, a crawling two-tone
+ *  crust line, hash-grid flecks, rising embers banded coral → amber →
+ *  acid, and the occasional surface bubble. All cycles are pure
+ *  functions of `tick`, so respawns replay identically; `animate`
+ *  false freezes one deterministic mid-cycle frame. */
+function lavaSpan(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  w: number,
+  floorY: number,
+  viewH: number,
+  tick: number,
+  animate: boolean,
+): void {
+  const surfaceY = floorY + HAZARD_SURFACE;
+  const depth = Math.max(0, viewH - surfaceY + 4);
+
+  // Molten body: near-black red washed with coral.
+  ctx.fillStyle = "#1a0d12";
+  ctx.fillRect(x, surfaceY, w, depth);
+  ctx.fillStyle = withAlpha(COLOR_HEX.tomato, 0.1);
+  ctx.fillRect(x, surfaceY, w, depth);
+
+  // Heat glow rising off the surface — the pit body hides below the
+  // viewport, so this IS the hazard's presence from a distance.
+  const glow = ctx.createLinearGradient(0, surfaceY, 0, surfaceY - 56);
+  glow.addColorStop(0, withAlpha(COLOR_HEX.tomato, 0.32));
+  glow.addColorStop(1, withAlpha(COLOR_HEX.tomato, 0));
+  ctx.fillStyle = glow;
+  ctx.fillRect(x, surfaceY - 56, w, 56);
+
+  // The crust: alternating coral/amber dashes crawling rightward,
+  // straddling the surface line so it never slips off screen.
+  const drift = animate ? Math.floor(tick / 5) % 16 : 0;
+  for (let sx = x - 16 + drift; sx < x + w; sx += 16) {
+    const a0 = Math.max(x, sx);
+    const a1 = Math.min(x + w, sx + 8);
+    if (a1 > a0) {
+      ctx.fillStyle = withAlpha(COLOR_HEX.tomato, 0.95);
+      ctx.fillRect(a0, surfaceY - 2, a1 - a0, 4);
+    }
+    const b0 = Math.max(x, sx + 8);
+    const b1 = Math.min(x + w, sx + 16);
+    if (b1 > b0) {
+      ctx.fillStyle = withAlpha(COLOR_HEX.orange, 0.95);
+      ctx.fillRect(b0, surfaceY - 2, b1 - b0, 4);
+    }
+  }
+
+  // Sub-surface flecks on a hash grid — the site's dither language.
+  ctx.fillStyle = withAlpha(COLOR_HEX.orange, 0.25);
+  const fleckDepth = Math.max(8, Math.min(depth - 6, 64));
+  for (let i = 0; i < w / 14; i++) {
+    const fx = x + ((i * 53 + 11) % Math.max(1, w - 4));
+    const fy = surfaceY + 6 + ((i * 37 + 5) % fleckDepth);
+    ctx.fillRect(Math.round(fx), Math.round(fy), 2, 2);
+  }
+
+  // Embers, one per ~45px, rising and cooling coral → amber → acid.
+  const n = Math.ceil(w / 45);
+  for (let i = 0; i < n; i++) {
+    const t = animate ? (tick / 2 + i * 37) % 90 : 20 + ((i * 17) % 30);
+    if (t >= 55) continue;
+    const ex = x + 2 + ((i * 97 + 23) % Math.max(1, w - 6));
+    const ey = surfaceY - 4 - t * 0.7;
+    const hex =
+      t < 18 ? COLOR_HEX.tomato : t < 36 ? COLOR_HEX.orange : COLOR_HEX.yellow;
+    ctx.fillStyle = withAlpha(hex, 0.9 * (1 - t / 55));
+    ctx.fillRect(Math.round(ex), Math.round(ey), 2, 2);
+  }
+
+  // Surface bubbles popping on their own slow cycles.
+  const bn = Math.max(1, Math.ceil(w / 90));
+  ctx.fillStyle = withAlpha(COLOR_HEX.orange, 0.9);
+  for (let i = 0; i < bn; i++) {
+    const cyc = animate ? Math.floor(tick / 8 + i * 13) % 24 : 2;
+    if (cyc >= 5) continue;
+    const bx = x + 2 + ((i * 149 + 61) % Math.max(1, w - 6));
+    ctx.fillRect(Math.round(bx), surfaceY - 5, 3, 3);
+  }
+}
+
+/** A water-filled pit (the harbor) — the cold sibling of lavaSpan.
+ *  Must still read "hazard surface": continuous ice line, bright
+ *  dashed lip, three drifting wave rows, sparse glints. */
+function waterSpan(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  w: number,
+  floorY: number,
+  viewH: number,
+  tick: number,
+  animate: boolean,
+): void {
+  const surfaceY = floorY + HAZARD_SURFACE;
+  const depth = Math.max(0, viewH - surfaceY + 4);
+
+  ctx.fillStyle = "#0a1220";
+  ctx.fillRect(x, surfaceY, w, depth);
+  ctx.fillStyle = withAlpha(COLOR_HEX.blue, 0.1);
+  ctx.fillRect(x, surfaceY, w, depth);
+
+  // Cold glow — like the lava's, the surface hugs the viewport
+  // bottom, so the presence must live at and above the line.
+  const glow = ctx.createLinearGradient(0, surfaceY, 0, surfaceY - 44);
+  glow.addColorStop(0, withAlpha(COLOR_HEX.blue, 0.18));
+  glow.addColorStop(1, withAlpha(COLOR_HEX.blue, 0));
+  ctx.fillStyle = glow;
+  ctx.fillRect(x, surfaceY - 44, w, 44);
+
+  // Unbroken surface line + bright dashed chop straddling it.
+  ctx.fillStyle = withAlpha(COLOR_HEX.teal, 0.8);
+  ctx.fillRect(x, surfaceY - 1, w, 2);
+  const drift = animate ? Math.floor(tick / 6) % 28 : 0;
+  ctx.fillStyle = withAlpha(COLOR_HEX.blue, 0.7);
+  for (let sx = x - 28 + drift; sx < x + w; sx += 28) {
+    const s0 = Math.max(x, sx);
+    const s1 = Math.min(x + w, sx + 12);
+    if (s1 > s0) ctx.fillRect(s0, surfaceY - 3, s1 - s0, 2);
+  }
+
+  // Sparse ice glints hopping over the chop.
+  const gn = Math.max(1, Math.ceil(w / 90));
+  ctx.fillStyle = withAlpha(COLOR_HEX.teal, 0.9);
+  for (let i = 0; i < gn; i++) {
+    const cyc = animate ? Math.floor(tick / 10 + i * 7) % 20 : 1;
+    if (cyc >= 4) continue;
+    const gx = x + 2 + ((i * 173 + 89) % Math.max(1, w - 4));
+    ctx.fillRect(Math.round(gx), surfaceY - 6, 2, 2);
+  }
+}
+
+/** Death burst at the sink point — pixel embers (lava) or droplets
+ *  (water) thrown up and out over ~36 steps, with a brief white-hot
+ *  core for lava. Reduced motion draws nothing; the caller cuts
+ *  straight to the respawn. */
+export function drawSizzle(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  step: number,
+  kind: "lava" | "water",
+  animate: boolean,
+): void {
+  if (!animate) return;
+  const palette =
+    kind === "lava"
+      ? [COLOR_HEX.tomato, COLOR_HEX.orange, COLOR_HEX.yellow]
+      : [COLOR_HEX.blue, COLOR_HEX.teal, INKISH];
+  if (kind === "lava" && step < 5) {
+    ctx.fillStyle = "#fff6e8";
+    ctx.fillRect(Math.round(x) - 3, Math.round(y) - 3, 6, 6);
+  }
+  const fade = Math.max(0, 1 - step / 36);
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2 + (i % 3) * 0.35;
+    const spd = 1 + ((i * 29) % 13) / 9;
+    const px = x + Math.cos(ang) * spd * step;
+    const py = y - Math.abs(Math.sin(ang)) * spd * 2.2 * step + 0.11 * step * step;
+    ctx.fillStyle = withAlpha(palette[i % 3], 0.9 * fade);
+    ctx.fillRect(Math.round(px), Math.round(py), i % 2 ? 2 : 3, i % 2 ? 2 : 3);
+  }
+}
+
 /** One platform slab: dark panel, hairline sides, phosphor top lip. */
 function slab(
   ctx: CanvasRenderingContext2D,
@@ -401,24 +573,18 @@ export function drawTerrain(
         ctx.fillRect(d.wx + 22, d.wy - 6, 12, 6);
         break;
       }
-      case "water": {
-        if (!visible(d.wx, d.w)) break;
-        // Black water in the pit: two rows of drifting wave dashes.
-        const drift = animate ? (tick / 6) % 28 : 0;
-        ctx.fillStyle = withAlpha(COLOR_HEX.blue, 0.22);
-        for (let row = 0; row < 2; row++) {
-          const wy = d.wy + 26 + row * 16;
-          for (
-            let x = d.wx - 28 + drift + row * 9;
-            x < d.wx + d.w;
-            x += 28
-          ) {
-            const seg = Math.min(12, d.wx + d.w - x);
-            if (x >= d.wx && seg > 2) ctx.fillRect(x, wy, seg, 2);
-          }
-        }
-        break;
-      }
+    }
+  }
+
+  // Pit hazards — every floor gap is filled with something that
+  // clearly wants to eat you: lava (or harbor water) with a lit
+  // surface line, so a pit never reads as plain darkness again.
+  for (const hz of level.hazards) {
+    if (!visible(hz.x, hz.w)) continue;
+    if (hz.kind === "lava") {
+      lavaSpan(ctx, hz.x, hz.w, level.floorY, viewH, tick, animate);
+    } else {
+      waterSpan(ctx, hz.x, hz.w, level.floorY, viewH, tick, animate);
     }
   }
 
