@@ -9,13 +9,22 @@
  */
 
 export const GRAVITY = 0.55;
+/** Falling is heavier than rising — the arc gets a flat top and a
+ *  crisp drop instead of a floaty mirror of the ascent. */
+export const FALL_GRAVITY_MULT = 1.3;
+/** Near the apex (|vy| below this) with jump still held, gravity
+ *  eases off — holding the button buys hang time to steer. */
+export const APEX_WINDOW = 1.5;
+export const APEX_GRAVITY_SCALE = 0.55;
+/** Terminal fall speed. */
+export const MAX_FALL = 14;
 /** Ground acceleration — top speed in ~10 steps (~0.17s). Tuned down
  *  from 0.5: reaching MAX_RUN in 7 steps read as binary on/off. */
 export const RUN_ACCEL = 0.34;
 /** Turnaround acceleration when input opposes travel — stronger than
  *  RUN_ACCEL so direction changes stay crisp despite the softer ramp. */
 export const SKID_ACCEL = 0.6;
-export const AIR_ACCEL = 0.3;
+export const AIR_ACCEL = 0.34;
 /** Gentle horizontal decay while airborne with no input, so flying
  *  off a fast-drifting orb doesn't feel launched on rails. */
 export const AIR_DRAG = 0.985;
@@ -54,8 +63,17 @@ export const MOPED_COAST = 0.995;
 export const MOPED_ROLL = 0.006;
 /** Riding left is allowed but reads as a heavy U-turn. */
 export const MOPED_REVERSE_MAX = 2.0;
-/** Faint airborne trim — can only oppose current speed, never add. */
+/** Faint airborne trim against current speed (braking in the air). */
 export const MOPED_AIR_ACCEL = 0.05;
+/** Even fainter forward trim while holding throttle in the air —
+ *  ~+0.5 vx over a long flight. Softens "committed momentum" without
+ *  erasing it (kicker gaps are re-measured with this held). */
+export const MOPED_AIR_TRIM = 0.015;
+/** The moped's arc-shaping siblings — gentler than on foot so the
+ *  fixed-height jump stays legible. */
+export const MOPED_FALL_MULT = 1.25;
+export const MOPED_APEX_WINDOW = 1.2;
+export const MOPED_APEX_SCALE = 0.7;
 /** One jump, fixed height (~100px apex) — speed changes distance,
  *  never height. jumpCut still applies. */
 export const MOPED_JUMP_V = -10.5;
@@ -231,13 +249,15 @@ export function stepMoped(
     }
   }
 
-  // Throttle / brake / coast. Airborne momentum is committed — input
-  // can only trim speed off, never add.
+  // Throttle / brake / coast. Airborne momentum is mostly committed —
+  // held throttle adds only a faint forward trim, braking trims off.
   if (input.right) {
     if (player.grounded) {
       player.vx = Math.min(MOPED_MAX, player.vx + MOPED_ACCEL);
     } else if (player.vx < 0) {
       player.vx = Math.min(0, player.vx + MOPED_AIR_ACCEL);
+    } else {
+      player.vx = Math.min(MOPED_MAX, player.vx + MOPED_AIR_TRIM);
     }
     if (player.vx >= 0) player.facing = 1;
   } else if (input.left) {
@@ -280,7 +300,12 @@ export function stepMoped(
   // Gravity + integrate + one-way landings (landing keeps vx — the
   // momentum IS the difficulty).
   if (!player.stand) {
-    player.vy = Math.min(14, player.vy + GRAVITY);
+    let g = GRAVITY;
+    if (player.vy > 0) g *= MOPED_FALL_MULT;
+    else if (input.upHeld && Math.abs(player.vy) < MOPED_APEX_WINDOW) {
+      g *= MOPED_APEX_SCALE;
+    }
+    player.vy = Math.min(MAX_FALL, player.vy + g);
     const prevY = player.y;
     player.x += player.vx;
     player.y += player.vy;
@@ -411,9 +436,16 @@ export function stepPlayer(
     }
   }
 
-  // Gravity + integrate.
+  // Gravity + integrate. Falling is heavier than rising, and holding
+  // jump near the apex hangs there a beat — see FALL_GRAVITY_MULT /
+  // APEX_WINDOW up top.
   if (!player.stand) {
-    player.vy = Math.min(14, player.vy + GRAVITY);
+    let g = GRAVITY;
+    if (player.vy > 0) g *= FALL_GRAVITY_MULT;
+    else if (input.upHeld && Math.abs(player.vy) < APEX_WINDOW) {
+      g *= APEX_GRAVITY_SCALE;
+    }
+    player.vy = Math.min(MAX_FALL, player.vy + g);
     const prevY = player.y;
     player.x += player.vx;
     player.y += player.vy;
