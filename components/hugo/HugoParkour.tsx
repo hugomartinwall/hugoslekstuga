@@ -37,6 +37,7 @@ import {
   drawLevelCard,
   drawSizzle,
   drawTerrain,
+  makeBackdrop,
   makeDither,
   BEAM_STEPS,
   type OrbSnapshot,
@@ -209,6 +210,9 @@ export default function HugoParkour() {
     // Screen-0 handover state — see FADE_ZONE.
     let homeLatch = true;
     let backdropAlpha = 0;
+    // The static backdrop, pre-rendered once per layout (see makeBackdrop):
+    // blitted every frame instead of re-filling the viewport twice.
+    let backdropCache: HTMLCanvasElement | null = null;
     let lastOrbs: OrbSnapshot[] = [];
     // The NEXT LEVEL transition — see the TRANS_* timeline.
     let phase: "play" | "transition" | "death" = "play";
@@ -237,6 +241,7 @@ export default function HugoParkour() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
       floorY = h - 10;
+      backdropCache = makeBackdrop(w, h, floorY, dpr);
       const keepFade = backdropAlpha;
       rebuild();
       // A mid-run resize shouldn't reset the handover fade.
@@ -445,12 +450,19 @@ export default function HugoParkour() {
       ctx.clearRect(0, 0, w, h);
 
       // Screen-space cover over the homepage DOM (see FADE_ZONE).
-      drawBackdrop(ctx, backdropAlpha, w, h, floorY, dither);
+      drawBackdrop(ctx, backdropAlpha, w, h, floorY, dither, backdropCache);
 
       // World → screen: everything below draws in world coordinates.
       // Rounded so pixel art never lands on half pixels.
       ctx.save();
       ctx.translate(-Math.round(camX), 0);
+
+      // Hugo shares the camera's integer lattice: the world scrolls in
+      // whole pixels (rounded camera), so the sprite must too, or it
+      // drifts sub-pixel against the terrain and reads as stutter at
+      // moped speed. Collision still uses the unrounded player.x/y.
+      const drawX = Math.round(rx);
+      const drawY = Math.round(ry);
 
       // Screen 0's terrain replicas — same coords as the collision,
       // so the DOM→canvas handover has no seam.
@@ -460,10 +472,10 @@ export default function HugoParkour() {
 
       drawTerrain(ctx, level, tick, camX, w, h, !reducedMotion);
 
-      drawGoal(ctx, level.goal, tick, !reducedMotion);
+      drawGoal(ctx, level.goal, tick, !reducedMotion, camX, w);
 
       if (!reducedMotion && tick <= BEAM_STEPS && !wonRef.current) {
-        drawBeam(ctx, level.spawn.x, Math.min(ry + 16, floorY), accent, tick);
+        drawBeam(ctx, level.spawn.x, Math.min(drawY + 16, floorY), accent, tick);
       }
 
       // Beam-out: the reverse beam swallows Hugo as the card fades in.
@@ -472,7 +484,7 @@ export default function HugoParkour() {
           1,
           BEAM_STEPS - Math.floor((transStep / TRANS_FADE_IN) * BEAM_STEPS),
         );
-        drawBeam(ctx, rx, Math.min(ry + 16, floorY), accent, t);
+        drawBeam(ctx, drawX, Math.min(drawY + 16, floorY), accent, t);
       }
 
       // The death beat: Hugo is gone; the hazard spits embers where
@@ -508,8 +520,8 @@ export default function HugoParkour() {
       if (level.mechanic === "moped") {
         drawHeadlight(
           ctx,
-          rx + 15 * player.facing,
-          ry + 6,
+          drawX + 15 * player.facing,
+          drawY + 6,
           player.facing,
           reducedMotion ? 4 : Math.abs(player.vx),
         );
@@ -521,8 +533,8 @@ export default function HugoParkour() {
               ? -1
               : 0;
         drawMopedHugo(ctx, {
-          x: rx,
-          y: ry,
+          x: drawX,
+          y: drawY,
           px: SPRITE_PX,
           accent,
           facing: player.facing,
@@ -539,8 +551,8 @@ export default function HugoParkour() {
         const running =
           player.grounded && Math.abs(player.vx) > 0.6 && !wonRef.current;
         drawHugoSprite(ctx, {
-          x: rx,
-          y: ry,
+          x: drawX,
+          y: drawY,
           px: SPRITE_PX,
           accent,
           eye,

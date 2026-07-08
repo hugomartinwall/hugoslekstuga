@@ -33,7 +33,13 @@ export function drawGoal(
   },
   tick: number,
   animate: boolean,
+  viewX: number,
+  viewW: number,
 ): void {
+  // Off-screen? Skip the gradient + text + sparkles entirely. The
+  // radial halo reaches ~130px past the sign, so cull with that
+  // margin (the goal sits ~9000px away for most of a level-2 run).
+  if (goal.x + goal.w < viewX - 130 || goal.x > viewX + viewW + 130) return;
   const hex = COLOR_HEX[goal.color];
   const cx = goal.x + goal.w / 2;
   const cy = goal.y + goal.h / 2 - 8;
@@ -166,9 +172,44 @@ export function makeDither(
   return ctx.createPattern(tile, "repeat");
 }
 
+/** Pre-render the static backdrop (cream + dither + floor line) to an
+ *  offscreen canvas at device resolution, so drawBackdrop can blit it
+ *  1:1 instead of re-filling the whole viewport every frame. Built
+ *  once per layout (rebuild on resize — it depends on w/h/floorY/dpr).
+ *  Alpha is applied at blit time, never baked, so level 1's 0→1
+ *  handover fade still works. The dpr transform is applied while
+ *  drawing so the pixels equal the old per-frame path exactly. */
+export function makeBackdrop(
+  w: number,
+  h: number,
+  floorY: number,
+  dpr: number,
+): HTMLCanvasElement | null {
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  const c = cv.getContext("2d");
+  if (!c) return null;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.imageSmoothingEnabled = false;
+  c.fillStyle = CREAM_HEX;
+  c.fillRect(0, 0, w, h);
+  const dither = makeDither(c);
+  if (dither) {
+    c.fillStyle = dither;
+    c.fillRect(0, 0, w, h);
+  }
+  c.fillStyle = withAlpha(INKISH, 0.16);
+  c.fillRect(0, floorY, w, 2);
+  return cv;
+}
+
 /** Room-dark cover over the whole viewport (screen space — call it
  *  BEFORE the world transform), with the site's dither whisper and a
- *  faint phosphor floor line so the ground reads through the fade. */
+ *  faint phosphor floor line so the ground reads through the fade.
+ *  When fully opaque and a prebuilt `cache` exists, blits it 1:1
+ *  (both levels' steady state); the per-frame fill path only runs
+ *  during level 1's partial handover fade or without a cache. */
 export function drawBackdrop(
   ctx: CanvasRenderingContext2D,
   alpha: number,
@@ -176,8 +217,18 @@ export function drawBackdrop(
   h: number,
   floorY: number,
   dither: CanvasPattern | null,
+  cache: HTMLCanvasElement | null,
 ): void {
   if (alpha <= 0) return;
+  if (cache && alpha >= 1) {
+    // 1:1 device-pixel blit — no scaling, no smoothing, byte-identical
+    // to the fills below but one drawImage instead of two full fills.
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(cache, 0, 0);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = CREAM_HEX;
@@ -434,10 +485,18 @@ export function drawTerrain(
     switch (d.kind) {
       case "girderline": {
         if (!visible(d.wx, d.w)) break;
-        ctx.fillStyle = withAlpha(INKISH, 0.07);
-        ctx.fillRect(d.wx, d.wy, d.w, 3);
-        for (let x = d.wx; x < d.wx + d.w; x += 90) {
-          ctx.fillRect(x, d.wy, 3, 26);
+        // Horizontal rail + vertical struts, clamped to the visible
+        // slice. Struts stay on the deco's 90px world grid so they
+        // don't shimmer while scrolling.
+        const left = Math.max(d.wx, viewX - 40);
+        const right = Math.min(d.wx + d.w, viewX + viewW + 40);
+        if (right > left) {
+          ctx.fillStyle = withAlpha(INKISH, 0.07);
+          ctx.fillRect(left, d.wy, right - left, 3);
+          const first = d.wx + Math.max(0, Math.floor((left - d.wx) / 90)) * 90;
+          for (let x = first; x < right; x += 90) {
+            ctx.fillRect(x, d.wy, 3, 26);
+          }
         }
         break;
       }
@@ -457,13 +516,24 @@ export function drawTerrain(
       }
       case "duct": {
         if (!visible(d.wx, d.w)) break;
-        // Vent duct band along the ceiling line with slats.
-        ctx.fillStyle = withAlpha("#2a3050", 0.35);
-        ctx.fillRect(d.wx, d.wy, d.w, 26);
-        ctx.fillStyle = withAlpha(INKISH, 0.05);
-        for (let x = d.wx + 12; x < d.wx + d.w; x += 46) {
-          ctx.fillRect(x, d.wy + 5, 24, 3);
-          ctx.fillRect(x, d.wy + 13, 24, 3);
+        // Vent duct band along the ceiling line with slats — clamped
+        // to the visible slice. Slats start on the deco's 46px world
+        // grid (d.wx + 12 + n·46) so they stay phase-stable as the
+        // camera scrolls; a floor-based first index keeps the slat
+        // straddling the left edge.
+        const left = Math.max(d.wx, viewX - 40);
+        const right = Math.min(d.wx + d.w, viewX + viewW + 40);
+        if (right > left) {
+          ctx.fillStyle = withAlpha("#2a3050", 0.35);
+          ctx.fillRect(left, d.wy, right - left, 26);
+          ctx.fillStyle = withAlpha(INKISH, 0.05);
+          const gridStart = d.wx + 12;
+          const first =
+            gridStart + Math.max(0, Math.floor((left - gridStart) / 46)) * 46;
+          for (let x = first; x < right; x += 46) {
+            ctx.fillRect(x, d.wy + 5, 24, 3);
+            ctx.fillRect(x, d.wy + 13, 24, 3);
+          }
         }
         break;
       }
@@ -487,25 +557,36 @@ export function drawTerrain(
       }
       case "skyline": {
         if (!visible(d.wx, d.w)) break;
-        // Phosphor city, static — blocks with a few lit windows.
+        // Phosphor city, static — blocks with a few lit windows. Each
+        // building's size and window pattern is a pure function of its
+        // index i, so we walk x/i in lockstep across the whole width
+        // (cheap integer math) but only PAINT the ones on screen. On
+        // level 2 the skyline spans the world; this keeps the fills —
+        // the actual cost — proportional to the viewport, and because
+        // i stays coupled to x the buildings never shift or shimmer.
         const seed = 7;
+        const left = viewX - 40;
+        const right = viewX + viewW + 40;
         let x = d.wx;
         let i = 0;
         while (x < d.wx + d.w) {
           const bw = 70 + ((i * 37 + seed) % 60);
-          const bh = 120 + ((i * 83 + seed * 13) % 180);
-          ctx.fillStyle = "#0e1019";
-          ctx.fillRect(x, viewH - 10 - bh, bw, bh);
-          ctx.fillStyle = withAlpha(COLOR_HEX.yellow, 0.25);
-          for (let wy = 0; wy < 3; wy++) {
-            for (let wx2 = 0; wx2 < 2; wx2++) {
-              if ((i + wy + wx2) % 3 === 0) {
-                ctx.fillRect(
-                  x + 14 + wx2 * 26,
-                  viewH - 10 - bh + 18 + wy * 34,
-                  6,
-                  8,
-                );
+          if (x > right) break;
+          if (x + bw >= left) {
+            const bh = 120 + ((i * 83 + seed * 13) % 180);
+            ctx.fillStyle = "#0e1019";
+            ctx.fillRect(x, viewH - 10 - bh, bw, bh);
+            ctx.fillStyle = withAlpha(COLOR_HEX.yellow, 0.25);
+            for (let wy = 0; wy < 3; wy++) {
+              for (let wx2 = 0; wx2 < 2; wx2++) {
+                if ((i + wy + wx2) % 3 === 0) {
+                  ctx.fillRect(
+                    x + 14 + wx2 * 26,
+                    viewH - 10 - bh + 18 + wy * 34,
+                    6,
+                    8,
+                  );
+                }
               }
             }
           }
