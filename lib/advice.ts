@@ -19,22 +19,17 @@
  *
  * Entries are structured now that Hugo delivers them himself:
  *   - `tone` lets his mood bias the draw (grumpy Hugo leans blunt)
- *   - `rarity: "rare"` marks the tiny locked pool — surfaced only at
- *     streak/visit milestones. Rares must clear the bar by a margin;
- *     when in doubt, it's common.
  *   - `id` is a content hash. Editing a line resets that line's
  *     told-you-this memory — acceptable; edits are rare and the cost
  *     is one repeat.
  */
 
 export type AdviceTone = "warm" | "blunt" | "wry";
-export type AdviceRarity = "common" | "rare";
 
 export type AdviceEntry = {
   id: string;
   text: string;
   tone: AdviceTone;
-  rarity: AdviceRarity;
 };
 
 /** djb2, base36, 6 chars — stable across sessions, unique enough for ~100 lines. */
@@ -113,31 +108,10 @@ const COMMON: [AdviceTone, string][] = [
   ["warm", "Suffering is the gap between what is and what you wanted."],
 ];
 
-/** The locked pool. Six lines, each earning its scarcity. */
-const RARE: [AdviceTone, string][] = [
-  ["blunt", "You already know. You're asking around for permission."],
-  ["warm", "Most doors aren't locked. Just heavy."],
-  ["blunt", "The life you're postponing is getting shorter too."],
-  ["warm", "You'll miss this version of yourself too."],
-  ["blunt", "No one claps for the disaster you prevented. Prevent it anyway."],
-  ["wry", "Being hard to please isn't a personality."],
-];
-
-export const adviceEntries: AdviceEntry[] = [
-  ...COMMON.map(
-    ([tone, text]): AdviceEntry => ({
-      id: adviceId(text),
-      text,
-      tone,
-      rarity: "common",
-    }),
-  ),
-  ...RARE.map(
-    ([tone, text]): AdviceEntry => ({
-      id: adviceId(text),
-      text,
-      tone,
-      rarity: "rare",
-    }),
-  ),
-];
+export const adviceEntries: AdviceEntry[] = COMMON.map(
+  ([tone, text]): AdviceEntry => ({
+    id: adviceId(text),
+    text,
+    tone,
+  }),
+);

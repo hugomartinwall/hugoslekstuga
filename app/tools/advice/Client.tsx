@@ -24,10 +24,9 @@ import {
  * delivering: a thinking beat whose length follows his mood, a glance
  * down at the line, then up at you. He remembers what he's told you
  * across visits, keeps one deterministic line per day ("one for
- * today"), holds a tiny rare pool for people who keep coming back —
- * and if you treat him like a slot machine, he closes his eyes for a
- * while. The soul is calm sincerity with a wink; he never speaks in
- * bubbles, he just hands you the thing.
+ * today"), and if you treat him like a slot machine, he closes his
+ * eyes for a while. The soul is calm sincerity with a wink; he never
+ * speaks in bubbles, he just hands you the thing.
  */
 
 /** Thinking-beat length per mood — sleepy Hugo takes his time. */
@@ -109,20 +108,16 @@ export default function AdvicePage() {
 
     setPose("thinking");
     later(() => {
-      const hugo = getHugoState();
       const result = drawAdvice({
         memory,
         mood,
-        streakDays: hugo.memory.streakDays,
-        visitCount: hugo.memory.visitCount,
-        firstSeen: hugo.memory.firstSeen,
         dateKey: localISODate(new Date()),
       });
       setMemory(result.memory);
       saveAdviceMemory(result.memory);
       setCurrent(result);
-      setPose(result.isRare ? "celebrating" : "delivering");
-      later(() => setPose("idle"), result.isRare ? 1600 : 950);
+      setPose("delivering");
+      later(() => setPose("idle"), 950);
     }, THINK_MS[mood]);
   };
 
@@ -181,13 +176,11 @@ export default function AdvicePage() {
 
   const subline = !current
     ? null
-    : current.isRare
-      ? "One of the rare ones. He doesn't hand these out often."
-      : current.isDaily
-        ? "Today's. Same line for everyone who asks him today."
-        : current.isRepeat
-          ? "He's told you this before. It's still true."
-          : null;
+    : current.isDaily
+      ? "Today's. Same line for everyone who asks him today."
+      : current.isRepeat
+        ? "He's told you this before. It's still true."
+        : null;
 
   return (
     <ToolFrame tool={tool}>
@@ -211,11 +204,7 @@ export default function AdvicePage() {
             </p>
           ) : (
             <div key={current.memory.draws} className="fade-rise contents">
-              <p
-                className={`max-w-2xl font-display text-3xl leading-tight text-ink sm:text-4xl md:text-5xl ${
-                  current.isRare ? "text-glow text-yellow" : ""
-                }`}
-              >
+              <p className="max-w-2xl font-display text-3xl leading-tight text-ink sm:text-4xl md:text-5xl">
                 &ldquo;{current.entry.text}&rdquo;
               </p>
               {subline && (

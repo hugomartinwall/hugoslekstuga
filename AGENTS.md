@@ -299,12 +299,10 @@ never teased with a game they can't play.
 - a recency window so lines don't echo
 - a deterministic "one for today" first draw per calendar day
 - tone bias from Hugo's live mood (grumpy leans blunt, sleepy warm)
-- a rare pool unlocked by the relationship (streak ≥ 7, visits ≥ 25,
-  or his "birthday" — the `firstSeen` anniversary)
 - told-you-this-before memory, the decline (he refuses after enough
   draws in one sitting), and a kept list
 
-Advice data lives in `lib/advice.ts` as `{ id, tone, rarity }` entries.
+Advice data lives in `lib/advice.ts` as `{ id, tone }` entries.
 All engine persistence is one key: `hugoslekstuga:advice:memory`.
 HugoStage performs the draw (thinking → delivering → …). Treat the
 engine as the only draw path — don't sample `adviceEntries` directly.
