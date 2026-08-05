@@ -9,7 +9,7 @@
 // games (currently just Munch) live at /games/<slug>. This file is
 // where that one-line decision is encoded.
 
-const GAME_SLUGS = new Set<string>(["munch", "noodle"]);
+const GAME_SLUGS = new Set<string>(["munch", "noodle", "overrun"]);
 
 /**
  * The route a tool lives at. Most tools are under /tools/<slug>; games
@@ -18,4 +18,9 @@ const GAME_SLUGS = new Set<string>(["munch", "noodle"]);
  */
 export function pathFor(slug: string): string {
   return GAME_SLUGS.has(slug) ? `/games/${slug}` : `/tools/${slug}`;
+}
+
+/** Games render as arcade cabinets on the homepage swarm; ToolMap asks here. */
+export function isGameSlug(slug: string): boolean {
+  return GAME_SLUGS.has(slug);
 }

@@ -15,6 +15,8 @@ export type Tool = {
   description: string;
   color: ToolColor;
   emoji: string;
+  /** Fresh arrival — the homepage swarm hangs a NEW tag on the orb. Remove after the novelty fades. */
+  isNew?: boolean;
 };
 
 export const tools: Tool[] = [
@@ -119,6 +121,16 @@ export const tools: Tool[] = [
       "Real-time multiplayer snake. You move forward at all times — aim with the mouse or your finger, eat dots to grow, hit another snake's body and you die. Hold space to boost (costs length). One shared room, pasta-named bots fill it when you're alone.",
     color: "pink",
     emoji: "~",
+  },
+  {
+    slug: "overrun",
+    title: "Overrun",
+    tagline: "Send everything. Take everything.",
+    description:
+      "A tiny real-time strategy game against the machine. Nodes breed units; drag from yours to pour them somewhere else. Take the neutrals, overrun the enemy, clear the level — two lives per run, and the levels don't get kinder. Single player, runs entirely in your tab.",
+    color: "pink",
+    emoji: "◍",
+    isNew: true,
   },
 ];
 

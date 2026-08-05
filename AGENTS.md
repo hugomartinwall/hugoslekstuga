@@ -59,7 +59,8 @@ the working constraints when you build:
 3. **Open a tab, use it, close it** — no onboarding, no settings buried
    in menus.
 
-The one exception to (2) is the multiplayer games (Munch, Noodle), which
+The one exception to (2) is the multiplayer games (Munch, Noodle —
+Overrun is single-player and needs no server), which
 share a small WebSocket server for game state. The server keeps no logs,
 no DB, no third-party connections. That's the only network round-trip in
 the whole site.
@@ -90,9 +91,13 @@ same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
-**9 tools + 2 games**: advice, breathe, focus, lorem, pixla, roll,
-sjokort, strip, sudoku + munch, noodle. (8 tools survived the
-2026-07-02 curation cull; pixla joined 2026-07-03.)
+**9 tools + 3 games**: advice, breathe, focus, lorem, pixla, roll,
+sjokort, strip, sudoku + munch, noodle, overrun. (8 tools survived the
+2026-07-02 curation cull; pixla joined 2026-07-03; overrun — the
+single-player RTS, ported from Hugo's separate CrazyGames project —
+joined 2026-08-05. Its engine lives in `lib/overrun/`; the upstream
+game repo keeps evolving separately for CrazyGames, so don't try to
+sync them.)
 The retired slugs (case, cleantext, convert, diff, pdf, qr, read,
 typing, stretch) 308-redirect to `/?retired=<slug>` in `next.config.ts`
 — HomeShell greets the broken bookmark with a quip. Don't reuse a
@@ -129,7 +134,7 @@ ship its page. Use the helpers in `lib/colors.ts` — never hand-roll a
    skin can flip individual accents back. Use the helpers — never
    hardcode the choice.
 2. **Colour = category.** Registry colours are categorical, not
-   decorative: games are magenta (munch, noodle = pink), brainy tools
+   decorative: games are magenta (munch, noodle, overrun = pink), brainy tools
    are violet/ice (sudoku = purple, sjokort = teal), calm tools are
    mint/cyan (focus = green, breathe = blue), quick warm utilities take
    the warm range (roll = orange/amber, strip = tomato/coral, lorem +

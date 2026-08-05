@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
-import { pathFor } from "@/lib/clusters";
+import { isGameSlug, pathFor } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
 import { drawCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
 import { getWordmarkRect, type WordmarkRect } from "@/lib/wordmark-bridge";
@@ -223,7 +223,7 @@ function wordmarkPad(width: number): number {
 /** Physics radius per node — munch/noodle render as 1.5× arcade
  *  cabinets, so walls and clamps must honour the bigger footprint. */
 function nodeRadius(n: Node): number {
-  const isGame = n.tool.slug === "munch" || n.tool.slug === "noodle";
+  const isGame = isGameSlug(n.tool.slug);
   return isGame ? NODE_R * 1.5 : NODE_R;
 }
 
@@ -624,7 +624,7 @@ export default function ToolMap({
       for (const n of nodesRef.current) {
         const entrance = getEntrance(n, nowTs);
         if (entrance <= 0.02) continue;
-        const isGame = n.tool.slug === "munch" || n.tool.slug === "noodle";
+        const isGame = isGameSlug(n.tool.slug);
         const isHov = hov === n.tool.slug;
         const scale =
           entrance *
@@ -1109,7 +1109,7 @@ export default function ToolMap({
             // Games (munch, noodle) are a different category of thing
             // — the canvas paints them as mini arcade cabinets instead
             // of orbs, so they read as machines at a glance.
-            const isGame = n.tool.slug === "munch" || n.tool.slug === "noodle";
+            const isGame = isGameSlug(n.tool.slug);
             const r = isGame ? NODE_R * 1.5 : NODE_R;
             const labelY = isGame ? r + 18 : LABEL_OFFSET;
             const emojiSize = isGame ? 28 : 20;
@@ -1173,6 +1173,31 @@ export default function ToolMap({
                 >
                   {n.tool.title}
                 </text>
+                {/* Fresh arrival — a pixel price-tag pinned to the top-right
+                    of the orb. Registry-driven (Tool.isNew); square corners
+                    are the skin. */}
+                {n.tool.isNew && (
+                  <g
+                    transform={`translate(${r * 0.62}, ${-r * 0.72})`}
+                    pointerEvents="none"
+                  >
+                    <rect x={-15} y={-7} width={30} height={14} fill={color} />
+                    <text
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      y={0.5}
+                      fontSize={8}
+                      fill={preferredTextHex(n.tool.color)}
+                      style={{
+                        fontFamily: "var(--font-pixel)",
+                        fontWeight: 700,
+                        letterSpacing: "0.08em",
+                      }}
+                    >
+                      NEW
+                    </text>
+                  </g>
+                )}
               </g>
             );
           })}
