@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "munch": "tsx server/index.ts",
-    "bake:sjokort": "tsx scripts/bake-sjokort-graph.ts"
+    "bake:sjokort": "tsx scripts/bake-sjokort-graph.ts",
+    "playtest:overrun": "tsx scripts/playtest-overrun.ts"
   },
   "dependencies": {
     "@types/ws": "^8.18.1",
