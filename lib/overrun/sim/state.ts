@@ -18,7 +18,21 @@ export function rngNext(rng: Rng): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-export type Owner = "player" | "enemy" | "neutral";
+/**
+ * Factions are small integers: 0 = neutral, 1 = the player, 2–4 = AI rivals.
+ * Free-for-all: every faction is hostile to every other.
+ */
+export type Faction = 0 | 1 | 2 | 3 | 4;
+export const NEUTRAL: Faction = 0;
+export const PLAYER: Faction = 1;
+export const MAX_FACTIONS = 4;
+
+/** Node specializations. Fixed at mapgen; survive capture. */
+export type NodeKind = 0 | 1 | 2 | 3;
+export const KIND_STANDARD = 0;
+export const KIND_FACTORY = 1; // produces ~1.6× faster
+export const KIND_FORTRESS = 2; // two hostile packets per defender killed
+export const KIND_TURRET = 3; // zaps nearby hostile packets while owned
 
 export type NodeSize = 0 | 1 | 2; // small | medium | large
 
@@ -30,9 +44,14 @@ export interface Node {
   id: number;
   x: number;
   y: number;
-  owner: Owner;
+  owner: Faction;
   units: number; // integer, always >= 0
   size: NodeSize;
+  kind: NodeKind;
+  /** Fortress damage alternator (0|1); every second hostile packet is absorbed. */
+  guard: number;
+  /** 0 = idle, else the tick this node's size upgrade completes. */
+  upgrading: number;
   selected: boolean;
 }
 
@@ -42,7 +61,7 @@ export interface Node {
  * packets for movement, only for arrival.
  */
 export interface Packet {
-  owner: Owner; // stamped at spawn; compared against target owner AT ARRIVAL
+  owner: Faction; // stamped at spawn; compared against target owner AT ARRIVAL
   from: number; // node id
   to: number; // node id
   departTick: number;
@@ -58,6 +77,23 @@ export interface Flow {
 
 export type GameStatus = "playing" | "won" | "lost";
 
+/**
+ * Per-AI behavioral fingerprint: pure multipliers over the base knobs.
+ * BALANCED (all 1.0) reproduces the classic 1v1 math exactly.
+ */
+export interface Persona {
+  aggression: number; // scales hostile-target bonus, shrinks overkill margin
+  expansion: number; // scales the neutral-capture bonus
+  opportunism: number; // scales the anti-snowball/weakness-seeking term
+  turtle: number; // divides send fraction (bigger = keeps more garrison)
+}
+
+export interface FactionCfg {
+  faction: Faction; // 2..4
+  persona: Persona;
+  firstMoveTick: number; // staggered per faction
+}
+
 /** Per-level difficulty knobs, derived from the level number by level.ts. */
 export interface LevelCfg {
   level: number;
@@ -71,8 +107,20 @@ export interface LevelCfg {
   aiKillCertainty: number;
   /** Fraction of a node's units sent on normal attacks (garrison keeps the rest). */
   aiSendFraction: number;
-  /** Target-scoring bonus for neutrals; shrinks with level so the AI hunts the player. */
+  /** Target-scoring bonus for neutrals; shrinks with level so the AI hunts rivals. */
   aiNeutralBonus: number;
+  /** Certainty multiplier applied when the kill victim is the player (anti-gank lever). */
+  aiKillPlayerBias: number;
+  /** Total factions on the board including the player (2–4). */
+  factionCount: number;
+  /** One entry per AI faction, ascending faction id from 2. */
+  ais: FactionCfg[];
+  /** Player-only production intervals by size (meta-progression boost). */
+  playerProdInterval: readonly [number, number, number];
+  /** Player-only node-upgrade costs (size 0→1, 1→2). */
+  playerUpgradeCost: readonly [number, number];
+  /** Player-only upgrade construction ticks. */
+  playerUpgradeTicks: number;
 }
 
 export interface GameState {
@@ -83,7 +131,8 @@ export interface GameState {
   nodes: Node[];
   flows: Flow[];
   packets: Packet[];
-  nextAiTick: number;
+  /** Next normal-layer wake per faction id; indices 0–1 unused. Fixed length 5. */
+  nextAiTick: number[];
   /** Set on the player's first send; the onboarding hint renders until then. */
   firstSendDone: boolean;
 }
@@ -91,7 +140,6 @@ export interface GameState {
 export const WORLD_W = 160;
 export const WORLD_H = 90;
 
-const OWNER_ID: Record<Owner, number> = { player: 1, enemy: 2, neutral: 3 };
 const STATUS_ID: Record<GameStatus, number> = { playing: 0, won: 1, lost: 2 };
 
 /** Cheap stable hash of the whole state, for determinism tests. */
@@ -105,7 +153,14 @@ export function hashState(state: GameState): number {
   mix(state.rng.s);
   mix(STATUS_ID[state.status]);
   mix(state.cfg.level);
-  mix(state.nextAiTick);
+  mix(state.cfg.factionCount);
+  mix(state.cfg.playerProdInterval[0]);
+  mix(state.cfg.playerProdInterval[1]);
+  mix(state.cfg.playerProdInterval[2]);
+  mix(state.cfg.playerUpgradeCost[0]);
+  mix(state.cfg.playerUpgradeCost[1]);
+  mix(state.cfg.playerUpgradeTicks);
+  for (const t of state.nextAiTick) mix(t);
   mix(state.firstSendDone ? 1 : 0);
   for (const n of state.nodes) {
     mix(n.id);
@@ -113,7 +168,10 @@ export function hashState(state: GameState): number {
     mix(Math.round(n.y * 1000));
     mix(n.units);
     mix(n.size);
-    mix(OWNER_ID[n.owner]);
+    mix(n.kind);
+    mix(n.guard);
+    mix(n.upgrading);
+    mix(n.owner);
     mix(n.selected ? 1 : 0);
   }
   for (const f of state.flows) {
@@ -122,7 +180,7 @@ export function hashState(state: GameState): number {
     mix(f.remaining);
   }
   for (const p of state.packets) {
-    mix(OWNER_ID[p.owner]);
+    mix(p.owner);
     mix(p.from);
     mix(p.to);
     mix(p.departTick);

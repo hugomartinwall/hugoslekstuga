@@ -24,4 +24,14 @@ export interface SendUnitsCommand {
   to: number;
 }
 
-export type Command = SelectNodeCommand | DeselectCommand | SendUnitsCommand;
+/** Spend units to grow a node one size tier (takes UPGRADE_TICKS to finish). */
+export interface UpgradeNodeCommand {
+  type: "upgradeNode";
+  nodeId: number;
+}
+
+export type Command =
+  | SelectNodeCommand
+  | DeselectCommand
+  | SendUnitsCommand
+  | UpgradeNodeCommand;

@@ -1,5 +1,6 @@
 import type { Command } from "../sim/commands";
 import type { GameState, Node } from "../sim/state";
+import { PLAYER } from "../sim/state";
 import { NODE_R } from "../sim/constants";
 import type { DragView } from "../render/renderer";
 import { Renderer } from "../render/renderer";
@@ -42,6 +43,8 @@ export interface InputCallbacks {
   onPauseToggle: () => void;
   /** True while the pause menu (or an overlay) owns input — world input is off. */
   worldInputBlocked: () => boolean;
+  /** App-level world-space buttons (upgrade chevron); return true if consumed. */
+  onWorldTap?: (wx: number, wy: number) => boolean;
 }
 
 export function attachInput(
@@ -80,11 +83,13 @@ export function attachInput(
     }
     // While a menu/overlay owns input, don't translate taps into world commands.
     if (callbacks.worldInputBlocked()) return;
+    // App-level world buttons (upgrade chevron) win over node selection.
+    if (callbacks.onWorldTap?.(x, y)) return;
     const scale = e.pointerType === "touch" ? 1.8 : 1.2;
     const state = getState();
     const hit = hitNode(state, x, y, scale);
 
-    if (hit?.owner === "player") {
+    if (hit?.owner === PLAYER) {
       drag = {
         active: true,
         fromNodeId: hit.id,
@@ -99,7 +104,7 @@ export function attachInput(
     }
 
     // Not starting a drag. Tap-tap send: a player node is selected → send there.
-    const selected = state.nodes.find((n) => n.selected && n.owner === "player");
+    const selected = state.nodes.find((n) => n.selected && n.owner === PLAYER);
     if (selected && hit) {
       queue.push({ type: "sendUnits", from: selected.id, to: hit.id });
       queue.push({ type: "deselect" });

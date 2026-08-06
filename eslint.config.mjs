@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
     // Vendored third-party scripts shipped under /public — these aren't
     // our source. Specifically: the pdfjs worker (~1.2 MB of minified JS).
     "public/vendor/**",
+    // Overrun's sim suites are copied verbatim from the upstream game so a
+    // re-sync stays a straight file copy. Linting them would mean editing
+    // them, which is exactly what we're avoiding. tsc still typechecks them.
+    "test/**",
   ]),
   {
     // The newer eslint-plugin-react-hooks ships strict rules that flag

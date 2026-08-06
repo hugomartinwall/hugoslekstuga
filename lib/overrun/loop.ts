@@ -22,6 +22,12 @@ export interface Loop {
   pause(): void;
   resume(): void;
   readonly paused: boolean;
+  /**
+   * Presentation-side time dilation (final-blow slow-mo): scales how fast
+   * wall-clock feeds the accumulator. Sim ticks are unchanged and identical —
+   * determinism is untouched. Clamped to [0.1, 1].
+   */
+  setTimeScale(s: number): void;
 }
 
 export function createLoop(cb: LoopCallbacks): Loop {
@@ -30,13 +36,14 @@ export function createLoop(cb: LoopCallbacks): Loop {
   let paused = false;
   let started = false;
   let rafId = 0;
+  let timeScale = 1;
 
   function frame(now: number): void {
     const dt = Math.min(now - last, MAX_FRAME_MS);
     last = now;
 
     if (!paused) {
-      acc += dt;
+      acc += dt * timeScale;
       while (acc >= TICK_MS) {
         cb.simTick();
         acc -= TICK_MS;
@@ -72,6 +79,9 @@ export function createLoop(cb: LoopCallbacks): Loop {
     },
     get paused() {
       return paused;
+    },
+    setTimeScale(s: number) {
+      timeScale = Math.max(0.1, Math.min(1, s));
     },
   };
 }

@@ -1,54 +1,80 @@
-import type { GameState, Node } from "./state";
+import type { FactionCfg, Faction, GameState, Node, Persona } from "./state";
+import { NEUTRAL, PLAYER, KIND_FORTRESS } from "./state";
 import { rngNext } from "./state";
-import { dist, startFlow } from "./tick";
-import { EMIT_EVERY, PACKET_SPEED, PROD_INTERVAL } from "./constants";
+import { applyUpgrade, dist, prodInterval, startFlow } from "./tick";
+import { EMIT_EVERY, PACKET_SPEED, UPGRADE_COST } from "./constants";
 
 /**
- * The enemy AI. Pure sim logic: deterministic given state, randomness only
- * through state.rng, acts through the same startFlow() as the player's
- * command handler. Difficulty comes from state.cfg knobs and the structural
- * TIERS table below — the AI never cheats on production.
+ * The rival AIs. Pure sim logic: deterministic given state, randomness only
+ * through state.rng, acting through the same startFlow()/applyUpgrade() the
+ * player's commands use. Free-for-all: every faction fights every other.
  *
- * Two layers:
- *  - KILL layer: detects that the player is finishable (whole-board finisher)
- *    or that a player node is defenseless (snipe) and commits, ignoring the
- *    usual caution knobs. Certainty (cfg.aiKillCertainty) is the only brake.
- *    This is what makes the AI "go for the kill" instead of farming neutrals
- *    while the player's emptied home sits open.
- *  - NORMAL layer: expansion/attack scoring at the wake cadence.
+ * Difficulty comes from cfg knobs + the structural TIERS table; FLAVOR comes
+ * from personas (pure multipliers — BALANCED reproduces the classic 1v1 math
+ * exactly, which is what keeps all historical calibration valid).
+ *
+ * Two layers per faction:
+ *  - KILL layer: finisher (eliminate a whole faction when certain) and snipe
+ *    (take any defenseless rival node). Certainty is the only brake.
+ *  - NORMAL layer: expansion/attack scoring at the wake cadence, with an
+ *    anti-snowball threat term so the board gangs up on a runaway leader.
  */
 
+export const BALANCED: Persona = { aggression: 1, expansion: 1, opportunism: 1, turtle: 1 };
+export const CRIMSON: Persona = { aggression: 1.5, expansion: 0.8, opportunism: 0.8, turtle: 0.85 };
+export const AMBER: Persona = { aggression: 0.7, expansion: 1.2, opportunism: 0.7, turtle: 1.3 };
+export const VIOLET: Persona = { aggression: 1.0, expansion: 1.0, opportunism: 1.6, turtle: 1.0 };
+
 interface Tier {
-  /** Kill-layer cadence in ticks; 0 = only at the normal wake-up. */
-  killCheckTicks: number;
-  /** Attack/reinforce decisions per wake-up. */
+  killCheckTicks: number; // 0 = only at the normal wake-up
   maxDecisions: number;
-  /** Snipe any player node at or below this effective defense (-1 = last node only). */
-  snipeMaxDef: number;
-  /** Two sources may combine on one target when neither clears it alone. */
+  snipeMaxDef: number; // -1 = last-node-only snipes
   focusFire: boolean;
-  /** Kill layer may redirect an existing flow toward the kill. */
   redirectForKill: boolean;
-  /** Send fraction used for kill commits (normal attacks use cfg.aiSendFraction). */
   killSend: number;
+  upgrades: boolean;
 }
 
 const TIERS: Record<number, Tier> = {
-  1: { killCheckTicks: 0, maxDecisions: 1, snipeMaxDef: -1, focusFire: false, redirectForKill: false, killSend: 0.9 },
-  2: { killCheckTicks: 30, maxDecisions: 2, snipeMaxDef: 2, focusFire: false, redirectForKill: false, killSend: 0.9 },
-  3: { killCheckTicks: 15, maxDecisions: 3, snipeMaxDef: 3, focusFire: true, redirectForKill: true, killSend: 1.0 },
-  4: { killCheckTicks: 1, maxDecisions: 4, snipeMaxDef: 4, focusFire: true, redirectForKill: true, killSend: 1.0 },
+  1: { killCheckTicks: 0, maxDecisions: 1, snipeMaxDef: -1, focusFire: false, redirectForKill: false, killSend: 0.9, upgrades: false },
+  2: { killCheckTicks: 30, maxDecisions: 2, snipeMaxDef: 2, focusFire: false, redirectForKill: false, killSend: 0.9, upgrades: false },
+  3: { killCheckTicks: 15, maxDecisions: 3, snipeMaxDef: 3, focusFire: true, redirectForKill: true, killSend: 1.0, upgrades: true },
+  4: { killCheckTicks: 1, maxDecisions: 4, snipeMaxDef: 4, focusFire: true, redirectForKill: true, killSend: 1.0, upgrades: true },
 };
 
-/** Defenders at arrival ≈ current units + friendly inbound − hostile inbound. */
-function effectiveDefense(state: GameState, target: Node): number {
-  let d = target.units;
+/* --------------------------------------------------------- shared scratch */
+
+// Reused per aiDecideFaction call — zero allocation in steady state.
+const inboundFriendly: number[] = [];
+const inboundHostile: number[] = [];
+const material = [0, 0, 0, 0, 0];
+
+/** One O(N+P) pass: per-node inbound tallies + per-faction material totals. */
+function precompute(state: GameState): void {
+  const n = state.nodes.length;
+  inboundFriendly.length = n;
+  inboundHostile.length = n;
+  inboundFriendly.fill(0);
+  inboundHostile.fill(0);
+  material.fill(0);
+  for (const node of state.nodes) material[node.owner]! += node.units;
   for (const p of state.packets) {
-    if (p.to !== target.id) continue;
-    if (p.owner === target.owner) d += 1;
-    else if (p.owner === "enemy") d -= 1; // our own wave already en route
+    material[p.owner]! += 1;
+    const target = state.nodes[p.to]!;
+    if (p.owner === target.owner) inboundFriendly[p.to]!++;
+    else inboundHostile[p.to]!++;
   }
-  return d;
+}
+
+/** Defenders at arrival ≈ current units + friendly inbound − hostile inbound. */
+function effDef(n: Node): number {
+  return n.units + inboundFriendly[n.id]! - inboundHostile[n.id]!;
+}
+
+function factionsAlive(state: GameState): number {
+  let count = 0;
+  for (let f = 1; f <= 1 + state.cfg.ais.length; f++) if (material[f]! > 0) count++;
+  return count;
 }
 
 /** Ticks for a wave of `units` from src to land on dst (travel + drain time). */
@@ -57,38 +83,44 @@ function waveTicks(src: Node, dst: Node, units: number): number {
 }
 
 /**
- * Units needed to take `n` with a wave from `src`: defenders at arrival,
- * production that lands while the wave is en route, plus the capture unit.
+ * Units needed to take `n` with a wave from `src`: defenders at arrival
+ * (doubled behind fortress armor), production landing during travel, plus
+ * the capture unit.
  */
 function killCost(state: GameState, n: Node, src: Node, waveSize: number): number {
+  const def = Math.max(0, effDef(n)) * (n.kind === KIND_FORTRESS ? 2 : 1);
   const prodDuringTravel =
-    n.owner === "neutral" ? 0 : Math.ceil(waveTicks(src, n, waveSize) / PROD_INTERVAL[n.size]);
-  return Math.max(0, effectiveDefense(state, n)) + prodDuringTravel + 1;
+    n.owner === NEUTRAL ? 0 : Math.ceil(waveTicks(src, n, waveSize) / prodInterval(state, n));
+  return def + prodDuringTravel + 1;
 }
 
 function hasFlow(state: GameState, nodeId: number): boolean {
   return state.flows.some((f) => f.from === nodeId);
 }
 
+function certaintyFor(state: GameState, victim: Faction): number {
+  const c = state.cfg.aiKillCertainty;
+  return victim === PLAYER ? c * state.cfg.aiKillPlayerBias : c;
+}
+
 /* -------------------------------------------------------------- kill layer */
 
-/** Try to end the game outright: cover every player node with a lethal wave. */
-function tryFinisher(state: GameState, tier: Tier): boolean {
-  const playerNodes = state.nodes.filter((n) => n.owner === "player");
-  if (playerNodes.length === 0) return false;
+/** Try to eliminate `victim` outright: cover every node they own. */
+function tryFinisher(state: GameState, self: Faction, tier: Tier, victim: Faction): boolean {
+  const victimNodes = state.nodes.filter((n) => n.owner === victim);
+  if (victimNodes.length === 0) return false;
 
   const sources = state.nodes.filter(
-    (n) => n.owner === "enemy" && n.units >= 2 && (tier.redirectForKill || !hasFlow(state, n.id)),
+    (n) => n.owner === self && n.units >= 2 && (tier.redirectForKill || !hasFlow(state, n.id)),
   );
   if (!sources.length) return false;
 
   let strayPackets = 0;
-  for (const p of state.packets) if (p.owner === "player") strayPackets++;
+  for (const p of state.packets) if (p.owner === victim) strayPackets++;
 
   const force = sources.reduce((s, n) => s + n.units, 0) * tier.killSend;
-  // Approximate total cost using each target's nearest source for travel time.
   let totalCost = strayPackets;
-  for (const t of playerNodes) {
+  for (const t of victimNodes) {
     let best = Infinity;
     for (const s of sources) {
       const c = killCost(state, t, s, Math.floor(s.units * tier.killSend));
@@ -96,12 +128,10 @@ function tryFinisher(state: GameState, tier: Tier): boolean {
     }
     totalCost += best;
   }
-  if (force < state.cfg.aiKillCertainty * totalCost) return false;
+  if (force < certaintyFor(state, victim) * totalCost) return false;
 
-  // Commit: assign each player node its nearest capable free source; leftovers
-  // pile onto the biggest target.
   const used = new Set<number>();
-  for (const t of playerNodes) {
+  for (const t of victimNodes) {
     let pick: Node | null = null;
     let pickDist = Infinity;
     for (const s of sources) {
@@ -120,9 +150,8 @@ function tryFinisher(state: GameState, tier: Tier): boolean {
   let fired = used.size > 0;
   for (const s of sources) {
     if (used.has(s.id)) continue;
-    // Everything else joins the hunt on the strongest player node.
     let big: Node | null = null;
-    for (const t of playerNodes) if (!big || t.units > big.units) big = t;
+    for (const t of victimNodes) if (!big || t.units > big.units) big = t;
     if (big) {
       startFlow(state, s.id, big.id, tier.killSend);
       fired = true;
@@ -131,19 +160,21 @@ function tryFinisher(state: GameState, tier: Tier): boolean {
   return fired;
 }
 
-/** Punish a defenseless player node — the emptied-home scenario. */
-function trySnipe(state: GameState, tier: Tier): boolean {
-  const playerNodes = state.nodes.filter((n) => n.owner === "player");
-  if (!playerNodes.length) return false;
-
+/** Punish any defenseless rival node — the emptied-home scenario. */
+function trySnipe(state: GameState, self: Faction, tier: Tier): boolean {
   let target: Node | null = null;
   let targetDef = Infinity;
-  for (const n of playerNodes) {
-    const def = effectiveDefense(state, n);
-    // Tier 1 only ever snipes the player's LAST node (guaranteed-loss states);
-    // higher tiers snipe any sufficiently open node.
-    if (tier.snipeMaxDef < 0 && playerNodes.length > 1) continue;
-    if (def > Math.max(tier.snipeMaxDef, tier.snipeMaxDef < 0 ? 2 : -1)) continue;
+  for (const n of state.nodes) {
+    if (n.owner === self || n.owner === NEUTRAL) continue;
+    const def = effDef(n);
+    if (tier.snipeMaxDef < 0) {
+      // Tier 1 only ever snipes a faction's LAST node (guaranteed-loss states).
+      let count = 0;
+      for (const m of state.nodes) if (m.owner === n.owner) count++;
+      if (count > 1 || def > 2) continue;
+    } else if (def > tier.snipeMaxDef) {
+      continue;
+    }
     if (def < targetDef) {
       target = n;
       targetDef = def;
@@ -153,10 +184,11 @@ function trySnipe(state: GameState, tier: Tier): boolean {
 
   let src: Node | null = null;
   let srcDist = Infinity;
+  const certainty = certaintyFor(state, target.owner);
   for (const n of state.nodes) {
-    if (n.owner !== "enemy" || hasFlow(state, n.id)) continue;
+    if (n.owner !== self || hasFlow(state, n.id)) continue;
     const cost = killCost(state, target, n, Math.floor(n.units * tier.killSend));
-    if (n.units * tier.killSend >= state.cfg.aiKillCertainty * cost && dist(n, target) < srcDist) {
+    if (n.units * tier.killSend >= certainty * cost && dist(n, target) < srcDist) {
       src = n;
       srcDist = dist(n, target);
     }
@@ -168,36 +200,68 @@ function trySnipe(state: GameState, tier: Tier): boolean {
 
 /* ------------------------------------------------------------ normal layer */
 
-function scoreTarget(state: GameState, src: Node, n: Node, waveSize: number): number {
+const KIND_LURE = [0, 6, -2, 4] as const; // standard, factory, fortress, turret
+
+function scoreTarget(
+  state: GameState,
+  self: Faction,
+  persona: Persona,
+  alive: number,
+  avgMaterial: number,
+  src: Node,
+  n: Node,
+  waveSize: number,
+): number {
   const prodDuringTravel =
-    n.owner === "neutral" ? 0 : Math.ceil(waveTicks(src, n, waveSize) / PROD_INTERVAL[n.size]);
+    n.owner === NEUTRAL ? 0 : Math.ceil(waveTicks(src, n, waveSize) / prodInterval(state, n));
+  // Anti-snowball: bias attacks toward the material leader (only meaningful
+  // in 3+-faction fights; 1v1 keeps the classic scoring exactly).
+  const threat =
+    n.owner === NEUTRAL || alive < 3
+      ? 0
+      : 12 * Math.max(0, material[n.owner]! / avgMaterial - 1) * persona.opportunism;
   return (
     60 / (1 + dist(src, n) / 20) +
-    (n.owner === "neutral" ? state.cfg.aiNeutralBonus : 8) +
-    4 * n.size -
-    effectiveDefense(state, n) -
-    prodDuringTravel
+    (n.owner === NEUTRAL
+      ? state.cfg.aiNeutralBonus * persona.expansion
+      : 8 * persona.aggression) +
+    4 * n.size +
+    KIND_LURE[n.kind] -
+    effDef(n) -
+    prodDuringTravel +
+    threat
   );
 }
 
-function normalDecision(state: GameState, tier: Tier, decided: Set<number>): boolean {
+function normalDecision(
+  state: GameState,
+  self: Faction,
+  persona: Persona,
+  tier: Tier,
+  decided: Set<number>,
+): boolean {
   const { cfg } = state;
+  const alive = factionsAlive(state);
+  const avgMaterial =
+    (material[PLAYER]! + state.cfg.ais.reduce((s, fc) => s + material[fc.faction]!, 0)) /
+    Math.max(1, alive);
 
   let src: Node | null = null;
   for (const n of state.nodes) {
-    if (n.owner !== "enemy" || n.units < cfg.aiMinUnits || decided.has(n.id)) continue;
+    if (n.owner !== self || n.units < cfg.aiMinUnits || decided.has(n.id)) continue;
     if (hasFlow(state, n.id)) continue;
     if (!src || n.units > src.units) src = n;
   }
   if (!src) return false;
   decided.add(src.id);
 
-  const wave = Math.floor(src.units * cfg.aiSendFraction);
+  const sendFraction = Math.min(0.95, cfg.aiSendFraction / persona.turtle);
+  const wave = Math.floor(src.units * sendFraction);
   let best: Node | null = null;
   let bestScore = -Infinity;
   for (const n of state.nodes) {
-    if (n.owner === "enemy") continue;
-    const score = scoreTarget(state, src, n, wave);
+    if (n.owner === self) continue;
+    const score = scoreTarget(state, self, persona, alive, avgMaterial, src, n, wave);
     if (score > bestScore) {
       bestScore = score;
       best = n;
@@ -205,9 +269,11 @@ function normalDecision(state: GameState, tier: Tier, decided: Set<number>): boo
   }
   if (!best) return false;
 
-  const need = effectiveDefense(state, best) + cfg.aiOverkillMargin;
+  const margin = Math.ceil(cfg.aiOverkillMargin / persona.aggression);
+  const fortressFactor = best.kind === KIND_FORTRESS ? 2 : 1;
+  const need = Math.max(0, effDef(best)) * fortressFactor + margin;
   if (wave > need) {
-    startFlow(state, src.id, best.id, cfg.aiSendFraction);
+    startFlow(state, src.id, best.id, sendFraction);
     return true;
   }
 
@@ -215,25 +281,25 @@ function normalDecision(state: GameState, tier: Tier, decided: Set<number>): boo
   if (tier.focusFire) {
     let ally: Node | null = null;
     for (const n of state.nodes) {
-      if (n.owner !== "enemy" || n.id === src.id || decided.has(n.id)) continue;
+      if (n.owner !== self || n.id === src.id || decided.has(n.id)) continue;
       if (hasFlow(state, n.id) || n.units < cfg.aiMinUnits / 2) continue;
       if (!ally || n.units > ally.units) ally = n;
     }
-    if (ally && wave + Math.floor(ally.units * cfg.aiSendFraction) > need + cfg.aiOverkillMargin) {
+    if (ally && wave + Math.floor(ally.units * sendFraction) > need + margin) {
       decided.add(ally.id);
-      startFlow(state, src.id, best.id, cfg.aiSendFraction);
-      startFlow(state, ally.id, best.id, cfg.aiSendFraction);
+      startFlow(state, src.id, best.id, sendFraction);
+      startFlow(state, ally.id, best.id, sendFraction);
       return true;
     }
   }
 
-  // No safe attack: shore up the frontline (enemy node closest to any player node).
+  // No safe attack: shore up the frontline (own node closest to any hostile node).
   let front: Node | null = null;
   let frontDist = Infinity;
   for (const n of state.nodes) {
-    if (n.owner !== "enemy" || n.id === src.id) continue;
+    if (n.owner !== self || n.id === src.id) continue;
     for (const p of state.nodes) {
-      if (p.owner !== "player") continue;
+      if (p.owner === self || p.owner === NEUTRAL) continue;
       const d = dist(n, p);
       if (d < frontDist) {
         frontDist = d;
@@ -242,37 +308,74 @@ function normalDecision(state: GameState, tier: Tier, decided: Set<number>): boo
     }
   }
   if (front && front.units < src.units / 2) {
-    startFlow(state, src.id, front.id, cfg.aiSendFraction);
+    startFlow(state, src.id, front.id, sendFraction);
     return true;
   }
   return false;
 }
 
+/** Tier-gated economy move: upgrade the richest safe node, one per wake. */
+function tryUpgrade(state: GameState, self: Faction, persona: Persona, tier: Tier): void {
+  if (!tier.upgrades && !(tier.killCheckTicks === 30 && persona.expansion >= 1.2)) return;
+  let pick: Node | null = null;
+  for (const n of state.nodes) {
+    if (n.owner !== self || n.size >= 2 || n.upgrading !== 0 || hasFlow(state, n.id)) continue;
+    if (n.units < UPGRADE_COST[n.size as 0 | 1] + state.cfg.aiMinUnits) continue;
+    // Safety: nothing hostile within 45 wu.
+    let safe = true;
+    for (const h of state.nodes) {
+      if (h.owner === self || h.owner === NEUTRAL) continue;
+      if (dist(n, h) < 45) {
+        safe = false;
+        break;
+      }
+    }
+    if (safe && (!pick || n.units > pick.units)) pick = n;
+  }
+  if (pick) applyUpgrade(state, pick.id, self);
+}
+
 /* -------------------------------------------------------------- entry point */
 
-export function aiDecide(state: GameState): void {
+function aiDecideFaction(state: GameState, fc: FactionCfg): void {
   const { cfg } = state;
-  if (state.tick < cfg.aiFirstMoveTick) return;
+  const self = fc.faction;
+  if (state.tick < fc.firstMoveTick) return;
   const tier = TIERS[cfg.aiTier] ?? TIERS[1]!;
 
-  // Kill layer: faster cadence than the wake-up at higher tiers.
+  // Kill layer: faster cadence than the wake-up at higher tiers; staggered
+  // per faction so rivals never commit on the same tick.
   const killDue =
     tier.killCheckTicks > 0
-      ? state.tick % tier.killCheckTicks === 0
-      : state.tick >= state.nextAiTick;
+      ? (state.tick + self * 7) % tier.killCheckTicks === 0
+      : state.tick >= state.nextAiTick[self]!;
   if (killDue) {
-    if (tryFinisher(state, tier)) return;
-    if (trySnipe(state, tier)) return;
+    precompute(state);
+    // Cheapest victim first (deterministic tie-break: ascending faction id).
+    const victims: Faction[] = [PLAYER];
+    for (const other of cfg.ais) if (other.faction !== self) victims.push(other.faction);
+    victims.sort((a, b) => material[a]! - material[b]! || a - b);
+    for (const v of victims) {
+      if (material[v]! === 0) continue;
+      if (tryFinisher(state, self, tier, v)) return;
+    }
+    if (trySnipe(state, self, tier)) return;
   }
 
-  if (state.tick < state.nextAiTick) return;
+  if (state.tick < state.nextAiTick[self]!) return;
   // Reschedule first so every exit path keeps the cadence (rng jitter,
   // deterministic via sim rng).
-  state.nextAiTick =
+  state.nextAiTick[self] =
     state.tick + cfg.aiIntervalTicks + Math.floor(rngNext(state.rng) * cfg.aiIntervalTicks * 0.4);
 
+  if (!killDue) precompute(state); // kill layer may not have run this tick
   const decided = new Set<number>();
   for (let i = 0; i < tier.maxDecisions; i++) {
-    if (!normalDecision(state, tier, decided)) break;
+    if (!normalDecision(state, self, fc.persona, tier, decided)) break;
   }
+  tryUpgrade(state, self, fc.persona, tier);
+}
+
+export function aiDecide(state: GameState): void {
+  for (const fc of state.cfg.ais) aiDecideFaction(state, fc);
 }

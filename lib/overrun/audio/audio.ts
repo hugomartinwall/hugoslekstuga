@@ -119,9 +119,12 @@ export class AudioSystem {
 
     if (e.playerCaptures > 0 && this.admit(2)) this.track(playCapturePing(ctx, out));
     if (e.playerLosses > 0 && this.admit(2)) this.track(playNodeLostThud(ctx, buf, out));
-    if (e.enemyCaptures > 0 && this.admit(0)) this.track(playEnemyCaptureTick(ctx, out));
+    if (e.aiCaptures > 0 && this.admit(0)) this.track(playEnemyCaptureTick(ctx, out));
     if (e.playerSends > 0 && this.admit(1)) this.track(playSendWhoosh(ctx, buf, out, false));
-    if (e.enemySends > 0 && this.admit(0)) this.track(playSendWhoosh(ctx, buf, out, true));
+    if (e.threatSends > 0 && this.admit(1)) this.track(playSendWhoosh(ctx, buf, out, true));
+    // Distant AI-vs-AI war: a rare, very quiet awareness tick.
+    if (e.distantSends > 0 && this.admit(0) && Math.random() < 0.3)
+      this.track(playEnemyCaptureTick(ctx, out));
 
     const arrivals = e.arrivalsFriendly + e.arrivalsHostile;
     if (arrivals > 0) {
