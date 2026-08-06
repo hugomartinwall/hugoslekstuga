@@ -105,24 +105,6 @@ export const tools: Tool[] = [
   // ---------- games ----------
 
   {
-    slug: "munch",
-    title: "Munch",
-    tagline: "The bigger the better.",
-    description:
-      "Real-time multiplayer on a single shared map. Eat the dots, eat the smaller players, dodge the bigger ones. Press space to fire half of yourself forward as a weapon. No accounts, no chat, just one shared room.",
-    color: "pink",
-    emoji: "◉",
-  },
-  {
-    slug: "noodle",
-    title: "Noodle",
-    tagline: "Eat dots. Don't get bumped.",
-    description:
-      "Real-time multiplayer snake. You move forward at all times — aim with the mouse or your finger, eat dots to grow, hit another snake's body and you die. Hold space to boost (costs length). One shared room, pasta-named bots fill it when you're alone.",
-    color: "pink",
-    emoji: "~",
-  },
-  {
     slug: "overrun",
     title: "Overrun",
     tagline: "Send everything. Take everything.",

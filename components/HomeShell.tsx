@@ -18,6 +18,8 @@ const RETIRED_NAMES: Record<string, string> = {
   read: "the text analyser",
   typing: "the typing test",
   stretch: "the stretch guide",
+  munch: "the blob arcade",
+  noodle: "the snake pit",
 };
 
 /**

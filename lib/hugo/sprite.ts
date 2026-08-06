@@ -236,8 +236,8 @@ export function drawHugoSprite(
 }
 
 /**
- * A mini arcade cabinet — how the two multiplayer games appear on the
- * homepage map (tools are orbs; games are machines you walk up to).
+ * A mini arcade cabinet — how the games appear on the homepage map
+ * (tools are orbs; games are machines you walk up to).
  * 19×21 cells, centred on (cx, cy). Ported from the lab prototype.
  */
 export function drawCabinet(

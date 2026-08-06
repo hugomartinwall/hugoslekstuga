@@ -6,10 +6,10 @@
 // no more category groupings, no more inter-tool edges.
 //
 // What survives: the path resolver. Most tools live at /tools/<slug>;
-// games (currently just Munch) live at /games/<slug>. This file is
+// games (currently just Overrun) live at /games/<slug>. This file is
 // where that one-line decision is encoded.
 
-const GAME_SLUGS = new Set<string>(["munch", "noodle", "overrun"]);
+const GAME_SLUGS = new Set<string>(["overrun"]);
 
 /**
  * The route a tool lives at. Most tools are under /tools/<slug>; games

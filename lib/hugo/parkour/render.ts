@@ -6,6 +6,7 @@
  * the caller has already applied any world→screen transform.
  */
 
+import { isGameSlug } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX } from "@/lib/colors";
 import { drawCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
 import { moverPos, type Level } from "./level";
@@ -258,7 +259,7 @@ export function drawHomeReplicas(
   ctx.save();
   ctx.globalAlpha = alpha;
   for (const o of orbs) {
-    if (o.slug === "munch" || o.slug === "noodle") {
+    if (isGameSlug(o.slug)) {
       drawCabinet(ctx, o.x, o.y, (o.r * 2) / 21, withAlpha(COLOR_HEX.pink, 0.55));
     } else {
       pixelDisc(ctx, o.x, o.y, o.r, withAlpha(INKISH, 0.28));

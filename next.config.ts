@@ -14,6 +14,10 @@ const RETIRED_TOOLS = [
   "stretch",
 ];
 
+// The multiplayer games, shut down 2026-08 along with their WebSocket
+// server. Same landing treatment, different URL prefix.
+const RETIRED_GAMES = ["munch", "noodle"];
+
 const nextConfig: NextConfig = {
   async redirects() {
     return [
@@ -27,6 +31,11 @@ const nextConfig: NextConfig = {
       },
       ...RETIRED_TOOLS.map((slug) => ({
         source: `/tools/${slug}`,
+        destination: `/?retired=${slug}`,
+        permanent: true,
+      })),
+      ...RETIRED_GAMES.map((slug) => ({
+        source: `/games/${slug}`,
         destination: `/?retired=${slug}`,
         permanent: true,
       })),

@@ -220,8 +220,8 @@ function wordmarkPad(width: number): number {
   return WORDMARK_PAD_MIN + (WORDMARK_PAD - WORDMARK_PAD_MIN) * t;
 }
 
-/** Physics radius per node — munch/noodle render as 1.5× arcade
- *  cabinets, so walls and clamps must honour the bigger footprint. */
+/** Physics radius per node — games render as 1.5× arcade cabinets,
+ *  so walls and clamps must honour the bigger footprint. */
 function nodeRadius(n: Node): number {
   const isGame = isGameSlug(n.tool.slug);
   return isGame ? NODE_R * 1.5 : NODE_R;
@@ -1106,7 +1106,7 @@ export default function ToolMap({
             const hoverScale = isHovered ? 1.08 : 1;
             const bounceScale = isBouncing ? 1.3 : 1;
             const scale = baseScale * hoverScale * bounceScale;
-            // Games (munch, noodle) are a different category of thing
+            // Games are a different category of thing
             // — the canvas paints them as mini arcade cabinets instead
             // of orbs, so they read as machines at a glance.
             const isGame = isGameSlug(n.tool.slug);

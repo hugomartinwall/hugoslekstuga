@@ -59,18 +59,11 @@ the working constraints when you build:
 3. **Open a tab, use it, close it** — no onboarding, no settings buried
    in menus.
 
-The one exception to (2) is the multiplayer games (Munch, Noodle —
-Overrun is single-player and needs no server), which
-share a small WebSocket server for game state. The server keeps no logs,
-no DB, no third-party connections. That's the only network round-trip in
-the whole site.
-
-**Critical multiplayer constraint** — the Fly.io app
-(`hugoslekstuga-munch`, both games share one process at `/munch` and
-`/noodle` paths) must run **exactly one machine**. The game state lives
-in-memory; two machines = two `Game` singletons = players split across
-sessions. Set with `flyctl scale count 1`. Documented in `fly.toml`.
-Don't scale up unless we move state out of process (Redis, etc).
+There are no exceptions to (2) anymore: the multiplayer games (Munch,
+Noodle) and their shared WebSocket server were retired 2026-08, so the
+whole site runs client-side (sjökort's sanctioned tile fetches aside —
+see rule 4). Overrun, the surviving game, is single-player and needs no
+server.
 
 The on-`/about` brand voice was rewritten 2026-07-04 (Hugo's notes,
 two rounds). It lives in three pieces in `app/about/Client.tsx`: the
@@ -91,17 +84,19 @@ same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
-**9 tools + 3 games**: advice, breathe, focus, lorem, pixla, roll,
-sjokort, strip, sudoku + munch, noodle, overrun. (8 tools survived the
-2026-07-02 curation cull; pixla joined 2026-07-03; overrun — the
-single-player RTS, ported from Hugo's separate CrazyGames project —
-joined 2026-08-05. Its engine lives in `lib/overrun/`; the upstream
-game repo keeps evolving separately for CrazyGames, so don't try to
-sync them.)
-The retired slugs (case, cleantext, convert, diff, pdf, qr, read,
-typing, stretch) 308-redirect to `/?retired=<slug>` in `next.config.ts`
-— HomeShell greets the broken bookmark with a quip. Don't reuse a
-retired slug for something new.
+**9 tools + 1 game**: advice, breathe, focus, lorem, pixla, roll,
+sjokort, strip, sudoku + overrun. (8 tools survived the 2026-07-02
+curation cull; pixla joined 2026-07-03; overrun — the single-player
+RTS, ported from Hugo's separate CrazyGames project — joined
+2026-08-05. Its engine lives in `lib/overrun/`; the upstream game repo
+keeps evolving separately for CrazyGames, so don't try to sync them.
+The multiplayer games munch + noodle were shut down 2026-08 — not fun
+enough — taking the WebSocket server and the Fly.io app with them.)
+The retired tool slugs (case, cleantext, convert, diff, pdf, qr, read,
+typing, stretch) 308-redirect to `/?retired=<slug>` in `next.config.ts`,
+and the retired game slugs (munch, noodle) do the same from
+`/games/<slug>` — HomeShell greets the broken bookmark with a quip.
+Don't reuse a retired slug for something new.
 
 ## Source-of-truth files
 
@@ -134,7 +129,7 @@ ship its page. Use the helpers in `lib/colors.ts` — never hand-roll a
    skin can flip individual accents back. Use the helpers — never
    hardcode the choice.
 2. **Colour = category.** Registry colours are categorical, not
-   decorative: games are magenta (munch, noodle, overrun = pink), brainy tools
+   decorative: games are magenta (overrun = pink), brainy tools
    are violet/ice (sudoku = purple, sjokort = teal), calm tools are
    mint/cyan (focus = green, breathe = blue), quick warm utilities take
    the warm range (roll = orange/amber, strip = tomato/coral, lorem +
@@ -150,7 +145,7 @@ Every tool is three files:
 - `app/tools/<slug>/opengraph-image.tsx` — one-line wrapper around
   `renderToolOG("<slug>")` from `lib/og.tsx`
 
-Same shape for the games at `app/games/munch/` and `app/games/noodle/`.
+Same shape for the game at `app/games/overrun/`.
 The split is so each page ships its own `<title>` and `<meta description>`
 — client components can't export `metadata`.
 
@@ -384,19 +379,17 @@ whole layout.
    any of them only when explicitly asked.
 6. **Don't introduce another CSS framework.** Tailwind + the `card-chunk` /
    `btn-chunk` shadow language is the system.
-7. **Don't add new server features.** Munch + Noodle are the only
-   server-backed experiences — resist leaderboards, accounts,
-   friends lists, persistent ranks. The room is capped at 10 humans
-   (a queue takes overflow).
-8. **Don't scale the multiplayer Fly.io app past one machine.** See
-   the multiplayer constraint above — in-memory state would split.
+7. **Don't add server features.** The site is fully serverless since
+   the multiplayer games retired (2026-08) — resist leaderboards,
+   accounts, friends lists, persistent ranks, and anything else that
+   would need a backend.
 
 ## Privacy audit (run before any network-adjacent commit)
 
 ```sh
 rg -n 'fetch\(|gtag|analytics|googletagmanager|cdn\.|XMLHttpRequest' \
   --glob '!node_modules' --glob '!.next' --glob '!public/vendor' \
-  app components lib server
+  app components lib
 ```
 
 Legitimate hits:
@@ -431,17 +424,11 @@ tools that are supposed to be fetchless.
 
 ```sh
 npm run dev           # Next dev on :3000
-npm run munch         # WebSocket server on :8080 (hosts BOTH /munch + /noodle,
-                      # only needed if you're playing the multiplayer games)
 npm run lint
 npm run build         # rm -rf .next first if Next caches stale routes —
                       # NOTE: that rm kills a running dev server; restart it
 npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)
 ```
-
-The multiplayer server is deployed via `flyctl deploy --remote-only`
-to the `hugoslekstuga-munch` app (Stockholm region, `arn`). Single
-machine — see the multiplayer constraint up top.
 
 ## Commit style
 

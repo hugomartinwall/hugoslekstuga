@@ -12,20 +12,14 @@ Live at https://hugoslekstuga.com
 ```sh
 npm install
 npm run dev          # Next dev on :3000
-npm run munch        # WebSocket server for the multiplayer games on :8080
 ```
-
-`munch` only needs to run if you want to play `/games/munch` or
-`/games/noodle` (they share one server process). Everything else works
-without it.
 
 ## Stack
 
 - Next.js 16 + React 19 + Tailwind v4 + TypeScript
-- 8 single-purpose tools at `app/tools/<slug>/page.tsx`
-- Two real-time multiplayer games at `app/games/{munch,noodle}/page.tsx`,
-  sharing one WebSocket server at `server/index.ts` (routes `/munch` +
-  `/noodle` to per-game handlers under `server/munch/` and `server/noodle/`)
+- 9 single-purpose tools at `app/tools/<slug>/page.tsx` and one
+  single-player game at `app/games/overrun/page.tsx` — everything runs
+  in the browser, no server
 - Source of truth for the catalogue: `lib/tools.ts` (registry) +
   `lib/clusters.ts` (`pathFor()` / `GAME_SLUGS`)
 - Single source of truth for accent colours: `lib/colors.ts`
@@ -37,9 +31,9 @@ without it.
 3. **Open a tab, use it, close it.** No onboarding, no settings.
 4. **A bit of personality.** Phosphor colours, pixel corners, a small wink.
 
-The one exception to (2) is the multiplayer games (Munch + Noodle), which
-connect to a small WebSocket server so other players can see your blob /
-snake. The server keeps no logs, no DB, no third-party connections.
+(The multiplayer games Munch + Noodle — the one exception to (2), with
+their small WebSocket server — were retired 2026-08. The site is fully
+serverless again.)
 
 ## Contributing
 
