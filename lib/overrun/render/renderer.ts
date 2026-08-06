@@ -15,9 +15,12 @@ import {
   KindSprites,
   OVERLAY_BUTTONS,
   ParticlePool,
+  type PanelButton,
   PAUSE_MENU,
   menuZoom,
   OVERLAY_BUTTONS_RECT,
+  RESTART_MENU,
+  RUNOVER_BUTTONS,
   setUiMetrics,
   Shake,
   SHOP_MENU,
@@ -92,6 +95,10 @@ export interface OverlayView {
   cores?: number;
   /** Stars earned on a won level (1–3). */
   stars?: number;
+  /** Set on a win that banked a fresh checkpoint — the level it banked at. */
+  checkpoint?: number;
+  /** Latest banked checkpoint; >1 turns the run-over screen into a choice. */
+  checkpointLevel?: number;
 }
 
 /** App-layer HUD data (run progression lives outside the sim). */
@@ -99,6 +106,8 @@ export interface HudView {
   lives: number;
   maxLives: number;
   bestLevel: number;
+  /** Latest banked checkpoint level (1 = none banked yet). */
+  checkpoint?: number;
   streak: number;
   cores: number;
   paused: boolean;
@@ -110,6 +119,11 @@ export interface HudView {
   nudgeNodeId?: number | null;
   /** After the nudge has fired once, faint standing chevrons on eligible unselected nodes. */
   showDimChevrons?: boolean;
+}
+
+/** Restart-choice panel view-model (RESTART RUN with a checkpoint banked). */
+export interface RestartView {
+  checkpointLevel: number;
 }
 
 /** Upgrade shop view-model, built by the app layer from TRACKS + save. */
@@ -306,6 +320,7 @@ export class Renderer {
     overlay: OverlayView | null,
     hud: HudView,
     shop: ShopView | null = null,
+    restart: RestartView | null = null,
   ): void {
     const t0 = performance.now();
     const { ctx, canvas } = this;
@@ -362,6 +377,7 @@ export class Renderer {
     if (this.vignette) ctx.drawImage(this.vignette, 0, 0);
 
     if (shop) this.drawShop(shop);
+    else if (restart) this.drawRestartMenu(restart);
     else if (hud.paused) this.drawPauseMenu();
     else if (overlay) {
       this.drawOverlay(overlay, curr, now);
@@ -963,7 +979,8 @@ export class Renderer {
     if (hud.bestLevel > 1) {
       ctx.fillStyle = ink(0.4);
       ctx.font = this.pixelFont(3 * u, true);
-      ctx.fillText(`BEST ${hud.bestLevel}`, 2.5 * u, 12.6 * u);
+      const cp = (hud.checkpoint ?? 1) > 1 ? ` · CP ${hud.checkpoint}` : "";
+      ctx.fillText(`BEST ${hud.bestLevel}${cp}`, 2.5 * u, 12.6 * u);
     }
 
     const totals = [0, 0, 0, 0, 0];
@@ -1084,6 +1101,13 @@ export class Renderer {
         ctx.fillStyle = ink(0.85);
       }
       ctx.fillText(`TAP FOR LEVEL ${state.cfg.level + 1}`, cx, cy + 12 * u);
+      if (overlay.checkpoint) {
+        // Gold, not CORE_HEX — next to "+N CORES" a cyan line reads as part of
+        // the reward instead of its own banked thing.
+        ctx.fillStyle = GOLD_HEX;
+        ctx.fillText(`CHECKPOINT · LEVEL ${overlay.checkpoint}`, cx, cy + 17 * u);
+        ctx.fillStyle = ink(0.85);
+      }
     } else if (overlay.kind === "lost") {
       ctx.fillStyle = coral(0.9);
       ctx.font = this.glyphFont(4 * u);
@@ -1097,7 +1121,10 @@ export class Renderer {
         cx,
         cy + 2 * u,
       );
-      ctx.fillText("TAP FOR NEW RUN", cx, cy + 8 * u);
+      // With a checkpoint banked the buttons below carry the prompt: a stray
+      // tap must not pick a branch, so there's nothing to "tap for" here.
+      if ((overlay.checkpointLevel ?? 1) > 1) ctx.fillText("PICK YOUR START", cx, cy + 8 * u);
+      else ctx.fillText("TAP FOR NEW RUN", cx, cy + 8 * u);
     } else if (overlay.kind === "daily-won") {
       if (overlay.cores) {
         ctx.fillStyle = CORE_HEX;
@@ -1130,6 +1157,12 @@ export class Renderer {
         ctx.textBaseline = "middle";
         ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
       };
+      // Run-over choice sits a tier higher, inside the same transform so both
+      // rows share one menuZoom (see RUNOVER_BUTTONS in fx.ts).
+      if (overlay.kind === "runover" && (overlay.checkpointLevel ?? 1) > 1) {
+        btn(RUNOVER_BUTTONS.checkpoint, `CHECKPOINT · L${overlay.checkpointLevel}`);
+        btn(RUNOVER_BUTTONS.fresh, "START OVER");
+      }
       btn(OVERLAY_BUTTONS.shop, "UPGRADES");
       btn(OVERLAY_BUTTONS.daily, "DAILY CHALLENGE");
       ctx.restore();
@@ -1201,6 +1234,56 @@ export class Renderer {
     ctx.fillStyle = ink(0.7);
     ctx.font = this.pixelFont(3, true);
     ctx.fillText("CLOSE", SHOP_MENU.close.x + SHOP_MENU.close.w / 2, SHOP_MENU.close.y + 3);
+    ctx.restore();
+  }
+
+  /** RESTART RUN's two-way choice — checkpoint or a clean climb from level 1. */
+  private drawRestartMenu(view: RestartView): void {
+    const { ctx, canvas } = this;
+    ctx.save();
+    ctx.fillStyle = backdropFill(0.8);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.translate(this.offsetX, this.offsetY);
+    ctx.scale(this.scale, this.scale * TILT_Y);
+    this.applyMenuZoom(menuZoom(RESTART_MENU.panel));
+
+    const p = RESTART_MENU.panel;
+    ctx.fillStyle = BG_PANEL;
+    ctx.strokeStyle = ink(0.15);
+    ctx.lineWidth = 0.4;
+    this.roundRect(p.x, p.y, p.w, p.h, 2.5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = ink(0.85);
+    ctx.font = this.displayFont(4.5);
+    ctx.fillText("RESTART RUN", p.x + p.w / 2, p.y + 5.5);
+    ctx.fillStyle = ink(0.5);
+    ctx.font = this.pixelFont(2.8, true);
+    ctx.fillText("WHERE FROM?", p.x + p.w / 2, p.y + 10.5);
+
+    const button = (r: PanelButton, label: string, accent = false) => {
+      ctx.fillStyle = accent ? "rgba(77,166,255,0.12)" : ink(0.08);
+      ctx.strokeStyle = accent ? "rgba(77,166,255,0.5)" : ink(0.25);
+      this.roundRect(r.x, r.y, r.w, r.h, 1.5);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ink(0.9);
+      ctx.font = this.pixelFont(3.4, true);
+      ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
+    };
+    button(RESTART_MENU.checkpoint, `CHECKPOINT · L${view.checkpointLevel}`, true);
+    button(RESTART_MENU.fresh, "START OVER · L1");
+    ctx.fillStyle = ink(0.55);
+    ctx.font = this.pixelFont(3, true);
+    ctx.fillText(
+      "CANCEL",
+      RESTART_MENU.cancel.x + RESTART_MENU.cancel.w / 2,
+      RESTART_MENU.cancel.y + RESTART_MENU.cancel.h / 2,
+    );
     ctx.restore();
   }
 

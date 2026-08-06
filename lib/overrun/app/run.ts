@@ -9,6 +9,9 @@ import { PROD_INTERVAL, UPGRADE_COST, UPGRADE_TICKS } from "../sim/constants";
 
 export const BASE_LIVES = 2;
 
+/** A checkpoint banks every 3rd cleared level: clearing 3/6/9 unlocks 4/7/10. */
+export const CHECKPOINT_EVERY = 3;
+
 export interface RunState {
   level: number;
   lives: number;
@@ -73,6 +76,20 @@ export function livesFor(save: SaveV3): number {
 
 export function newRun(save?: SaveV3): RunState {
   return { level: 1, lives: save ? livesFor(save) : BASE_LIVES };
+}
+
+/**
+ * Latest banked checkpoint. Derived from clearedMax rather than stored, so it
+ * can never desync from the levels actually cleared — and every existing save
+ * gets its checkpoint retroactively, with no migration.
+ */
+export function checkpointLevel(save: SaveV3): number {
+  return 1 + CHECKPOINT_EVERY * Math.floor(save.clearedMax / CHECKPOINT_EVERY);
+}
+
+/** A run beginning at an explicit level with a full set of lives. */
+export function runFrom(save: SaveV3, level: number): RunState {
+  return { level: Math.max(1, Math.floor(level)), lives: livesFor(save) };
 }
 
 export function newSave(): SaveV3 {
@@ -162,8 +179,11 @@ export function applyWin(save: SaveV3, w: WinContext): SaveV3 {
 export function applyDefeat(save: SaveV3): DefeatResult {
   const lives = save.run.lives - 1;
   if (lives <= 0) {
+    // The run-over screen offers checkpoint-or-restart, but the save has to
+    // hold a level in case the player quits on that screen. Default to the
+    // generous branch — it's the one the primary button picks.
     return {
-      save: { ...save, run: newRun(save) },
+      save: { ...save, run: runFrom(save, checkpointLevel(save)) },
       runOver: true,
       reachedLevel: save.run.level,
     };

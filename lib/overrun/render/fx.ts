@@ -501,6 +501,58 @@ export function hitPauseMenu(wx: number, wy: number): PauseAction | "outside" | 
   return "outside"; // tap outside = resume
 }
 
+/**
+ * Restart-choice panel: reached from RESTART RUN once a checkpoint exists.
+ * Rows finish at 64 inside a panel ending at 68 — keep the panel taller than
+ * the rows or menuZoom fits a box the buttons overflow.
+ */
+export const RESTART_MENU = {
+  panel: { x: 44, y: 24, w: 72, h: 44 },
+  checkpoint: { x: 51, y: 36, w: 58, h: 9 },
+  fresh: { x: 51, y: 47, w: 58, h: 9 },
+  cancel: { x: 51, y: 58, w: 58, h: 6 },
+} as const;
+
+export type RestartAction = "checkpoint" | "fresh" | "cancel";
+
+export function hitRestartMenu(wx: number, wy: number): RestartAction | "outside" | "panel" {
+  const mz = menuZoom(RESTART_MENU.panel);
+  wx = unzoom(wx, WORLD_W / 2, mz);
+  wy = unzoom(wy, WORLD_H / 2, mz);
+  const pad = hitPad(9, mz, 1);
+  const inPadded = (r: PanelButton) =>
+    wx >= r.x && wx <= r.x + r.w && wy >= r.y - pad && wy <= r.y + r.h + pad;
+  if (inPadded(RESTART_MENU.checkpoint)) return "checkpoint";
+  if (inPadded(RESTART_MENU.fresh)) return "fresh";
+  if (inPadded(RESTART_MENU.cancel)) return "cancel";
+  if (inRect(RESTART_MENU.panel, wx, wy)) return "panel";
+  return "outside"; // tap outside = cancel
+}
+
+/**
+ * Run-over choice row, one tier above UPGRADES/DAILY.
+ *
+ * Deliberately hit-tested against OVERLAY_BUTTONS_RECT, not its own anchor:
+ * menuZoom measures the max extent from world centre, and both rows share the
+ * same x span and the same y=80 bottom edge, so one anchor gives both rows an
+ * identical zoom and keeps them visually locked together.
+ */
+export const RUNOVER_BUTTONS = {
+  checkpoint: { x: 32, y: 58, w: 42, h: 9 },
+  fresh: { x: 86, y: 58, w: 42, h: 9 },
+} as const;
+
+export function hitRunOverButton(wx: number, wy: number): "checkpoint" | "fresh" | null {
+  const mz = menuZoom(OVERLAY_BUTTONS_RECT);
+  wx = unzoom(wx, WORLD_W / 2, mz);
+  wy = unzoom(wy, WORLD_H / 2, mz);
+  const pad = hitPad(RUNOVER_BUTTONS.checkpoint.h, mz, 2);
+  const padded = (r: PanelButton) => ({ x: r.x, y: r.y - pad, w: r.w, h: r.h + 2 * pad });
+  if (inRect(padded(RUNOVER_BUTTONS.checkpoint), wx, wy)) return "checkpoint";
+  if (inRect(padded(RUNOVER_BUTTONS.fresh), wx, wy)) return "fresh";
+  return null;
+}
+
 /** Secondary buttons on end-of-level overlays (world coordinates). */
 export const OVERLAY_BUTTONS = {
   shop: { x: 32, y: 72, w: 42, h: 8 },

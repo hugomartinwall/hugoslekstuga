@@ -10,6 +10,7 @@ import {
   type DragView,
   type GameFonts,
   type OverlayView,
+  type RestartView,
   type ShopView,
 } from "./render/renderer";
 import { attachInput } from "./input/input";
@@ -19,6 +20,8 @@ import {
   hitChevron,
   hitOverlayButton,
   hitPauseMenu,
+  hitRestartMenu,
+  hitRunOverButton,
   hitShopMenu,
   hitUiButton,
 } from "./render/fx";
@@ -28,11 +31,12 @@ import {
   applyWin,
   boostsFor,
   buyUpgrade,
+  checkpointLevel,
   coresForWin,
   dailySeed,
   livesFor,
   migrateSave,
-  newRun,
+  runFrom,
   todayUTC,
   TRACKS,
   type SaveV3,
@@ -42,7 +46,8 @@ import { loadRaw, persistSave } from "./save";
 
 /**
  * App layer: owns the run/level lifecycle around the sim.
- * appState: "playing" | "paused" | "over" | "shop"; mode: "run" | "daily".
+ * appState: "playing" | "paused" | "over" | "shop" | "restart";
+ * mode: "run" | "daily".
  *
  * The game lives inside a React page, so everything registered here —
  * listeners, timers, the rAF loop, the AudioContext — is collected into
@@ -110,7 +115,7 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
   game.prevState = structuredClone(game.state);
 
   const commandQueue: Command[] = [];
-  let appState: "playing" | "paused" | "over" | "shop" = "playing";
+  let appState: "playing" | "paused" | "over" | "shop" | "restart" = "playing";
   let shopReturn: "paused" | "over" = "paused";
   let mode: "run" | "daily" = "run";
   let dailyMutator = "";
@@ -189,6 +194,7 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
     lives: save.run.lives,
     maxLives: livesFor(save),
     bestLevel: save.bestLevel,
+    checkpoint: checkpointLevel(save),
     streak,
     cores: save.cores,
     paused: appState === "paused",
@@ -216,6 +222,9 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
       }),
     };
   };
+
+  const restartView = (): RestartView | null =>
+    appState === "restart" ? { checkpointLevel: checkpointLevel(save) } : null;
 
   const simTick = (): void => {
     game.prevState = structuredClone(game.state);
@@ -267,16 +276,19 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
   };
 
   const togglePause = (): void => {
-    if (appState === "paused") resumeGame();
+    // Esc backs out of the restart choice rather than doing nothing.
+    if (appState === "restart") appState = "paused";
+    else if (appState === "paused") resumeGame();
     else if (appState === "playing") pauseGame();
   };
 
-  const restartRun = (): void => {
-    save = { ...save, run: newRun(save) };
+  /** Begin a fresh run at `level` with full lives (checkpoint or level 1). */
+  const beginRun = (level: number): void => {
+    save = { ...save, run: runFrom(save, level) };
     streak = 0;
     persist();
     loop.resume();
-    startLevel(1);
+    startLevel(save.run.level);
   };
 
   const openShop = (from: "paused" | "over"): void => {
@@ -309,9 +321,11 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
         levelLosses === 0 ? (game.state.tick <= parTicks(level) ? 3 : 2) : 1;
       const ctx = { level, stars, streak, rivalsEliminatedByPlayer: levelRivalsDown };
       const cores = coresForWin(save, ctx);
+      const cpBefore = checkpointLevel(save);
       save = applyWin(save, ctx);
       persist();
-      overlay = { kind: "won", cores, stars };
+      const cpAfter = checkpointLevel(save);
+      overlay = { kind: "won", cores, stars, checkpoint: cpAfter > cpBefore ? cpAfter : undefined };
       audio.victory();
     } else {
       streak = 0;
@@ -319,7 +333,12 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
       save = result.save;
       persist();
       overlay = result.runOver
-        ? { kind: "runover", reachedLevel: result.reachedLevel, bestLevel: save.bestLevel }
+        ? {
+            kind: "runover",
+            reachedLevel: result.reachedLevel,
+            bestLevel: save.bestLevel,
+            checkpointLevel: checkpointLevel(save),
+          }
         : { kind: "lost", lives: save.run.lives };
       audio.defeat();
     }
@@ -359,7 +378,15 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
       }
     },
     render(alpha) {
-      renderer.render(game.prevState ?? game.state, game.state, alpha, overlay, hud(), shopView());
+      renderer.render(
+        game.prevState ?? game.state,
+        game.state,
+        alpha,
+        overlay,
+        hud(),
+        shopView(),
+        restartView(),
+      );
     },
   });
 
@@ -415,13 +442,30 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
       return;
     }
 
+    if (appState === "restart") {
+      const hit = hitRestartMenu(x, y);
+      if (hit === "checkpoint") {
+        audio.uiTap();
+        beginRun(checkpointLevel(save));
+      } else if (hit === "fresh") {
+        audio.uiTap();
+        beginRun(1);
+      } else if (hit === "cancel" || hit === "outside") {
+        audio.uiTap();
+        appState = "paused";
+      }
+      return;
+    }
+
     if (appState === "paused") {
       if (hitUiButton(x, y)) return; // top-right buttons already handled by input.ts
       const action = hitPauseMenu(x, y);
       if (action === "mute") audio.toggleUserMuted();
       else if (action === "restart") {
         audio.uiTap();
-        restartRun();
+        // With nothing banked both branches are level 1 — skip the choice.
+        if (checkpointLevel(save) > 1) appState = "restart";
+        else beginRun(1);
       } else if (action === "shop") {
         audio.uiTap();
         openShop("paused");
@@ -454,6 +498,15 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
       startDaily();
       return;
     }
+    // Run over with a checkpoint banked: the start is an explicit choice, so a
+    // tap anywhere else does nothing rather than silently picking a branch.
+    if (overlay?.kind === "runover" && checkpointLevel(save) > 1) {
+      const choice = hitRunOverButton(x, y);
+      if (choice === null) return;
+      audio.uiTap();
+      beginRun(choice === "checkpoint" ? checkpointLevel(save) : 1);
+      return;
+    }
     audio.uiTap();
     // applyWin/applyDefeat already set the right level; dailies never touch
     // run lives, so both paths resume the run where it left off.
@@ -479,7 +532,15 @@ export function createOverrun(canvas: HTMLCanvasElement, opts: OverrunOptions): 
           simTick();
           if (game.state.status !== "playing") onGameOver();
         }
-        renderer.render(game.prevState ?? game.state, game.state, 1, overlay, hud(), shopView());
+        renderer.render(
+          game.prevState ?? game.state,
+          game.state,
+          1,
+          overlay,
+          hud(),
+          shopView(),
+          restartView(),
+        );
       },
       skipOverlay: () => {
         overlayShownAt = 0;
