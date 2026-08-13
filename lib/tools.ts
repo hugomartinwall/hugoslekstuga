@@ -114,6 +114,16 @@ export const tools: Tool[] = [
     emoji: "◍",
     isNew: true,
   },
+  {
+    slug: "adventure",
+    title: "Adventure",
+    tagline: "One sword. Ten worlds.",
+    description:
+      "A top-down action adventure. At closing time Hugo takes the lost & found sword and walks out the back door — ten worlds, ten bosses, and a change machine that follows him selling upgrades. You start with only a swing; by the end you have everything. Runs entirely in your tab.",
+    color: "pink",
+    emoji: "⚔",
+    isNew: true,
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

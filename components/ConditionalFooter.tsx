@@ -8,7 +8,12 @@ import Footer from "@/components/Footer";
  * homepage swarm map and the sjökort chart both fill the screen. It
  * still renders on every other route.
  */
-const FULL_SCREEN_ROUTES = new Set(["/", "/tools/sjokort", "/games/overrun"]);
+const FULL_SCREEN_ROUTES = new Set([
+  "/",
+  "/tools/sjokort",
+  "/games/overrun",
+  "/games/adventure",
+]);
 
 export default function ConditionalFooter() {
   const pathname = usePathname();

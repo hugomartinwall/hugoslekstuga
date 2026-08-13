@@ -84,12 +84,19 @@ same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
-**9 tools + 1 game**: advice, breathe, focus, lorem, pixla, roll,
-sjokort, strip, sudoku + overrun. (8 tools survived the 2026-07-02
-curation cull; pixla joined 2026-07-03; overrun — the single-player
-RTS, ported from Hugo's separate CrazyGames project — joined
-2026-08-05. Its engine lives in `lib/overrun/`; the upstream game repo
-keeps evolving separately for CrazyGames, so don't try to sync them.
+**9 tools + 2 games**: advice, breathe, focus, lorem, pixla, roll,
+sjokort, strip, sudoku + overrun + adventure. (8 tools survived the
+2026-07-02 curation cull; pixla joined 2026-07-03; overrun — the
+single-player RTS, ported from Hugo's separate CrazyGames project —
+joined 2026-08-05. Its engine lives in `lib/overrun/`; the upstream
+game repo keeps evolving separately for CrazyGames, so don't try to
+sync them. **Adventure** — the top-down ten-world action adventure
+starring Hugo himself — joined 2026-08-13; its engine lives in
+`lib/adventure/` (pure 60 Hz sim + canvas renderer, all content
+authored data in `lib/adventure/content/`, suites in
+`test/adventure/`), and it follows every Overrun platform pattern:
+fixed-timestep loop, all-synth WebAudio, keyboard + touch, reduced
+motion changes presentation but never timings.
 The multiplayer games munch + noodle were shut down 2026-08 — not fun
 enough — taking the WebSocket server and the Fly.io app with them.)
 The retired tool slugs (case, cleantext, convert, diff, pdf, qr, read,
@@ -417,6 +424,7 @@ tools that are supposed to be fetchless.
   keys: `hugoslekstuga:hugo` (mood/memory), `hugoslekstuga:dot-color`
   (his colour), `hugoslekstuga:advice:memory` (the Advice engine).
   Overrun's keys: `hugoslekstuga:overrun:{save,muted,music,sfx,motion}`.
+  Adventure's keys: `hugoslekstuga:adventure:{save,muted,music,sfx,motion}`.
 - The React 19 compiler memoises automatically — **drop manual `useCallback`
   in new code**. Older tools still use it; they pass lint but new code
   doesn't need to follow that pattern.
@@ -426,15 +434,17 @@ tools that are supposed to be fetchless.
 ```sh
 npm run dev           # Next dev on :3000
 npm run lint
-npm run test          # vitest — Overrun's suites (the only tests here)
+npm run test          # vitest — Overrun's suites + Adventure's (test/adventure/)
 npm run build         # rm -rf .next first if Next caches stale routes —
                       # NOTE: that rm kills a running dev server; restart it
 npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)
 ```
 
-The suites in `test/` are copied **verbatim** from the upstream Overrun repo
-and are excluded from eslint for that reason — fix the engine, not the test.
-`tsc` still typechecks them.
+The flat suites in `test/*.ts` are copied **verbatim** from the upstream
+Overrun repo and are excluded from eslint for that reason — fix the
+engine, not the test. `tsc` still typechecks them. Adventure's suites in
+`test/adventure/` have no upstream: they are linted normally and may be
+edited freely.
 
 ## Commit style
 
