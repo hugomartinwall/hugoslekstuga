@@ -73,7 +73,10 @@ function hurtPlayer(state: GameState, dmg: number, fromX: number, fromY: number,
   return true;
 }
 
-function hurtEnemy(state: GameState, e: Entity, dmg: number, fromAng: number, kb = 2.5): void {
+// A connected swing SHOVES — hitting something buys space. That's the
+// melee contract; tune the default kb with the 0.88 decay below in mind
+// (together they move a hit enemy about two tiles).
+function hurtEnemy(state: GameState, e: Entity, dmg: number, fromAng: number, kb = 4.2): void {
   e.hp -= dmg;
   e.hitFlash = 4;
   e.kbx = Math.cos(fromAng) * kb;
@@ -527,8 +530,8 @@ export function tick(state: GameState, intent: Intent): void {
       evx += (eFlow.x * 30) / 60;
       evy += (eFlow.y * 30) / 60;
     }
-    e.kbx *= 0.85;
-    e.kby *= 0.85;
+    e.kbx *= 0.88;
+    e.kby *= 0.88;
     const phasing = e.flags & F.PHASEDARK && !ghostLit(state, e);
     if (phasing) {
       // Ghosts ignore walls.

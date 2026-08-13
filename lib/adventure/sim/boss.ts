@@ -82,15 +82,11 @@ function fan(state: GameState, x: number, y: number, ang: number, n: number, spr
   }
 }
 
-function addMinion(state: GameState, kind: string, x: number, y: number, cap: number): void {
+/** Boss adds — stats come from MINION_KINDS, never overridden inline. */
+function addMinion(state: GameState, kind: "cartling" | "addSapling" | "litter", x: number, y: number, cap: number): void {
   const alive = state.room.entities.filter((e) => e.kind === kind).length;
   if (alive >= cap) return;
-  const m = makeMinion(state, "litter", x, y);
-  m.kind = kind;
-  m.hp = m.maxHp = kind === "cartling" ? 4 : 3;
-  m.r = 6;
-  m.speed = kind === "cartling" ? 60 : 58;
-  state.room.entities.push(m);
+  state.room.entities.push(makeMinion(state, kind, x, y));
 }
 
 const toPlayer = (b: BossState, s: GameState) => Math.atan2(s.player.y - b.y, s.player.x - b.x);
@@ -307,8 +303,8 @@ function stepStump(state: GameState, b: BossState, rng: Rng, floor: number): voi
       break;
     }
     case "spawn": {
-      addMinion(state, "sapling", b.x - 30, b.y + 20, b.phase === 2 ? 3 : 2);
-      addMinion(state, "sapling", b.x + 30, b.y + 20, b.phase === 2 ? 3 : 2);
+      addMinion(state, "addSapling", b.x - 30, b.y + 20, b.phase === 2 ? 3 : 2);
+      addMinion(state, "addSapling", b.x + 30, b.y + 20, b.phase === 2 ? 3 : 2);
       b.mode = "rest";
       b.t = 0;
       break;

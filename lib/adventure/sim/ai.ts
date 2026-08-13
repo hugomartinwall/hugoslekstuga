@@ -1,3 +1,4 @@
+import { MINION_KINDS } from "../content/enemies";
 import type { Rng } from "./rng";
 import { F, type Entity, type GameState } from "./state";
 import { angDiff, circleHitsSolid, tileUnder } from "./collision";
@@ -295,7 +296,7 @@ export function stepEnemy(
         e.t = 0;
         return still;
       }
-      return chase(d < 100 ? 2.3 : 1);
+      return chase(d < 100 ? 2.0 : 1);
     }
 
     case "healer": {
@@ -323,11 +324,12 @@ export function stepEnemy(
   }
 }
 
-/** Build a minion entity inline (spawner litters) — mirrors spawnEnemy. */
-function makeMinion(state: GameState, kind: "litter" | "shard", x: number, y: number): Entity {
-  const def = kind === "litter"
-    ? { hp: 2, speed: 70, r: 5, coins: 1, touchDmg: 2 }
-    : { hp: 2, speed: 80, r: 5, coins: 1, touchDmg: 2 };
+/**
+ * Build a minion entity (splitter shards, spawner litters, boss adds).
+ * Stats come from MINION_KINDS — one table, no hand-rolled copies.
+ */
+function makeMinion(state: GameState, kind: keyof typeof MINION_KINDS, x: number, y: number): Entity {
+  const def = MINION_KINDS[kind];
   return {
     id: state.nextId++,
     kind,

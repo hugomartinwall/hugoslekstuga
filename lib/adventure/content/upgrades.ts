@@ -117,7 +117,7 @@ export const BASE_HEARTS = 3;
 export const BASE_DMG = 2;
 export const BASE_SPEED = 80;
 export const BASE_ARC = 90;
-export const SWORD_REACH = 22;
+export const SWORD_REACH = 27;
 
 export function heroStats(gear: readonly string[]): HeroStats {
   const owned = new Set(gear);
