@@ -90,7 +90,7 @@ export function button(s: ScreenCtx, id: string, label: string, x: number, y: nu
 
 // -----------------------------------------------------------------------
 
-export function drawTitle(s: ScreenCtx, sel: number, hasSave: boolean, accent: string, worldsCleared: number): void {
+export function drawTitle(s: ScreenCtx, sel: number, hasSave: boolean, accent: string, worldsCleared: number, heroName = "dot"): void {
   const { w, h } = s;
   const cx = w / 2;
   text(s, "hugos lekstuga presents", cx, h * 0.22, px(s, 12), MUTED);
@@ -108,8 +108,17 @@ export function drawTitle(s: ScreenCtx, sel: number, hasSave: boolean, accent: s
     bobY: 0,
   });
 
+  // Narrow screens get the short form — the keycap is not a marquee.
+  const n = Math.min(10, worldsCleared + 1);
+  const continueLabel = w < 480 ? `${heroName} — adventure ${n}` : `continue — ${heroName}'s adventure ${n}`;
   const items: [string, string][] = hasSave
-    ? [["continue", `continue — adventure ${Math.min(10, worldsCleared + 1)}`], ["new", "new adventure"], ["help", "how to play"], ["exit", "back to the playhouse"]]
+    ? [
+        ["continue", continueLabel],
+        ["map", "the map"],
+        ["new", "new adventure"],
+        ["help", "how to play"],
+        ["exit", "back to the playhouse"],
+      ]
     : [["new", "begin"], ["help", "how to play"], ["exit", "back to the playhouse"]];
   items.forEach(([id, label], i) => {
     button(s, id, label, cx, h * 0.66 + i * 46, Math.min(320, w - 60), sel === i, accent);
@@ -255,11 +264,212 @@ export function drawHelp(s: ScreenCtx, accent: string): void {
 
 // -----------------------------------------------------------------------
 
+// -----------------------------------------------------------------------
+// Character creation — pick a colour, name the hero.
+// -----------------------------------------------------------------------
+
+export type CreateView = {
+  step: "color" | "name";
+  colorIdx: number; // index into COLOR_ORDER
+  colorHexes: string[]; // resolved swatch colours, same order
+  name: string;
+  touch: boolean; // show the tappable letter grid
+  nameMax: number;
+};
+
+export function drawCreate(s: ScreenCtx, v: CreateView): void {
+  const { w, h } = s;
+  const cx = w / 2;
+  const accent = v.colorHexes[v.colorIdx];
+
+  text(s, "new adventure", cx, h * 0.1, px(s, 12), MUTED);
+  text(s, v.step === "color" ? "WHO'S GOING?" : "AND THEIR NAME?", cx, h * 0.17, disp(s, Math.min(44, w / 10)), INK_HEX);
+
+  // The hero, live, in the chosen colour.
+  drawHugoSprite(s.ctx, {
+    x: cx,
+    y: h * 0.34,
+    px: 5,
+    accent,
+    eye: { open: true, wide: v.step === "name", dx: 0, dy: 0 },
+    feet: reducedMotion() ? 0 : ((((s.now / 300) | 0) % 2) as 0 | 1),
+    bobY: 0,
+  });
+
+  if (v.step === "color") {
+    // 8 swatches in a row (2×4 on narrow screens).
+    const perRow = w < 480 ? 4 : 8;
+    const size = 40;
+    const gap = 14;
+    const rows = Math.ceil(v.colorHexes.length / perRow);
+    v.colorHexes.forEach((hex, i) => {
+      const row = Math.floor(i / perRow);
+      const inRow = Math.min(perRow, v.colorHexes.length - row * perRow);
+      const rowW = inRow * size + (inRow - 1) * gap;
+      const x = cx - rowW / 2 + (i % perRow) * (size + gap);
+      const y = h * 0.5 + row * (size + gap) - (rows > 1 ? (size + gap) / 2 : 0);
+      s.ctx.fillStyle = hex;
+      s.ctx.fillRect(x, y, size, size);
+      if (i === v.colorIdx) {
+        s.ctx.strokeStyle = INK_HEX;
+        s.ctx.lineWidth = 2;
+        s.ctx.strokeRect(x - 4, y - 4, size + 8, size + 8);
+      }
+      s.hits.push({ id: `swatch:${i}`, rect: { x: x - 6, y: y - 6, w: size + 12, h: size + 12 } });
+    });
+    button(s, "next", "next", cx, h * 0.5 + rows * (size + gap) + 34, 200, true, accent);
+    text(s, "arrows to browse · enter to keep going", cx, h * 0.5 + rows * (size + gap) + 68, px(s, 10), MUTED);
+  } else {
+    // The name field.
+    const fw = Math.min(300, w - 60);
+    const fy = h * 0.47;
+    s.ctx.fillStyle = PANEL;
+    s.ctx.fillRect(cx - fw / 2, fy, fw, 40);
+    s.ctx.strokeStyle = accent;
+    s.ctx.strokeRect(cx - fw / 2 + 0.5, fy + 0.5, fw - 1, 39);
+    const caret = !reducedMotion() && ((s.now / 500) | 0) % 2 === 0 && v.name.length < v.nameMax;
+    text(s, v.name + (caret ? "_" : ""), cx, fy + 21, px(s, 16), INK_HEX);
+
+    if (v.touch) {
+      // A–Z grid + erase + done for thumbs.
+      const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+      const cols = 7;
+      const cell = Math.min(44, (w - 40) / cols);
+      const gridW = cols * cell;
+      const gx = cx - gridW / 2;
+      const gy = fy + 58;
+      letters.forEach((ch, i) => {
+        const x = gx + (i % cols) * cell;
+        const y = gy + Math.floor(i / cols) * cell;
+        s.ctx.fillStyle = PANEL;
+        s.ctx.fillRect(x + 2, y + 2, cell - 4, cell - 4);
+        text(s, ch, x + cell / 2, y + cell / 2 + 1, px(s, 13), INK_HEX);
+        s.hits.push({ id: `char:${ch}`, rect: { x, y, w: cell, h: cell } });
+      });
+      // Erase + done on the last row.
+      const lastY = gy + 3 * cell;
+      const eraseX = gx + 5 * cell;
+      s.ctx.fillStyle = PANEL;
+      s.ctx.fillRect(eraseX + 2, lastY + 2, cell * 2 - 4, cell - 4);
+      text(s, "erase", eraseX + cell, lastY + cell / 2 + 1, px(s, 11), MUTED);
+      s.hits.push({ id: "erase", rect: { x: eraseX, y: lastY, w: cell * 2, h: cell } });
+      button(s, "done", "begin", cx, gy + 4 * cell + 30, 200, true, accent);
+    } else {
+      text(s, "type it. enter when it's them.", cx, fy + 62, px(s, 11), MUTED);
+      button(s, "done", "begin", cx, fy + 104, 200, true, accent);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// The world map — ten adventures on one winding road.
+// -----------------------------------------------------------------------
+
+export type MapNode = {
+  world: number;
+  name: string; // "?????" while locked
+  accent: string;
+  state: "locked" | "cleared" | "current";
+};
+
+export type MapView = {
+  nodes: MapNode[];
+  sel: number;
+  heroAccent: string;
+  heroName: string;
+  introLine: string | null; // the selected world's card line, if reached
+};
+
+export function drawMap(s: ScreenCtx, v: MapView): void {
+  const { w, h } = s;
+  const cx = w / 2;
+  text(s, `${v.heroName}'s adventure`, cx, h * 0.1, px(s, 12), MUTED);
+  text(s, "THE ROAD SO FAR", cx, h * 0.17, disp(s, Math.min(40, w / 10)), INK_HEX);
+
+  // Serpentine: two rows of five, the path snaking right then left.
+  const perRow = 5;
+  const usableW = Math.min(w - 80, 640);
+  const stepX = usableW / (perRow - 1);
+  const x0 = cx - usableW / 2;
+  const rowY = [h * 0.36, h * 0.56];
+  const pos = (i: number) => {
+    const row = Math.floor(i / perRow);
+    const col = i % perRow;
+    const x = row % 2 === 0 ? x0 + col * stepX : x0 + (perRow - 1 - col) * stepX;
+    return { x, y: rowY[row] };
+  };
+
+  // The road: dotted segments between consecutive nodes.
+  s.ctx.fillStyle = withAlpha(INK_HEX, 0.25);
+  for (let i = 0; i < v.nodes.length - 1; i++) {
+    const a = pos(i);
+    const b = pos(i + 1);
+    const steps = 8;
+    for (let t = 1; t < steps; t++) {
+      const x = a.x + ((b.x - a.x) * t) / steps;
+      const y = a.y + ((b.y - a.y) * t) / steps;
+      s.ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
+    }
+  }
+
+  v.nodes.forEach((node, i) => {
+    const { x, y } = pos(i);
+    const r = 17;
+    const locked = node.state === "locked";
+    s.ctx.fillStyle = locked ? PANEL : node.accent;
+    s.ctx.beginPath();
+    s.ctx.arc(x, y, r, 0, Math.PI * 2);
+    s.ctx.fill();
+    if (i === v.sel) {
+      const ringR = r + 5 + (reducedMotion() ? 0 : pulse(s.now, 1200) * 1.5);
+      s.ctx.strokeStyle = INK_HEX;
+      s.ctx.lineWidth = 2;
+      s.ctx.beginPath();
+      s.ctx.arc(x, y, ringR, 0, Math.PI * 2);
+      s.ctx.stroke();
+    }
+    text(s, locked ? "?" : String(node.world), x, y + 1, px(s, 13), locked ? MUTED : CREAM_HEX);
+    if (node.state === "cleared") {
+      s.ctx.fillStyle = INK_HEX;
+      s.ctx.fillRect(x + r - 6, y - r - 2, 8, 8);
+      text(s, "✓", x + r - 2, y - r + 2, px(s, 8), CREAM_HEX);
+    }
+    if (node.state === "current") {
+      drawHugoSprite(s.ctx, {
+        x,
+        y: y - r - 20,
+        px: 2,
+        accent: v.heroAccent,
+        eye: { open: true, wide: false, dx: 0, dy: 1 },
+        feet: reducedMotion() ? 0 : ((((s.now / 320) | 0) % 2) as 0 | 1),
+        bobY: 0,
+      });
+    }
+    if (!locked) {
+      s.hits.push({ id: `node:${i}`, rect: { x: x - 24, y: y - 24, w: 48, h: 48 } });
+    }
+  });
+
+  // The selected node's plaque.
+  const selNode = v.nodes[v.sel];
+  const plaqueY = h * 0.72;
+  text(s, `ADVENTURE ${selNode.state === "locked" ? "?" : selNode.world}`, cx, plaqueY, px(s, 11), selNode.state === "locked" ? MUTED : selNode.accent);
+  text(s, selNode.name, cx, plaqueY + 24, disp(s, 26), selNode.state === "locked" ? MUTED : INK_HEX);
+  if (v.introLine) text(s, v.introLine, cx, plaqueY + 48, px(s, 10.5), MUTED);
+
+  const mainLabel = selNode.state === "current" ? "onward" : selNode.state === "cleared" ? "replay (nothing banked)" : "locked";
+  if (selNode.state !== "locked") {
+    button(s, "go", mainLabel, cx - 90, h * 0.9, 220, true, selNode.accent);
+  }
+  button(s, "back", "back", cx + (selNode.state !== "locked" ? 110 : 0), h * 0.9, selNode.state !== "locked" ? 120 : 200, false, v.heroAccent);
+}
+
 export type CreditsView = {
   receipt: { name: string; price: number }[];
   footer: readonly string[];
   extraLine: string | null;
   deaths: number;
+  soldTo: string;
   t: number; // ms since credits started
 };
 
@@ -277,6 +487,7 @@ export function drawCredits(s: ScreenCtx, v: CreditsView, accent: string): void 
   text(s, "ADVENTURE", cx, Math.max(40, h * 0.12 - scroll * 0.3), disp(s, 40), accent);
   y = Math.max(90, h * 0.24 - scroll * 0.3) + 10;
   row("· receipt ·", MUTED, 10);
+  row(`sold to: ${v.soldTo}`, MUTED, 10);
   y += 6;
   for (const item of v.receipt) {
     row(`${item.name}  ····  ${item.price}¢`);

@@ -80,6 +80,8 @@ export type Player = {
   flashUntil: number; // the flash verb's world-lighting window
   /** Tick of the last hp loss — the out-of-combat regen clock. */
   lastHurtAt: number;
+  /** Second wind spent this world (the killing blow that wasn't). */
+  windUsed: boolean;
 };
 
 export type Entity = {
@@ -391,6 +393,7 @@ function makePlayer(cp: CheckpointData, entry: { x: number; y: number }): Player
     bufDodge: 0,
     flashUntil: 0,
     lastHurtAt: 0,
+    windUsed: false,
   };
 }
 

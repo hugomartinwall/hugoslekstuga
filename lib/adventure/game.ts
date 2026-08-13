@@ -1,4 +1,5 @@
-import { readAccent } from "@/lib/hugo/sprite";
+import { COLOR_ORDER, readAccent } from "@/lib/hugo/sprite";
+import { COLOR_HEX } from "@/lib/colors";
 import type { ToolColor } from "@/lib/tools";
 import { createAudio, type AudioFacade } from "./audio/audio";
 import { diffTick, type TickEvents } from "./audio/events";
@@ -9,15 +10,17 @@ import {
   applyDeath,
   applyWorldClear,
   buyUpgrade,
+  HERO_NAME_MAX,
   migrateSave,
   newSave,
   priceOf,
+  sanitizeHeroName,
   shopDiscount,
   shopInventory,
   type AdventureSave,
 } from "./app/run";
 import { heroStats, upgradeById } from "./content/upgrades";
-import { worldDef, FINAL_WORLD } from "./content/worlds";
+import { worldDef, FINAL_WORLD, WORLDS } from "./content/worlds";
 import {
   COIN_RECEIPT_LINE,
   CREDITS_FOOTER,
@@ -38,7 +41,7 @@ import { tick } from "./sim/tick";
 import { attachInput } from "./input/input";
 import { Renderer, type GameFonts, type RenderFrame, type SceneId } from "./render/renderer";
 import { motionPref, nextMotionPref, reducedMotion, setMotionPref } from "./render/motion";
-import type { Card, CreditsView, SettingsView, ShopView } from "./render/screens";
+import type { Card, CreditsView, MapView, SettingsView, ShopView } from "./render/screens";
 import { inRect } from "./render/ui-layout";
 
 export type AdventureOptions = {
@@ -100,6 +103,12 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
   let wipePhase: "in" | "out" | null = null;
   let pendingAfterWipe: (() => void) | null = null;
   let slowmoUntil = 0;
+  let createDraft: { step: "color" | "name"; colorIdx: number; name: string } | null = null;
+  let mapSel = 0;
+  /** Non-null while practice-replaying a cleared world — nothing banks. */
+  let replayFrom: number | null = null;
+  const coarsePointer =
+    typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 
   const renderer = new Renderer(canvas, opts.fonts);
   const audio: AudioFacade = createAudio();
@@ -137,6 +146,72 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
         footer: "press any key",
       });
     }
+  };
+
+  const heroAccent = (): string =>
+    save.heroColor ? COLOR_HEX[save.heroColor] : readAccent();
+
+  /** Practice-run a cleared world: same checkpoint, nothing banks. */
+  const startReplay = (world: number) => {
+    replayFrom = world;
+    state = enterWorld(save.checkpoint, world, save.seed, 0);
+    state.player.flasks = heroStats(state.player.gear).flaskMax;
+    prevState = null;
+    audio.setMood(world);
+    scene = "worldIntro";
+    setCard({
+      kicker: `ADVENTURE ${world} · again`,
+      title: worldDef(world).name,
+      lines: [WORLD_SCRIPT[world].intro, "practice run — nothing banked."],
+      footer: "press any key",
+    });
+  };
+
+  const openMap = () => {
+    scene = "map";
+    mapSel = Math.min(WORLDS.length - 1, Math.max(0, (save.won ? FINAL_WORLD : save.world) - 1));
+    replayFrom = null;
+  };
+
+  const mapView = (): MapView => {
+    const nodes = WORLDS.map((w) => {
+      const cleared = w.id <= save.worldsCleared;
+      const current = !save.won && w.id === save.world;
+      const reached = cleared || current;
+      return {
+        world: w.id,
+        name: reached ? w.name : "?????",
+        accent: COLOR_HEX[w.accent],
+        state: (current ? "current" : cleared ? "cleared" : "locked") as "locked" | "cleared" | "current",
+      };
+    });
+    const sel = Math.min(mapSel, nodes.length - 1);
+    const reached = nodes[sel].state !== "locked";
+    return {
+      nodes,
+      sel,
+      heroAccent: heroAccent(),
+      heroName: save.heroName,
+      introLine: reached ? WORLD_SCRIPT[sel + 1].intro : null,
+    };
+  };
+
+  const finalizeCreate = () => {
+    if (!createDraft) return;
+    const fresh = newSave((Date.now() ^ 0x9e3779b9) >>> 0);
+    fresh.heroName = sanitizeHeroName(createDraft.name);
+    fresh.heroColor = COLOR_ORDER[createDraft.colorIdx] ?? null;
+    save = fresh;
+    persistSave(save);
+    happyFired = false;
+    createDraft = null;
+    scene = "opening";
+    setCard({
+      kicker: "hugos lekstuga",
+      title: "ADVENTURE",
+      lines: [OPENING_CARD[0], `${save.heroName} has a sword now. (it was in lost & found.)`],
+      footer: "press any key",
+    });
   };
 
   const beginWipe = (then: () => void) => {
@@ -188,7 +263,7 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
     shopView = {
       items: inv.map((id) => {
         const u = upgradeById(id)!;
-        const price = priceOf(id, save);
+        const price = priceOf(id, save, state!.player.gear);
         return {
           id,
           name: u.name,
@@ -200,7 +275,11 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
       }),
       sel: Math.min(menuSel, inv.length),
       coins: state.player.coins,
-      line: discount ? MERCHANT.pity : WORLD_SCRIPT[state.world].shopLine,
+      line: discount
+        ? MERCHANT.pity
+        : state.world === 1
+          ? `${save.heroName}. good name. i want your coins.`
+          : WORLD_SCRIPT[state.world].shopLine,
       discount,
       flash: performance.now() < shopFlashUntil ? shopView?.flash ?? null : null,
     };
@@ -248,6 +327,12 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
 
   const confirmClear = () => {
     if (!state) return;
+    if (replayFrom !== null) {
+      // Practice run: applaud, bank nothing, back to the map.
+      replayFrom = null;
+      openMap();
+      return;
+    }
     const cp = checkpointOf(state);
     applyWorldClear(save, cp, state.tick);
     persistSave(save);
@@ -261,7 +346,8 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
       });
       audio.setMood("title");
     } else {
-      startWorld(save.world, false);
+      // The road grows: show the map with the new node lit, then onward.
+      openMap();
     }
   };
 
@@ -277,6 +363,13 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
 
   const onDeath = () => {
     if (!state) return;
+    if (replayFrom !== null) {
+      // Practice deaths don't count. Back to the map, no lecture.
+      replayFrom = null;
+      audio.sfx("death");
+      openMap();
+      return;
+    }
     applyDeath(save);
     persistSave(save);
     scene = "death";
@@ -289,27 +382,52 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
   };
 
   // ---- menus ---------------------------------------------------------
-  const titleItems = () => (save.worldsCleared > 0 || save.checkpoint.gear.length > 0 ? ["continue", "new", "help", "exit"] : ["new", "help", "exit"]);
+  const titleItems = () =>
+    save.worldsCleared > 0 || save.checkpoint.gear.length > 0
+      ? ["continue", "map", "new", "help", "exit"]
+      : ["new", "help", "exit"];
   const pauseItems = ["resume", "settings", "help", "restart", "quit"];
   const settingsItems = ["music", "sfx", "motion", "back"];
 
   const activate = (id: string) => {
     switch (id) {
       case "continue":
+        replayFrom = null;
         startWorld(save.world, false);
         break;
-      case "new":
-        save = newSave((Date.now() ^ 0x9e3779b9) >>> 0);
-        persistSave(save);
-        happyFired = false;
-        scene = "opening";
-        setCard({
-          kicker: "hugos lekstuga",
-          title: "ADVENTURE",
-          lines: [...OPENING_CARD],
-          footer: "press any key",
-        });
+      case "map":
+        openMap();
         break;
+      case "new":
+        // The old save survives until the new hero is actually born.
+        createDraft = { step: "color", colorIdx: 0, name: "" };
+        scene = "create";
+        menuSel = 0;
+        break;
+      case "next":
+        if (createDraft) createDraft.step = "name";
+        break;
+      case "erase":
+        if (createDraft) createDraft.name = createDraft.name.slice(0, -1);
+        break;
+      case "done":
+        if (createDraft) finalizeCreate();
+        else if (scene === "credits") {
+          scene = "title";
+          menuSel = 0;
+        }
+        break;
+      case "go": {
+        const view = mapView();
+        const node = view.nodes[view.sel];
+        if (node.state === "current") {
+          replayFrom = null;
+          startWorld(node.world, false);
+        } else if (node.state === "cleared") {
+          startReplay(node.world);
+        }
+        break;
+      }
       case "help":
         overlay = "help";
         break;
@@ -329,6 +447,16 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
         if (state) startWorld(state.world, true);
         break;
       case "back":
+        if (overlay === null && (scene === "map" || scene === "create")) {
+          if (scene === "create" && createDraft?.step === "name") {
+            createDraft.step = "color";
+          } else {
+            createDraft = null;
+            scene = "title";
+          }
+          menuSel = 0;
+          break;
+        }
         overlay = overlay === "settings" ? "pause" : null;
         if (scene === "title") overlay = null;
         menuSel = 0;
@@ -346,15 +474,20 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
         scene = "play";
         shopView = null;
         break;
-      case "done":
-        scene = "title";
-        menuSel = 0;
-        break;
       case "confirm":
         confirmCard();
         break;
       default:
         if (id.startsWith("shop:")) tryBuy(id.slice(5));
+        else if (id.startsWith("swatch:") && createDraft) {
+          createDraft.colorIdx = Math.max(0, Math.min(COLOR_ORDER.length - 1, Number(id.slice(7))));
+        } else if (id.startsWith("char:") && createDraft) {
+          if (createDraft.name.length < HERO_NAME_MAX) createDraft.name += id.slice(5);
+        } else if (id.startsWith("node:")) {
+          const idx = Number(id.slice(5));
+          if (mapSel === idx) activate("go");
+          else mapSel = idx;
+        }
     }
     audio.sfx("ui");
   };
@@ -396,6 +529,26 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
   };
 
   const onMenuKey = (key: "up" | "down" | "left" | "right" | "confirm" | "back") => {
+    // Creation and the map steer their own cursors.
+    if (scene === "create" && createDraft && overlay === null) {
+      if (createDraft.step === "color") {
+        if (key === "left" || key === "up") createDraft.colorIdx = (createDraft.colorIdx + COLOR_ORDER.length - 1) % COLOR_ORDER.length;
+        else if (key === "right" || key === "down") createDraft.colorIdx = (createDraft.colorIdx + 1) % COLOR_ORDER.length;
+        else if (key === "confirm") activate("next");
+        else if (key === "back") activate("back");
+      } else if (key === "confirm") activate("done");
+      else if (key === "back") activate("back");
+      return;
+    }
+    if (scene === "map" && overlay === null) {
+      const unlocked = mapView().nodes.map((n, i) => (n.state !== "locked" ? i : -1)).filter((i) => i >= 0);
+      const at = unlocked.indexOf(Math.min(mapSel, unlocked.length ? unlocked[unlocked.length - 1] : 0));
+      if (key === "left" || key === "up") mapSel = unlocked[Math.max(0, at - 1)] ?? mapSel;
+      else if (key === "right" || key === "down") mapSel = unlocked[Math.min(unlocked.length - 1, at + 1)] ?? mapSel;
+      else if (key === "confirm") activate("go");
+      else if (key === "back") activate("back");
+      return;
+    }
     const len = menuLen();
     if (key === "up") menuSel = (menuSel - 1 + len) % len;
     else if (key === "down") menuSel = (menuSel + 1) % len;
@@ -455,6 +608,15 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
     },
     onMute: () => audio.toggleMute(),
     isPlaying: () => scene === "play" && overlay === null,
+    wantsText: () => scene === "create" && createDraft?.step === "name" && overlay === null,
+    onChar: (ch) => {
+      if (createDraft && createDraft.name.length < HERO_NAME_MAX) createDraft.name += ch;
+    },
+    onTextControl: (k) => {
+      if (!createDraft) return;
+      if (k === "backspace") createDraft.name = createDraft.name.slice(0, -1);
+      else activate("done");
+    },
     touchLayout: () => renderer.touchLayout,
   });
   disposers.push(input.detach);
@@ -550,11 +712,24 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
         alpha,
         menuSel,
         accent: worldAccent(),
-        hugoAccent: readAccent(),
+        hugoAccent: heroAccent(),
+        heroName: save.heroName,
         card,
         shop: shopView ? { ...shopView, sel: menuSel } : null,
         settings: settingsView(),
         credits: scene === "credits" ? creditsView(now) : null,
+        create:
+          scene === "create" && createDraft
+            ? {
+                step: createDraft.step,
+                colorIdx: createDraft.colorIdx,
+                colorHexes: COLOR_ORDER.map((c) => COLOR_HEX[c]),
+                name: createDraft.name,
+                touch: coarsePointer || input.touch.seenTouch,
+                nameMax: HERO_NAME_MAX,
+              }
+            : null,
+        map: scene === "map" ? mapView() : null,
         hasSave: save.worldsCleared > 0 || save.checkpoint.gear.length > 0 || save.world > 1,
         worldsCleared: save.worldsCleared,
         wipe,
@@ -586,6 +761,7 @@ export function createAdventure(canvas: HTMLCanvasElement, opts: AdventureOption
     footer: CREDITS_FOOTER,
     extraLine: save.purchases.includes("coin") ? COIN_RECEIPT_LINE : null,
     deaths: save.deaths,
+    soldTo: save.heroName,
     t: now - creditsStart,
   });
 

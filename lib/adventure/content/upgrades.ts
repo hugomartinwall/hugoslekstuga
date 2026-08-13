@@ -24,19 +24,21 @@ export type Upgrade = {
 
 export const UPGRADES: Upgrade[] = [
   // ---- world 1 ------------------------------------------------------
-  { id: "roll", name: "dodge roll", desc: "a quick tumble. brief invincibility.", price: 40, world: 1, kind: "verb" },
-  { id: "heart1", name: "heart container", desc: "+1 heart. filled on delivery.", price: 30, world: 1, kind: "stat" },
-  { id: "speed1", name: "boots I", desc: "walk a little faster.", price: 25, world: 1, kind: "stat" },
+  { id: "roll", name: "dodge roll", desc: "a quick tumble. brief invincibility.", price: 28, world: 1, kind: "verb" },
+  { id: "heart1", name: "heart container", desc: "+1 heart. filled on delivery.", price: 20, world: 1, kind: "stat" },
+  { id: "speed1", name: "boots I", desc: "walk a little faster.", price: 14, world: 1, kind: "stat" },
   // ---- world 2 ------------------------------------------------------
   { id: "dagger", name: "throwing daggers", desc: "pointy mail. unlimited stamps.", price: 55, world: 2, kind: "verb" },
   { id: "dmg1", name: "whetstone I", desc: "sword damage up.", price: 35, world: 2, kind: "stat" },
   { id: "rollcd1", name: "loose laces", desc: "roll again sooner.", price: 25, world: 2, kind: "stat" },
   { id: "magnet1", name: "coin magnet I", desc: "coins drift toward you.", price: 20, world: 2, kind: "stat" },
+  { id: "thornboots", name: "thornproof boots", desc: "walk the hedges like they're rumours.", price: 30, world: 2, kind: "stat" },
   // ---- world 3 ------------------------------------------------------
   { id: "charge", name: "charge slash", desc: "hold, glint, release. breaks shields.", price: 70, world: 3, kind: "verb" },
   { id: "heart2", name: "heart container", desc: "+1 heart. filled on delivery.", price: 40, world: 3, kind: "stat" },
   { id: "daggerdmg", name: "sharper daggers", desc: "dagger damage doubled.", price: 35, world: 3, kind: "stat" },
   { id: "speed2", name: "boots II", desc: "walk faster still.", price: 30, world: 3, kind: "stat" },
+  { id: "hilt", name: "heavy hilt", desc: "your swing sends them further away.", price: 40, world: 3, kind: "stat" },
   // ---- world 4 ------------------------------------------------------
   { id: "parry", name: "parry", desc: "meet it head on. returns to sender.", price: 85, world: 4, kind: "verb" },
   { id: "dmg2", name: "whetstone II", desc: "sword damage up again.", price: 50, world: 4, kind: "stat" },
@@ -47,16 +49,19 @@ export const UPGRADES: Upgrade[] = [
   { id: "heart3", name: "heart container", desc: "+1 heart. filled on delivery.", price: 50, world: 5, kind: "stat" },
   { id: "rollcd2", name: "lighter boots", desc: "roll much sooner.", price: 40, world: 5, kind: "stat" },
   { id: "speed3", name: "boots III", desc: "frankly quick now.", price: 35, world: 5, kind: "stat" },
+  { id: "regen1", name: "warm blanket", desc: "hearts return sooner after a scrape.", price: 45, world: 5, kind: "stat" },
   // ---- world 6 ------------------------------------------------------
   { id: "whirl", name: "whirlwind", desc: "everything around you, at once.", price: 115, world: 6, kind: "verb" },
   { id: "arc1", name: "wider swing I", desc: "sword arc 90° → 120°.", price: 45, world: 6, kind: "stat" },
   { id: "fan", name: "dagger fan", desc: "three daggers per throw.", price: 55, world: 6, kind: "stat" },
   { id: "flask2", name: "second flask charge", desc: "more cream soda.", price: 40, world: 6, kind: "stat" },
+  { id: "regen2", name: "warmer blanket", desc: "hearts return faster once they start.", price: 55, world: 6, kind: "stat" },
   // ---- world 7 ------------------------------------------------------
   { id: "bomb", name: "bomb", desc: "lobbed opinion. flushes what hides.", price: 140, world: 7, kind: "verb" },
   { id: "dmg3", name: "whetstone III", desc: "sword damage up again.", price: 70, world: 7, kind: "stat" },
   { id: "pierce", name: "dagger pierce", desc: "daggers keep going through one kill.", price: 50, world: 7, kind: "stat" },
   { id: "magnet3", name: "coin magnet III", desc: "the whole room's coins are yours.", price: 35, world: 7, kind: "stat" },
+  { id: "charm", name: "haggler's charm", desc: "ten percent off, forever. i regret this.", price: 60, world: 7, kind: "stat" },
   // ---- world 8 ------------------------------------------------------
   { id: "flash", name: "flash", desc: "one bright argument. ghosts hate it.", price: 150, world: 8, kind: "verb" },
   { id: "heart4", name: "heart container", desc: "+1 heart. filled on delivery.", price: 70, world: 8, kind: "stat" },
@@ -67,6 +72,7 @@ export const UPGRADES: Upgrade[] = [
   { id: "heart5", name: "heart container", desc: "+1 heart. filled on delivery.", price: 70, world: 9, kind: "stat" },
   { id: "dmg4", name: "whetstone IV", desc: "sword damage up. it hums now.", price: 90, world: 9, kind: "stat" },
   { id: "speed4", name: "boots IV", desc: "the fast ones.", price: 40, world: 9, kind: "stat" },
+  { id: "wind", name: "second wind", desc: "once per world, the killing blow isn't.", price: 80, world: 9, kind: "stat" },
   // ---- world 10 -----------------------------------------------------
   { id: "overclock", name: "overclock", desc: "brief. brilliant. everything, faster.", price: 170, world: 10, kind: "verb" },
   { id: "arc2", name: "wider swing II", desc: "sword arc 120° → 150°.", price: 60, world: 10, kind: "stat" },
@@ -110,6 +116,10 @@ export type HeroStats = {
   daggerFan: boolean;
   daggerPierce: boolean;
   coneWide: boolean; // lantern oil
+  thornProof: boolean;
+  kbMult: number; // melee knockback multiplier
+  regenGrace: number; // ticks unhit before hearts trickle back
+  regenEvery: number; // ticks per regained half-heart
   has: (id: string) => boolean;
 };
 
@@ -146,6 +156,10 @@ export function heroStats(gear: readonly string[]): HeroStats {
     daggerFan: has("fan"),
     daggerPierce: has("pierce"),
     coneWide: has("oil"),
+    thornProof: has("thornboots"),
+    kbMult: has("hilt") ? 1.35 : 1,
+    regenGrace: has("regen1") ? 120 : 180,
+    regenEvery: has("regen2") ? 60 : 90,
     has,
   };
 }

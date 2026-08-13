@@ -53,6 +53,47 @@ describe("regen", () => {
     expect(state.player.hp).toBe(2); // no beat has landed since the re-hit
   });
 
+  it("the blanket upgrades shorten the wait", () => {
+    const state = enterWorld({ ...cp, gear: ["regen1", "regen2"] }, 1, 42);
+    state.room.entities.length = 0;
+    state.room.cleared = true;
+    idle(state, 10);
+    hurt(state, 4);
+    idle(state, 120 + 1 + 60 * 3);
+    expect(state.player.hp).toBe(6); // grace 120, beat 60 — full in half the time
+  });
+
+  it("second wind turns one killing blow into 1 hp, once per world", () => {
+    const state = enterWorld({ ...cp, gear: ["wind"] }, 1, 42);
+    state.room.entities.length = 0;
+    state.room.cleared = true;
+    idle(state, 10);
+    state.player.hp = 1;
+    // A lethal hit through the real damage path.
+    state.player.iframesUntil = 0;
+    const before = state.player.windUsed;
+    state.player.lastHurtAt = 0;
+    // Simulate via a hostile projectile landing.
+    state.room.projectiles.push({
+      x: state.player.x, y: state.player.y, vx: 0, vy: 0, r: 3, dmg: 2,
+      hostile: true, kind: "shot", t: 0, ttl: 60, pierce: 0, homing: 0,
+    });
+    idle(state, 2);
+    expect(before).toBe(false);
+    expect(state.player.windUsed).toBe(true);
+    expect(state.player.hp).toBe(1);
+    expect(state.playerDied).toBe(false);
+    // The second killing blow is final.
+    idle(state, 100); // outlive i-frames
+    state.player.hp = 1;
+    state.room.projectiles.push({
+      x: state.player.x, y: state.player.y, vx: 0, vy: 0, r: 3, dmg: 2,
+      hostile: true, kind: "shot", t: 0, ttl: 60, pierce: 0, homing: 0,
+    });
+    idle(state, 2);
+    expect(state.playerDied).toBe(true);
+  });
+
   it("the bog blocks regen", () => {
     const state = quietState();
     // Turn the tile under the player into bog and park there.

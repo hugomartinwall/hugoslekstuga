@@ -57,12 +57,16 @@ export const WORLDS: WorldDef[] = [
     boss: "cartking",
     bossName: "THE CART KING",
     bossCoins: 25,
+    // The tutorial world: the shop sits just before the boss so a full
+    // clear affords ALL THREE world-1 SKUs — Hugo meets the Cart King
+    // with the roll, a fourth heart, and boots. Choice pressure starts
+    // in world 2.
     rooms: [
-      { layout: "open", kind: "combat", spawns: { "1": "rat", "2": "rat", "3": "rat" } },
+      { layout: "open", kind: "combat", spawns: { "1": "rat", "2": "rat", "3": "rat", "4": "rat" } },
       { layout: "pillars", kind: "combat", spawns: { "1": "rat", "2": "rat", "3": "rat", "4": "rat" } },
       { layout: "cross", kind: "combat", spawns: { "1": "rat", "2": "rat", "3": "pigeon", "4": "rat" } },
-      shop,
       { layout: "halls", kind: "combat", spawns: { "1": "rat", "2": "rat", "3": "pigeon", "4": "rat", "5": "pigeon" } },
+      shop,
       { layout: "arena", kind: "boss" },
     ],
   },

@@ -42,8 +42,8 @@ export type EnemyDef = {
 
 export const ENEMY_KINDS: Record<string, EnemyDef> = {
   // ---- world 1: the parking lot -------------------------------------
-  rat: { name: "lot rat", arch: "chaser", hp: 4, speed: 48, r: 7, coins: 2, touchDmg: 2 },
-  pigeon: { name: "gutter pigeon", arch: "shooter", hp: 3, speed: 40, r: 7, coins: 3, touchDmg: 2 },
+  rat: { name: "lot rat", arch: "chaser", hp: 4, speed: 48, r: 7, coins: 3, touchDmg: 2 },
+  pigeon: { name: "gutter pigeon", arch: "shooter", hp: 3, speed: 40, r: 7, coins: 5, touchDmg: 2 },
 
   // ---- world 2: the dark forest -------------------------------------
   sapling: { name: "sapling", arch: "chaser", hp: 4, speed: 51, r: 7, coins: 2, touchDmg: 2 },

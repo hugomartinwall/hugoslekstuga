@@ -75,8 +75,20 @@ function hurtPlayer(state: GameState, dmg: number, fromX: number, fromY: number,
   p.kbx = Math.cos(ang) * kb;
   p.kby = Math.sin(ang) * kb;
   p.hitStop = HIT_STOP;
-  if (p.hp <= 0) state.playerDied = true;
+  if (p.hp <= 0) fatal(state);
   return true;
+}
+
+/** The killing blow — unless second wind is banked and unspent. */
+function fatal(state: GameState): void {
+  const p = state.player;
+  if (!p.windUsed && p.gear.includes("wind")) {
+    p.windUsed = true;
+    p.hp = 1;
+    p.iframesUntil = state.tick + HURT_IFRAMES * 2; // room to breathe
+    return;
+  }
+  state.playerDied = true;
 }
 
 // A connected swing SHOVES — hitting something buys space. That's the
@@ -96,6 +108,7 @@ function meleeHitEnemy(
   dmg: number,
   swingId: number,
   breaksShield: boolean,
+  kbMult = 1,
 ): void {
   if (e.lastHitSwing === swingId) return;
   e.lastHitSwing = swingId;
@@ -114,7 +127,7 @@ function meleeHitEnemy(
     }
     if (front && breaksShield) e.shieldHp = 0;
   }
-  hurtEnemy(state, e, dmg, fromAng);
+  hurtEnemy(state, e, dmg, fromAng, 4.2 * kbMult);
   p.hitStop = HIT_STOP;
 }
 
@@ -424,7 +437,7 @@ export function tick(state: GameState, intent: Intent): void {
 
   // ---- terrain damage ------------------------------------------------
   const nowTile = tileUnder(state.room.tiles, p.x, p.y);
-  if (nowTile === T.THORN) {
+  if (nowTile === T.THORN && !stats.thornProof) {
     hurtPlayer(state, 2, p.x + Math.cos(p.faceAng), p.y + Math.sin(p.faceAng), 3.5);
   }
   if (nowTile === T.BOG) {
@@ -432,20 +445,21 @@ export function tick(state: GameState, intent: Intent): void {
     if (p.bogT > 30 && p.bogT % 60 === 0) {
       p.hp -= 1;
       p.lastHurtAt = state.tick;
-      if (p.hp <= 0) state.playerDied = true;
+      if (p.hp <= 0) fatal(state);
     }
   } else {
     p.bogT = 0;
   }
 
   // Out-of-combat regen — never while standing in bog (attrition is the
-  // bog's whole identity), never while the hurt clock is fresh.
+  // bog's whole identity), never while the hurt clock is fresh. The
+  // blanket upgrades shorten the grace and quicken the beat.
   if (
     p.hp > 0 &&
     p.hp < p.maxHp &&
     nowTile !== T.BOG &&
-    state.tick - p.lastHurtAt >= REGEN_GRACE &&
-    (state.tick - p.lastHurtAt - REGEN_GRACE) % REGEN_EVERY === 0
+    state.tick - p.lastHurtAt >= stats.regenGrace &&
+    (state.tick - p.lastHurtAt - stats.regenGrace) % stats.regenEvery === 0
   ) {
     p.hp += 1;
   }
@@ -476,7 +490,7 @@ export function tick(state: GameState, intent: Intent): void {
     for (const e of state.room.entities) {
       if (e.hp <= 0) continue;
       if (!sectorHits(p.x, p.y, a.ang, reach, arcRad, e.x, e.y, e.r)) continue;
-      meleeHitEnemy(state, e, Math.round(dmg), swingId, isCharge || a.phase === "dashing");
+      meleeHitEnemy(state, e, Math.round(dmg), swingId, isCharge || a.phase === "dashing", stats.kbMult);
     }
     const b = state.boss;
     if (b && !b.dead && b.lastHitSwing !== swingId && sectorHits(p.x, p.y, a.ang, reach + 6, arcRad, b.x, b.y, b.r)) {

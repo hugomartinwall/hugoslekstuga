@@ -3,22 +3,27 @@ import type { ToolColor } from "@/lib/tools";
 import { drawHugoSprite, withAlpha } from "@/lib/hugo/sprite";
 import { F, type BossState, type Entity, type GameState, type Zone } from "../sim/state";
 import { ROOM_H, ROOM_PX_H, ROOM_PX_W, ROOM_W, T, TILE } from "../sim/rooms";
-import { REGEN_GRACE, zoneContains } from "../sim/tick";
+import { zoneContains } from "../sim/tick";
+import { heroStats } from "../content/upgrades";
 import { biomeFor, type Biome } from "./palette";
 import { drawHero } from "./hero";
 import { pulse, reducedMotion } from "./motion";
 import {
   drawCard,
+  drawCreate,
   drawCredits,
   drawHelp,
+  drawMap,
   drawPause,
   drawSettings,
   drawShop,
   drawTitle,
   type Card,
+  type CreateView,
   type CreditsView,
   type GameFonts,
   type Hit,
+  type MapView,
   type ScreenCtx,
   type SettingsView,
   type ShopView,
@@ -30,6 +35,8 @@ export type { GameFonts };
 
 export type SceneId =
   | "title"
+  | "create"
+  | "map"
   | "opening"
   | "worldIntro"
   | "play"
@@ -53,11 +60,14 @@ export type RenderFrame = {
   alpha: number;
   menuSel: number;
   accent: ToolColor; // world accent
-  hugoAccent: string; // his persisted colour, hex
+  hugoAccent: string; // the hero's colour, hex
+  heroName: string;
   card: Card | null;
   shop: ShopView | null;
   settings: SettingsView | null;
   credits: CreditsView | null;
+  create: CreateView | null;
+  map: MapView | null;
   hasSave: boolean;
   worldsCleared: number;
   wipe: number; // 0..1 door-transition coverage
@@ -158,7 +168,13 @@ export class Renderer {
     // Scene chrome.
     switch (frame.scene) {
       case "title":
-        drawTitle(s, frame.menuSel, frame.hasSave, frame.hugoAccent, frame.worldsCleared);
+        drawTitle(s, frame.menuSel, frame.hasSave, frame.hugoAccent, frame.worldsCleared, frame.heroName);
+        break;
+      case "create":
+        if (frame.create) drawCreate(s, frame.create);
+        break;
+      case "map":
+        if (frame.map) drawMap(s, frame.map);
         break;
       case "opening":
       case "worldIntro":
@@ -934,7 +950,7 @@ export class Renderer {
     const regenArmed =
       curr.player.hp > 0 &&
       curr.player.hp < curr.player.maxHp &&
-      curr.tick - curr.player.lastHurtAt >= REGEN_GRACE;
+      curr.tick - curr.player.lastHurtAt >= heroStats(curr.player.gear).regenGrace;
     const fillingIdx = Math.floor(curr.player.hp / 2);
     for (let i = 0; i < hearts; i++) {
       const hx = left + i * 13;

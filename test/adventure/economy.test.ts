@@ -53,13 +53,29 @@ describe("economy solvency", () => {
     }
   });
 
-  it("every world's shop stock exceeds its income (choice pressure)", () => {
+  it("every world's shop stock exceeds its income (choice pressure, w2+)", () => {
     for (const w of WORLDS) {
+      // World 1 is the deliberate exception: the tutorial world lets a
+      // full clear buy everything, so the first boss is met fully kitted.
+      if (w.id === 1) continue;
       expect(
         worldStock(w.id),
         `world ${w.id} stock vs income ${worldIncome(w.id)}`,
       ).toBeGreaterThanOrEqual(worldIncome(w.id) * 1.05);
     }
+  });
+
+  it("world 1's full clear affords its entire shop before the boss", () => {
+    const w1 = WORLDS[0];
+    const shopIdx = w1.rooms.findIndex((r) => r.kind === "shop");
+    const bossIdx = w1.rooms.findIndex((r) => r.kind === "boss");
+    expect(shopIdx).toBe(bossIdx - 1); // the shop sits at the boss's door
+    let preBoss = 0;
+    for (const room of w1.rooms.slice(0, shopIdx)) {
+      preBoss += roomIncome(room.spawns) + potCount(room.layout);
+    }
+    const stock = worldStock(1);
+    expect(preBoss, `pre-boss income ${preBoss} vs stock ${stock}`).toBeGreaterThanOrEqual(stock);
   });
 
   it("lifetime stock exceeds lifetime income — you cannot buy everything", () => {
@@ -105,6 +121,7 @@ describe("upgrade catalogue integrity", () => {
       ["magnet1", "magnet2", "magnet3"],
       ["rollcd1", "rollcd2"],
       ["arc1", "arc2"],
+      ["regen1", "regen2"],
       ["flask", "flask2", "flask3"],
       ["heart1", "heart2", "heart3", "heart4", "heart5"],
     ]) {

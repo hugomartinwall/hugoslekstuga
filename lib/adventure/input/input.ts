@@ -24,6 +24,10 @@ export type InputApi = {
   onMute(): void;
   /** True while the sim consumes movement (scene === play). */
   isPlaying(): boolean;
+  /** True while a text field (the hero's name) owns the keyboard. */
+  wantsText(): boolean;
+  onChar(ch: string): void;
+  onTextControl(k: "backspace" | "done"): void;
   touchLayout(): TouchLayout | null;
 };
 
@@ -52,6 +56,18 @@ export function attachInput(canvas: HTMLCanvasElement, api: InputApi): InputHand
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    // Name entry owns the keyboard outright — letters are letters, not
+    // bindings (typing "w" must not mean "up").
+    if (api.wantsText()) {
+      if (e.key === "Backspace") api.onTextControl("backspace");
+      else if (e.key === "Enter") api.onTextControl("done");
+      else if (e.key === "Escape") api.onMenuKey("back");
+      else if (e.key.length === 1 && /[a-zA-Z0-9 ]/.test(e.key)) api.onChar(e.key.toLowerCase());
+      e.preventDefault();
+      return;
+    }
+
     const action = ACTION_CODES[e.code] ?? ACTION_KEYS[e.key.toLowerCase()];
     const move = MOVE_CODES[e.code];
 

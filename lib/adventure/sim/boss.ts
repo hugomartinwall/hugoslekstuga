@@ -222,7 +222,7 @@ function stepCartKing(state: GameState, b: BossState, rng: Rng, floor: number): 
       break;
     }
     case "charge":
-      go(b, b.mem[0], 260);
+      go(b, b.mem[0], 240);
       if (b.mem[5] === 1 || b.t > 90) {
         // Crash. Coins spill; every second crash sheds a cartling.
         b.mem[1]++;
@@ -250,7 +250,7 @@ function stepCartKing(state: GameState, b: BossState, rng: Rng, floor: number): 
       }
       break;
     case "stun":
-      if (b.t >= (b.phase === 2 ? 60 : 90)) {
+      if (b.t >= (b.phase === 2 ? 60 : 110)) {
         b.mode = "track";
         b.t = 0;
       }

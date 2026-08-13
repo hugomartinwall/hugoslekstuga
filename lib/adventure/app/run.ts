@@ -1,3 +1,4 @@
+import type { ToolColor } from "@/lib/tools";
 import { heroStats, UPGRADES, upgradeById } from "../content/upgrades";
 import { FINAL_WORLD } from "../content/worlds";
 import type { CheckpointData } from "../sim/state";
@@ -15,7 +16,10 @@ import type { CheckpointData } from "../sim/state";
  */
 
 export type AdventureSave = {
-  v: 1;
+  v: 2;
+  /** The player's own hero — chosen at creation, worn everywhere. */
+  heroName: string;
+  heroColor: ToolColor | null; // null → follow the site-wide dot colour
   world: number; // current world, 1..10
   worldsCleared: number; // highest cleared, 0..10
   won: boolean;
@@ -27,9 +31,29 @@ export type AdventureSave = {
   purchases: string[]; // lifetime receipt (the credits scroll)
 };
 
+export const HERO_NAME_MAX = 12;
+
+const HERO_COLORS = new Set<string>([
+  "tomato", "blue", "yellow", "pink", "green", "purple", "orange", "teal",
+]);
+
+/** Clamp a name to the pixel-field charset: letters, digits, spaces. */
+export function sanitizeHeroName(raw: unknown): string {
+  if (typeof raw !== "string") return "dot";
+  const clean = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/ +/g, " ")
+    .trim()
+    .slice(0, HERO_NAME_MAX);
+  return clean || "dot";
+}
+
 export function newSave(seed: number): AdventureSave {
   return {
-    v: 1,
+    v: 2,
+    heroName: "dot",
+    heroColor: null,
     world: 1,
     worldsCleared: 0,
     won: false,
@@ -44,12 +68,16 @@ export function newSave(seed: number): AdventureSave {
 
 const KNOWN_GEAR = new Set(UPGRADES.map((u) => u.id));
 
-/** Normalize whatever was on disk into a valid v1 save. */
+/**
+ * Normalize whatever was on disk into a valid v2 save. v1 blobs (from the
+ * pre-character-creation release) upgrade in place: the hero is "dot" in
+ * the site-wide dot colour until the player makes their own.
+ */
 export function migrateSave(raw: unknown, fallbackSeed = 1): AdventureSave {
   const fresh = newSave(fallbackSeed);
   if (!raw || typeof raw !== "object") return fresh;
   const r = raw as Record<string, unknown>;
-  if (r.v !== 1) return fresh;
+  if (r.v !== 1 && r.v !== 2) return fresh;
 
   const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
   const gearIn = Array.isArray(r.checkpoint && (r.checkpoint as Record<string, unknown>).gear)
@@ -60,7 +88,12 @@ export function migrateSave(raw: unknown, fallbackSeed = 1): AdventureSave {
   const cpIn = (r.checkpoint ?? {}) as Record<string, unknown>;
 
   const save: AdventureSave = {
-    v: 1,
+    v: 2,
+    heroName: sanitizeHeroName(r.heroName),
+    heroColor:
+      typeof r.heroColor === "string" && HERO_COLORS.has(r.heroColor)
+        ? (r.heroColor as ToolColor)
+        : null,
     world: Math.max(1, Math.min(FINAL_WORLD, Math.round(num(r.world, 1)))),
     worldsCleared: Math.max(0, Math.min(FINAL_WORLD, Math.round(num(r.worldsCleared, 0)))),
     won: r.won === true,
@@ -118,10 +151,12 @@ export function shopDiscount(save: AdventureSave): number {
   return save.deathsThisWorld >= 2 ? 0.9 : 1;
 }
 
-export function priceOf(id: string, save: AdventureSave): number {
+export function priceOf(id: string, save: AdventureSave, gear: readonly string[] = []): number {
   const u = upgradeById(id);
   if (!u) return Infinity;
-  return Math.max(1, Math.round(u.price * shopDiscount(save)));
+  // The haggler's charm stacks with the pity valve — VÄXEL regrets both.
+  const charm = gear.includes("charm") ? 0.9 : 1;
+  return Math.max(1, Math.round(u.price * shopDiscount(save) * charm));
 }
 
 /** What this world's shop has left to sell (each SKU sold once). */
@@ -144,7 +179,7 @@ export function buyUpgrade(
   const u = upgradeById(id);
   if (!u) return { ok: false, reason: "unknown" };
   if (bag.gear.includes(id)) return { ok: false, reason: "owned" };
-  const price = priceOf(id, save);
+  const price = priceOf(id, save, bag.gear);
   if (bag.coins < price) return { ok: false, reason: "coins" };
   bag.coins -= price;
   bag.gear.push(id);
