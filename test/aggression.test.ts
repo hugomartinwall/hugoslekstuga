@@ -23,6 +23,7 @@ function makeState(
     status: "playing",
     cfg: {
       level,
+      seed: 0, // hand-built board
       aiFirstMoveTick: 0, // awake immediately — these tests are about reactions
       aiIntervalTicks: p.aiIntervalTicks,
       aiMinUnits: p.aiMinUnits,
@@ -51,6 +52,9 @@ function makeState(
     packets: [],
     nextAiTick: [0, 0, 0, 0, 0],
     firstSendDone: true,
+    halfSendDone: false,
+    holdTicks: 0,
+    sendsUsed: 0,
   };
 }
 
@@ -108,14 +112,32 @@ describe("kill instinct", () => {
 });
 
 describe("knob monotonicity", () => {
-  it("aggression knobs never regress with level", () => {
-    for (let L = 2; L <= 25; L++) {
-      const lo = levelParams(L - 1);
-      const hi = levelParams(L);
-      expect(hi.aiTier).toBeGreaterThanOrEqual(lo.aiTier);
-      expect(hi.aiKillCertainty).toBeLessThanOrEqual(lo.aiKillCertainty);
-      expect(hi.aiSendFraction).toBeGreaterThanOrEqual(lo.aiSendFraction);
-      expect(hi.aiNeutralBonus).toBeLessThanOrEqual(lo.aiNeutralBonus);
+  /**
+   * The knob-monotonicity sweep that used to live here is gone, not weakened.
+   *
+   * It was a strict subset of `tiers.test.ts` > "the aggression knobs never
+   * regress, within a topology, swept to L60": same four knobs plus enemyStart,
+   * over L2-60 instead of L2-25. Two copies of one invariant have to be edited
+   * in lockstep, and when the invariant changed — triads now freeze their
+   * difficulty vector inside a window, so the curve is per-topology rather than
+   * global — this copy came second and failed on its own terms.
+   *
+   * Deleted deliberately rather than reformulated twice. If you remove the
+   * tiers.test.ts sweep, bring one back here.
+   */
+  it("still owns the knob RANGES, which the monotonicity sweep does not check", () => {
+    // A curve can be monotone and still leave the game — these are the absolute
+    // bounds every knob has to respect at any level or topology.
+    for (let L = 1; L <= 200; L++) {
+      const p = levelParams(L);
+      expect(p.aiKillCertainty, `L${L}`).toBeGreaterThanOrEqual(1.25);
+      expect(p.aiSendFraction, `L${L}`).toBeLessThanOrEqual(0.85);
+      expect(p.aiSendFraction, `L${L}`).toBeGreaterThan(0);
+      expect(p.aiNeutralBonus, `L${L}`).toBeGreaterThanOrEqual(6);
+      expect(p.aiFirstMoveTick, `L${L}`).toBeGreaterThanOrEqual(45);
+      expect(p.aiIntervalTicks, `L${L}`).toBeGreaterThanOrEqual(45);
+      expect(p.aiMinUnits, `L${L}`).toBeGreaterThanOrEqual(6);
+      expect(p.aiOverkillMargin, `L${L}`).toBeGreaterThanOrEqual(2);
     }
   });
 });

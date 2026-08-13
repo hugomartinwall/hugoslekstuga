@@ -1,5 +1,6 @@
 import type { GameState } from "../sim/state";
-import { NEUTRAL, PLAYER } from "../sim/state";
+import { KIND_SIPHON, KIND_VOLATILE, NEUTRAL, PLAYER } from "../sim/state";
+import { SIPHON_EVERY, SIPHON_RANGE, unitCap } from "../sim/constants";
 
 /**
  * Per-tick gameplay events, derived by diffing the previous and current sim
@@ -22,6 +23,10 @@ export interface TickEvents {
   distantArrivals: number; // AI-vs-AI / AI-vs-neutral combat — the far-war bed
   turretZaps: number; // packets destroyed by turrets this tick
   rivalsEliminated: number; // AI factions whose material hit zero this tick
+  playerUpgradesDone: number; // player nodes that finished growing this tick
+  volatileBlasts: number; // volatile nodes that changed hands, i.e. detonated
+  siphonDrains: number; // owned siphons that stole a unit this tick
+  corrupterSteals: number; // in-flight packets that changed owner this tick
 }
 
 export function createTickEvents(): TickEvents {
@@ -37,6 +42,10 @@ export function createTickEvents(): TickEvents {
     distantArrivals: 0,
     turretZaps: 0,
     rivalsEliminated: 0,
+    playerUpgradesDone: 0,
+    volatileBlasts: 0,
+    siphonDrains: 0,
+    corrupterSteals: 0,
   };
 }
 
@@ -65,15 +74,30 @@ export function diffTick(prev: GameState, curr: GameState, out: TickEvents): voi
   out.distantArrivals = 0;
   out.turretZaps = 0;
   out.rivalsEliminated = 0;
+  out.playerUpgradesDone = 0;
+  out.volatileBlasts = 0;
+  out.siphonDrains = 0;
+  out.corrupterSteals = 0;
 
-  // Owner flips — O(N)
+  // Owner flips, and finished construction — O(N)
   for (let i = 0; i < curr.nodes.length; i++) {
-    const was = prev.nodes[i]!.owner;
-    const is = curr.nodes[i]!.owner;
-    if (was === is) continue;
-    if (is === PLAYER) out.playerCaptures++;
-    else if (was === PLAYER) out.playerLosses++;
+    const a = prev.nodes[i]!;
+    const b = curr.nodes[i]!;
+    // A node that was building and is now bigger has finished. Checking size
+    // as well as `upgrading` matters: losing the node also clears `upgrading`,
+    // and that is a defeat, not a payoff.
+    if (a.upgrading !== 0 && b.upgrading === 0 && b.size > a.size && b.owner === PLAYER) {
+      out.playerUpgradesDone++;
+    }
+    if (a.owner === b.owner) continue;
+    if (b.owner === PLAYER) out.playerCaptures++;
+    else if (a.owner === PLAYER) out.playerLosses++;
     else out.aiCaptures++;
+    // A volatile detonates on every capture. This counts owner CHANGES, which
+    // undercounts the rare case of a node flipping twice in one tick (A→B→A
+    // reads as no change at all). Sonifying one blast per tick is what the
+    // voice budget wants anyway, so the floor matters more than the ceiling.
+    if (b.kind === KIND_VOLATILE) out.volatileBlasts++;
   }
 
   // Sends — a flow is "new" if it appeared, changed target, or grew. O(F²)
@@ -105,17 +129,24 @@ export function diffTick(prev: GameState, curr: GameState, out: TickEvents): voi
     }
   }
 
-  // Turret zaps — packets that vanished while still mid-flight. Both arrays
-  // preserve relative order, so a two-pointer sweep finds them. Identity:
-  // (owner, from, departTick) is unique — a node emits ≤1 packet per tick.
+  // Turret zaps — packets that vanished while still mid-flight — and corrupter
+  // steals, packets that survived but changed sides. Both arrays preserve
+  // relative order, so one two-pointer sweep finds both.
+  //
+  // Identity is (from, departTick), NOT (owner, from, departTick). A node emits
+  // at most one packet per tick, so the pair is already unique, and `owner`
+  // stopped being stable the moment KIND_CORRUPTER shipped: a stolen packet
+  // would fail the old key, read as missing, and be reported as a turret zap it
+  // never was — a wrong sound on a board with no turret on it.
   let ci = 0;
   for (const p of prev.packets) {
     if (p.arriveTick <= prev.tick) continue; // consumed by arrival, not a zap
     let found = false;
     while (ci < curr.packets.length) {
       const c = curr.packets[ci]!;
-      if (c.owner === p.owner && c.from === p.from && c.departTick === p.departTick) {
+      if (c.from === p.from && c.departTick === p.departTick) {
         found = true;
+        if (c.owner !== p.owner) out.corrupterSteals++; // exact, unlike siphonDrains
         ci++;
         break;
       }
@@ -125,6 +156,38 @@ export function diffTick(prev: GameState, curr: GameState, out: TickEvents): voi
       break;
     }
     if (!found) out.turretZaps++;
+  }
+
+  // Siphon drains. Re-derived from the board rather than inferred from a unit
+  // delta, because a drained node is usually also producing and fighting on the
+  // same tick, so the delta is not attributable to any one cause.
+  //
+  // An APPROXIMATION, deliberately. It reads `prev`, the start of the tick that
+  // just ran, while siphonDrain() runs after combat — so it disagrees with the
+  // sim whenever the board changed mid-tick: it over-reports a victim whose last
+  // unit combat took first, and under-reports both a victim refilled by its own
+  // deposit and a siphon captured this tick. Making it exact would mean
+  // recording drains in GameState, which is hashed, for a sound.
+  //
+  // Worth the imprecision because of where it lands: one lowest-priority voice
+  // (`admit(0)`), first to be dropped under load. A missed or spurious tick is
+  // inaudible; a hashed field for audio would not be.
+  if (prev.tick % SIPHON_EVERY === 0) {
+    const range2 = SIPHON_RANGE * SIPHON_RANGE;
+    for (const s of prev.nodes) {
+      if (s.kind !== KIND_SIPHON || s.owner === NEUTRAL) continue;
+      if (s.units >= unitCap(s.size, s.kind)) continue; // a full siphon stops
+      for (const n of prev.nodes) {
+        if (n.owner === s.owner || n.units <= 0) continue;
+        const dx = n.x - s.x;
+        const dy = n.y - s.y;
+        // `<` not `<=`, matching siphonDrain's exclusive range test.
+        if (dx * dx + dy * dy < range2) {
+          out.siphonDrains++;
+          break;
+        }
+      }
+    }
   }
 
   // Rival eliminations — per-faction material presence prev vs curr. O(N+P)

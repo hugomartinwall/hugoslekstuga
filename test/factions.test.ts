@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Faction, GameState, Node, NodeKind } from "../lib/overrun/sim/state";
+import type { Faction, Node } from "../lib/overrun/sim/state";
 import { hashState, WORLD_H, WORLD_W } from "../lib/overrun/sim/state";
 import { tick, TICK_HZ } from "../lib/overrun/sim/tick";
 import { createLevel } from "../lib/overrun/sim/level";
@@ -13,59 +13,7 @@ import {
 } from "../lib/overrun/sim/constants";
 import type { Command } from "../lib/overrun/sim/commands";
 
-/** Hand-built state with explicit factions/kinds; AI asleep unless configured. */
-function makeState(
-  nodes: Array<Partial<Node> & Pick<Node, "x" | "y" | "owner" | "units">>,
-  opts: {
-    ais?: GameState["cfg"]["ais"];
-    tier?: number;
-    interval?: number;
-    certainty?: number;
-  } = {},
-): GameState {
-  const ais = opts.ais ?? [{ faction: 2 as Faction, persona: BALANCED, firstMoveTick: 1e6 }];
-  const nextAiTick = [0, 0, 0, 0, 0];
-  for (const fc of ais) nextAiTick[fc.faction] = fc.firstMoveTick;
-  return {
-    tick: 0,
-    rng: { s: 42 },
-    status: "playing",
-    cfg: {
-      level: 1,
-      aiFirstMoveTick: 0,
-      aiIntervalTicks: opts.interval ?? 60,
-      aiMinUnits: 8,
-      aiOverkillMargin: 4,
-      aiTier: opts.tier ?? 2,
-      aiKillCertainty: opts.certainty ?? 99,
-      aiSendFraction: 0.65,
-      aiNeutralBonus: 25,
-      aiKillPlayerBias: 1,
-      factionCount: 1 + ais.length,
-      ais,
-      playerProdInterval: PROD_INTERVAL,
-      playerUpgradeCost: UPGRADE_COST,
-      playerUpgradeTicks: UPGRADE_TICKS,
-    },
-    nodes: nodes.map((n, id) => ({
-      id,
-      size: 1 as const,
-      kind: 0 as NodeKind,
-      guard: 0,
-      upgrading: 0,
-      selected: false,
-      ...n,
-    })),
-    flows: [],
-    packets: [],
-    nextAiTick,
-    firstSendDone: true,
-  };
-}
-
-function run(s: GameState, ticks: number, cmds: (i: number) => Command[] = () => []): void {
-  for (let i = 0; i < ticks && s.status === "playing"; i++) tick(s, cmds(i));
-}
+import { makeState, run } from "./sim-harness";
 
 describe("multi-faction determinism", () => {
   it("3-way and 4-way levels are deterministic over 10k ticks", () => {
@@ -238,7 +186,7 @@ describe("in-run upgrades", () => {
 
 describe("mapgen fairness", () => {
   it("3-way boards: every faction sees congruent distances to every orbit", () => {
-    for (const lvl of [6, 7, 9]) {
+    for (const lvl of [12, 17, 24]) {
       const s = createLevel(lvl);
       const starts = [1, 2, 3].map((f) => s.nodes.find((n) => n.owner === f)!);
       const neutrals = s.nodes.filter((n) => n.owner === 0);
@@ -255,7 +203,7 @@ describe("mapgen fairness", () => {
   });
 
   it("4-way boards: one start per quadrant, orbit quads share stats", () => {
-    const s = createLevel(12);
+    const s = createLevel(9);
     const starts = [1, 2, 3, 4].map((f) => s.nodes.find((n) => n.owner === f)!);
     expect(starts.filter((n) => n.x < WORLD_W / 2 && n.y < WORLD_H / 2)).toHaveLength(1);
     expect(starts.filter((n) => n.x > WORLD_W / 2 && n.y < WORLD_H / 2)).toHaveLength(1);
@@ -270,31 +218,30 @@ describe("mapgen fairness", () => {
     const l5 = createLevel(5);
     expect(l5.nodes.some((n) => n.kind === 2 && n.units === 12)).toBe(true);
     const l7 = createLevel(7);
-    const turret = l7.nodes.find((n) => n.kind === 3);
     const player = l7.nodes.find((n) => n.owner === 1)!;
     const crimson = l7.nodes.find((n) => n.owner === 2)!;
-    expect(turret).toBeDefined();
-    // The demo turret sits in CRIMSON's sphere, away from the player's lanes.
-    expect(Math.hypot(turret!.x - player.x, turret!.y - player.y)).toBeGreaterThan(35);
-    expect(Math.hypot(turret!.x - crimson.x, turret!.y - crimson.y)).toBeLessThan(25);
+    const turrets = l7.nodes.filter((n) => n.kind === 3);
+    // The demo turret is placed across its whole symmetry orbit — one in each
+    // faction's sphere — so the orbit size follows the topology rather than
+    // being hardcoded. It used to be applied to a single node, which handed one
+    // faction a mechanic the others lacked; that is the regression here, not the
+    // count. L7 is a duel now (onboarding is duels all the way to L8), so the
+    // orbit is a mirror pair.
+    expect(turrets).toHaveLength(l7.cfg.factionCount);
+    const nearCrimson = turrets.reduce((a, b) =>
+      Math.hypot(a.x - crimson.x, a.y - crimson.y) < Math.hypot(b.x - crimson.x, b.y - crimson.y) ? a : b,
+    );
+    // The one the player watches sits in CRIMSON's sphere, out of their lanes.
+    // Stated as a comparison rather than a magic radius: "nearer its owner than
+    // the player" is the property that matters and it survives a topology change.
+    const toPlayer = Math.hypot(nearCrimson.x - player.x, nearCrimson.y - player.y);
+    const toCrimson = Math.hypot(nearCrimson.x - crimson.x, nearCrimson.y - crimson.y);
+    expect(toPlayer).toBeGreaterThan(35);
+    expect(toCrimson).toBeLessThan(toPlayer);
   });
 });
 
 describe("personas", () => {
-  function duel(personaA: typeof CRIMSON, ticks: number): GameState {
-    const s = makeState(
-      [
-        { x: 30, y: 45, owner: 1, units: 15 },
-        { x: 130, y: 45, owner: 2, units: 15 },
-        { x: 80, y: 30, owner: 0, units: 6 },
-        { x: 80, y: 60, owner: 0, units: 6 },
-      ],
-      { ais: [{ faction: 2, persona: personaA, firstMoveTick: 0 }], tier: 2, interval: 60, certainty: 99 },
-    );
-    run(s, ticks);
-    return s;
-  }
-
   it("CRIMSON commits far more units to attacks than AMBER on the same board", () => {
     // Proxy: distinct flow snapshots ≈ wave emissions ≈ units committed away
     // from home. The brawler's higher send fraction + lower margins should

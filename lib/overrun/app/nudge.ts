@@ -1,11 +1,38 @@
 import type { GameState } from "../sim/state";
 import { PLAYER } from "../sim/state";
+import { unitCap } from "../sim/constants";
 
 /**
  * One-time upgrade teaching nudge (SaveV3.flags.upgradeNudgeShown).
  * Pure predicates over sim state; the app layer owns the level gate,
  * the save flag, and the per-level lifecycle.
  */
+
+/**
+ * The all-capped standoff: every player node is sitting at its unit cap with
+ * nothing outbound and nothing of the player's in the air — total passivity.
+ * A confused first-timer can idle into this on L1–L2 (production stops at the
+ * cap, the retuned bot may still be between wakes) and the game reads as
+ * frozen. The app layer times this predicate and speaks up after ~5 s.
+ * Pure and O(nodes + flows + packets); no state is written here.
+ */
+export function allPlayerNodesCapped(state: GameState): boolean {
+  let any = false;
+  for (const n of state.nodes) {
+    if (n.owner !== PLAYER) continue;
+    any = true;
+    if (n.upgrading !== 0) return false; // building = acting
+    if (n.units < unitCap(n.size, n.kind)) return false;
+  }
+  if (!any) return false;
+  for (const f of state.flows) {
+    if (state.nodes[f.from]!.owner === PLAYER) return false;
+  }
+  for (const p of state.packets) {
+    if (p.owner === PLAYER) return false;
+  }
+  return true;
+}
 
 /** Upgrade-eligible (chevron criteria minus `selected`) AND safe:
  *  no hostile flow targets it, no outbound flow drains it. */

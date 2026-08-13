@@ -13,7 +13,7 @@ export interface LoopCallbacks {
   render(alpha: number): void;
 }
 
-/** Don't try to catch up more than this after a stall (tab switch, ad). */
+/** Don't try to catch up more than this after a stall (e.g. a tab switch). */
 const MAX_FRAME_MS = 250;
 
 export interface Loop {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Faction, GameState, Node, NodeKind } from "../lib/overrun/sim/state";
-import { PROD_INTERVAL, UPGRADE_COST, UPGRADE_TICKS } from "../lib/overrun/sim/constants";
-import { isNudgeCandidate, pickUpgradeNudgeNode } from "../lib/overrun/app/nudge";
+import { PROD_INTERVAL, UPGRADE_COST, UPGRADE_TICKS, unitCap } from "../lib/overrun/sim/constants";
+import { allPlayerNodesCapped, isNudgeCandidate, pickUpgradeNudgeNode } from "../lib/overrun/app/nudge";
 
 /** Minimal hand-built state; AI asleep, no flows unless a test adds them. */
 function makeState(
@@ -14,6 +14,7 @@ function makeState(
     status: "playing",
     cfg: {
       level: 5,
+      seed: 0, // hand-built board
       aiFirstMoveTick: 1e6,
       aiIntervalTicks: 60,
       aiMinUnits: 8,
@@ -48,6 +49,9 @@ function makeState(
     packets: [],
     nextAiTick: [0, 0, 1e6, 0, 0],
     firstSendDone: true,
+    halfSendDone: false,
+    holdTicks: 0,
+    sendsUsed: 0,
   };
 }
 
@@ -108,5 +112,65 @@ describe("upgrade nudge candidacy", () => {
   it("respects the per-level discounted cost from cfg", () => {
     const s = makeState([{ x: 20, y: 45, owner: 1, units: 10 }], [9, 19]);
     expect(isNudgeCandidate(s, 0)).toBe(true);
+  });
+});
+
+describe("cap-stall predicate", () => {
+  const cap0 = unitCap(0, 0);
+
+  it("true only when every player node sits at its cap with nothing moving", () => {
+    const s = makeState([
+      { x: 20, y: 45, owner: 1, units: cap0 },
+      { x: 60, y: 45, owner: 1, units: cap0 },
+      { x: 100, y: 45, owner: 2, units: 5 },
+      { x: 140, y: 45, owner: 0, units: 5 },
+    ]);
+    expect(allPlayerNodesCapped(s)).toBe(true);
+  });
+
+  it("one node below cap breaks the stall", () => {
+    const s = makeState([
+      { x: 20, y: 45, owner: 1, units: cap0 },
+      { x: 60, y: 45, owner: 1, units: cap0 - 1 },
+      { x: 100, y: 45, owner: 2, units: 5 },
+    ]);
+    expect(allPlayerNodesCapped(s)).toBe(false);
+  });
+
+  it("an outbound flow, an in-flight packet, or a build counts as acting", () => {
+    const flow = makeState([
+      { x: 20, y: 45, owner: 1, units: cap0 },
+      { x: 100, y: 45, owner: 2, units: 5 },
+    ]);
+    flow.flows.push({ from: 0, to: 1, remaining: 3 });
+    expect(allPlayerNodesCapped(flow)).toBe(false);
+
+    const packet = makeState([
+      { x: 20, y: 45, owner: 1, units: cap0 },
+      { x: 100, y: 45, owner: 2, units: 5 },
+    ]);
+    packet.packets.push({ owner: 1, from: 0, to: 1, departTick: 0, arriveTick: 30 });
+    expect(allPlayerNodesCapped(packet)).toBe(false);
+
+    const building = makeState([
+      { x: 20, y: 45, owner: 1, units: cap0, upgrading: 50 },
+      { x: 100, y: 45, owner: 2, units: 5 },
+    ]);
+    expect(allPlayerNodesCapped(building)).toBe(false);
+  });
+
+  it("no player nodes at all is a loss in progress, not a stall", () => {
+    const s = makeState([{ x: 100, y: 45, owner: 2, units: 5 }]);
+    expect(allPlayerNodesCapped(s)).toBe(false);
+  });
+
+  it("deposits past the cap still count as capped", () => {
+    // Deposits may exceed the cap (the cap only limits growth) — a node
+    // sitting ABOVE it is exactly as stalled as one sitting at it.
+    const s = makeState([
+      { x: 20, y: 45, owner: 1, units: cap0 + 12 },
+      { x: 100, y: 45, owner: 2, units: 5 },
+    ]);
+    expect(allPlayerNodesCapped(s)).toBe(true);
   });
 });

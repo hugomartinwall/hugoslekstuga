@@ -1,71 +1,113 @@
 import type { Faction } from "../sim/state";
 
 /**
- * The one place the game's colours live — Nattöppet edition.
+ * The one place faction colors live. Indexed by Faction (0 neutral, 1 player,
+ * 2 Warlord, 3 Builder, 4 Vulture).
  *
- * Every literal the canvas paints should come from here. The renderer and fx
- * are copied wholesale from the upstream game on each re-sync, so the fewer
- * hexes live in those two files the cheaper the next sync is. If you find
- * yourself typing an rgba() into renderer.ts, add it here instead.
+ * Re-skinned to Nattöppet: player cyan, Warlord coral, Builder acid, Vulture
+ * violet on the site's room-dark surfaces. Builder is acid rather than
+ * upstream's amber — against our coral it gives ~30 L* of lightness
+ * separation where amber gave 13.6, and under deuteranopia lightness is the
+ * only cue that pair has left. Values mirror lib/colors.ts (canvas can't
+ * read CSS variables); if you find yourself typing an rgba() into
+ * renderer.ts, add it here instead — that's what keeps the next sync cheap.
  *
- * Faction indices: 0 neutral, 1 player, 2 Warlord, 3 Builder, 4 Vulture.
- * Values mirror lib/colors.ts (canvas can't read CSS variables).
+ * Colorblind rationale: asserted under simulated deuteranopia/protanopia/
+ * tritanopia in test/sigil.test.ts. With these values the weakest pair is
+ * player/Vulture at 0.343 simulated distance (the player-vs-rival bound is
+ * 0.08 — a 4× margin; upstream's own weakest pair sat at 0.093), and every
+ * inkOn() ink clears the 3:1 contrast bound on the shaded limb fill,
+ * tightest at 3.49 on player cyan.
  *
- * Colourblind rationale: Warlord coral and Builder acid are the pair most at
- * risk — under deuteranopia both lose their hue cue and only lightness is
- * left. Upstream paired red with gold for ~21 L* of separation; coral against
- * acid gives ~30 L*, so the pair is safer here than it was there. Vulture
- * violet sits ~18 L* below the player's cyan (upstream: ~8). Verified with
- * DevTools vision-deficiency emulation at level 11+, where four factions
- * share the board.
+ * Colour is not the only faction channel off the board — the ticker badges,
+ * intro-card legend, death marks (render/sigil.ts) and share-bar hatches are
+ * shape-coded. ON the board it is the only channel since 2026-08-10 (in-ball
+ * sigils removed at Hugo's call), which makes these CVD assertions the load-
+ * bearing defence for ball identity.
+ *
+ * Typed as Record<Faction, string> rather than readonly string[] so tsc
+ * enforces totality and call sites drop their non-null assertions.
  */
-export const FACTION_COLORS: readonly string[] = [
-  "#8e97a8", // neutral — ink-muted
-  "#35e0ff", // player — cyan. Sacred; never reassign.
-  "#ff6e5e", // Warlord — coral
-  "#d8ff3d", // Builder — acid
-  "#a78bff", // Vulture — violet
-];
+export const FACTION_COLORS: Record<Faction, string> = {
+  0: "#8e97a8", // neutral — ink-muted
+  1: "#35e0ff", // player — cyan. Sacred; never reassign.
+  2: "#ff6e5e", // Warlord — coral
+  3: "#d8ff3d", // Builder — acid
+  4: "#a78bff", // Vulture — violet
+};
 
-export const FACTION_DIM: readonly string[] = [
-  "rgba(142,151,168,0.35)",
-  "rgba(53,224,255,0.35)",
-  "rgba(255,110,94,0.35)",
-  "rgba(216,255,61,0.35)",
-  "rgba(167,139,255,0.35)",
-];
+export const FACTION_DIM: Record<Faction, string> = {
+  0: "rgba(142,151,168,0.35)",
+  1: "rgba(53,224,255,0.35)",
+  2: "rgba(255,110,94,0.35)",
+  3: "rgba(216,255,61,0.35)",
+  4: "rgba(167,139,255,0.35)",
+};
 
-export const FACTION_NAMES: readonly string[] = ["", "YOU", "WARLORD", "BUILDER", "VULTURE"];
+/** Neutral is deliberately nameless — "NEUTRAL" would surface in the ticker
+ *  and intro card, where it means nothing. */
+export const FACTION_NAMES: Record<Faction, string> = {
+  0: "",
+  1: "YOU",
+  2: "WARLORD",
+  3: "BUILDER",
+  4: "VULTURE",
+};
 
-/** Room-dark ink on the bright fills, phosphor everywhere else. */
+/** Panel fill — mirrors the site's --color-panel. */
+export const UI_PANEL = "#1e2136";
+/** Core ice: currency, checkpoints, "this is good". */
+export const UI_ACCENT = "#8af0ff";
+/** UI_ACCENT as an rgb triple, for `rgba(${...},a)` call sites. */
+export const UI_ACCENT_RGB = "138,240,255";
+/** rgb triples, for `rgba(${...},a)` — scrims and ink vary only in alpha. */
+export const UI_SCRIM = "5,6,12";
+export const UI_INK = "232,242,233";
+export const UI_PLAYER = "53,224,255";
+
+/** Stars, streak flame, objective gold — the site's amber. Free for this role
+ *  precisely because Builder is acid here, not upstream's amber. */
+export const GOLD_HEX = "#ffb13d";
+
+/**
+ * Semantic colours. NOT faction colours.
+ *
+ * The defeat title used to reach into FACTION_COLORS[2] for a generic "bad",
+ * which meant losing to anyone painted the screen Warlord red — muddying
+ * red-as-Warlord at the emotional peak of a loss. danger stays coral-family
+ * but measurably apart from the Warlord (0.21–0.24 simulated CVD distance,
+ * where upstream's equivalent pair had 0.10).
+ */
+export const SEMANTIC = {
+  danger: "#ff9b82",
+  accent: UI_ACCENT,
+} as const;
+
+/** Room-dark ink on bright fills (Builder acid), phosphor everywhere else —
+ *  the site rule: every accent takes room-dark text. */
 export function inkOn(faction: Faction): string {
   return faction === 3 ? "#0b0c14" : "#e8f2e9";
 }
 
-/* ── surfaces + chrome ─────────────────────────────────────────────── */
+/** `inkOn` at an alpha. Three call sites hardcoded this rule independently. */
+export function inkOnAlpha(faction: Faction, a: number): string {
+  return faction === 3 ? `rgba(11,12,20,${a})` : `rgba(232,242,233,${a})`;
+}
 
-/** Phosphor text. Mirrors --color-ink / INK_HEX. */
-export const INK = "#e8f2e9";
-/** Phosphor at an alpha — the HUD's workhorse. */
-export const ink = (a: number): string => `rgba(232,242,233,${a})`;
-/** Coral at an alpha — damage, hearts, the mute slash. */
-export const coral = (a: number): string => `rgba(255,110,94,${a})`;
-
-/** The letterbox outside the board. Mirrors --color-cream. */
-export const BG_LETTERBOX = "#0b0c14";
-/** Raised panels: pause menu, shop. Mirrors --color-panel. */
-export const BG_PANEL = "#1e2136";
-/** Backdrop wash behind overlays. */
-export const backdrop = (a: number): string => `rgba(5,6,12,${a})`;
-
-/** Cores currency — ice. Amber is free for stars/streak now that Builder took acid. */
-export const CORE_HEX = "#8af0ff";
-/** Star ratings and the streak flame — amber. */
-export const GOLD_HEX = "#ffb13d";
-
-/* ── particles ─────────────────────────────────────────────────────── */
-
-/** Particle palette: slots 0–4 = faction colours, 5 = ink, 6 = ember. */
+/** Particle palette: slots 0–4 = faction colors, 5 = phosphor, 6 = ember.
+ *
+ *  Do NOT add slots casually: ParticlePool.draw iterates
+ *  PARTICLE_PALETTE.length × MAX_PARTICLES every frame regardless of how many
+ *  particles are live, so each new entry costs another unconditional
+ *  512-iteration pass forever. */
 export const P_WHITE = 5;
 export const P_EMBER = 6;
-export const PARTICLE_PALETTE: readonly string[] = [...FACTION_COLORS, INK, "#5c2a24"];
+export const PARTICLE_PALETTE: readonly string[] = [
+  FACTION_COLORS[0],
+  FACTION_COLORS[1],
+  FACTION_COLORS[2],
+  FACTION_COLORS[3],
+  FACTION_COLORS[4],
+  "#e8f2e9",
+  "#5c2a24",
+];

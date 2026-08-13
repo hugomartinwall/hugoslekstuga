@@ -36,6 +36,15 @@ const eslintConfig = defineConfig([
       "react-hooks/refs": "warn",
     },
   },
+  {
+    // The Overrun engine is canvas code with no React in it, synced from an
+    // upstream repo that is free to name a sim helper `useAbility`. The hooks
+    // rules only produce false positives there.
+    files: ["lib/overrun/**"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

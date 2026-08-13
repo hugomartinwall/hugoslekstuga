@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createTickEvents, diffTick } from "../lib/overrun/audio/events";
-import type { GameState, Node } from "../lib/overrun/sim/state";
+import type { Faction, GameState, Node, NodeKind } from "../lib/overrun/sim/state";
+import { KIND_SIPHON, KIND_STANDARD, KIND_VOLATILE, NEUTRAL } from "../lib/overrun/sim/state";
 import { tick } from "../lib/overrun/sim/tick";
 import { BALANCED } from "../lib/overrun/sim/ai";
-import { PROD_INTERVAL, UPGRADE_COST, UPGRADE_TICKS } from "../lib/overrun/sim/constants";
+import { PROD_INTERVAL, SIPHON_EVERY, UPGRADE_COST, UPGRADE_TICKS } from "../lib/overrun/sim/constants";
+import { fires, makeState as kindState } from "./sim-harness";
 
 /** Same helper shape as combat.test.ts — AI asleep, optional enemy sentinel. */
 function makeState(
@@ -17,6 +19,7 @@ function makeState(
     status: "playing",
     cfg: {
       level: 1,
+      seed: 0, // hand-built board
       aiFirstMoveTick: 1e6,
       aiIntervalTicks: 60,
       aiMinUnits: 5,
@@ -45,6 +48,9 @@ function makeState(
     packets: [],
     nextAiTick: [0, 0, 1e6, 0, 0],
     firstSendDone: false,
+    halfSendDone: false,
+    holdTicks: 0,
+    sendsUsed: 0,
   };
 }
 
@@ -140,5 +146,61 @@ describe("tick event diff", () => {
     const s = makeState([{ x: 40, y: 45, owner: 1, units: 10 }]);
     const e = step(s);
     expect(Object.values(e).every((v) => v === 0)).toBe(true);
+  });
+});
+
+describe("boss-kind events", () => {
+  it("counts one blast per volatile capture, and none for an ordinary one", () => {
+    const board = (kind: NodeKind) =>
+      kindState([
+        { x: 20, y: 45, owner: 1, units: 30 },
+        { x: 60, y: 45, owner: NEUTRAL, units: 1, kind },
+        { x: 150, y: 82, owner: 2 as Faction, units: 20 },
+      ]);
+    const total = (kind: NodeKind) => {
+      const s = board(kind);
+      let blasts = 0;
+      for (let i = 0; i < 200; i++) {
+        blasts += step(s, i === 0 ? [{ type: "sendUnits", from: 0, to: 1 }] : []).volatileBlasts;
+      }
+      return { blasts, captured: s.nodes[1]!.owner === 1 };
+    };
+    const volatile = total(KIND_VOLATILE);
+    const plain = total(KIND_STANDARD);
+    expect(volatile.captured).toBe(true);
+    expect(plain.captured).toBe(true);
+    expect(volatile.blasts).toBe(1);
+    expect(plain.blasts).toBe(0);
+  });
+
+  it("reports a drain only on cadence ticks, and only with a victim in range", () => {
+    const inRange = kindState([
+      { x: 60, y: 45, owner: 1, units: 10, kind: KIND_SIPHON },
+      { x: 70, y: 45, owner: 2 as Faction, units: 30 },
+    ]);
+    const outOfRange = kindState([
+      { x: 20, y: 45, owner: 1, units: 10, kind: KIND_SIPHON },
+      { x: 140, y: 45, owner: 2 as Faction, units: 30 },
+    ]);
+    let near = 0;
+    let far = 0;
+    const ticks = SIPHON_EVERY * 3 + 1;
+    for (let i = 0; i < ticks; i++) {
+      near += step(inRange).siphonDrains;
+      far += step(outOfRange).siphonDrains;
+    }
+    expect(near).toBe(fires(ticks, SIPHON_EVERY));
+    expect(far).toBe(0);
+  });
+
+  it("a neutral siphon reports nothing — it is dormant", () => {
+    const s = kindState([
+      { x: 60, y: 45, owner: NEUTRAL, units: 10, kind: KIND_SIPHON },
+      { x: 70, y: 45, owner: 1, units: 30 },
+      { x: 150, y: 82, owner: 2 as Faction, units: 20 },
+    ]);
+    let drains = 0;
+    for (let i = 0; i < SIPHON_EVERY * 3 + 1; i++) drains += step(s).siphonDrains;
+    expect(drains).toBe(0);
   });
 });
