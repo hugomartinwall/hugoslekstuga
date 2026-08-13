@@ -222,7 +222,9 @@ function stepCartKing(state: GameState, b: BossState, rng: Rng, floor: number): 
       break;
     }
     case "charge":
-      go(b, b.mem[0], 240);
+      // Phase 2 doubles up, so each half runs slower — the combo's threat
+      // is the chain, not the sprint.
+      go(b, b.mem[0], b.phase === 2 ? 215 : 240);
       if (b.mem[5] === 1 || b.t > 90) {
         // Crash. Coins spill; every second crash sheds a cartling.
         b.mem[1]++;
@@ -230,16 +232,16 @@ function stepCartKing(state: GameState, b: BossState, rng: Rng, floor: number): 
           { x: b.x, y: b.y - 10, vx: rng.range(-1, 1), vy: rng.range(-1.5, -0.5), value: 1, t: 0 },
           { x: b.x, y: b.y - 10, vx: rng.range(-1, 1), vy: rng.range(-1.5, -0.5), value: 1, t: 0 },
         );
-        if (b.mem[1] % 2 === 0 || b.phase === 2) {
+        if (b.mem[1] % 2 === 0) {
           addMinion(state, "cartling", b.x + 12, b.y, 3);
         }
         if (b.phase === 2 && b.mem[2] === 0) {
-          // Chained second charge: brief re-aim, then go again.
+          // Chained second charge — with the FULL rattle telegraph. The
+          // double reads as a one-two, never a sucker punch: every windup
+          // in this game respects the world's floor, this one included.
           b.mem[2] = 1;
           b.mode = "rattle";
-          // Shortened re-aim: the rattle restarts part-way through, so the
-          // second charge still shows ≥ 12 visible telegraph ticks.
-          b.t = Math.max(0, Math.max(28, floor) - 12);
+          b.t = 0;
         } else {
           b.mem[2] = 0;
           b.mode = "stun";
@@ -250,7 +252,7 @@ function stepCartKing(state: GameState, b: BossState, rng: Rng, floor: number): 
       }
       break;
     case "stun":
-      if (b.t >= (b.phase === 2 ? 60 : 110)) {
+      if (b.t >= (b.phase === 2 ? 80 : 110)) {
         b.mode = "track";
         b.t = 0;
       }
