@@ -78,6 +78,8 @@ export type Player = {
   bufAttack: number; // input buffer expiry ticks
   bufDodge: number;
   flashUntil: number; // the flash verb's world-lighting window
+  /** Tick of the last hp loss — the out-of-combat regen clock. */
+  lastHurtAt: number;
 };
 
 export type Entity = {
@@ -388,6 +390,7 @@ function makePlayer(cp: CheckpointData, entry: { x: number; y: number }): Player
     bufAttack: 0,
     bufDodge: 0,
     flashUntil: 0,
+    lastHurtAt: 0,
   };
 }
 
@@ -481,6 +484,7 @@ export function hashState(state: GameState): number {
   mix(q(p.x));
   mix(q(p.y));
   mix(p.hp * 65537 + p.coins);
+  mix(p.lastHurtAt);
   mix(p.gear.length);
   for (const e of state.room.entities) {
     mix(e.id);

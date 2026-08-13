@@ -45,6 +45,11 @@ export const FLASH_LIT = 180;
 export const OVERCLOCK_CD = 1200;
 export const OVERCLOCK_TICKS = 180;
 export const STAGGER_TICKS = 30;
+// Out-of-combat regen: stay unhit this long, then hearts trickle back.
+// A scrappy room costs tempo, not the run; burst damage still threatens
+// because nothing regens while you're being hurt (or standing in bog).
+export const REGEN_GRACE = 180; // 3s
+export const REGEN_EVERY = 90; // +1 half-heart per 1.5s
 
 const dropCoin = (state: GameState, x: number, y: number, rng: Rng, value = 1) => {
   state.room.coins.push({
@@ -64,6 +69,7 @@ function hurtPlayer(state: GameState, dmg: number, fromX: number, fromY: number,
     return false; // mid-roll invulnerability
   }
   p.hp -= dmg;
+  p.lastHurtAt = state.tick;
   p.iframesUntil = state.tick + HURT_IFRAMES;
   const ang = Math.atan2(p.y - fromY, p.x - fromX);
   p.kbx = Math.cos(ang) * kb;
@@ -425,10 +431,23 @@ export function tick(state: GameState, intent: Intent): void {
     p.bogT++;
     if (p.bogT > 30 && p.bogT % 60 === 0) {
       p.hp -= 1;
+      p.lastHurtAt = state.tick;
       if (p.hp <= 0) state.playerDied = true;
     }
   } else {
     p.bogT = 0;
+  }
+
+  // Out-of-combat regen — never while standing in bog (attrition is the
+  // bog's whole identity), never while the hurt clock is fresh.
+  if (
+    p.hp > 0 &&
+    p.hp < p.maxHp &&
+    nowTile !== T.BOG &&
+    state.tick - p.lastHurtAt >= REGEN_GRACE &&
+    (state.tick - p.lastHurtAt - REGEN_GRACE) % REGEN_EVERY === 0
+  ) {
+    p.hp += 1;
   }
 
   // ---- lava tides ----------------------------------------------------

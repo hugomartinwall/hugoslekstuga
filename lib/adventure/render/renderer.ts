@@ -3,7 +3,7 @@ import type { ToolColor } from "@/lib/tools";
 import { drawHugoSprite, withAlpha } from "@/lib/hugo/sprite";
 import { F, type BossState, type Entity, type GameState, type Zone } from "../sim/state";
 import { ROOM_H, ROOM_PX_H, ROOM_PX_W, ROOM_W, T, TILE } from "../sim/rooms";
-import { zoneContains } from "../sim/tick";
+import { REGEN_GRACE, zoneContains } from "../sim/tick";
 import { biomeFor, type Biome } from "./palette";
 import { drawHero } from "./hero";
 import { pulse, reducedMotion } from "./motion";
@@ -927,12 +927,24 @@ export class Renderer {
     const y = view.safe.top + view.hudH / 2 + 2;
     const left = Math.max(view.safe.left + 10, view.ox);
 
-    // Hearts (half-heart resolution).
+    // Hearts (half-heart resolution). The heart currently refilling
+    // pulses while out-of-combat regen is armed — recovery should read
+    // on screen, not surprise you. Steady under reduced motion.
     const hearts = curr.player.maxHp / 2;
+    const regenArmed =
+      curr.player.hp > 0 &&
+      curr.player.hp < curr.player.maxHp &&
+      curr.tick - curr.player.lastHurtAt >= REGEN_GRACE;
+    const fillingIdx = Math.floor(curr.player.hp / 2);
     for (let i = 0; i < hearts; i++) {
       const hx = left + i * 13;
       const fill = curr.player.hp - i * 2;
       drawHeart(ctx, hx, y - 4, fill >= 2 ? "full" : fill === 1 ? "half" : "empty", biome.accent);
+      if (regenArmed && i === fillingIdx) {
+        const a = reducedMotion() ? 0.4 : 0.25 + 0.25 * (pulse(frame.now, 900) * 0.5 + 0.5);
+        ctx.fillStyle = withAlpha(biome.accent, a);
+        ctx.fillRect(hx, y - 4, 9, 8);
+      }
     }
     // Flasks.
     for (let i = 0; i < curr.player.flasks; i++) {
