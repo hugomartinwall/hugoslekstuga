@@ -416,6 +416,7 @@ tools that are supposed to be fetchless.
 - localStorage keys must be namespaced `hugoslekstuga:*`. Hugo's own
   keys: `hugoslekstuga:hugo` (mood/memory), `hugoslekstuga:dot-color`
   (his colour), `hugoslekstuga:advice:memory` (the Advice engine).
+  Overrun's keys: `hugoslekstuga:overrun:{save,muted,music,sfx,motion}`.
 - The React 19 compiler memoises automatically — **drop manual `useCallback`
   in new code**. Older tools still use it; they pass lint but new code
   doesn't need to follow that pattern.
@@ -425,7 +426,7 @@ tools that are supposed to be fetchless.
 ```sh
 npm run dev           # Next dev on :3000
 npm run lint
-npm run test          # vitest — Overrun's sim suites (the only tests here)
+npm run test          # vitest — Overrun's suites (the only tests here)
 npm run build         # rm -rf .next first if Next caches stale routes —
                       # NOTE: that rm kills a running dev server; restart it
 npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)

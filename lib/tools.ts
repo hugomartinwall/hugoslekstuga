@@ -109,7 +109,7 @@ export const tools: Tool[] = [
     title: "Overrun",
     tagline: "Send everything. Take everything.",
     description:
-      "A tiny real-time strategy game against the machine. Nodes breed units; drag from yours to pour them somewhere else. Take the neutrals, overrun the enemy, clear the level — two lives per run, and the levels don't get kinder. Single player, runs entirely in your tab.",
+      "A tiny real-time strategy game against the machine. Nodes breed units; drag from yours to pour them somewhere else. Take the neutrals, overrun three rival factions across a thirty-level campaign — checkpoints bank your progress, cores buy doctrine and powers between runs, and the levels don't get kinder. Single player, runs entirely in your tab.",
     color: "pink",
     emoji: "◍",
     isNew: true,

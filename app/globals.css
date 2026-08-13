@@ -98,6 +98,15 @@
     0 calc(100% - 4px)
   );
   --dither: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 0h1v1H0zM2 0h1v1H2zM4 0h1v1H4zM2 2h1v1H2zM6 2h1v1H6zM0 4h1v1H0zM4 4h1v1H4zM6 4h1v1H6zM2 6h1v1H2zM6 6h1v1H6z' fill='%23E8F2E9' fill-opacity='0.045'/%3E%3C/svg%3E");
+
+  /* Safe-area insets republished as plain custom properties so Overrun's
+     canvas renderer can read them with getComputedStyle — env() is not
+     otherwise reachable from script. 0px everywhere until a route opts into
+     viewport-fit=cover (today: /games/overrun via its viewport export). */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
 }
 
 /* ----------------------------------------------------------------------------
