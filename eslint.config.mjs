@@ -48,6 +48,19 @@ const eslintConfig = defineConfig([
       "react-hooks/rules-of-hooks": "off",
     },
   },
+  {
+    // Greyrot's platform seam implements an interface whose parameters it
+    // deliberately ignores — the SDK those calls used to reach is gone, and
+    // the signatures stay so 60 other files need no edit. Underscore-prefixed
+    // means "I know, and it is on purpose".
+    files: ["lib/greyrot/**"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

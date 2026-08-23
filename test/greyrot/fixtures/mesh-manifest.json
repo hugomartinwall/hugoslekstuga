@@ -1,0 +1,157 @@
+{
+  "prim/box": {
+    "vertices": 8,
+    "triangles": 12,
+    "hash": "d9842383"
+  },
+  "prim/sphere": {
+    "vertices": 98,
+    "triangles": 192,
+    "hash": "ddc0da5d"
+  },
+  "prim/cylinder": {
+    "vertices": 24,
+    "triangles": 44,
+    "hash": "fdba650b"
+  },
+  "prim/cone": {
+    "vertices": 14,
+    "triangles": 24,
+    "hash": "32d3784d"
+  },
+  "prim/lathe-pot": {
+    "vertices": 66,
+    "triangles": 128,
+    "hash": "ddeb68ad"
+  },
+  "prim/tube-horn": {
+    "vertices": 144,
+    "triangles": 284,
+    "hash": "1618d39f"
+  },
+  "humanoid/hero": {
+    "vertices": 523,
+    "triangles": 966,
+    "hash": "cf4e2af9"
+  },
+  "humanoid/lean": {
+    "vertices": 523,
+    "triangles": 966,
+    "hash": "57b7ab74"
+  },
+  "humanoid/heavy": {
+    "vertices": 523,
+    "triangles": 966,
+    "hash": "b8cd7cfd"
+  },
+  "humanoid/mage": {
+    "vertices": 523,
+    "triangles": 966,
+    "hash": "6d05028a"
+  },
+  "sporeling/pim": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "280512ea"
+  },
+  "sporeling/sella": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "ec294678"
+  },
+  "sporeling/emberkin": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "2ff5b81c"
+  },
+  "sporeling/rotling": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "f0b674c7"
+  },
+  "sporeling/ashcap": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "e39f21bd"
+  },
+  "sporeling/seeper": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "f18f21a9"
+  },
+  "sporeling/sopling": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "255e1476"
+  },
+  "sporeling/cinderling": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "57557890"
+  },
+  "sporeling/rimecap": {
+    "vertices": 732,
+    "triangles": 1352,
+    "hash": "b5a284a6"
+  },
+  "sporeling/rotfang": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "88db4758"
+  },
+  "sporeling/stormling": {
+    "vertices": 683,
+    "triangles": 1282,
+    "hash": "67fb95c6"
+  },
+  "sporeling/thornback": {
+    "vertices": 725,
+    "triangles": 1342,
+    "hash": "31a0c5c5"
+  },
+  "weapon/blade": {
+    "vertices": 34,
+    "triangles": 52,
+    "hash": "458bd7e5"
+  },
+  "weapon/cudgel": {
+    "vertices": 78,
+    "triangles": 144,
+    "hash": "8e2c47cf"
+  },
+  "prop/brazier": {
+    "vertices": 135,
+    "triangles": 246,
+    "hash": "53305ce1"
+  },
+  "prop/stump": {
+    "vertices": 195,
+    "triangles": 338,
+    "hash": "5b5a127d"
+  },
+  "prop/well-ring": {
+    "vertices": 164,
+    "triangles": 260,
+    "hash": "4f442b88"
+  },
+  "prop/strike-stones": {
+    "vertices": 108,
+    "triangles": 180,
+    "hash": "6c271677"
+  },
+  "prop/fallen-giant": {
+    "vertices": 257,
+    "triangles": 462,
+    "hash": "94f30ba1"
+  },
+  "prop/kiln-domes": {
+    "vertices": 399,
+    "triangles": 698,
+    "hash": "aa56a3f9"
+  },
+  "prop/great-snag": {
+    "vertices": 158,
+    "triangles": 280,
+    "hash": "2b4083ee"
+  }
+}
