@@ -124,6 +124,16 @@ export const tools: Tool[] = [
     emoji: "⚔",
     isNew: true,
   },
+  {
+    slug: "greyrot",
+    title: "Greyrot",
+    tagline: "The mould takes the colour first.",
+    description:
+      "A real-time action adventure about the smallest mushroom in the colony. A grey rot is draining the forest of its colour, and you walk into it with one element and no plan — six get found along the road, two can be queued at once, and every cast goes wherever you happen to be facing. Spells leave water, oil, ice and fire on the ground; all of it spreads, reacts, and burns you too. Runs entirely in your tab.",
+    color: "pink",
+    emoji: "🍄",
+    isNew: true,
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

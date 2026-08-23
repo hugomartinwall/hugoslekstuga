@@ -9,7 +9,7 @@
 // games (currently just Overrun) live at /games/<slug>. This file is
 // where that one-line decision is encoded.
 
-const GAME_SLUGS = new Set<string>(["overrun", "adventure"]);
+const GAME_SLUGS = new Set<string>(["overrun", "adventure", "greyrot"]);
 
 /**
  * The route a tool lives at. Most tools are under /tools/<slug>; games

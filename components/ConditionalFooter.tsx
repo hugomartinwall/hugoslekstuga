@@ -13,6 +13,7 @@ const FULL_SCREEN_ROUTES = new Set([
   "/tools/sjokort",
   "/games/overrun",
   "/games/adventure",
+  "/games/greyrot",
 ]);
 
 export default function ConditionalFooter() {
