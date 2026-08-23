@@ -442,6 +442,20 @@ unmounts and a Next route does, twice under StrictMode:
   importing `render/`.
 - Fonts: game2 declared none. `fonts.ts` resolves Chivo Mono +
   Silkscreen off probe spans, as Overrun and Adventure do.
+- **A fullscreen button** — the site's first, so this is the pattern.
+  Third in the top-right stack under mute and motion. It fullscreens
+  `document.documentElement`, NOT the game's wrapper: fullscreening an
+  element makes it the containing block for its `position: fixed`
+  descendants, and the entire HUD is fixed inside `#ui`. It hides itself
+  where `document.fullscreenEnabled` is false (iPhone Safari gives
+  fullscreen to `<video>` only) rather than sitting there inert, and it
+  reads its glyph off `fullscreenchange` so F11 and Escape keep it
+  honest. No resize plumbing: `resize()` already runs every frame and
+  no-ops unless the backing size changed.
+  **Escape is guarded** — in fullscreen it leaves fullscreen and does
+  NOT also quit, because the browser exits fullscreen on that press
+  regardless of `preventDefault`, and spending two intentions on one
+  keystroke is a bug. The next Escape quits.
 - The ad economy is inert — `ADS_ENABLED` in `app/economy.ts` was
   already `false`, so no offer ever renders. `economy.ts` is kept
   rather than surgically removed from `main.ts`'s six call sites.

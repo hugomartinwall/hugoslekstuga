@@ -352,6 +352,36 @@ export async function createGreyrot(
   // The player's own toggle is ours to remember; the PLATFORM's toggle is not,
   // and is read live from the SDK every session (§3).
   if (meta.muted !== audio.isUserMuted()) audio.toggleUserMuted();
+  /* ------------------------------------------------------- fullscreen */
+
+  /**
+   * Fullscreen goes on `document.documentElement`, not the game's wrapper.
+   *
+   * The wrapper is `fixed inset-0` and already covers the viewport, so the two
+   * look identical — but fullscreening an element makes it the containing
+   * block for its `position: fixed` descendants, and the whole HUD is fixed
+   * inside `#ui`. Taking the root instead leaves that relationship exactly as
+   * it is on the normal page.
+   *
+   * No resize plumbing needed: `resize()` runs inside `drawFrame` every frame
+   * and no-ops unless the backing size actually changed.
+   */
+  if (document.fullscreenEnabled) {
+    hud.onFullscreenToggle(() => {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+      // Rejects if the gesture was not user-activated, which is the only
+      // reason it can fail here — and then the button simply did nothing
+      // visible, which is honest.
+      else void document.documentElement.requestFullscreen().catch(() => {});
+    });
+    hud.setFullscreen(document.fullscreenElement !== null);
+    // The browser is the source of truth: F11 and Escape both change this
+    // without going through the button.
+    listen(document, "fullscreenchange", () => {
+      hud.setFullscreen(document.fullscreenElement !== null);
+    });
+  }
+
   // Motion, beside mute. The pref is read at module load and cached, so
   // flipping it takes effect on the next frame that asks — no reload.
   hud.setMotionPref(motionPref());
@@ -536,7 +566,13 @@ export async function createGreyrot(
 
   /* -------------------------------------------------------------- input */
 
-  const input = new SpellInput(canvas, opts.onExit);
+  const input = new SpellInput(canvas, () => {
+    // Escape while fullscreen: the browser leaves fullscreen on this press no
+    // matter what we do (it ignores preventDefault for that), and quitting as
+    // well would spend two intentions on one keystroke. The next Escape quits.
+    if (document.fullscreenElement) return;
+    opts.onExit();
+  });
   let queueDirty = true;
   const spellHud = new SpellHud(uiRoot, {
     onElement: (e: Element) => input.pressElement(e),

@@ -96,6 +96,38 @@ const STYLE = /* css */ `
   }
   .hud-motion[data-pref="on"] { opacity: 0.45; }
 
+  /*
+   * Fullscreen, under motion. Same 44px circle, same own pointer-events.
+   *
+   * Hidden outright where the Fullscreen API is unavailable (iPhone Safari
+   * grants it to <video> only) rather than shown inert — the same rule the
+   * seam applies to an offer that cannot pay.
+   */
+  .hud-full {
+    position: absolute;
+    pointer-events: auto;
+    right: 16px;
+    top: 118px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid ${UI.panelBorder};
+    background: ${UI.panelBg};
+    color: ${UI.text};
+    font: 400 17px/1 system-ui, sans-serif;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity ${UI.motionMs}ms ease-out;
+  }
+  .hud-full[hidden] { display: none; }
+  /* U+21F1 draws smaller than U+26F6 at the same size — even them up. */
+  .hud-full[data-on="true"] { font-size: 20px; }
+
   .hud-banner {
     position: absolute;
     left: 50%;
@@ -197,6 +229,7 @@ export class Hud {
   private lootEl: HTMLDivElement;
   private muteBtn: HTMLButtonElement;
   private motionBtn!: HTMLButtonElement;
+  private fullBtn!: HTMLButtonElement;
   private objectiveEl: HTMLDivElement;
 
   /* -------------------------------------------------- the banner slot */
@@ -243,6 +276,11 @@ export class Hud {
     this.motionBtn.className = "hud-motion";
     root.appendChild(this.motionBtn);
 
+    this.fullBtn = document.createElement("button");
+    this.fullBtn.className = "hud-full";
+    this.fullBtn.hidden = true; // until main.ts says the API is there
+    root.appendChild(this.fullBtn);
+
     this.muteBtn = document.createElement("button");
     this.muteBtn.className = "hud-mute";
     this.muteBtn.textContent = "\u266A";
@@ -276,6 +314,31 @@ export class Hud {
       "aria-label",
       pref === "auto" ? "Motion: follow system" : pref === "on" ? "Motion: reduced" : "Motion: full",
     );
+  }
+
+  /**
+   * Wire the fullscreen button, and reveal it. Not called at all when the
+   * Fullscreen API is missing, which is what keeps the button hidden.
+   */
+  onFullscreenToggle(fn: () => void): void {
+    this.fullBtn.hidden = false;
+    this.fullBtn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      fn();
+    });
+  }
+
+  /**
+   * Reflect the browser's actual state, not what we asked for. Driven off
+   * `fullscreenchange`, so F11 and Escape keep the glyph honest too.
+   */
+  setFullscreen(on: boolean): void {
+    this.fullBtn.dataset.on = String(on);
+    // Not a cross. Muted mute is already a cross and so is the queue's clear
+    // button, and all three can be on screen at once — an arrow into a corner
+    // says "shrink back" and collides with nothing.
+    this.fullBtn.textContent = on ? "\u21F1" : "\u26F6";
+    this.fullBtn.setAttribute("aria-label", on ? "Leave fullscreen" : "Play fullscreen");
   }
 
   setMuted(muted: boolean): void {
