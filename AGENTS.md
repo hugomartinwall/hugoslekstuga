@@ -44,8 +44,17 @@ big display only — it ships weight 400 only, `globals.css` normalizes
 bold rendering), Chivo Mono (`--font-sans`, all body copy), Silkscreen
 (`--font-pixel`, micro-labels and badges).
 
-**Exception:** Sjökort's on-map colors are pinned map-anchored values
-(a nautical chart is dark-on-light) — don't re-skin them.
+**Two exceptions**, both sanctioned and both for the same reason — the
+colour is doing a job the skin cannot do:
+
+- **Sjökort's** on-map colors are pinned map-anchored values (a nautical
+  chart is dark-on-light) — don't re-skin them.
+- **Greyrot's** world inside its canvas is warm and saturated, and that is
+  mechanical, not leftover. The game's antagonist IS desaturation: enemies
+  read as ashen against a warm world with no outlines or nameplates, and
+  winning literally pushes colour back into the frame through `post.ts`'s
+  saturation uniform. Phosphor-on-dark would delete the game's primary
+  feedback loop. Nattöppet still owns everything around the canvas.
 
 ## The three house rules (internal — not displayed, still load-bearing)
 
@@ -84,8 +93,8 @@ same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
-**9 tools + 2 games**: advice, breathe, focus, lorem, pixla, roll,
-sjokort, strip, sudoku + overrun + adventure. (8 tools survived the
+**9 tools + 3 games**: advice, breathe, focus, lorem, pixla, roll,
+sjokort, strip, sudoku + overrun + adventure + greyrot. (8 tools survived the
 2026-07-02 curation cull; pixla joined 2026-07-03; overrun — the
 single-player RTS, ported from Hugo's separate CrazyGames project —
 joined 2026-08-05. Its engine lives in `lib/overrun/`; the upstream
@@ -97,6 +106,11 @@ authored data in `lib/adventure/content/`, suites in
 `test/adventure/`), and it follows every Overrun platform pattern:
 fixed-timestep loop, all-synth WebAudio, keyboard + touch, reduced
 motion changes presentation but never timings.
+**Greyrot** — a real-time action adventure in low-poly 3D, and the only
+3D thing on the site — joined 2026-08-23, ported from Hugo's second
+abandoned CrazyGames project (`~/Claude/Projects/game2`). See its own
+section below; that repo is cold, so unlike Overrun there is no upstream
+to sync with.
 The multiplayer games munch + noodle were shut down 2026-08 — not fun
 enough — taking the WebSocket server and the Fly.io app with them.)
 The retired tool slugs (case, cleantext, convert, diff, pdf, qr, read,
@@ -354,6 +368,92 @@ the bottom edge. Reduced motion = one static, fully-lit draw.
 `.crt-on` scaleY animation squashes gBCR mid-power-on and poisons the
 whole layout.
 
+## Greyrot — the 3D one
+
+`/games/greyrot`, ported 2026-08-23 from `~/Claude/Projects/game2`. A
+real-time action adventure: you are **Pim**, the smallest sporeling in
+Hollowstump, and the Greyrot is a grey mould that drains colour rather
+than killing. Reference points were *Magicka 2* for the combat and
+*Murloc RPG* for the shape.
+
+**What ships is Chapter 1** — 12 stages, 9 foe kinds, one boss
+(`thornback`), ~15–25 minutes, ending at the camp gate with "the road
+ends here, for now". Chapters 2+ exist only in `game2`'s docs. The
+original repo is cold: there is **no upstream to sync with**, unlike
+Overrun. Fix things here.
+
+**The engine** lives in `lib/greyrot/`, and the layout is game2's, not
+the site's usual: `main.ts` (the campaign, ~1800 lines, the app layer),
+`loop.ts`, `sim/` (pure, 30 Hz), `render/` (three.js), `ui/` (real DOM),
+`content/` (typed authored tables), `audio/`, `input/`, `app/`,
+`platform/`.
+
+Things that make it unlike the other two games:
+
+- **It is 3D.** `three` is the site's only 3D dependency, imported
+  through a dynamic `import()` inside `Client.tsx`'s effect so the
+  ~119 KB gz chunk never reaches the initial payload — not even on the
+  game's own page. Post-processing and orbit controls are hand-rolled;
+  nothing from `three/examples/jsm` is used, so no `transpilePackages`.
+- **Zero assets.** Every mesh, texture, sound and particle is generated
+  at runtime. Meshes come from a DSL in `render/mesh/dsl.ts` with a
+  hash-based regression fixture.
+- **Its HUD is real DOM, not canvas.** Four classes (`Hud`, `SpellHud`,
+  `Seam`, `Dialogue`) append into the `#ui` root and inject their own
+  prefixed stylesheets there. Which is why the route renders a
+  `<canvas>` **and** a sibling `#ui` div.
+- **`#ui` has `pointer-events: none` and no blanket rule giving it
+  back.** Do not "tidy" this. A `#ui > * { pointer-events: auto }` has
+  specificity (1,0,1), beats `.sp-root`'s (0,1,0), and — because
+  `.sp-root` is full-viewport — shields the entire canvas. Measured
+  when it existed: the virtual stick moved the hero 0.0000 m over 40
+  held ticks, touch mode never latched, and a touch pilot stood still
+  for 1,865 ticks. It never looked wrong in a screenshot. Every
+  interactive HUD element declares its own `pointer-events: auto`.
+- **It must stay full-bleed.** Six world→screen projection sites read
+  `innerWidth`/`innerHeight`. Correct while the canvas is the viewport;
+  wrong the moment anyone letterboxes it.
+- **Its palette is a sanctioned exception** — see "The skin" above.
+
+**What the port changed**, all of it because a CrazyGames page never
+unmounts and a Next route does, twice under StrictMode:
+
+- `boot()` → `createGreyrot(canvas, uiRoot, opts)` returning a handle
+  with `destroy()`. The site's factory shape.
+- **A teardown path, which did not exist.** `loop.stop()` (there was no
+  `cancelAnimationFrame` anywhere in game2), `SpellInput.detach()`,
+  `AudioSystem.dispose()`, `renderer.forceContextLoss()`, and a
+  `disposers` list every listener registers through.
+- The CrazyGames SDK wrapper is **gone**, replaced by
+  `platform/local.ts` — the same `Platform` interface over localStorage.
+  `getPlatform()` is lazy so nothing runs at import time.
+  `architecture.test.ts` now asserts the SDK is nowhere at all.
+- `browser-quirks.ts` scoped its `wheel`/`keydown`/`contextmenu`
+  preventDefaults from `window` to the **canvas** — on a real site the
+  originals killed page scroll and right-click everywhere.
+- **Escape quits** (game2 left it unbound; CrazyGames owned it for
+  fullscreen), and the seam panels carry a BACK TO PLAYHOUSE action.
+- **Reduced motion, which game2 had none of.** `render/motion.ts` is
+  Adventure's module with Greyrot's key. It suppresses camera shake,
+  snaps the traversal↔combat framing transition, and drops the
+  resaturation *sweep* — but NOT the resaturation itself, because
+  colour returning is the game's primary feedback, not an ornament.
+  Sim timings never change; `sim/` is structurally barred from
+  importing `render/`.
+- Fonts: game2 declared none. `fonts.ts` resolves Chivo Mono +
+  Silkscreen off probe spans, as Overrun and Adventure do.
+- The ad economy is inert — `ADS_ENABLED` in `app/economy.ts` was
+  already `false`, so no offer ever renders. `economy.ts` is kept
+  rather than surgically removed from `main.ts`'s six call sites.
+
+**Tests**: `test/greyrot/` — 17 suites from game2 plus `port.test.ts`
+for the four seams above. All pure-sim, node environment, no jsdom. The
+dev handle is `window.__greyrot`, dev-only, with `step(n)`, `render()`,
+`teleport()`, `spawn()`, `setAutopause()` — note the game **pauses on
+blur**, so headless driving wants `setAutopause(false)`, and a hidden
+tab gets no rAF at all (drive it with interleaved `step(1)`/`render(0)`
+or the camera lags the hero).
+
 ## Things NOT to do
 
 1. **Don't rename slugs.** URL stability beats copy precision. Title and
@@ -425,6 +525,10 @@ tools that are supposed to be fetchless.
   (his colour), `hugoslekstuga:advice:memory` (the Advice engine).
   Overrun's keys: `hugoslekstuga:overrun:{save,muted,music,sfx,motion}`.
   Adventure's keys: `hugoslekstuga:adventure:{save,muted,music,sfx,motion}`.
+  Greyrot's keys: `hugoslekstuga:greyrot:{save,meta,muted,motion}` — no
+  separate music/sfx split, and `meta` (settings + lifetime totals) is
+  read independently of `save` so a corrupt campaign can't take the
+  settings down with it.
 - The React 19 compiler memoises automatically — **drop manual `useCallback`
   in new code**. Older tools still use it; they pass lint but new code
   doesn't need to follow that pattern.
@@ -434,7 +538,7 @@ tools that are supposed to be fetchless.
 ```sh
 npm run dev           # Next dev on :3000
 npm run lint
-npm run test          # vitest — Overrun's suites + Adventure's (test/adventure/)
+npm run test          # vitest — Overrun's suites + Adventure's + Greyrot's
 npm run build         # rm -rf .next first if Next caches stale routes —
                       # NOTE: that rm kills a running dev server; restart it
 npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)
@@ -443,7 +547,8 @@ npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)
 The flat suites in `test/*.ts` are copied **verbatim** from the upstream
 Overrun repo and are excluded from eslint for that reason — fix the
 engine, not the test. `tsc` still typechecks them. Adventure's suites in
-`test/adventure/` have no upstream: they are linted normally and may be
+`test/adventure/` and `test/greyrot/` have no upstream: they are linted
+normally and may be
 edited freely.
 
 ## Commit style
