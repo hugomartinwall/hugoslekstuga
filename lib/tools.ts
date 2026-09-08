@@ -134,6 +134,16 @@ export const tools: Tool[] = [
     emoji: "🍄",
     isNew: true,
   },
+  {
+    slug: "survival-maxx",
+    title: "Survival Maxx",
+    tagline: "Survive. Upgrade. Repeat.",
+    description:
+      "An arena survivor. Move and dash while your weapons aim and fire on their own, then spend emeralds between waves and merge matching gear to rank it up. Thirty waves, a boss every third, ten characters unlocked in order — and Endless once a character clears the campaign. Runs entirely in your tab.",
+    color: "pink",
+    emoji: "⬢",
+    isNew: true,
+  },
 ];
 
 export function findTool(slug: string): Tool | undefined {

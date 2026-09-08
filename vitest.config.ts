@@ -12,5 +12,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
+    // Survival Maxx's geometry sweeps take several seconds each; its campaign
+    // suite carries its own four-minute budget.
+    testTimeout: 30_000,
   },
 });

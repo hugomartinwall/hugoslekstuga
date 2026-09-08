@@ -93,8 +93,8 @@ same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
-**9 tools + 3 games**: advice, breathe, focus, lorem, pixla, roll,
-sjokort, strip, sudoku + overrun + adventure + greyrot. (8 tools survived the
+**9 tools + 4 games**: advice, breathe, focus, lorem, pixla, roll,
+sjokort, strip, sudoku + overrun + adventure + greyrot + survival-maxx. (8 tools survived the
 2026-07-02 curation cull; pixla joined 2026-07-03; overrun — the
 single-player RTS, ported from Hugo's separate CrazyGames project —
 joined 2026-08-05. Its engine lives in `lib/overrun/`; the upstream
@@ -111,6 +111,11 @@ motion changes presentation but never timings.
 abandoned CrazyGames project (`~/Claude/Projects/game2`). See its own
 section below; that repo is cold, so unlike Overrun there is no upstream
 to sync with.
+**Survival Maxx** — an arena survivor in 3D (the second three.js game)
+— joined 2026-09-09, ported from Hugo's third CrazyGames project
+(`~/Documents/ChatGPT/Crazy games - Game 1`, which keeps evolving for
+CrazyGames on its own; the site copy is its own line — don't sync). See
+its own section below.
 The multiplayer games munch + noodle were shut down 2026-08 — not fun
 enough — taking the WebSocket server and the Fly.io app with them.)
 The retired tool slugs (case, cleantext, convert, diff, pdf, qr, read,
@@ -467,6 +472,78 @@ dev handle is `window.__greyrot`, dev-only, with `step(n)`, `render()`,
 blur**, so headless driving wants `setAutopause(false)`, and a hidden
 tab gets no rAF at all (drive it with interleaved `step(1)`/`render(0)`
 or the camera lags the hero).
+
+## Survival Maxx — the arena survivor
+
+`/games/survival-maxx`, ported 2026-09-09 from
+`~/Documents/ChatGPT/Crazy games - Game 1` at that repo's 0.8.0. You move
+and dash; weapons aim and fire on their own; between waves a shop sells
+weapons, items and drones, and two matching pieces at the same rank
+merge into the next rank. Thirty waves, a boss every third; ten
+characters unlock in order by clearing the campaign; a cleared character
+also gets an **Endless** option on the roster (a fresh wave-1 run with
+no finish line). Everything is procedural: meshes, portraits, particles
+and audio are generated at runtime, so there are no assets and no
+fetches.
+
+**The engine** lives in `lib/survival-maxx/`, flat, in the upstream
+layout: `model.ts` (the run, a fixed 60 Hz sim with its own seeded
+random), `content.ts` (every table), `progression.ts` (unlocks),
+`review.ts` (the diagnostic pilot the tests and
+`scripts/survival-maxx-balance.ts` drive), `scene.ts` + `meshes.ts` +
+`hero-rigs.ts` + `equipment-art.ts` + `geometry.ts` + `weapon-pose.ts`
+(three.js), `ui.ts` + `style.css` (the interface is real DOM, a
+1280×720 stage scaled to fit), `audio.ts`, `controls.ts`, `motion.ts`,
+`platform.ts` (localStorage) and `main.ts` (the factory).
+
+Things that make it unlike the other games:
+
+- **Its interface is a stylesheet, not injected strings.** `style.css`
+  is 3.9k lines and every selector is `.rz-` prefixed; the route's
+  `Client.tsx` imports it as a global stylesheet (the sjökort route does
+  the same for maplibre's). Only the old page-shell rules were rewritten,
+  as the `.sm-` block in `main.ts`.
+- **It keeps its own typography and palette inside the stage** — a
+  sanctioned exception in the Greyrot sense. Nattöppet owns the route
+  chrome around it, which on this route is nothing: the game is
+  full-bleed.
+- **Keyboard input is bound on `window`** for the life of the mount (the
+  route is full-bleed and the interface takes focus), and removed on
+  destroy. Escape pauses in play, backs out of menus, and on the home
+  screen leaves for the playhouse; `P` also pauses.
+- **Equipment portraits are rendered once per page** into data URLs by a
+  second, short-lived WebGL context (`equipment-art.ts`), cached at module
+  scope in `scene.ts`.
+
+**What the port changed**, all of it because a CrazyGames page never
+unmounts and a Next route does, twice under StrictMode:
+
+- The page-level script became `createSurvivalMaxx(root, { onExit })`
+  returning `{ destroy() }`. It builds the arena, splash and touch
+  joystick under `root`, and `destroy()` cancels the frame, unbinds every
+  listener through a `disposers` list, persists progress, and disposes
+  interface, renderer (`forceContextLoss`), audio and platform.
+- The CrazyGames SDK wrapper is gone. `platform.ts` is localStorage under
+  `hugoslekstuga:survival-maxx:save`, keeps the same method names as
+  no-ops, and tolerates blocked storage by playing in memory with a
+  notice. `test/survival-maxx/architecture.test.ts` asserts the SDK is
+  nowhere, that the sim files never import three or touch the DOM, and
+  that importing `main.ts` under Node is side-effect free.
+- The global `bootstrap.css` (`html, body { overflow: hidden;
+  touch-action: none }`, `*`, `#app`) became the scoped `.sm-` shell
+  block; the touch joystick is positioned inside `root` instead of
+  fixed to the viewport.
+- BACK TO PLAYHOUSE actions on the home screen and the pause menu.
+- The dev-only review tooling (`review-art/media/video.ts`, the Vite
+  middleware) stayed behind; `review.ts` came along because the tests
+  and the balance script drive its pilot.
+
+**Tests** in `test/survival-maxx/`: the upstream suites copied with
+vitest imports (simulation, economy, all ten earned campaigns into
+Endless, hero and equipment surface audits, weapon poses, motion,
+controls, layout), a local-platform suite, and the architecture suite.
+The ten-campaign test carries its own four-minute budget; the config's
+30 s `testTimeout` is for the geometry sweeps.
 
 ## Things NOT to do
 

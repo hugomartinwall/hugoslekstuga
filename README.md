@@ -17,9 +17,10 @@ npm run dev          # Next dev on :3000
 ## Stack
 
 - Next.js 16 + React 19 + Tailwind v4 + TypeScript
-- 9 single-purpose tools at `app/tools/<slug>/page.tsx` and one
-  single-player game at `app/games/overrun/page.tsx` — everything runs
-  in the browser, no server
+- 9 single-purpose tools at `app/tools/<slug>/page.tsx` and four
+  single-player games at `app/games/<slug>/page.tsx` (overrun,
+  adventure, greyrot, survival-maxx) — everything runs in the browser,
+  no server
 - Source of truth for the catalogue: `lib/tools.ts` (registry) +
   `lib/clusters.ts` (`pathFor()` / `GAME_SLUGS`)
 - Single source of truth for accent colours: `lib/colors.ts`

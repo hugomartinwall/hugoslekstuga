@@ -14,6 +14,7 @@ const FULL_SCREEN_ROUTES = new Set([
   "/games/overrun",
   "/games/adventure",
   "/games/greyrot",
+  "/games/survival-maxx",
 ]);
 
 export default function ConditionalFooter() {
