@@ -538,6 +538,21 @@ unmounts and a Next route does, twice under StrictMode:
   middleware) stayed behind; `review.ts` came along because the tests
   and the balance script drive its pilot.
 
+**Balance, 2026-09-09.** The first live playtest reached wave 26 at
+full health with 727 unspent emeralds, so the site copy is deliberately
+much harder than the CrazyGames build and the two now differ on
+purpose. Enemy health growth `age·0.18 + age²·0.009` → `age·0.3 +
+age²·0.02` (about +65% at wave 11, +90% at wave 30; the wave 1–3 grunt
+buffer is untouched), speed cap +55% → +85%, spawn groups of three
+after wave 8 (was four again from wave 19), spawn floor 0.8 → 0.95 s
+and the ramp stops at wave 18, live cap 60 → 48, bosses
+`2400·0.72·tier^1.6`. Three-seed matrix
+(`scripts/survival-maxx-balance.ts --seeds=1,17,73`): 30/30 bot clears,
+median 18.4 min combat, boss median 38 s (worst 112 s), per-character
+hits roughly tripled, unspent emeralds at wave 29 910 → 172. The bots
+dodge far better than people; treat their clears as a ceiling, not a
+target.
+
 **Tests** in `test/survival-maxx/`: the upstream suites copied with
 vitest imports (simulation, economy, all ten earned campaigns into
 Endless, hero and equipment surface audits, weapon poses, motion,

@@ -3275,6 +3275,12 @@
 .rz-inspector-status .rz-family-tag {
   font-size: 11px;
 }
+.rz-inspector-behavior {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #d3decf;
+}
 .rz-inspector-metrics {
   min-height: 28px;
   margin-top: 12px;

@@ -687,7 +687,7 @@ test("opening grunts survive one starter volley without bloating late-wave healt
   late.wave = lateAge;
   late.startWave();
   const oldLateHealth =
-    24 * (1 + lateAge * 0.18 + lateAge * lateAge * 0.009);
+    24 * (1 + lateAge * 0.3 + lateAge * lateAge * 0.02);
   assert.ok(
     late.enemies[0].maxHp < oldLateHealth * 1.1,
     "early pressure cannot multiply late grunt durability",
@@ -828,7 +828,7 @@ test("ten boss variants occur every three waves and timeout cannot skip a boss",
   run.enemies = [target];
   advance(run, 1);
   assert.ok(
-    Math.hypot(target.vx, target.vy) <= 5.5,
+    Math.hypot(target.vx, target.vy) <= 3.5 * 1.85 + 1e-6,
     "ordinary enemy speed stays capped in Endless",
   );
 });

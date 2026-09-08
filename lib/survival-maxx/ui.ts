@@ -1,4 +1,3 @@
-import "./style.css";
 import {
   HEROES,
   HERO_ORDER,
@@ -656,6 +655,12 @@ export class SurvivalUI {
     );
   }
 
+  /** What a piece does, in words: the same sentence the shop's info note shows. */
+  private gearBehavior(kind: string, level: number): string {
+    if (kind in WEAPONS) return rankStatLines(kind as WeaponId, level)[2] ?? "";
+    return ITEMS[kind as ItemId]?.description ?? "";
+  }
+
   private canMerge(item: UIEquipment): boolean {
     return (
       item.mergeable ??
@@ -697,7 +702,7 @@ export class SurvivalUI {
       const item = items.find((entry, index) => (entry.slot ?? index) === slot);
       if (!item)
         return `<div class="rz-hand-hud is-empty">${uiIcon("hand")}<span>${slot + 1}</span></div>`;
-      return `<div class="rz-hand-hud rz-rank-${item.level}" style="--rank:${this.rank(item.level).color}" aria-label="${escape(this.gearName(item))}, ${this.rank(item.level).name}">${uiIcon(item.kind)}${this.rankBadge(item.level, true)}</div>`;
+      return `<div class="rz-hand-hud rz-rank-${item.level}" style="--rank:${this.rank(item.level).color}" title="${escape(this.gearName(item))}, ${this.rank(item.level).name} — ${escape(this.gearBehavior(item.kind, item.level))}" aria-label="${escape(this.gearName(item))}, ${this.rank(item.level).name}">${uiIcon(item.kind)}${this.rankBadge(item.level, true)}</div>`;
     }).join("");
   }
 
@@ -711,7 +716,7 @@ export class SurvivalUI {
     const rank = this.rank(item.level);
     const art = this.current.art?.[item.kind];
     const mergeable = this.canMerge(item);
-    return `<button type="button" class="rz-gear-cell rz-rank-${rank.level}${hand ? " is-hand" : ""}${this.selectedEquipment === String(item.id) ? " is-selected" : ""}${mergeable ? " can-merge" : ""}${this.fusedEquipment === String(item.id) ? " is-fused" : ""}" style="--rank:${rank.color}" data-action="inspectEquipment" data-value="${escape(item.id)}" data-focus-key="gear:${escape(item.id)}" aria-pressed="${this.selectedEquipment === String(item.id)}" aria-label="${escape(this.gearName(item))}, ${rank.name}${mergeable ? ", merge available" : ""}">${art ? `<img src="${escape(art)}" alt="" draggable="false"/>` : uiIcon(item.kind)}${this.rankBadge(item.level, true)}${mergeable ? `<span class="rz-merge-dot" title="Merge available">${uiIcon("merge")}</span>` : ""}${!hand && item.category === "weapon" ? `<span class="rz-stored-mark" title="Stored weapon">${uiIcon("bag")}</span>` : ""}</button>`;
+    return `<button type="button" class="rz-gear-cell rz-rank-${rank.level}${hand ? " is-hand" : ""}${this.selectedEquipment === String(item.id) ? " is-selected" : ""}${mergeable ? " can-merge" : ""}${this.fusedEquipment === String(item.id) ? " is-fused" : ""}" style="--rank:${rank.color}" data-action="inspectEquipment" data-value="${escape(item.id)}" data-focus-key="gear:${escape(item.id)}" aria-pressed="${this.selectedEquipment === String(item.id)}" title="${escape(this.gearName(item))}, ${rank.name} — ${escape(this.gearBehavior(item.kind, item.level))}" aria-label="${escape(this.gearName(item))}, ${rank.name}${mergeable ? ", merge available" : ""}">${art ? `<img src="${escape(art)}" alt="" draggable="false"/>` : uiIcon(item.kind)}${this.rankBadge(item.level, true)}${mergeable ? `<span class="rz-merge-dot" title="Merge available">${uiIcon("merge")}</span>` : ""}${!hand && item.category === "weapon" ? `<span class="rz-stored-mark" title="Stored weapon">${uiIcon("bag")}</span>` : ""}</button>`;
   }
 
   private rankGuide(): string {
@@ -766,11 +771,10 @@ export class SurvivalUI {
             },
           ).join("")}</div>`
         : "";
-    return `<section class="rz-gear-inspector rz-rank-${rank.level}${this.fusedEquipment === String(item.id) ? " is-fused" : ""}" style="--rank:${rank.color}"><div class="rz-inspector-title"><h2>${escape(this.gearName(item))}</h2>${this.rankBadge(rank.level)}</div><div class="rz-inspector-status"><span>${item.equipped ? `HAND ${(item.slot ?? 0) + 1}` : item.category === "weapon" ? "IN BAG · INACTIVE" : "IN BAG · ACTIVE"}</span><div class="rz-family-tags">${families.map((id) => this.familyChip(id)).join("")}</div></div><div class="rz-inspector-metrics">${this.gearStats(
+    return `<section class="rz-gear-inspector rz-rank-${rank.level}${this.fusedEquipment === String(item.id) ? " is-fused" : ""}" style="--rank:${rank.color}"><div class="rz-inspector-title"><h2>${escape(this.gearName(item))}</h2>${this.rankBadge(rank.level)}</div><div class="rz-inspector-status"><span>${item.equipped ? `HAND ${(item.slot ?? 0) + 1}` : item.category === "weapon" ? "IN BAG · INACTIVE" : "IN BAG · ACTIVE"}</span><div class="rz-family-tags">${families.map((id) => this.familyChip(id)).join("")}</div></div><p class="rz-inspector-behavior">${escape(this.gearBehavior(item.kind, item.level))}</p><div class="rz-inspector-metrics">${this.gearStats(
       item.kind,
       item.level,
     )
-      .slice(0, 3)
       .map((line) => this.metricChip(line))
       .join(
         "",

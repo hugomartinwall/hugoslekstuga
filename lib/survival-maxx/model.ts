@@ -1020,14 +1020,15 @@ export class SurvivalRun {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
         this.spawnTimer += Math.max(
-          0.8,
-          2 - Math.min(this.wave, 24) * 0.055 - this.waveProgress * 0.35,
+          0.95,
+          2 - Math.min(this.wave, 18) * 0.055 - this.waveProgress * 0.35,
         );
         // Simultaneous entries create choices between directions, with enough
         // travel time to read a gap. A lone trickle never pressures an auto-aim gun.
-        const arrivals =
-          this.wave === 1 ? 3 : this.wave < 9 || this.wave >= 19 ? 4 : 3;
-        for (let i = 0; i < arrivals && this.enemies.length < 60; i++)
+        // Fewer, tougher enemies after the opening chapters: pressure comes
+        // from health and speed, not from crowd size.
+        const arrivals = this.wave === 1 ? 3 : this.wave < 9 ? 4 : 3;
+        for (let i = 0; i < arrivals && this.enemies.length < 48; i++)
           this.spawn(this.chooseEnemy());
       }
     }
@@ -1093,10 +1094,10 @@ export class SurvivalRun {
       kind === "boss"
         ? // Tiers arrive every third wave against younger builds; the base is
           // lower than the boss table's nominal value and the curve is steeper.
-          definition.hp * 0.71 * Math.pow(bossTier, 1.6)
+          definition.hp * 0.72 * Math.pow(bossTier, 1.6)
         : definition.hp +
           (kind === "grunt" ? 24 : definition.hp) *
-            (age * 0.18 + age * age * 0.009);
+            (age * 0.3 + age * age * 0.02);
     const hp =
       kind === "grunt"
         ? Math.max(scaledHp, Math.min(120, 50 + age * 36))
@@ -1584,7 +1585,7 @@ export class SurvivalRun {
       }
       let speed =
           def.speed *
-          (1 + Math.min(0.55, (this.wave - 1) * 0.024)) *
+          (1 + Math.min(0.85, (this.wave - 1) * 0.034)) *
           enemy.slowFactor,
         mx = dx / d,
         my = dy / d;
