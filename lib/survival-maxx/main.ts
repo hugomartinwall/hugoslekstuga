@@ -42,7 +42,7 @@ export interface SurvivalMaxxHandle {
 
 const SHELL_STYLE = /* css */ `
 .sm-root {
-  position: relative;
+  /* The route positions and sizes the root; the shell only paints it. */
   overflow: hidden;
   font-family: Arial, Helvetica, sans-serif;
   color: #f4eee2;
