@@ -1,195 +1,31 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ITEMS, RANKS, WEAPONS } from "./content";
-import { bake, box, cylinder, glowMaterial, material, torus } from "./geometry";
-
-// One manufactured kit is used in the armory, in a robot's hand, and in flight.
-// A hand weapon's origin is the centre of its grip; its bore points along +Z.
-const P = {
-  chassis: 0x273238,
-  recess: 0x111b21,
-  steel: 0x70848a,
-  edge: 0xc6d2d2,
-  ceramic: 0xd8ded5,
-  rubber: 0x263034,
-  brass: 0xb79764,
-};
-type Point = readonly [number, number];
-const opticalMaterials = new Map<number, THREE.MeshStandardMaterial>();
-function optical(color: number) {
-  if (!opticalMaterials.has(color))
-    opticalMaterials.set(
-      color,
-      new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.17,
-        metalness: 0.56,
-        emissive: color,
-        emissiveIntensity: 0.055,
-      }),
-    );
-  return opticalMaterials.get(color)!;
-}
-
-/** Beveled side-profile extrusion: points are [forward Z, height Y]. */
-function receiver(
-  parent: THREE.Object3D,
-  width: number,
-  outline: readonly Point[],
-  color: number,
-  bevel = 0.018,
-) {
-  const shape = new THREE.Shape();
-  outline.forEach(([z, y], index) =>
-    index ? shape.lineTo(z, y) : shape.moveTo(z, y),
-  );
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: width,
-    steps: 1,
-    bevelEnabled: bevel > 0,
-    bevelSize: bevel,
-    bevelThickness: bevel,
-    bevelSegments: 1,
-    curveSegments: 16,
-  });
-  geometry.rotateY(-Math.PI / 2);
-  geometry.translate(width / 2, 0, 0);
-  const mesh = new THREE.Mesh(geometry, material(color));
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-
-/** Faceted plate in XY, with an actual edge thickness rather than coplanar decals. */
-function plate(
-  parent: THREE.Object3D,
-  points: readonly Point[],
-  depth: number,
-  at: number[],
-  color: number,
-  bevel = 0.018,
-) {
-  const shape = new THREE.Shape();
-  points.forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)));
-  shape.closePath();
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelSize: bevel,
-    bevelThickness: bevel,
-    bevelSegments: 1,
-    bevelEnabled: bevel > 0,
-    steps: 1,
-  });
-  geo.translate(0, 0, -depth / 2);
-  const mesh = new THREE.Mesh(geo, material(color));
-  mesh.position.set(at[0], at[1], at[2]);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-
-function axial(
-  parent: THREE.Object3D,
-  radius: number,
-  length: number,
-  at: number[],
-  color: number,
-  top = radius,
-  segments = 16,
-) {
-  const mesh = cylinder(parent, radius, length, at, color, segments, top);
-  mesh.rotation.x = Math.PI / 2;
-  return mesh;
-}
-
-function strip(
-  parent: THREE.Object3D,
-  size: number[],
-  at: number[],
-  color: number,
-  lit = false,
-) {
-  const part = box(parent, size, at, color, 0.006);
-  if (lit) part.material = glowMaterial(color);
-  return part;
-}
-
-function bore(
-  parent: THREE.Group,
-  x: number,
-  y: number,
-  z: number,
-  radius: number,
-  collar = P.steel,
-) {
-  axial(parent, radius, 0.075, [x, y, z], collar);
-  axial(parent, radius * 0.67, 0.008, [x, y, z + 0.042], P.recess);
-}
-
-function grip(parent: THREE.Group, long = false) {
-  receiver(
-    parent,
-    0.2,
-    [
-      [-0.15, -0.24],
-      [0.065, -0.24],
-      [0.14, 0.2],
-      [-0.09, 0.2],
-    ],
-    P.rubber,
-    0.025,
-  );
-  box(parent, [0.22, 0.06, 0.245], [0, -0.24, -0.039], P.steel, 0.018);
-  for (const x of [-0.111, 0.111])
-    strip(parent, [0.012, 0.2, 0.085], [x, -0.025, -0.015], 0x536367);
-  if (long) {
-    // The stock stays close to the receiver: no long bar crossing the robot's waist.
-    receiver(
-      parent,
-      0.24,
-      [
-        [-0.49, 0.16],
-        [-0.17, 0.2],
-        [-0.13, 0.42],
-        [-0.5, 0.42],
-      ],
-      P.chassis,
-    );
-    box(parent, [0.27, 0.32, 0.07], [0, 0.275, -0.51], P.rubber, 0.025);
-  }
-}
-
-function sight(parent: THREE.Group, y: number, back: number, front: number) {
-  box(parent, [0.15, 0.065, 0.085], [0, y, back], P.chassis, 0.012);
-  box(parent, [0.07, 0.065, 0.055], [0, y, front], P.chassis, 0.009);
-  strip(parent, [0.035, 0.025, 0.012], [0, y + 0.01, front + 0.029], 0xeccba0);
-}
-
-function rankInset(
-  parent: THREE.Group,
-  rank: number,
-  width: number,
-  y: number,
-  z: number,
-) {
-  const tint = new THREE.Color(RANKS[rank - 1].color).getHex();
-  for (const side of [-1, 1]) {
-    // Every rank uses the same installed inset, avoiding arbitrary floating upgrade fins.
-    strip(parent, [0.018, 0.075, 0.21], [side * width, y, z], P.recess);
-    strip(
-      parent,
-      [0.021, 0.026, 0.15],
-      [side * (width + 0.002), y, z],
-      tint,
-      rank === 6,
-    );
-  }
-}
-
+import { DRONE_BUILDERS } from "./drone-art-expansion";
+import {
+  axial,
+  bore,
+  canister,
+  droneHull,
+  grip,
+  medicalMark,
+  moduleBadge,
+  optical,
+  P,
+  plate,
+  receiver,
+  rankInset,
+  sight,
+  strip,
+  thruster,
+  type Point,
+} from "./equipment-parts";
+import { bake, box, cylinder, torus } from "./geometry";
+import { ITEM_BUILDERS } from "./item-art-expansion";
+import { WEAPON_BUILDERS } from "./weapon-art-expansion";
 function weaponModel(group: THREE.Group, kind: string, rank: number): number[] {
+  const expansion = WEAPON_BUILDERS[kind];
+  if (expansion) return [...expansion(group, rank)];
   const rankColor = new THREE.Color(RANKS[rank - 1].color).getHex();
   if (kind === "blade") {
     cylinder(group, 0.085, 0.45, [0, 0, 0], P.rubber, 10);
@@ -589,66 +425,77 @@ function weaponModel(group: THREE.Group, kind: string, rank: number): number[] {
     rankInset(group, rank, 0.239, 0.305, 0.02);
     return [0, 0.35, 1.42];
   }
-  // Beam emitter: a wide lens and a single suspended barrel inside a closed frame.
-  receiver(
-    group,
-    0.4,
-    [
-      [-0.28, 0.14],
-      [0.57, 0.16],
-      [0.7, 0.32],
-      [0.49, 0.58],
-      [-0.23, 0.58],
-    ],
-    0x9f93b2,
-    0.025,
-  );
-  axial(group, 0.16, 0.72, [0, 0.35, 0.66], P.chassis, 0.16, 12);
-  for (const side of [-1, 1]) {
+  if (kind === "beam") {
+    // Beam emitter: a wide lens and a single suspended barrel inside a closed frame.
     receiver(
       group,
-      0.09,
+      0.4,
       [
-        [0.24, 0.15],
-        [1.01, 0.19],
-        [1.14, 0.35],
-        [1.01, 0.53],
-        [0.24, 0.58],
+        [-0.28, 0.14],
+        [0.57, 0.16],
+        [0.7, 0.32],
+        [0.49, 0.58],
+        [-0.23, 0.58],
       ],
-      P.ceramic,
-      0.014,
-    ).position.x = side * 0.2;
-    strip(
-      group,
-      [0.015, 0.035, 0.49],
-      [side * 0.255, 0.36, 0.7],
-      0xd1b6ee,
-      true,
+      0x9f93b2,
+      0.025,
     );
+    axial(group, 0.16, 0.72, [0, 0.35, 0.66], P.chassis, 0.16, 12);
+    for (const side of [-1, 1]) {
+      receiver(
+        group,
+        0.09,
+        [
+          [0.24, 0.15],
+          [1.01, 0.19],
+          [1.14, 0.35],
+          [1.01, 0.53],
+          [0.24, 0.58],
+        ],
+        P.ceramic,
+        0.014,
+      ).position.x = side * 0.2;
+      strip(
+        group,
+        [0.015, 0.035, 0.49],
+        [side * 0.255, 0.36, 0.7],
+        0xd1b6ee,
+        true,
+      );
+    }
+    axial(group, 0.195, 0.07, [0, 0.35, 1.1], P.steel, 0.195, 12);
+    axial(group, 0.143, 0.014, [0, 0.35, 1.144], 0xd0b2e7, 0.143, 16).material =
+      optical(0xd0b2e7);
+    rankInset(group, rank, 0.229, 0.31, -0.04);
+    return [0, 0.35, 1.19];
   }
-  axial(group, 0.195, 0.07, [0, 0.35, 1.1], P.steel, 0.195, 12);
-  axial(group, 0.143, 0.014, [0, 0.35, 1.144], 0xd0b2e7, 0.143, 16).material =
-    optical(0xd0b2e7);
-  rankInset(group, rank, 0.229, 0.31, -0.04);
-  return [0, 0.35, 1.19];
-}
-
-function thruster(
-  group: THREE.Group,
-  x: number,
-  z: number,
-  tint: number,
-  y = 0,
-) {
-  cylinder(group, 0.155, 0.24, [x, y, z], P.chassis, 12, 0.19);
-  cylinder(group, 0.158, 0.04, [x, y - 0.135, z], P.steel, 12);
-  cylinder(group, 0.109, 0.016, [x, y - 0.164, z], tint, 12);
+  // Safe generic sidearm: an unknown id never borrows another weapon's silhouette.
+  receiver(
+    group,
+    0.3,
+    [
+      [-0.22, 0.16],
+      [0.48, 0.16],
+      [0.58, 0.3],
+      [0.5, 0.46],
+      [-0.18, 0.46],
+    ],
+    P.chassis,
+    0.022,
+  );
+  axial(group, 0.07, 0.3, [0, 0.3, 0.68], P.steel);
+  bore(group, 0, 0.3, 0.83, 0.084);
+  rankInset(group, rank, 0.181, 0.26, 0.1);
+  return [0, 0.3, 0.9];
 }
 
 function droneModel(group: THREE.Group, kind: string, rank: number): number[] {
-  const tint = new THREE.Color(
-    ITEMS[kind as keyof typeof ITEMS].color,
-  ).getHex();
+  const expansion = DRONE_BUILDERS[kind];
+  if (expansion) return [...expansion(group, rank)];
+  const tint =
+    kind in ITEMS
+      ? new THREE.Color(ITEMS[kind as keyof typeof ITEMS].color).getHex()
+      : 0xb9c7cc;
   if (kind === "orbit_drone") {
     // Disc cutter: three connected curved blades surround a low, armoured hub.
     cylinder(group, 0.3, 0.2, [0, 0, 0], P.chassis, 16, 0.25);
@@ -698,39 +545,7 @@ function droneModel(group: THREE.Group, kind: string, rank: number): number[] {
         : kind === "repair_drone"
           ? 0xc5d4bc
           : 0xb7a780;
-  receiver(
-    group,
-    0.49,
-    [
-      [-0.42, -0.1],
-      [0.31, -0.1],
-      [0.45, 0.04],
-      [0.24, 0.27],
-      [-0.27, 0.27],
-      [-0.42, 0.1],
-    ],
-    P.chassis,
-    0.028,
-  );
-  receiver(
-    group,
-    0.44,
-    [
-      [-0.29, 0.08],
-      [0.27, 0.08],
-      [0.32, 0.16],
-      [0.18, 0.31],
-      [-0.21, 0.31],
-      [-0.34, 0.21],
-    ],
-    hullColor,
-    0.022,
-  );
-  strip(group, [0.15, 0.055, 0.025], [0, 0.063, 0.446], tint, true);
-  for (const side of [-1, 1]) {
-    box(group, [0.32, 0.09, 0.17], [side * 0.32, 0.02, -0.12], P.steel, 0.018);
-    thruster(group, side * 0.46, -0.12, tint);
-  }
+  droneHull(group, hullColor, tint);
   if (kind === "gun_drone") {
     axial(group, 0.115, 0.74, [0, -0.14, 0.36], P.steel);
     receiver(
@@ -770,7 +585,7 @@ function droneModel(group: THREE.Group, kind: string, rank: number): number[] {
       strip(group, [0.055, 0.19, 0.015], [side * 0.17, -0.24, 0.18], 0xcde4c3);
     }
     medicalMark(group, [0, 0.197, 0.294], 0.8);
-  } else {
+  } else if (kind === "magnet_drone") {
     // Collector has a lowered, open magnetic fork — immediately distinct from a gun.
     box(group, [0.5, 0.16, 0.15], [0, -0.2, 0.2], P.steel, 0.025);
     for (const side of [-1, 1]) {
@@ -795,6 +610,10 @@ function droneModel(group: THREE.Group, kind: string, rank: number): number[] {
         0.018,
       );
     }
+  } else {
+    // Generic hull for an unknown drone id: a sensor pod, nothing borrowed.
+    box(group, [0.22, 0.12, 0.3], [0, 0.36, 0.02], P.steel, 0.02);
+    axial(group, 0.06, 0.12, [0, 0.36, 0.22], P.recess, 0.05, 12);
   }
   rankInset(group, rank, 0.275, 0.052, -0.02);
   return [
@@ -804,57 +623,12 @@ function droneModel(group: THREE.Group, kind: string, rank: number): number[] {
   ];
 }
 
-function medicalMark(group: THREE.Group, at: number[], scale = 1) {
-  strip(group, [0.22 * scale, 0.07 * scale, 0.018], at, P.ceramic);
-  strip(
-    group,
-    [0.07 * scale, 0.22 * scale, 0.02],
-    [at[0], at[1], at[2] + 0.002],
-    P.ceramic,
-  );
-}
-
-function canister(
-  group: THREE.Group,
-  x: number,
-  y: number,
-  z: number,
-  color: number,
-  radius = 0.19,
-  height = 0.7,
-) {
-  cylinder(group, radius, height, [x, y, z], color, 12, radius * 0.9);
-  for (const side of [-1, 1])
-    cylinder(
-      group,
-      radius * 1.035,
-      0.09,
-      [x, y + (side * height) / 2, z],
-      P.chassis,
-      12,
-    );
-  cylinder(
-    group,
-    radius * 0.65,
-    0.09,
-    [x, y + height / 2 + 0.07, z],
-    P.steel,
-    12,
-  );
-}
-
-function moduleBadge(group: THREE.Group, rank: number, at: number[]) {
-  strip(group, [0.17, 0.056, 0.026], at, P.recess);
-  strip(
-    group,
-    [0.11, 0.018, 0.03],
-    [at[0], at[1], at[2] + 0.003],
-    new THREE.Color(RANKS[rank - 1].color).getHex(),
-    rank === 6,
-  );
-}
-
 function itemModel(group: THREE.Group, kind: string, rank: number) {
+  const expansion = ITEM_BUILDERS[kind];
+  if (expansion) {
+    expansion(group, rank);
+    return;
+  }
   const tint =
     kind in ITEMS
       ? new THREE.Color(ITEMS[kind as keyof typeof ITEMS].color).getHex()
@@ -1133,15 +907,15 @@ export function makeEquipment(kind: string, level = 1): THREE.Group {
   group.userData.kind = kind;
   group.userData.level = rank;
   group.userData.grip = new THREE.Vector3();
-  if (kind in WEAPONS) {
+  if (kind in WEAPONS || kind in WEAPON_BUILDERS) {
     group.userData.weaponId = kind;
     group.userData["weapon-id"] = kind;
     group.userData.muzzle = new THREE.Vector3().fromArray(
       weaponModel(group, kind, rank),
     );
   } else if (
-    kind in ITEMS &&
-    ITEMS[kind as keyof typeof ITEMS].category === "drone"
+    kind in DRONE_BUILDERS ||
+    (kind in ITEMS && ITEMS[kind as keyof typeof ITEMS].category === "drone")
   ) {
     group.userData.muzzle = new THREE.Vector3().fromArray(
       droneModel(group, kind, rank),

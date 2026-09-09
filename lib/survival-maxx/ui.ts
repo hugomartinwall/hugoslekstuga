@@ -7,11 +7,32 @@ import {
   CAMPAIGN_WAVES,
   RANKS,
   rankStatLines,
+  BAG_CAPACITY,
+  BAG_SLOT_COST,
+  MAX_EXTRA_SLOTS,
+  MAP_COUNT,
+  MAP_ORDER,
+  OFFENSIVE_DRONES,
+  SET_TIERS,
+  HINTS,
+  mapById,
+  mapStatLines,
   type HeroId,
   type WeaponId,
   type ItemId,
   type FamilyId,
+  type MapId,
+  type EquipmentCategory,
+  type DroneAttack,
 } from "./content";
+import {
+  GUIDE_TABS,
+  completesSetTier,
+  deployHelp,
+  renderGuideTab,
+  type GuideTab,
+} from "./guide";
+import { EXPANSION_WEAPON_ICONS, EXPANSION_ITEM_ICONS } from "./gear-icons";
 
 export type SurvivalScreen =
   | "home"
@@ -32,7 +53,7 @@ export interface UIOffer {
   cost: number;
   sold: boolean;
   locked: boolean;
-  rarity: "common" | "rare" | "epic";
+  rarity: "common" | "rare" | "epic" | "insane";
   canBuy?: boolean;
   level?: number;
 }
@@ -44,7 +65,7 @@ export interface UIEquipment {
   title?: string;
   description?: string;
   sellValue?: number;
-  category?: "weapon" | "passive" | "drone";
+  category?: EquipmentCategory;
   slot?: number;
   equipped?: boolean;
   mergeable?: boolean;
@@ -52,7 +73,7 @@ export interface UIEquipment {
 }
 
 export interface UIBagEntry extends UIEquipment {
-  category: "weapon" | "passive" | "drone";
+  category: EquipmentCategory;
 }
 
 export interface UIStat {
@@ -72,6 +93,23 @@ export interface UISynergy {
   description: string;
 }
 
+export interface UIMap {
+  id: MapId;
+  /** 1-based position in MAP_ORDER. */
+  index: number;
+  name: string;
+  tagline: string;
+  /** CSS colour from the map palette accent. */
+  accent: string;
+  rule: { title: string; description: string };
+  lines: string[];
+}
+
+export interface UIUnlock {
+  hero?: HeroId;
+  map?: MapId;
+}
+
 export interface SurvivalViewModel {
   screen: SurvivalScreen;
   heroId?: string;
@@ -82,7 +120,8 @@ export interface SurvivalViewModel {
   maxHp?: number;
   kills?: number;
   runTime?: number;
-  bestCombo?: number;
+  fullClears?: number;
+  fastestClear?: number;
   earned?: number;
   time?: number;
   dash?: number;
@@ -101,7 +140,11 @@ export interface SurvivalViewModel {
   locked?: boolean;
   rerollCost?: number;
   notice?: string;
-  combo?: number;
+  enemiesRemaining?: number;
+  waveBudget?: number;
+  hordeWarning?: number;
+  canBuySlot?: boolean;
+  extraSlots?: number;
   waveIntro?: string;
   bossHp?: number;
   bossMaxHp?: number;
@@ -112,7 +155,14 @@ export interface SurvivalViewModel {
   unlockedHeroes?: HeroId[];
   clearedHeroes?: HeroId[];
   heroRecords?: Partial<Record<HeroId, number>>;
-  newUnlock?: HeroId;
+  newUnlock?: UIUnlock;
+  selectedMap?: MapId;
+  unlockedMaps?: MapId[];
+  clearedMaps?: Partial<Record<HeroId, MapId[]>>;
+  clearedBy?: Partial<Record<MapId, HeroId[]>>;
+  mapRecords?: Partial<Record<HeroId, number[]>>;
+  map?: UIMap;
+  totalMaps?: number;
   endless?: boolean;
   synergies?: UISynergy[];
   weaveCharge?: number;
@@ -126,7 +176,7 @@ const HERO_LIST = HERO_ORDER.map((id) => HEROES[id]);
 
 interface CatalogEntry {
   id: WeaponId | ItemId;
-  category: "weapon" | "passive" | "drone";
+  category: EquipmentCategory;
   name: string;
   description: string;
   families: FamilyId[];
@@ -239,11 +289,17 @@ export function uiIcon(name: string, className = ""): string {
     shock_drone: "storm",
     repair_drone: "heal",
     magnet_drone: "magnet",
+    torch_drone: "flame",
+    frost_drone: "frostgun",
+    mortar_drone: "rocket",
+    aegis_drone: "shield",
+    venom_drone: "needle",
   };
-  name = droneIcons[name] ?? name;
+  name = EXPANSION_ITEM_ICONS[name] ? name : (droneIcons[name] ?? name);
   if (name.endsWith("_core")) name = name.slice(0, -5);
-  const isWeapon = name in WEAPON_ICONS;
-  return `<svg class="rz-icon rz-icon-${escape(name)} ${className}" viewBox="0 0 ${isWeapon ? 64 : 24} ${isWeapon ? 64 : 24}" fill="none" stroke="currentColor" stroke-width="${isWeapon ? 2.4 : 1.7}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WEAPON_ICONS[name] ?? ICONS[name] ?? ICONS.power}</svg>`;
+  const weaponGlyph = WEAPON_ICONS[name] ?? EXPANSION_WEAPON_ICONS[name],
+    isWeapon = !!weaponGlyph;
+  return `<svg class="rz-icon rz-icon-${escape(name)} ${className}" viewBox="0 0 ${isWeapon ? 64 : 24} ${isWeapon ? 64 : 24}" fill="none" stroke="currentColor" stroke-width="${isWeapon ? 2.4 : 1.7}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${weaponGlyph ?? EXPANSION_ITEM_ICONS[name] ?? ICONS[name] ?? ICONS.power}</svg>`;
 }
 
 function button(
@@ -277,7 +333,7 @@ export class SurvivalUI {
   private lastAnnouncement = "";
   private resizeObserver: ResizeObserver;
   private selectedEquipment: string | null = null;
-  private registryCategory: "weapon" | "passive" | "drone" = "weapon";
+  private guideTab: GuideTab = "weapons";
   private registryFamily = "all";
   private registryRank = 1;
   private registrySelected: string | null = null;
@@ -304,7 +360,20 @@ export class SurvivalUI {
     this.resize(container);
   }
 
+  private isGuideTab(value: string | undefined): value is GuideTab {
+    return GUIDE_TABS.some((tab) => tab.id === value);
+  }
+
   private handleLocalAction(action: string, value?: string): boolean {
+    // A deep link into the guide picks the tab here and still lets the game
+    // switch screens.
+    if (action === "armory") {
+      if (this.isGuideTab(value)) {
+        this.guideTab = value;
+        this.registrySelected = null;
+      }
+      return false;
+    }
     switch (action) {
       case "inspectEquipment":
         this.selectedEquipment = value ?? null;
@@ -312,8 +381,9 @@ export class SurvivalUI {
       case "catalogItem":
         this.registrySelected = value ?? null;
         break;
-      case "catalogCategory":
-        this.registryCategory = value as "weapon" | "passive" | "drone";
+      case "guideTab":
+        if (!this.isGuideTab(value)) return true;
+        this.guideTab = value;
         this.registrySelected = null;
         break;
       case "catalogFamily":
@@ -326,7 +396,7 @@ export class SurvivalUI {
       default:
         return false;
     }
-    if (["catalogCategory", "catalogFamily"].includes(action)) {
+    if (["guideTab", "catalogFamily"].includes(action)) {
       for (const panel of this.element.querySelectorAll<HTMLElement>(
         "[data-scroll-key]",
       ))
@@ -509,10 +579,19 @@ export class SurvivalUI {
       ?.classList.toggle("is-visible", !!vm.waveThreat);
     update("threatName", vm.waveThreat?.name ?? "");
     update("threatDescription", vm.waveThreat?.description ?? "");
-    const combo = vm.combo ?? 0;
-    update("combo", combo > 1 ? `${combo}×` : "");
-    this.hudNodes.get("comboWrap")?.classList.toggle("is-visible", combo > 1);
     const bossVisible = (vm.bossMaxHp ?? 0) > 0 && (vm.bossHp ?? 0) > 0;
+    const remaining = Math.max(0, Math.round(vm.enemiesRemaining ?? 0)),
+      budget = vm.waveBudget ?? 0,
+      horde = (vm.hordeWarning ?? 0) > 0;
+    update("enemiesLeft", String(remaining));
+    update("counterLabel", horde ? "HORDE" : "LEFT");
+    const counter = this.hudNodes.get("counterWrap");
+    counter?.classList.toggle("is-visible", remaining > 0 || !bossVisible);
+    counter?.classList.toggle(
+      "is-low",
+      remaining > 0 && remaining <= Math.max(6, Math.round(budget * 0.12)),
+    );
+    counter?.classList.toggle("is-horde", horde);
     this.hudNodes.get("boss")?.classList.toggle("is-visible", bossVisible);
     this.hudNodes
       .get("bossFill")
@@ -539,9 +618,14 @@ export class SurvivalUI {
   }
 
   clearNotice(): void {
-    this.current.notice = "";
+    this.setNotice("");
+  }
+
+  /** Updates the notice without rebuilding the screen (used by the HUD). */
+  setNotice(message: string): void {
+    this.current.notice = message;
     const notice = this.element.querySelector<HTMLElement>(".rz-notice");
-    if (notice) notice.textContent = "";
+    if (notice && notice.textContent !== message) notice.textContent = message;
   }
 
   destroy(): void {
@@ -572,11 +656,42 @@ export class SurvivalUI {
     const vm = this.current;
     if (!vm.bestWave) return "";
     const unlocked = vm.unlockedHeroes?.length ?? 1;
-    return `<p class="rz-home-record">${uiIcon("trophy")}<span>BEST WAVE ${String(vm.bestWave).padStart(2, "0")}</span><i></i><span>${unlocked} / ${HERO_LIST.length} CHARACTERS</span></p>`;
+    const totalMaps = vm.totalMaps ?? MAP_COUNT;
+    const clears = Object.values(vm.clearedMaps ?? {}).reduce(
+      (sum, maps) => sum + (maps?.length ?? 0),
+      0,
+    );
+    return `<p class="rz-home-record">${uiIcon("trophy")}<span>BEST WAVE ${String(vm.bestWave).padStart(2, "0")}</span><i></i><span>${unlocked} / ${HERO_LIST.length} CHARACTERS</span><i></i><span>${clears} / ${HERO_LIST.length * totalMaps} MAPS</span></p>`;
   }
 
   private home(): string {
     return `<div class="rz-home-gradient"></div><div class="rz-home-content">${this.brand()}<p class="rz-home-line">Survive. Upgrade. Repeat.</p>${this.homeRecord()}<nav class="rz-home-actions" aria-label="Main menu">${button("play", "Play", { className: "rz-button-primary rz-button-large", icon: "arrow" })}${button("settings", "Settings", { className: "rz-button-home-secondary", icon: "settings" })}${this.current.canExit ? button("exit", "Back to playhouse", { className: "rz-button-home-secondary", icon: "back" }) : ""}</nav></div>`;
+  }
+
+  private mapAccent(id: MapId): string {
+    if (this.current.map?.id === id) return this.current.map.accent;
+    return `#${mapById(id).palette.accent.toString(16).padStart(6, "0")}`;
+  }
+
+  private mapPicker(
+    unlockedMaps: MapId[],
+    clearedMaps: MapId[],
+    selected: MapId,
+  ): string {
+    const chips = MAP_ORDER.map((id) => {
+      const definition = mapById(id);
+      const cleared = clearedMaps.includes(id),
+        open = unlockedMaps.includes(id),
+        current = id === selected;
+      const state = !open ? "locked" : cleared ? "cleared" : "open";
+      return `<button type="button" class="rz-map-chip${cleared ? " is-cleared" : ""}${current ? " is-current" : ""}${!open ? " is-locked" : ""}" data-action="selectMap" data-value="${id}" data-focus-key="map:${id}" style="--map:${this.mapAccent(id)}" aria-pressed="${current}" aria-label="Map ${id}, ${escape(definition.name)}, ${state}"${open ? "" : " disabled"}><span>${String(id).padStart(2, "0")}</span>${cleared ? uiIcon("check") : !open ? uiIcon("lock") : ""}</button>`;
+    }).join("");
+    return `<div class="rz-map-picker" role="group" aria-label="Maps">${chips}</div>`;
+  }
+
+  private mapBrief(map: UIMap, locked = false): string {
+    const total = this.current.totalMaps ?? MAP_COUNT;
+    return `<div class="rz-map-brief${locked ? " is-locked" : ""}" style="--map:${map.accent}"><span class="rz-eyebrow">MAP ${String(map.index).padStart(2, "0")} / ${total}</span><strong>${escape(map.name)}</strong><p><b>${escape(map.rule.title)}</b>${escape(map.rule.description)}</p><div class="rz-map-lines">${map.lines.map((line) => `<span>${escape(line)}</span>`).join("")}</div></div>`;
   }
 
   private characters(): string {
@@ -585,21 +700,90 @@ export class SurvivalUI {
     const selectedIndex = HERO_ORDER.indexOf(hero.id);
     const unlocked = vm.unlockedHeroes ?? [HERO_ORDER[0]];
     const isUnlocked = unlocked.includes(hero.id);
-    const isCleared = (vm.clearedHeroes ?? []).includes(hero.id);
-    const cleared = vm.clearedHeroes ?? [];
     const previousHero = HEROES[HERO_ORDER[Math.max(0, selectedIndex - 1)]];
-    const record = vm.heroRecords?.[hero.id] ?? 0;
+    const totalMaps = vm.totalMaps ?? MAP_COUNT;
+    const selectedMap = vm.selectedMap ?? vm.map?.id ?? MAP_ORDER[0];
+    const map =
+      vm.map && vm.map.id === selectedMap
+        ? vm.map
+        : {
+            id: selectedMap,
+            index: MAP_ORDER.indexOf(selectedMap) + 1,
+            name: mapById(selectedMap).name,
+            tagline: mapById(selectedMap).tagline,
+            accent: this.mapAccent(selectedMap),
+            rule: mapById(selectedMap).rule,
+            lines: mapStatLines(mapById(selectedMap)),
+          };
+    const unlockedMaps = vm.unlockedMaps ?? (isUnlocked ? [MAP_ORDER[0]] : []);
+    const clearedMaps = vm.clearedMaps?.[hero.id] ?? [];
+    const mapUnlocked = isUnlocked && unlockedMaps.includes(selectedMap);
+    const pairCleared = clearedMaps.includes(selectedMap);
+    const record = vm.mapRecords?.[hero.id]?.[selectedMap - 1] ?? 0;
     const roster = HERO_LIST.map((entry) => {
       const available = unlocked.includes(entry.id);
-      const completed = cleared.includes(entry.id);
-      return `<button type="button" class="rz-roster-tile${entry.id === hero.id ? " is-selected" : ""}${!available ? " is-locked" : ""}${completed ? " is-cleared" : ""}" data-action="selectHero" data-value="${entry.id}" style="--card-accent:${entry.color}" aria-pressed="${entry.id === hero.id}" aria-label="${escape(entry.name)}${!available ? ", locked" : completed ? ", completed" : ""}">${uiIcon(entry.weapon, "rz-roster-symbol")}<span class="rz-roster-name">${escape(entry.name)}</span><span class="rz-roster-state">${!available ? uiIcon("lock") : completed ? uiIcon("check") : `<i></i>`}</span></button>`;
+      const clears = vm.clearedMaps?.[entry.id]?.length ?? 0;
+      const completed = clears >= totalMaps;
+      const state = !available
+        ? uiIcon("lock")
+        : completed
+          ? uiIcon("check")
+          : clears > 0
+            ? `<small>${clears}/${totalMaps}</small>`
+            : `<i></i>`;
+      const progress = Array.from(
+        { length: totalMaps },
+        (_, index) => `<i${index < clears ? ' class="is-done"' : ""}></i>`,
+      ).join("");
+      return `<button type="button" class="rz-roster-tile${entry.id === hero.id ? " is-selected" : ""}${!available ? " is-locked" : ""}${completed ? " is-cleared" : ""}" data-action="selectHero" data-value="${entry.id}" data-focus-key="hero:${entry.id}" style="--card-accent:${entry.color}" aria-pressed="${entry.id === hero.id}" aria-label="${escape(entry.name)}${!available ? ", locked" : completed ? ", all maps cleared" : `, ${clears} of ${totalMaps} maps cleared`}">${uiIcon(entry.weapon, "rz-roster-symbol")}<span class="rz-roster-name">${escape(entry.name)}</span><span class="rz-roster-state">${state}</span><span class="rz-roster-progress" aria-hidden="true">${progress}</span></button>`;
     }).join("");
-    return `<div class="rz-selection-gradient"></div>${this.header("SELECT CHARACTER")}<div class="rz-selection-armory">${button("armory", "Gear guide", { className: "rz-button-secondary", icon: "armory" })}</div><section class="rz-hero-details" aria-live="polite"><div class="rz-overline"><i></i>${escape(hero.role.toUpperCase())}</div><h1>${escape(hero.name)}<span>.</span></h1><p class="rz-hero-passive">${escape(hero.passiveDescription)}</p><div class="rz-hero-loadout">${uiIcon(hero.weapon)}<div><span class="rz-eyebrow">STARTING GEAR · ${hero.weaponSlots} ${hero.weaponSlots === 1 ? "HAND" : "HANDS"}</span><strong>${escape(WEAPONS[hero.weapon].name)}${hero.id === "wisp" ? `<br />+ ${escape(ITEMS.gun_drone.name)}` : ""}</strong></div><span class="rz-hero-health">${uiIcon("heart")}${hero.maxHp}</span></div><div class="rz-hero-ability">${uiIcon("dash")}<span>${escape(hero.abilityDescription)}</span></div></section><div class="rz-roster-summary"><span class="rz-eyebrow">CHARACTERS <b>${unlocked.length} / ${HERO_LIST.length}</b></span>${record > 0 ? `<span class="rz-hero-record">${uiIcon("trophy")} BEST WAVE ${String(record).padStart(2, "0")}</span>` : ""}</div><div class="rz-roster" role="group" aria-label="Characters">${roster}</div><div class="rz-deploy">${isCleared ? button("deployEndless", "Endless", { className: "rz-button-secondary", icon: "infinity" }) : ""}${button("deploy", isUnlocked ? "Start" : "Locked", { className: "rz-button-primary", icon: isUnlocked ? "arrow" : "lock", disabled: !isUnlocked })}<span class="rz-deploy-help${!isUnlocked ? " is-unlock-condition" : ""}">${isUnlocked ? (isCleared ? "Endless has no finish line. Best wave counts." : "WASD to move · Space to dash · Auto-attack") : `Complete wave ${CAMPAIGN_WAVES} with ${escape(previousHero.name)}`}</span></div>`;
+    const help = deployHelp({
+      heroName: hero.name,
+      previousHeroName: previousHero.name,
+      heroUnlocked: isUnlocked,
+      mapIndex: map.index,
+      mapUnlocked,
+      cleared: pairCleared,
+      bestWave: record,
+      endless: pairCleared,
+    });
+    return `<div class="rz-selection-gradient"></div>${this.header("SELECT CHARACTER")}<div class="rz-selection-armory">${button("armory", "Game guide", { className: "rz-button-secondary", icon: "armory" })}</div><section class="rz-hero-details" aria-live="polite"><div class="rz-overline"><i></i>${escape(hero.role.toUpperCase())}</div><h1>${escape(hero.name)}<span>.</span></h1><p class="rz-hero-passive">${escape(hero.passiveDescription)}</p><div class="rz-hero-loadout">${uiIcon(hero.weapon)}<div><span class="rz-eyebrow">STARTING GEAR · ${hero.weaponSlots} ${hero.weaponSlots === 1 ? "HAND" : "HANDS"}</span><strong>${escape(WEAPONS[hero.weapon].name)}${hero.id === "wisp" ? `<br />+ ${escape(ITEMS.gun_drone.name)}` : ""}</strong></div><span class="rz-hero-health">${uiIcon("heart")}${hero.maxHp}</span></div><div class="rz-hero-ability">${uiIcon("dash")}<span>${escape(hero.abilityDescription)}</span></div><div class="rz-hero-traits"><div class="rz-hero-signature">${uiIcon("power")}<span><b>${escape(hero.signature)}</b>${escape(hero.signatureDescription)}</span></div><div class="rz-hero-downside">${uiIcon("info")}<span><b>${escape(hero.downside)}</b>${escape(hero.downsideDescription)}</span></div></div></section><div class="rz-roster-summary"><span class="rz-eyebrow">CHARACTERS <b>${unlocked.length} / ${HERO_LIST.length}</b></span>${record > 0 ? `<span class="rz-hero-record">${uiIcon("trophy")} BEST WAVE ${String(record).padStart(2, "0")}</span>` : ""}</div>${this.mapPicker(unlockedMaps, clearedMaps, selectedMap)}<div class="rz-roster" role="group" aria-label="Characters">${roster}</div><div class="rz-deploy">${this.mapBrief(map, !mapUnlocked)}${pairCleared ? button("deployEndless", "Endless", { className: "rz-button-secondary", icon: "infinity" }) : ""}${button("deploy", mapUnlocked ? "Start" : "Locked", { className: "rz-button-primary", icon: mapUnlocked ? "arrow" : "lock", disabled: !mapUnlocked })}<span class="rz-deploy-help${!mapUnlocked ? " is-unlock-condition" : ""}">${escape(help)}</span></div>`;
+  }
+
+  /** The wave-1 movement hint, built from the HINTS entry so copy lives in content. */
+  private moveHint(): string {
+    const hint = HINTS.find((entry) => entry.id === "move");
+    const keys = hint?.keys ?? "WASD to move · SPACE to dash";
+    const touch = hint?.touch ?? "Drag to move · Tap Dash to dodge";
+    const segment = (text: string, keyboard: boolean) =>
+      text
+        .split("·")
+        .map((part) =>
+          part
+            .trim()
+            .split(/\s+/)
+            .map((token) =>
+              keyboard && /^[A-Z]{2,}$/.test(token)
+                ? token === "WASD"
+                  ? token
+                      .split("")
+                      .map((key) => `<kbd>${key}</kbd>`)
+                      .join("")
+                  : `<kbd>${escape(token)}</kbd>`
+                : escape(token),
+            )
+            .join(" "),
+        )
+        .join("<i></i>");
+    return `<div class="rz-hint" data-hud="hint" aria-live="polite"><span class="rz-hint-keys">${segment(keys, true)}</span><span class="rz-hint-touch">${segment(touch, false)}</span></div>`;
   }
 
   private hud(): string {
     const vm = this.current;
-    return `<div class="rz-hurt-vignette"></div><div class="rz-hud-top"><div class="rz-vitals"><div class="rz-vitals-number">${uiIcon("heart")}<strong data-hud="health">100</strong><span data-hud="maxHealth">/ 100</span></div><div class="rz-health-track"><i data-hud="healthFill"></i></div></div><div class="rz-wave-clock"><span class="rz-eyebrow">WAVE <strong data-hud="wave">01</strong><span class="rz-wave-total">${vm.endless ? " / ∞" : ` / ${vm.totalWaves ?? CAMPAIGN_WAVES}`}</span></span><span class="rz-timer" data-hud="timer">0:45</span></div><div class="rz-hud-wallet">${uiIcon("coin")}<strong data-hud="currency">0</strong>${iconButton("pause", "Pause", "pause")}</div></div><div class="rz-boss" data-hud="boss"><span class="rz-eyebrow" data-hud="bossName">${escape(vm.bossName ?? "WARDEN")}</span><div><i data-hud="bossFill"></i></div></div><div class="rz-threat" data-hud="threat"><span class="rz-eyebrow">NEW ENEMY</span><strong data-hud="threatName"></strong><p data-hud="threatDescription"></p></div><div class="rz-combo" data-hud="comboWrap"><b data-hud="combo"></b><span>COMBO</span></div><div class="rz-wave-announcement" data-hud="announcement" aria-live="polite"></div><div class="rz-hint" data-hud="hint" aria-live="polite"><span class="rz-hint-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or drag to move<i></i><kbd>SPACE</kbd> to dash<i></i>Weapons fire on their own</span><span class="rz-hint-touch">Drag to move<i></i>Tap Dash to dodge<i></i>Weapons fire on their own</span></div><div class="rz-weave" data-hud="weave" tabindex="0" aria-label="Dodge boost. Dodge 3 shots closely for 25% more damage for 3.5 seconds.">${uiIcon("weave")}<div><span data-hud="weaveLabel">DODGE BOOST</span><div class="rz-weave-track"><i data-hud="weaveFill"></i></div></div><strong data-hud="weaveValue"></strong><div class="rz-weave-tooltip">Dodge 3 shots closely.<br />+25% damage for 3.5s</div></div><div class="rz-hud-bottom"><button type="button" class="rz-dash is-ready" data-hud="dash" data-action="dash" aria-label="Dash">${uiIcon("dash")}<div><span data-hud="dashLabel">DASH</span><div class="rz-dash-track"><i data-hud="dashFill"></i></div></div><kbd>SPACE</kbd></button><div class="rz-hud-equipment" data-hud="inventory"></div><div class="rz-move-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><b>MOVE</b></div></div>`;
+    const mapName = vm.map
+      ? `<b class="rz-hud-map" style="--map:${escape(vm.map.accent)}">${escape(vm.map.name.toUpperCase())}</b> · `
+      : "";
+    return `<div class="rz-hurt-vignette"></div><div class="rz-hud-top"><div class="rz-vitals"><div class="rz-vitals-number">${uiIcon("heart")}<strong data-hud="health">100</strong><span data-hud="maxHealth">/ 100</span></div><div class="rz-health-track"><i data-hud="healthFill"></i></div></div><div class="rz-wave-clock"><span class="rz-eyebrow">${mapName}WAVE <strong data-hud="wave">01</strong><span class="rz-wave-total">${vm.endless ? " / ∞" : ` / ${vm.totalWaves ?? CAMPAIGN_WAVES}`}</span></span><span class="rz-timer" data-hud="timer">0:45</span></div><div class="rz-hud-wallet">${uiIcon("coin")}<strong data-hud="currency">0</strong>${iconButton("pause", "Pause", "pause")}</div></div><div class="rz-boss" data-hud="boss"><span class="rz-eyebrow" data-hud="bossName">${escape(vm.bossName ?? "WARDEN")}</span><div><i data-hud="bossFill"></i></div></div><div class="rz-threat" data-hud="threat"><span class="rz-eyebrow">NEW ENEMY</span><strong data-hud="threatName"></strong><p data-hud="threatDescription"></p></div><div class="rz-enemy-counter" data-hud="counterWrap" aria-live="off"><b data-hud="enemiesLeft">0</b><span data-hud="counterLabel">LEFT</span></div><div class="rz-wave-announcement" data-hud="announcement" aria-live="polite"></div>${this.moveHint()}<div class="rz-weave" data-hud="weave" tabindex="0" aria-label="Dodge boost. Dodge 3 shots closely for 25% more damage for 3.5 seconds.">${uiIcon("weave")}<div><span data-hud="weaveLabel">DODGE BOOST</span><div class="rz-weave-track"><i data-hud="weaveFill"></i></div></div><strong data-hud="weaveValue"></strong><div class="rz-weave-tooltip">Dodge 3 shots closely.<br />+25% damage for 3.5s</div></div><div class="rz-hud-bottom"><button type="button" class="rz-dash is-ready" data-hud="dash" data-action="dash" aria-label="Dash">${uiIcon("dash")}<div><span data-hud="dashLabel">DASH</span><div class="rz-dash-track"><i data-hud="dashFill"></i></div></div><kbd>SPACE</kbd></button><div class="rz-hud-equipment" data-hud="inventory"></div><div class="rz-move-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><b>MOVE</b></div></div>`;
   }
 
   private rank(level: number) {
@@ -646,6 +830,12 @@ export class SurvivalUI {
     );
   }
 
+  /** What a piece does, in words: the same sentence the shop's info note shows. */
+  private gearBehavior(kind: string, level: number): string {
+    if (kind in WEAPONS) return rankStatLines(kind as WeaponId, level)[2] ?? "";
+    return ITEMS[kind as ItemId]?.description ?? "";
+  }
+
   private gearStats(kind: string, level: number): string[] {
     const item = ITEMS[kind as ItemId];
     return rankStatLines(kind as WeaponId | ItemId, level).filter(
@@ -653,12 +843,6 @@ export class SurvivalUI {
         /^[+\-\d]/.test(line) &&
         !(item?.category === "drone" && line === item.description),
     );
-  }
-
-  /** What a piece does, in words: the same sentence the shop's info note shows. */
-  private gearBehavior(kind: string, level: number): string {
-    if (kind in WEAPONS) return rankStatLines(kind as WeaponId, level)[2] ?? "";
-    return ITEMS[kind as ItemId]?.description ?? "";
   }
 
   private canMerge(item: UIEquipment): boolean {
@@ -685,8 +869,8 @@ export class SurvivalUI {
         (entry) =>
           entry.id !== item.id &&
           entry.category === "drone" &&
-          ["gun", "orbit", "shock"].includes(
-            ITEMS[entry.kind as ItemId]?.drone?.attack ?? "",
+          OFFENSIVE_DRONES.includes(
+            ITEMS[entry.kind as ItemId]?.drone?.attack as DroneAttack,
           ),
       );
     return (
@@ -697,12 +881,17 @@ export class SurvivalUI {
     );
   }
 
+  private isInsane(kind: string): boolean {
+    return !!WEAPONS[kind as WeaponId]?.unique;
+  }
+
   private equipment(items: UIEquipment[], compact = false): string {
     return Array.from({ length: this.slots }, (_, slot) => {
       const item = items.find((entry, index) => (entry.slot ?? index) === slot);
       if (!item)
         return `<div class="rz-hand-hud is-empty">${uiIcon("hand")}<span>${slot + 1}</span></div>`;
-      return `<div class="rz-hand-hud rz-rank-${item.level}" style="--rank:${this.rank(item.level).color}" title="${escape(this.gearName(item))}, ${this.rank(item.level).name} — ${escape(this.gearBehavior(item.kind, item.level))}" aria-label="${escape(this.gearName(item))}, ${this.rank(item.level).name}">${uiIcon(item.kind)}${this.rankBadge(item.level, true)}</div>`;
+      const insane = this.isInsane(item.kind);
+      return `<div class="rz-hand-hud rz-rank-${item.level}${insane ? " is-insane" : ""}" style="--rank:${this.rank(item.level).color}" title="${escape(this.gearName(item))}, ${insane ? "insane" : this.rank(item.level).name} — ${escape(this.gearBehavior(item.kind, item.level))}" aria-label="${escape(this.gearName(item))}, ${insane ? "insane" : this.rank(item.level).name}">${uiIcon(item.kind)}${insane ? `<span class="rz-insane-badge is-compact">!</span>` : this.rankBadge(item.level, true)}</div>`;
     }).join("");
   }
 
@@ -716,7 +905,8 @@ export class SurvivalUI {
     const rank = this.rank(item.level);
     const art = this.current.art?.[item.kind];
     const mergeable = this.canMerge(item);
-    return `<button type="button" class="rz-gear-cell rz-rank-${rank.level}${hand ? " is-hand" : ""}${this.selectedEquipment === String(item.id) ? " is-selected" : ""}${mergeable ? " can-merge" : ""}${this.fusedEquipment === String(item.id) ? " is-fused" : ""}" style="--rank:${rank.color}" data-action="inspectEquipment" data-value="${escape(item.id)}" data-focus-key="gear:${escape(item.id)}" aria-pressed="${this.selectedEquipment === String(item.id)}" title="${escape(this.gearName(item))}, ${rank.name} — ${escape(this.gearBehavior(item.kind, item.level))}" aria-label="${escape(this.gearName(item))}, ${rank.name}${mergeable ? ", merge available" : ""}">${art ? `<img src="${escape(art)}" alt="" draggable="false"/>` : uiIcon(item.kind)}${this.rankBadge(item.level, true)}${mergeable ? `<span class="rz-merge-dot" title="Merge available">${uiIcon("merge")}</span>` : ""}${!hand && item.category === "weapon" ? `<span class="rz-stored-mark" title="Stored weapon">${uiIcon("bag")}</span>` : ""}</button>`;
+    const insane = this.isInsane(item.kind);
+    return `<button type="button" class="rz-gear-cell rz-rank-${rank.level}${hand ? " is-hand" : ""}${insane ? " is-insane" : ""}${this.selectedEquipment === String(item.id) ? " is-selected" : ""}${mergeable ? " can-merge" : ""}${this.fusedEquipment === String(item.id) ? " is-fused" : ""}" style="--rank:${rank.color}" data-action="inspectEquipment" data-value="${escape(item.id)}" data-focus-key="gear:${escape(item.id)}" aria-pressed="${this.selectedEquipment === String(item.id)}" title="${escape(this.gearName(item))}, ${rank.name} — ${escape(this.gearBehavior(item.kind, item.level))}" aria-label="${escape(this.gearName(item))}, ${insane ? "insane" : rank.name}${mergeable ? ", merge available" : ""}">${art ? `<img src="${escape(art)}" alt="" draggable="false"/>` : uiIcon(item.kind)}${insane ? `<span class="rz-insane-badge is-compact">!</span>` : this.rankBadge(item.level, true)}${mergeable ? `<span class="rz-merge-dot" title="Merge available">${uiIcon("merge")}</span>` : ""}${!hand && item.category === "weapon" ? `<span class="rz-stored-mark" title="Stored weapon">${uiIcon("bag")}</span>` : ""}</button>`;
   }
 
   private rankGuide(): string {
@@ -775,6 +965,7 @@ export class SurvivalUI {
       item.kind,
       item.level,
     )
+      
       .map((line) => this.metricChip(line))
       .join(
         "",
@@ -906,18 +1097,48 @@ export class SurvivalUI {
     return `<span class="rz-family-tag" style="--family:${family.color}">${uiIcon(id)}${escape(family.name)}</span>`;
   }
 
+  private setCounts(): Partial<Record<FamilyId, number>> {
+    const counts: Partial<Record<FamilyId, number>> = {};
+    for (const set of this.current.synergies ?? [])
+      counts[set.id as FamilyId] = set.count;
+    return counts;
+  }
+
   private synergyBar(): string {
     const known = this.current.synergies ?? [];
+    const hero = this.hero;
+    const maxPips = SET_TIERS[SET_TIERS.length - 1];
     return `<div class="rz-synergy-bar" aria-label="Equipment sets">${Object.values(
       FAMILIES,
     )
       .map((family) => {
         const status = known.find((entry) => entry.id === family.id);
         const count = status?.count ?? 0;
-        const next = status?.next ?? (count >= 4 ? null : count >= 2 ? 4 : 2);
-        return `<div class="rz-synergy-chip${count >= 2 ? " is-active" : ""}" tabindex="0" data-focus-key="set:${family.id}" style="--family:${family.color}" aria-label="${escape(family.name)} set, ${count} pieces${count >= 2 ? ", active" : ""}">${uiIcon(family.id)}<span>${escape(family.name)}</span><strong>${count}<small>${next ? `/${next}` : uiIcon("check")}</small></strong><div class="rz-synergy-tooltip"><b>${escape(family.name)}</b><small>Equipped weapons, items and drones each count once.<br />Weapons in your bag do not count.</small><div class="${count >= 2 ? "is-active" : ""}"><strong>2</strong><p>${escape(family.thresholds[2])}</p></div><div class="${count >= 4 ? "is-active" : ""}"><strong>4</strong><p>${escape(family.thresholds[4])}</p></div></div></div>`;
+        const tier =
+          status?.tier ?? SET_TIERS.filter((size) => count >= size).length;
+        const next =
+          status?.next ?? SET_TIERS.find((size) => count < size) ?? null;
+        const free = hero.setPiece.includes(family.id);
+        const pips = Array.from({ length: maxPips }, (_, index) => {
+          const piece = index + 1;
+          const marks = (SET_TIERS as readonly number[]).includes(piece)
+            ? " is-tier"
+            : "";
+          return `<i class="${piece <= count ? "is-on" : ""}${marks}"></i>`;
+        }).join("");
+        const rows = SET_TIERS.map(
+          (size) =>
+            `<div class="${count >= size ? "is-active" : ""}${next === size ? " is-next" : ""}"><strong>${size}</strong><p>${escape(family.thresholds[size])}</p></div>`,
+        ).join("");
+        return `<div class="rz-synergy-chip${tier >= 1 ? " is-active" : ""} is-tier-${tier}" tabindex="0" data-focus-key="set:${family.id}" style="--family:${family.color}" aria-label="${escape(family.name)} set, ${count} of ${maxPips} pieces${tier >= 1 ? `, tier ${tier} active` : ""}">${uiIcon(family.id)}<span>${escape(family.name)}</span><strong>${count}<small>${next ? `/${next}` : uiIcon("check")}</small></strong><span class="rz-synergy-pips" aria-hidden="true">${pips}</span><div class="rz-synergy-tooltip"><b>${escape(family.name)}</b><small>Equipped weapons, items, drones and mods each count once.<br />Weapons in your bag do not count.${free ? `<br />${escape(hero.name)} counts as 1 free ${escape(family.name)} piece.` : ""}</small>${rows}<button type="button" class="rz-synergy-link" data-action="armory" data-value="sets">All sets in the guide ${uiIcon("arrow")}</button></div></div>`;
       })
       .join("")}</div>`;
+  }
+
+  private shopMapBadge(): string {
+    const map = this.current.map;
+    if (!map) return "";
+    return `<span class="rz-shop-map" tabindex="0" role="note" data-focus-key="shop-map" style="--map:${escape(map.accent)}" aria-label="Map ${map.index}, ${escape(map.name)}. ${escape(map.rule.title)}: ${escape(map.rule.description)}"><i></i><span><b>${escape(map.name)}</b><small>${escape(map.rule.title)}</small></span><div class="rz-shop-map-tooltip"><span class="rz-eyebrow">MAP ${String(map.index).padStart(2, "0")} · ${escape(map.rule.title.toUpperCase())}</span><p>${escape(map.rule.description)}</p><div class="rz-map-lines">${map.lines.map((line) => `<span>${escape(line)}</span>`).join("")}</div></div></span>`;
   }
 
   private shop(): string {
@@ -933,19 +1154,25 @@ export class SurvivalUI {
       this.selectedEquipment = selected ? String(selected.id) : null;
     }
     const offers = vm.offers ?? [];
+    const setCounts = this.setCounts();
     const cards = offers
       .map((offer, index) => {
         const level = offer.level ?? 1,
           rank = this.rank(level),
           art = vm.art?.[offer.contentId];
+        const insane = offer.rarity === "insane";
         const type =
           offer.kind === "weapon"
-            ? "WEAPON"
+            ? insane
+              ? "INSANE WEAPON"
+              : "WEAPON"
             : offer.kind === "heal"
               ? "REPAIR"
               : ITEMS[offer.contentId as ItemId]?.category === "drone"
                 ? "DRONE"
-                : "ITEM";
+                : ITEMS[offer.contentId as ItemId]?.category === "mod"
+                  ? "MOD"
+                  : "ITEM";
         const fullHealth =
           offer.kind === "heal" && (vm.hp ?? 0) >= (vm.maxHp ?? 100);
         const blocked =
@@ -983,11 +1210,23 @@ export class SurvivalUI {
         const purchaseLabel = offer.sold
           ? `${offer.title}, bought`
           : `${label}${shortfall > 0 && !fullHealth && !bagFull ? (shortfall === 1 ? " emerald" : " emeralds") : ""}: ${offer.title}, ${offer.cost} emeralds`;
-        return `<article class="rz-stock-card rz-rank-${rank.level}${offer.sold ? " is-sold" : blocked ? " is-blocked" : " is-affordable"}" style="--rank:${rank.color}"><div class="rz-stock-top">${offer.kind === "heal" ? `<span class="rz-stock-service">${uiIcon("mending")} SERVICE</span>` : this.rankBadge(level)}${!offer.sold ? iconButton("lock", offer.locked ? "Stop keeping this offer" : "Keep this offer after reroll", offer.locked ? "lock" : "unlock", String(index), offer.locked) : uiIcon("check")}</div><div class="rz-stock-art">${art ? `<img src="${escape(art)}" alt="" draggable="false"/>` : uiIcon(offer.contentId)}</div><div class="rz-stock-name"><span>${type}</span><h2>${escape(offer.title)}</h2><span class="rz-stock-info" tabindex="0" role="note" data-focus-key="offer-info:${escape(offer.id)}" aria-label="${escape(behavior)}">${uiIcon("info")}<span class="rz-stock-detail"><strong>${escape(offer.title)}</strong><span>${escape(behavior)}</span>${statistics.map((line) => `<small>${escape(line)}</small>`).join("")}</span></span></div><div class="rz-stock-metrics">${statistics.map((line) => this.metricChip(line)).join("")}</div><div class="rz-family-tags">${families.map((id) => this.familyChip(id)).join("")}</div><button type="button" class="rz-stock-buy" data-action="buy" data-value="${index}" aria-label="${escape(purchaseLabel)}"${blocked ? " disabled" : ""}><span>${label}</span><strong>${offer.sold ? uiIcon("check") : `${uiIcon("coin")} ${offer.cost}`}</strong></button></article>`;
+        // A weapon that lands in the bag stays inactive (except for Prism's lattice).
+        const willBeActive =
+          offer.kind === "item" ||
+          (offer.kind === "weapon" &&
+            (this.hero.id === "prism" ||
+              (vm.inventory?.length ?? 0) < this.slots));
+        const reaches = offer.sold
+          ? []
+          : completesSetTier(families, setCounts, willBeActive);
+        const tierFlag = reaches.length
+          ? `<span class="rz-set-tier-flag" title="${escape(reaches.map((entry) => `${FAMILIES[entry.family].name} set reaches ${entry.size}`).join(" · "))}">${reaches.map((entry) => `<span style="--family:${FAMILIES[entry.family].color}">${uiIcon(entry.family)}<b>${entry.size}</b></span>`).join("")}</span>`
+          : "";
+        return `<article class="rz-stock-card rz-rank-${rank.level}${offer.sold ? " is-sold" : blocked ? " is-blocked" : " is-affordable"}${insane ? " is-insane" : ""}${reaches.length ? " is-set-tier" : ""}" style="--rank:${rank.color}"><div class="rz-stock-top">${offer.kind === "heal" ? `<span class="rz-stock-service">${uiIcon("mending")} SERVICE</span>` : insane ? `<span class="rz-insane-badge">Insane</span>` : this.rankBadge(level)}${!offer.sold ? iconButton("lock", offer.locked ? "Stop keeping this offer" : "Keep this offer after reroll", offer.locked ? "lock" : "unlock", String(index), offer.locked) : uiIcon("check")}</div><div class="rz-stock-art">${art ? `<img src="${escape(art)}" alt="" draggable="false"/>` : uiIcon(offer.contentId)}${tierFlag}</div><div class="rz-stock-name"><span>${type}</span><h2>${escape(offer.title)}</h2><span class="rz-stock-info" tabindex="0" role="note" data-focus-key="offer-info:${escape(offer.id)}" aria-label="${escape(behavior)}">${uiIcon("info")}<span class="rz-stock-detail"><strong>${escape(offer.title)}</strong><span>${escape(behavior)}</span>${statistics.map((line) => `<small>${escape(line)}</small>`).join("")}</span></span></div><div class="rz-stock-metrics">${statistics.map((line) => this.metricChip(line)).join("")}</div><div class="rz-family-tags">${families.map((id) => this.familyChip(id)).join("")}</div><button type="button" class="rz-stock-buy" data-action="buy" data-value="${index}" aria-label="${escape(purchaseLabel)}"${blocked ? " disabled" : ""}><span>${label}</span><strong>${offer.sold ? uiIcon("check") : `${uiIcon("coin")} ${offer.cost}`}</strong></button></article>`;
       })
       .join("");
     const handItems = vm.inventory ?? [];
-    return `<div class="rz-shop-scrim"></div><header class="rz-workshop-header"><div><h1>Shop<span>.</span></h1><span class="rz-eyebrow">WAVE ${String(vm.wave ?? 1).padStart(2, "0")} COMPLETE</span></div><div class="rz-workshop-header-actions"><span class="rz-shop-health">${uiIcon("heart")}<strong>${Math.ceil(vm.hp ?? 100)}</strong><small>/ ${Math.ceil(vm.maxHp ?? 100)}</small></span><span class="rz-salvage">${uiIcon("coin")}<strong>${currency}</strong></span>${button("nextWave", "Next wave", { className: "rz-button-primary", icon: "arrow" })}${iconButton("pause", "Pause", "pause")}</div></header><aside class="rz-build-sidebar"><span class="rz-eyebrow">STATS</span><div class="rz-build-stats">${(vm.stats ?? []).map(({ label, description, value }) => `<div title="${escape(description ?? label)}" role="group" aria-label="${escape(`${label}: ${value}${description ? `. ${description}` : ""}`)}"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join("")}</div><div class="rz-build-sets"><span class="rz-eyebrow">SETS</span>${this.synergyBar()}</div>${button("armory", "Gear guide", { className: "rz-button-secondary", icon: "armory" })}</aside><div class="rz-stock-heading"><span class="rz-eyebrow">OFFERS</span>${button("reroll", `Reroll <span class="rz-inline-price">${uiIcon("coin")} ${vm.rerollCost ?? 5}</span>`, { className: "rz-button-reroll", icon: "reroll", disabled: (vm.rerollCost ?? 5) > currency || !offers.some((offer) => !offer.locked || offer.sold) })}</div><section class="rz-stock-grid" aria-label="Shop offers">${cards}</section><section class="rz-inventory-bench"><div class="rz-bench-header"><span class="rz-eyebrow">EQUIPMENT</span>${this.rankGuide()}</div><div class="rz-hands-panel"><div class="rz-panel-label"><span>HANDS</span><b>${handItems.length}/${this.slots}</b></div><div class="rz-hand-cells">${Array.from(
+    return `<div class="rz-shop-scrim"></div><header class="rz-workshop-header"><div class="rz-workshop-title"><div><h1>Shop<span>.</span></h1><span class="rz-eyebrow">WAVE ${String(vm.wave ?? 1).padStart(2, "0")} COMPLETE</span></div>${this.shopMapBadge()}</div><div class="rz-workshop-header-actions"><span class="rz-shop-health">${uiIcon("heart")}<strong>${Math.ceil(vm.hp ?? 100)}</strong><small>/ ${Math.ceil(vm.maxHp ?? 100)}</small></span><span class="rz-salvage">${uiIcon("coin")}<strong>${currency}</strong></span>${button("nextWave", "Next wave", { className: "rz-button-primary", icon: "arrow" })}${iconButton("pause", "Pause", "pause")}</div></header><aside class="rz-build-sidebar"><span class="rz-eyebrow">STATS</span><div class="rz-build-stats">${(vm.stats ?? []).map(({ label, description, value }) => `<div title="${escape(description ?? label)}" role="group" aria-label="${escape(`${label}: ${value}${description ? `. ${description}` : ""}`)}"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join("")}</div><div class="rz-build-sets"><span class="rz-eyebrow">SETS</span>${this.synergyBar()}</div>${button("armory", "Game guide", { className: "rz-button-secondary", icon: "armory", value: "weapons" })}</aside><div class="rz-stock-heading"><span class="rz-eyebrow">OFFERS</span>${button("reroll", `Reroll <span class="rz-inline-price">${uiIcon("coin")} ${vm.rerollCost ?? 5}</span>`, { className: "rz-button-reroll", icon: "reroll", disabled: (vm.rerollCost ?? 5) > currency || !offers.some((offer) => !offer.locked || offer.sold) })}</div><section class="rz-stock-grid" aria-label="Shop offers">${cards}</section><section class="rz-inventory-bench"><div class="rz-bench-header"><span class="rz-eyebrow">EQUIPMENT</span>${this.rankGuide()}</div><div class="rz-hands-panel"><div class="rz-panel-label"><span>HANDS</span><b>${handItems.length}/${this.slots}</b></div><div class="rz-hand-cells">${Array.from(
       { length: this.slots },
       (_, slot) =>
         this.gearCell(
@@ -997,7 +1236,7 @@ export class SurvivalUI {
         ),
     ).join(
       "",
-    )}</div></div><div class="rz-bag-panel"><div class="rz-panel-label"><span>BAG <small>ITEMS & DRONES ACTIVE</small></span><b>${bag.length}/${vm.bagCapacity ?? 12}</b></div><div class="rz-bag-cells">${Array.from({ length: vm.bagCapacity ?? 12 }, (_, index) => this.gearCell(bag[index], index)).join("")}</div></div></section>${this.gearInspector(selected)}`;
+    )}</div></div><div class="rz-bag-panel"><div class="rz-panel-label"><span>BAG <small>ITEMS & DRONES ACTIVE</small></span>${(vm.extraSlots ?? 0) < MAX_EXTRA_SLOTS ? `<button type="button" class="rz-bag-buy" data-action="buySlot" data-focus-key="buy-slot" ${vm.canBuySlot ? "" : "disabled"} aria-label="Buy an extra bag slot for ${BAG_SLOT_COST} emeralds" title="+1 bag slot · up to ${BAG_CAPACITY + MAX_EXTRA_SLOTS} total">+ SLOT ${uiIcon("coin")}${BAG_SLOT_COST}</button>` : `<span class="rz-bag-buy is-max" title="Maximum bag size">MAX SLOTS</span>`}<b>${bag.length}/${vm.bagCapacity ?? 12}</b></div><div class="rz-bag-cells">${Array.from({ length: vm.bagCapacity ?? 12 }, (_, index) => this.gearCell(bag[index], index)).join("")}</div></div></section>${this.gearInspector(selected)}`;
   }
 
   private catalog(): CatalogEntry[] {
@@ -1023,40 +1262,44 @@ export class SurvivalUI {
   }
 
   private armory(): string {
-    const entries = this.catalog().filter(
-      (entry) =>
-        entry.category === this.registryCategory &&
-        (this.registryFamily === "all" ||
-          entry.families.includes(this.registryFamily as FamilyId)),
-    );
-    const selected =
-      entries.find((entry) => entry.id === this.registrySelected) ?? entries[0];
-    if (selected) this.registrySelected = selected.id;
+    const vm = this.current;
+    const tab =
+      GUIDE_TABS.find((entry) => entry.id === this.guideTab) ?? GUIDE_TABS[0];
     const rank = this.rank(this.registryRank);
-    const tabs: [
-      ["weapon" | "passive" | "drone", string],
-      ["weapon" | "passive" | "drone", string],
-      ["weapon" | "passive" | "drone", string],
-    ] = [
-      ["weapon", "Weapons"],
-      ["passive", "Items"],
-      ["drone", "Drones"],
-    ];
-    return `<div class="rz-shop-scrim"></div>${this.header("GEAR GUIDE")}<div class="rz-armory-categories" role="group" aria-label="Equipment categories">${tabs.map(([id, label]) => `<button type="button" data-action="catalogCategory" data-value="${id}" class="${this.registryCategory === id ? "is-selected" : ""}" aria-pressed="${this.registryCategory === id}">${label}</button>`).join("")}</div><div class="rz-armory-filters" role="group" aria-label="Set filter">${[{ id: "all", name: "All", color: "#bdd4c5" }, ...Object.values(FAMILIES)].map((family) => `<button type="button" data-action="catalogFamily" data-value="${family.id}" class="${this.registryFamily === family.id ? "is-selected" : ""}" style="--family:${family.color}" aria-pressed="${this.registryFamily === family.id}">${family.id === "all" ? "" : uiIcon(family.id)}${family.name}</button>`).join("")}</div><div class="rz-armory-ranks"><span class="rz-eyebrow">${rank.name.toUpperCase()}</span><div role="group" aria-label="Rank selector">${RANKS.map((entry) => `<button type="button" class="rz-rank-${entry.level}${entry.level === rank.level ? " is-selected" : ""}" style="--rank:${entry.color}" data-action="catalogRank" data-value="${entry.level}" aria-label="${entry.name}" aria-pressed="${entry.level === rank.level}">${this.rankBadge(entry.level, true)}</button>`).join("")}</div></div><div class="rz-catalog-grid" data-scroll-key="catalog-grid">${entries.length ? entries.map((entry) => `<button type="button" class="rz-catalog-card rz-rank-${rank.level}${entry.id === selected?.id ? " is-selected" : ""}" style="--rank:${rank.color}" data-action="catalogItem" data-value="${entry.id}" aria-pressed="${entry.id === selected?.id}">${this.current.art?.[entry.id] ? `<img src="${escape(this.current.art[entry.id])}" alt="" draggable="false"/>` : uiIcon(entry.id)}<strong>${escape(entry.name)}</strong></button>`).join("") : '<p class="rz-catalog-empty">No gear in this set.</p>'}</div>${
-      selected
-        ? `<section class="rz-catalog-detail rz-rank-${rank.level}" data-scroll-key="catalog-detail" style="--rank:${rank.color}"><div class="rz-catalog-art">${this.current.art?.[selected.id] ? `<img src="${escape(this.current.art[selected.id])}" alt="" draggable="false"/>` : uiIcon(selected.id)}</div>${this.rankBadge(rank.level)}<h1>${escape(selected.name)}</h1><p>${escape(selected.description)}</p><div class="rz-catalog-stats">${this.gearStats(
-            selected.id,
-            rank.level,
-          )
-            .map(
-              (line) =>
-                `<div>${this.metricChip(line, true)}<span>${escape(line)}</span></div>`,
-            )
-            .join(
-              "",
-            )}</div><div class="rz-family-tags">${selected.families.map((id) => this.familyChip(id)).join("")}</div><small>${selected.category === "weapon" ? "Base stats at this rank. Equip to attack." : selected.category === "drone" ? "Active in your bag." : ""}</small></section>`
-        : ""
-    }`;
+    const family = (
+      this.registryFamily in FAMILIES ? this.registryFamily : "all"
+    ) as FamilyId | "all";
+    const tabs = GUIDE_TABS.map(
+      (entry) =>
+        `<button type="button" role="tab" data-action="guideTab" data-value="${entry.id}" class="${entry.id === tab.id ? "is-selected" : ""}" aria-selected="${entry.id === tab.id}" aria-pressed="${entry.id === tab.id}">${uiIcon(entry.icon)}<span>${escape(entry.label)}</span></button>`,
+    ).join("");
+    const filters = [
+      { id: "all", name: "All", color: "#bdd4c5" },
+      ...Object.values(FAMILIES),
+    ]
+      .map(
+        (entry) =>
+          `<button type="button" data-action="catalogFamily" data-value="${entry.id}" class="${family === entry.id ? "is-selected" : ""}" style="--family:${entry.color}" aria-pressed="${family === entry.id}">${entry.id === "all" ? "" : uiIcon(entry.id)}${escape(entry.name)}</button>`,
+      )
+      .join("");
+    const ranks = RANKS.map(
+      (entry) =>
+        `<button type="button" class="rz-rank-${entry.level}${entry.level === rank.level ? " is-selected" : ""}" style="--rank:${entry.color}" data-action="catalogRank" data-value="${entry.level}" aria-label="${entry.name}" aria-pressed="${entry.level === rank.level}">${this.rankBadge(entry.level, true)}</button>`,
+    ).join("");
+    const content = renderGuideTab(
+      tab.id,
+      { family, rank: rank.level, selected: this.registrySelected },
+      {
+        icon: uiIcon,
+        art: vm.art,
+        escape,
+        rankBadge: (level) => this.rankBadge(level),
+        familyChip: (id) => this.familyChip(id),
+        clearedBy: vm.clearedBy,
+        heroRecords: vm.heroRecords,
+      },
+    );
+    return `<div class="rz-shop-scrim"></div>${this.header("GAME GUIDE")}<div class="rz-guide-tabs" role="tablist" aria-label="Guide sections">${tabs}</div><div class="rz-armory-filters${tab.usesFamily ? "" : " is-hidden"}" role="group" aria-label="Set filter">${filters}</div><div class="rz-armory-ranks${tab.usesRank ? "" : " is-hidden"}"><span class="rz-eyebrow">${escape(rank.name.toUpperCase())}</span><div role="group" aria-label="Rank selector">${ranks}</div></div><div class="rz-guide-content" data-guide-tab="${tab.id}">${content}</div>`;
   }
 
   private pause(): string {
@@ -1077,9 +1320,54 @@ export class SurvivalUI {
 
   private results(): string {
     const vm = this.current;
-    const newHero = vm.newUnlock ? HEROES[vm.newUnlock] : undefined;
+    const newHero = vm.newUnlock?.hero ? HEROES[vm.newUnlock.hero] : undefined;
+    const newMap = vm.newUnlock?.map ? mapById(vm.newUnlock.map) : undefined;
+    const hasUnlock = !!(newHero || newMap);
     const victory = !!vm.won && !vm.endless;
-    return `<div class="rz-results-backdrop"></div><section class="rz-results${newHero ? " has-unlock" : ""}"><span class="rz-overline"><i></i>${victory ? `${CAMPAIGN_WAVES} WAVES COMPLETE` : vm.endless ? "ENDLESS MODE" : escape(this.hero.name)}</span><h1>${victory ? "Victory" : "Run ended"}<span>.</span></h1><div class="rz-results-rule"></div><div class="rz-result-stats"><div><span class="rz-eyebrow">WAVE</span><strong>${String(vm.wave ?? 1).padStart(2, "0")}<small>${vm.endless ? "/∞" : `/${vm.totalWaves ?? CAMPAIGN_WAVES}`}</small></strong></div><div><span class="rz-eyebrow">ENEMIES DEFEATED</span><strong>${vm.kills ?? 0}</strong></div><div><span class="rz-eyebrow">BEST WAVE</span><strong>${String(vm.bestWave ?? vm.wave ?? 1).padStart(2, "0")}</strong></div><div><span class="rz-eyebrow">RUN TIME</span><strong>${this.formatTime(vm.runTime ?? 0)}</strong></div><div><span class="rz-eyebrow">BEST COMBO</span><strong>${vm.bestCombo ?? 0}<small>×</small></strong></div><div><span class="rz-eyebrow">EMERALDS EARNED</span><strong>${vm.earned ?? 0}</strong></div></div>${this.resultLoadout()}${newHero ? `<div class="rz-unlock-badge" style="--unlock:${newHero.color}">${uiIcon(newHero.weapon)}<div><span class="rz-eyebrow">CHARACTER UNLOCKED</span><strong>${escape(newHero.name)}</strong></div>${uiIcon("unlock")}</div>` : ""}<div class="rz-results-actions">${victory ? button("endless", "Play endless", { className: "rz-button-primary", icon: "infinity" }) : button("retry", "Try again", { className: "rz-button-primary", icon: "reroll" })}${victory ? button("retry", "Play again", { className: "rz-button-secondary", icon: "reroll" }) : ""}${button("home", "Home", { className: "rz-button-secondary" })}</div></section>`;
+    const mapIndex = String(vm.map?.index ?? 1).padStart(2, "0");
+    const mapName = vm.map?.name ?? "";
+    const overline = victory
+      ? `MAP ${mapIndex} CLEARED · ${vm.totalWaves ?? CAMPAIGN_WAVES} WAVES`
+      : vm.endless
+        ? `ENDLESS · ${mapName.toUpperCase()}`
+        : `${this.hero.name.toUpperCase()} · MAP ${mapIndex}`;
+    const badges = hasUnlock
+      ? `<div class="rz-results-unlocks">${
+          newHero
+            ? `<div class="rz-unlock-badge is-hero" style="--unlock:${newHero.color}">${uiIcon(newHero.weapon)}<div><span class="rz-eyebrow">CHARACTER UNLOCKED</span><strong>${escape(newHero.name)}</strong></div>${uiIcon("unlock")}</div>`
+            : ""
+        }${
+          newMap
+            ? `<div class="rz-unlock-badge is-map" style="--unlock:${this.mapAccent(newMap.id)}"><i class="rz-unlock-swatch"></i><div><span class="rz-eyebrow">MAP ${String(newMap.id).padStart(2, "0")} UNLOCKED</span><strong>${escape(newMap.name)}</strong></div>${uiIcon("unlock")}</div>`
+            : ""
+        }</div>`
+      : "";
+    const actions = victory
+      ? [
+          newMap
+            ? button("nextMap", "Next map", {
+                className: "rz-button-primary",
+                icon: "arrow",
+              })
+            : "",
+          button("endless", "Play endless", {
+            className: newMap ? "rz-button-secondary" : "rz-button-primary",
+            icon: "infinity",
+          }),
+          button("retry", "Play again", {
+            className: "rz-button-secondary",
+            icon: "reroll",
+          }),
+          button("home", "Home", { className: "rz-button-secondary" }),
+        ]
+      : [
+          button("retry", "Try again", {
+            className: "rz-button-primary",
+            icon: "reroll",
+          }),
+          button("home", "Home", { className: "rz-button-secondary" }),
+        ];
+    return `<div class="rz-results-backdrop"></div><section class="rz-results${hasUnlock ? " has-unlock" : ""}${victory ? " is-victory" : ""}"><span class="rz-overline"><i></i>${escape(overline)}</span><h1>${victory ? "Victory" : "Run ended"}<span>.</span></h1><div class="rz-results-rule"></div><div class="rz-result-stats"><div><span class="rz-eyebrow">WAVE</span><strong>${String(vm.wave ?? 1).padStart(2, "0")}<small>${vm.endless ? "/∞" : `/${vm.totalWaves ?? CAMPAIGN_WAVES}`}</small></strong></div><div><span class="rz-eyebrow">ENEMIES DEFEATED</span><strong>${vm.kills ?? 0}</strong></div><div><span class="rz-eyebrow">BEST WAVE</span><strong>${String(vm.bestWave ?? vm.wave ?? 1).padStart(2, "0")}</strong></div><div><span class="rz-eyebrow">RUN TIME</span><strong>${this.formatTime(vm.runTime ?? 0)}</strong></div><div><span class="rz-eyebrow">FULL CLEARS</span><strong>${vm.fullClears ?? 0}<small>/${vm.endless ? "∞" : (vm.totalWaves ?? CAMPAIGN_WAVES)}</small></strong></div><div><span class="rz-eyebrow">EMERALDS EARNED</span><strong>${vm.earned ?? 0}</strong></div></div>${this.resultLoadout()}${badges}<div class="rz-results-actions">${actions.join("")}</div></section>`;
   }
 
   private resultLoadout(): string {
@@ -1087,10 +1375,11 @@ export class SurvivalUI {
     const items = [...(vm.inventory ?? []), ...(vm.bag ?? [])];
     if (!items.length) return "";
     const cells = items
-      .map(
-        (item) =>
-          `<div class="rz-hand-hud rz-rank-${item.level}" style="--rank:${this.rank(item.level).color}" title="${escape(this.gearName(item))}, ${this.rank(item.level).name}" aria-label="${escape(this.gearName(item))}, ${this.rank(item.level).name}">${uiIcon(item.kind)}${this.rankBadge(item.level, true)}</div>`,
-      )
+      .map((item) => {
+        const insane = this.isInsane(item.kind);
+        const label = `${this.gearName(item)}, ${insane ? "insane" : this.rank(item.level).name}`;
+        return `<div class="rz-hand-hud rz-rank-${item.level}${insane ? " is-insane" : ""}" style="--rank:${this.rank(item.level).color}" title="${escape(label)}" aria-label="${escape(label)}">${uiIcon(item.kind)}${insane ? `<span class="rz-insane-badge is-compact">!</span>` : this.rankBadge(item.level, true)}</div>`;
+      })
       .join("");
     return `<div class="rz-result-loadout" aria-label="Final loadout"><span class="rz-eyebrow">FINAL LOADOUT</span><div>${cells}</div></div>`;
   }

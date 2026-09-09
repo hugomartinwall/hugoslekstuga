@@ -112,7 +112,6 @@ export const tools: Tool[] = [
       "A tiny real-time strategy game against the machine. Nodes breed units; drag from yours to pour them somewhere else. Take the neutrals, overrun three rival factions across a thirty-level campaign — checkpoints bank your progress, cores buy doctrine and powers between runs, and the levels don't get kinder. Single player, runs entirely in your tab.",
     color: "pink",
     emoji: "◍",
-    isNew: true,
   },
   {
     slug: "adventure",
@@ -122,7 +121,6 @@ export const tools: Tool[] = [
       "A top-down action adventure. At closing time Hugo takes the lost & found sword and walks out the back door — ten worlds, ten bosses, and a change machine that follows him selling upgrades. You start with only a swing; by the end you have everything. Runs entirely in your tab.",
     color: "pink",
     emoji: "⚔",
-    isNew: true,
   },
   {
     slug: "greyrot",
@@ -132,14 +130,13 @@ export const tools: Tool[] = [
       "A real-time action adventure about the smallest mushroom in the colony. A grey rot is draining the forest of its colour, and you walk into it with one element and no plan — six get found along the road, two can be queued at once, and every cast goes wherever you happen to be facing. Spells leave water, oil, ice and fire on the ground; all of it spreads, reacts, and burns you too. Runs entirely in your tab.",
     color: "pink",
     emoji: "🍄",
-    isNew: true,
   },
   {
     slug: "survival-maxx",
     title: "Survival Maxx",
     tagline: "Survive. Upgrade. Repeat.",
     description:
-      "An arena survivor. Move and dash while your weapons aim and fire on their own, then spend emeralds between waves and merge matching gear to rank it up. Thirty waves, a boss every third, ten characters unlocked in order — and Endless once a character clears the campaign. Runs entirely in your tab.",
+      "An arena survivor. Move and dash while your weapons aim and fire on their own, then spend emeralds between waves and merge matching gear to rank up. Thirty waves with a countdown of enemies, a boss every third, ten characters and ten maps that each character unlocks in order — and Endless once a pair is cleared. Runs entirely in your tab.",
     color: "pink",
     emoji: "⬢",
     isNew: true,

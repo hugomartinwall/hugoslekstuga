@@ -144,6 +144,18 @@ export class AudioEngine {
       boss_charge: "boss-charge",
       boss_burst: "boss-burst",
       boss_phase: "boss-phase",
+      pinball: "gun",
+      thumper: "thump",
+      mortar: "thump",
+      flare: "flame",
+      skyfall: "arc",
+      tesla_orb: "arc",
+      halo: "frost",
+      gravity: "frost",
+      shatter: "frost",
+      spore_mine: "needle",
+      hive: "needle",
+      sentry: "gun",
     };
     name = aliases[name] ?? name;
     const now = this.ctx.currentTime;
@@ -168,6 +180,9 @@ export class AudioEngine {
       "boss-charge": 0.5,
       "boss-burst": 0.2,
       "boss-phase": 1,
+      thump: 0.09,
+      eclipse: 1.2,
+      horde: 1.5,
     };
     if (now - (this.lastPlayed.get(name) ?? -100) < (limits[name] ?? 0.035))
       return;
@@ -178,6 +193,112 @@ export class AudioEngine {
     );
     const jitter = 0.94 + Math.random() * 0.12;
     switch (name) {
+      case "thump":
+        // Piston and lobber: a sub-bass drop with a soft mechanical click on top.
+        this.tone({
+          frequency: 90 * jitter,
+          end: 40,
+          duration: 0.18,
+          gain: 0.5 * v,
+        });
+        this.tone({
+          frequency: 620 * jitter,
+          end: 240,
+          duration: 0.03,
+          gain: 0.06 * v,
+          type: "triangle",
+        });
+        this.noise({
+          duration: 0.08,
+          gain: 0.12 * v,
+          frequency: 900,
+          end: 260,
+          filter: "lowpass",
+        });
+        break;
+      case "eclipse":
+        // Charge: a rising filtered-noise sweep over a sub drone, then the
+        // crack and a shimmer as the ring collapses.
+        this.noise({
+          duration: 1.5,
+          gain: 0.22 * v,
+          frequency: 180,
+          end: 5200,
+          filter: "bandpass",
+          q: 2.2,
+          attack: 0.25,
+        });
+        this.tone({
+          frequency: 41,
+          end: 55,
+          duration: 1.55,
+          gain: 0.34 * v,
+          attack: 0.3,
+        });
+        this.tone({
+          frequency: 82,
+          end: 110,
+          duration: 1.5,
+          gain: 0.09 * v,
+          type: "triangle",
+          attack: 0.4,
+        });
+        this.noise({
+          duration: 0.32,
+          gain: 0.62 * v,
+          frequency: 3800,
+          end: 120,
+          filter: "lowpass",
+          delay: 1.5,
+        });
+        this.tone({
+          frequency: 160,
+          end: 30,
+          duration: 0.5,
+          gain: 0.6 * v,
+          delay: 1.5,
+        });
+        [1760, 2217, 2637, 3520].forEach((frequency, index) =>
+          this.tone({
+            frequency,
+            end: frequency * 1.01,
+            duration: 0.9 - index * 0.12,
+            gain: 0.045 * v,
+            delay: 1.56 + index * 0.05,
+            attack: 0.02,
+          }),
+        );
+        break;
+      case "horde":
+        // Two-note warning sting: a swarm is on its way.
+        [329.6, 466.2].forEach((frequency, index) => {
+          this.tone({
+            frequency,
+            end: frequency * 0.985,
+            duration: 0.26,
+            gain: 0.2 * v,
+            type: "square",
+            delay: index * 0.17,
+            attack: 0.01,
+          });
+          this.tone({
+            frequency: frequency / 2,
+            duration: 0.3,
+            gain: 0.12 * v,
+            type: "triangle",
+            delay: index * 0.17,
+            attack: 0.01,
+          });
+        });
+        this.noise({
+          duration: 0.12,
+          gain: 0.08 * v,
+          frequency: 2600,
+          end: 900,
+          filter: "highpass",
+          delay: 0.17,
+        });
+        break;
       case "merge":
         this.noise({
           duration: 0.2,

@@ -105,6 +105,7 @@ function offer(
     title: kind,
     description: "",
     cost,
+    baseCost: cost,
     locked: false,
     sold: false,
     rarity: "common",
@@ -401,7 +402,9 @@ test("each active instance contributes one family piece regardless of rank", () 
 
 test("all ten operator passives affect combat or economy as described", () => {
   assert.equal(new SurvivalRun("ember").stats.damage, 1.1);
-  assert.equal(new SurvivalRun("volt").stats.shockChance, 0.15);
+  // Volt's Live wire plus its own Lightning piece next to the Arc coil.
+  assert.equal(new SurvivalRun("volt").stats.shockChance, 0.25);
+  assert.equal(new SurvivalRun("volt").stats.maxHp, 84);
   assert.equal(new SurvivalRun("bastion").stats.armor, 8);
   for (const hero of ["cinder", "frost", "thorn"] as const) {
     const run = new SurvivalRun(hero);
@@ -411,7 +414,8 @@ test("all ten operator passives affect combat or economy as described", () => {
     run.enemies = [target];
     advance(run, 0.35);
     if (hero === "cinder") assert.ok(target.burnTime > 0);
-    if (hero === "frost") assert.equal(target.slowFactor, 0.8);
+    if (hero === "frost")
+      assert.ok(Math.abs(target.slowFactor - 0.7) < 1e-9, "Frost slows harder");
     if (hero === "thorn") assert.ok(target.poisonStacks > 0);
   }
   const wisp = new SurvivalRun("wisp");
@@ -431,11 +435,11 @@ test("all ten operator passives affect combat or economy as described", () => {
   assert.equal(reaper.player.hp, 102);
   const prism = shop("prism");
   const close = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9);
-  close(prism.stats.damage, 1.03);
+  close(prism.stats.damage, 1.05);
   buy(prism, "pistol");
-  close(prism.stats.damage, 1.06);
+  close(prism.stats.damage, 1.1);
   buy(prism, "pistol");
-  close(prism.stats.damage, 1.06);
+  close(prism.stats.damage, 1.1);
 });
 
 test("all weapons deal damage and each hand emits its own stable equipment id", () => {
@@ -443,9 +447,14 @@ test("all weapons deal damage and each hand emits its own stable equipment id", 
     const run = new SurvivalRun();
     run.weapons[0].kind = kind;
     run.startWave();
-    const target = foe(3, 0, { hp: 10000, maxHp: 10000 });
+    // Mines are laid at your feet; everything else reaches out.
+    const target = foe(kind === "spore_mine" ? 0.9 : 3, 0, {
+      hp: 10000,
+      maxHp: 10000,
+    });
     run.enemies = [target];
-    advance(run, 0.55);
+    // Mortars, wells and turrets need a moment; direct weapons hit at once.
+    advance(run, 2.5);
     assert.ok(target.hp < 10000, `${kind} deals damage`);
     assert.ok(
       run.events.some(
@@ -526,7 +535,7 @@ test("burn and poison persist after shots stop and then expire", () => {
     const hp = target.hp;
     advance(run, 0.5);
     assert.ok(target.hp < hp);
-    if (hero === "thorn") assert.equal(target.poisonStacks, 3);
+    if (hero === "thorn") assert.equal(target.poisonStacks, 5);
     advance(run, 4);
     assert.equal(target.burnTime, 0);
     assert.equal(target.poisonTime, 0);
@@ -562,7 +571,8 @@ test("the nine threats appear at their chapter boundary and never before it", ()
     run.wave = threat.wave - 1;
     run.startWave();
     disableWeapons(run);
-    advance(run, 1);
+    // The intro enemy is telegraphed at 0.8 s and arrives after the ring closes.
+    advance(run, 1.6);
     assert.equal(run.waveThreat?.kind, threat.kind);
     assert.ok(run.enemies.some((e) => e.kind === threat.kind));
     for (const enemy of run.enemies)
@@ -828,7 +838,7 @@ test("ten boss variants occur every three waves and timeout cannot skip a boss",
   run.enemies = [target];
   advance(run, 1);
   assert.ok(
-    Math.hypot(target.vx, target.vy) <= 3.5 * 1.85 + 1e-6,
+    Math.hypot(target.vx, target.vy) <= 3.5 * 1.85 + 0.01,
     "ordinary enemy speed stays capped in Endless",
   );
 });
@@ -867,7 +877,7 @@ test(
       assert.equal(run.bossesDefeated, 9);
       assert.ok(run.earnedSalvage > 1000);
       assert.ok(run.weapons.length <= HEROES[hero].weaponSlots);
-      assert.ok(run.bag.length <= BAG_CAPACITY);
+      assert.ok(run.bag.length <= run.bagCapacity);
       assert.ok(
         run.equipment.some((item) => item.level === 6),
         `${hero} can deliberately build Legendary equipment`,

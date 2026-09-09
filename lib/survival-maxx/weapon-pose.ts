@@ -5,23 +5,42 @@ const rotation = new THREE.Euler(0, 0, 0, "YXZ");
 const orientation = new THREE.Quaternion();
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
-export const weaponScale = (kind: string): number =>
-  kind === "pistol"
-    ? 0.92
-    : kind === "blade"
-      ? 0.85
-      : kind === "railgun" || kind === "rocket"
-        ? 0.68
-        : 0.76;
+/** Held-model scale per weapon; large ordnance shrinks to fit the palm. */
+const WEAPON_SCALE: Record<string, number> = {
+  pistol: 0.92,
+  blade: 0.85,
+  halo: 0.8,
+  railgun: 0.68,
+  rocket: 0.68,
+  mortar: 0.68,
+  sentry: 0.68,
+  eclipse: 0.68,
+};
+/** Seconds for the attack impulse to settle back to the ready pose. */
+const WEAPON_RECOVERY: Record<string, number> = {
+  blade: 0.38,
+  boomerang: 0.3,
+  shotgun: 0.22,
+  rocket: 0.22,
+  mortar: 0.22,
+  thumper: 0.22,
+  eclipse: 0.22,
+};
+/** Two-handed ordnance: a deeper shoulder kick and a slower muzzle climb. */
+export const WEAPON_HEAVY = new Set<string>([
+  "shotgun",
+  "rocket",
+  "railgun",
+  "mortar",
+  "thumper",
+  "sentry",
+  "eclipse",
+]);
+
+export const weaponScale = (kind: string): number => WEAPON_SCALE[kind] ?? 0.76;
 
 export const weaponRecovery = (kind: string): number =>
-  kind === "blade"
-    ? 0.38
-    : kind === "boomerang"
-      ? 0.3
-      : kind === "shotgun" || kind === "rocket"
-        ? 0.22
-        : 0.15;
+  WEAPON_RECOVERY[kind] ?? 0.15;
 
 /** Palm stays attached. The wrist counters the shoulder instead of aiming into it.
  * `attack` falls from 1 to 0 after a real attack event; zero is the ready pose.
@@ -65,7 +84,7 @@ export function poseHeldWeapon(
     rotation.set(0.15 - flick * 0.3, (side * Math.PI) / 2, 0, "YXZ");
   } else {
     const kick = impulse * impulse;
-    const heavy = kind === "shotgun" || kind === "rocket" || kind === "railgun";
+    const heavy = WEAPON_HEAVY.has(kind);
     arm.rotation.set(
       -0.4 + kick * (heavy ? 0.14 : 0.075),
       0,

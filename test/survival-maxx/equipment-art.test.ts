@@ -8,6 +8,7 @@ import {
 } from "../../lib/survival-maxx/equipment-art";
 import { HEROES, HERO_ORDER } from "../../lib/survival-maxx/content";
 import { animateHeroRig, makeHero } from "../../lib/survival-maxx/hero-rigs";
+import { weaponScale } from "../../lib/survival-maxx/weapon-pose";
 import { exposedSurfaceConflicts } from "./helpers/surface-audit";
 
 test("every equipment rank has separated visible surfaces from rear, side and roof angles", () => {
@@ -30,9 +31,7 @@ test("each starter loadout remains free of surface conflicts while equipped and 
       const rig = makeHero(hero);
       const kind = HEROES[hero].weapon;
       const weapon = makeEquipment(kind, rank);
-      weapon.scale.setScalar(
-        kind === "pistol" ? 0.92 : kind === "blade" ? 0.85 : 0.76,
-      );
+      weapon.scale.setScalar(weaponScale(kind));
       rig.weaponMounts[0].add(weapon);
       assert.deepEqual(
         exposedSurfaceConflicts(rig.root),

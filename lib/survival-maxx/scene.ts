@@ -19,8 +19,33 @@ import {
   type Rig,
 } from "./meshes";
 import type { SurvivalRun, GameEvent } from "./model";
-import { HEROES, WEAPONS, ITEMS, CAMPAIGN_WAVES, type HeroId } from "./content";
+import {
+  HEROES,
+  WEAPONS,
+  ITEMS,
+  CAMPAIGN_WAVES,
+  MAPS,
+  ENEMY_STATS,
+  type HeroId,
+  type EnemyKind,
+  type MapDefinition,
+  type MapPalette,
+  type MapDecoration,
+} from "./content";
 
+/** The simulation's pending-spawn marker, typed locally so this file compiles before model.ts exposes it. */
+interface SpawnMarker {
+  id: number;
+  kind: EnemyKind;
+  x: number;
+  y: number;
+  age: number;
+  delay: number;
+  budgeted: boolean;
+  elite: boolean;
+  horde: boolean;
+  radius: number;
+}
 type Particle = {
   x: number;
   y: number;
@@ -47,10 +72,25 @@ type FloatLabel = {
   max: number;
   z: number;
 };
-let portraitCache: Record<string, string> | undefined;
 const lerp = THREE.MathUtils.lerp;
 const scratch = new THREE.Object3D();
 const color = new THREE.Color();
+const tintA = new THREE.Color();
+const tintB = new THREE.Color();
+/** 0xRRGGBB as a CSS colour, for canvas fills. */
+const cssHex = (hex: number) => `#${hex.toString(16).padStart(6, "0")}`;
+/** Scale a colour's brightness; clamps to the sRGB range. */
+const shade = (hex: number, factor: number) =>
+  tintA.setHex(hex).multiplyScalar(factor).getHex();
+/** Blend two colours, t = 0 keeps the first. */
+const mixHex = (a: number, b: number, t: number) =>
+  tintA.setHex(a).lerp(tintB.setHex(b), t).getHex();
+/** Outer decoration ring: 16 posts at r = 21.3, spires on a wider ring of 12. */
+const ringSlots = (decoration: MapDecoration) =>
+  decoration === "spires"
+    ? { count: 12, radius: 22 }
+    : { count: 16, radius: 21.3 };
+let portraitCache: Record<string, string> | undefined;
 export class SurvivalScene {
   private viewportWidth = 1;
   private viewportHeight = 1;
@@ -73,6 +113,12 @@ export class SurvivalScene {
   heldWeapons = new Map<number, THREE.Group>();
   weaponMotion = new Map<number, number>();
   hazardMeshes = new Map<number, THREE.Group>();
+  spawnMarkerMeshes = new Map<number, THREE.Group>();
+  /** The map whose arena is built; the menu diorama always uses MAPS[0]'s palette. */
+  map: MapDefinition = MAPS[0];
+  hemiLight: THREE.HemisphereLight;
+  rimLight: THREE.DirectionalLight;
+  lampLight: THREE.PointLight;
   enemyAuras = new Map<number, THREE.Mesh>();
   equipmentPool = new Map<string, THREE.Group[]>();
   /** Equipment portraits are rendered once per page and shared by every scene. */
@@ -175,6 +221,8 @@ export class SurvivalScene {
   pickupGeometry = new THREE.OctahedronGeometry(0.2);
   hazardDisc = new THREE.CircleGeometry(1, 48);
   ringGeometry = new THREE.RingGeometry(0.91, 1, 64);
+  /** Heavier ring for elite spawn marks. */
+  thickRingGeometry = new THREE.RingGeometry(0.84, 1, 64);
   glows: THREE.Sprite[] = [];
   constructor(private container: HTMLElement) {
     this.art = portraitCache ??= equipmentPortraits();
@@ -203,7 +251,8 @@ export class SurvivalScene {
     container.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color(0x161c23);
     this.scene.fog = new THREE.FogExp2(0x161c23, 0.014);
-    this.scene.add(new THREE.HemisphereLight(0xcbdcea, 0x30353b, 1.75));
+    this.hemiLight = new THREE.HemisphereLight(0xcbdcea, 0x30353b, 1.75);
+    this.scene.add(this.hemiLight);
     const key = (this.keyLight = new THREE.DirectionalLight(0xfff1db, 3.3));
     key.position.set(-12, 24, 15);
     key.castShadow = true;
@@ -217,10 +266,10 @@ export class SurvivalScene {
     key.shadow.radius = 2;
     key.shadow.bias = -0.0002;
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight(0x8dc9e9, 1.2);
+    const rim = (this.rimLight = new THREE.DirectionalLight(0x8dc9e9, 1.2));
     rim.position.set(8, 7, -16);
     this.scene.add(rim);
-    const lamp = new THREE.PointLight(0xff7b40, 15, 18, 2);
+    const lamp = (this.lampLight = new THREE.PointLight(0xff7b40, 15, 18, 2));
     lamp.position.set(0, 6, -8);
     this.scene.add(lamp);
     this.scene.add(this.arena, this.stage, this.actors, this.fx);
@@ -235,7 +284,7 @@ export class SurvivalScene {
     this.shieldFill.renderOrder = 22;
     this.shieldFill.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.actors.add(this.healthBack, this.healthFill, this.shieldFill);
-    this.makeArena();
+    this.makeArena(this.map);
     this.previewFloor = this.makeStage();
     this.player = makeHero("ember");
     this.actors.add(this.player.root);
@@ -286,6 +335,7 @@ export class SurvivalScene {
       }),
     );
     this.scene.add(this.ambient);
+    this.applyPalette(this.map.palette);
     this.resize();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -331,10 +381,57 @@ export class SurvivalScene {
         COLORS[hero],
       );
     this.configureLighting();
+    // The menu diorama keeps the Foundry look whichever map is queued up.
+    this.applyPalette(this.menu ? MAPS[0].palette : this.map.palette);
     this.arena.visible = !this.menu;
     this.actors.visible = !this.menu;
     this.stage.visible = this.menu;
     this.fx.visible = !this.menu;
+  }
+  /** Recolour the sky, fog, lamps and dust; the arena meshes come from makeArena. */
+  applyPalette(p: MapPalette) {
+    if (this.scene.background instanceof THREE.Color)
+      this.scene.background.setHex(p.background);
+    else this.scene.background = new THREE.Color(p.background);
+    const fog = this.scene.fog;
+    if (fog instanceof THREE.FogExp2) {
+      fog.color.setHex(p.fog);
+      fog.density = p.fogDensity;
+    } else this.scene.fog = new THREE.FogExp2(p.fog, p.fogDensity);
+    this.hemiLight.color.setHex(p.sky);
+    this.hemiLight.groundColor.setHex(p.groundLight);
+    // The backlight borrows the sky tone, dimmed so it lands at the old 0x8dc9e9 rim's brightness.
+    this.rimLight.color.setHex(p.sky);
+    this.rimLight.intensity = 1.0;
+    this.lampLight.color.setHex(p.lamp);
+    (this.ambient.material as THREE.PointsMaterial).color.setHex(p.dust);
+  }
+  /** Swap the arena for another map's. Cheap when the map is unchanged. */
+  setMap(map: MapDefinition) {
+    if (map.key === this.map.key) return;
+    this.disposeArena();
+    this.map = map;
+    this.makeArena(map);
+    if (!this.menu) this.applyPalette(map.palette);
+  }
+  private disposeArena() {
+    this.arena.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const material = object.material as THREE.Material & {
+        map?: THREE.Texture | null;
+        vertexColors?: boolean;
+      };
+      if (object.userData.owned) {
+        object.geometry.dispose();
+        material.map?.dispose();
+        material.dispose();
+      } else if (material.vertexColors) {
+        // A baked merge owns its geometry; the shared vertex-colour material stays.
+        object.geometry.dispose();
+      }
+      // Anything else (glow lamps) uses the cached geometry/material pools.
+    });
+    this.arena.clear();
   }
   private configureLighting() {
     const key = this.keyLight;
@@ -369,11 +466,13 @@ export class SurvivalScene {
       ? { x: this.point.x, y: this.point.z }
       : null;
   }
-  private groundTexture() {
+  private groundTexture(palette: MapPalette) {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 1024;
     const c = canvas.getContext("2d")!;
-    c.fillStyle = "#26343e";
+    // The darker tile, grid line and bolt heads take the slab tone at a low alpha.
+    const slab = cssHex(palette.slab);
+    c.fillStyle = palette.ground;
     c.fillRect(0, 0, 1024, 1024);
     let seed = 24;
     const random = () => {
@@ -383,14 +482,15 @@ export class SurvivalScene {
     for (let i = 0; i < 12000; i++) {
       const x = random() * 1024,
         y = random() * 1024;
-      c.fillStyle = i % 3 ? "#a5bdcb09" : "#070d1315";
+      c.fillStyle = i % 3 ? `${palette.groundLine}09` : `${slab}15`;
       c.fillRect(x, y, random() * 3 + 0.6, random() * 2 + 0.4);
     }
     for (let y = 0; y < 1024; y += 128) {
       for (let x = 0; x < 1024; x += 128) {
-        c.fillStyle = ((x + y) / 128) % 2 ? "#30404a25" : "#142b3820";
+        c.fillStyle =
+          ((x + y) / 128) % 2 ? `${palette.groundTile}25` : `${slab}20`;
         c.fillRect(x + 3, y + 3, 122, 122);
-        c.strokeStyle = "#8399a31b";
+        c.strokeStyle = `${palette.groundLine}1b`;
         c.lineWidth = 1;
         c.beginPath();
         c.moveTo(x + 5, y + 124);
@@ -398,13 +498,13 @@ export class SurvivalScene {
         c.lineTo(x + 124, y + 5);
         c.stroke();
         for (const bx of [x + 10, x + 118]) {
-          c.fillStyle = "#111e2870";
+          c.fillStyle = `${slab}70`;
           c.fillRect(bx - 1, y + 10, 2, 2);
           c.fillRect(bx - 1, y + 117, 2, 2);
         }
       }
     }
-    c.strokeStyle = "#0a192a70";
+    c.strokeStyle = `${slab}70`;
     c.lineWidth = 3;
     for (let x = 0; x <= 1024; x += 128) {
       c.beginPath();
@@ -416,7 +516,7 @@ export class SurvivalScene {
       c.lineTo(1024, x);
       c.stroke();
     }
-    c.strokeStyle = "#778e9b10";
+    c.strokeStyle = `${palette.groundLine}10`;
     c.lineWidth = 1;
     for (let i = 0; i < 50; i++) {
       const x = random() * 1024,
@@ -431,62 +531,68 @@ export class SurvivalScene {
     t.anisotropy = 8;
     return t;
   }
-  makeArena() {
+  /** Build the arena for a map. Meshes tagged `owned` are disposed by setMap; the rest share cached pools. */
+  makeArena(map: MapDefinition) {
+    const palette = map.palette;
+    const { slab, edge, trim, accent } = palette;
+    const stripe = shade(accent, 0.84);
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(36, 0.65, 36),
       new THREE.MeshStandardMaterial({
-        map: this.groundTexture(),
+        map: this.groundTexture(palette),
         roughness: 0.94,
         metalness: 0.08,
       }),
     );
     floor.position.y = -0.35;
     floor.receiveShadow = true;
+    floor.userData.owned = true;
     this.arena.add(floor);
     const lower = new THREE.Group();
-    box(lower, [40, 0.6, 40], [0, -1.05, 0], 0x111b23, 0.05);
-    box(lower, [38, 0.08, 38], [0, -0.72, 0], 0xe27c43, 0.02);
+    box(lower, [40, 0.6, 40], [0, -1.05, 0], slab, 0.05);
+    box(lower, [38, 0.08, 38], [0, -0.72, 0], edge, 0.02);
     bake(lower);
     this.arena.add(lower);
-    const trim = new THREE.Group();
+    const trimGroup = new THREE.Group();
     for (const sign of [-1, 1]) {
-      box(trim, [35, 0.04, 0.07], [0, 0.018, sign * 16.8], 0xbaa67b, 0.02);
-      box(trim, [0.07, 0.04, 35], [sign * 16.8, 0.018, 0], 0xbaa67b, 0.02);
+      box(trimGroup, [35, 0.04, 0.07], [0, 0.018, sign * 16.8], trim, 0.02);
+      box(trimGroup, [0.07, 0.04, 35], [sign * 16.8, 0.018, 0], trim, 0.02);
       for (let n = -16; n <= 16; n += 4) {
-        box(trim, [1, 0.07, 0.09], [n, 0.018, sign * 17.65], 0xebad63);
-        box(trim, [0.09, 0.07, 1], [sign * 17.65, 0.018, n], 0xebad63);
-        box(trim, [1.65, 0.08, 0.8], [n, -0.03, sign * 18.2], 0x4c5558);
-        box(trim, [0.8, 0.08, 1.65], [sign * 18.2, -0.03, n], 0x4c5558);
+        box(trimGroup, [1, 0.07, 0.09], [n, 0.018, sign * 17.65], accent);
+        box(trimGroup, [0.09, 0.07, 1], [sign * 17.65, 0.018, n], accent);
+        box(trimGroup, [1.65, 0.08, 0.8], [n, -0.03, sign * 18.2], 0x4c5558);
+        box(trimGroup, [0.8, 0.08, 1.65], [sign * 18.2, -0.03, n], 0x4c5558);
       }
     }
     for (let i = 0; i < 4; i++) {
       const g = new THREE.Group();
       g.rotation.y = (i * Math.PI) / 2;
       for (let j = 0; j < 5; j++) {
-        const stripe = box(
+        const s = box(
           g,
           [1.5, 0.015, 0.18],
           [-3 + j * 1.5, 0.011, 15.7],
-          0xc69350,
+          stripe,
           0.001,
         );
-        stripe.rotation.y = 0.5;
+        s.rotation.y = 0.5;
       }
-      trim.add(g);
+      trimGroup.add(g);
     }
-    bake(trim);
-    this.arena.add(trim);
+    bake(trimGroup);
+    this.arena.add(trimGroup);
     const center = new THREE.Group();
     cylinder(center, 4.6, 0.04, [0, 0.016, 0], 0x354045, 64);
     torus(center, 4.38, 0.032, [0, 0.05, 0], 0x606968).rotation.x = Math.PI / 2;
-    torus(center, 4.13, 0.028, [0, 0.06, 0], 0x9d865f).rotation.x = Math.PI / 2;
+    torus(center, 4.13, 0.028, [0, 0.06, 0], shade(trim, 0.84)).rotation.x =
+      Math.PI / 2;
     for (let i = 0; i < 8; i++) {
       const a = (i * Math.PI) / 4;
       const panel = box(
         center,
         [0.1, 0.04, 0.9],
         [Math.cos(a) * 4.1, 0.07, Math.sin(a) * 4.1],
-        0xafa27f,
+        shade(trim, 0.94),
       );
       panel.rotation.y = -a + Math.PI / 2;
     }
@@ -498,7 +604,7 @@ export class SurvivalScene {
     const cc = markCanvas.getContext("2d")!;
     cc.font = "900 132px Arial";
     cc.textAlign = "center";
-    cc.fillStyle = "#c2b99c";
+    cc.fillStyle = cssHex(accent);
     cc.globalAlpha = 0.19;
     cc.fillText("MAXX", 256, 170);
     const texture = new THREE.CanvasTexture(markCanvas);
@@ -513,62 +619,149 @@ export class SurvivalScene {
     );
     mark.rotation.x = -Math.PI / 2;
     mark.position.set(0, 0.055, 0);
+    mark.userData.owned = true;
     this.arena.add(mark);
     const scenery = new THREE.Group();
-    for (let i = 0; i < 16; i++) {
-      const a = (i * Math.PI) / 8;
-      const r = 21.3;
-      const x = Math.cos(a) * r,
-        z = Math.sin(a) * r;
+    this.decorateRing(scenery, map.decoration, palette);
+    bake(scenery);
+    this.arena.add(scenery);
+    const worldFloor = new THREE.Mesh(
+      new THREE.PlaneGeometry(180, 180),
+      new THREE.MeshStandardMaterial({
+        color: mixHex(
+          palette.background,
+          Number(palette.ground.replace("#", "0x")),
+          0.22,
+        ),
+        roughness: 1,
+      }),
+    );
+    worldFloor.rotation.x = -Math.PI / 2;
+    worldFloor.position.y = -1.6;
+    worldFloor.receiveShadow = true;
+    worldFloor.userData.owned = true;
+    this.arena.add(worldFloor);
+  }
+  /** The ring of props outside the playfield; each map picks one silhouette family. */
+  private decorateRing(
+    scenery: THREE.Group,
+    decoration: MapDecoration,
+    palette: MapPalette,
+  ) {
+    const { trim, accent, edge, lamp } = palette;
+    const glow = mixHex(lamp, 0xffffff, 0.22);
+    const post = shade(accent, 0.975);
+    const { count, radius } = ringSlots(decoration);
+    for (let i = 0; i < count; i++) {
+      const a = (i * Math.PI * 2) / count;
       const p = new THREE.Group();
-      p.position.set(x, 0, z);
+      p.position.set(Math.cos(a) * radius, 0, Math.sin(a) * radius);
       p.rotation.y = -a;
-      box(p, [1.55, 2.3, 1.65], [0, 0.65, 0], 0x313b41, 0.1);
-      box(p, [1.65, 0.26, 1.75], [0, 1.85, 0], 0x718082, 0.07);
-      box(p, [0.75, 0.14, 1.75], [0, 2.05, 0], 0xe5a864);
-      for (let j = 0; j < 3; j++)
-        box(p, [0.1, 0.09, 1.76], [-0.5 + j * 0.5, 1.95, 0], 0x2b343b);
-      cylinder(p, 0.45, 1.5, [0, 2.3, 0], 0x3a474e, 8);
-      if (i % 2) {
-        const gl = box(p, [0.55, 0.35, 0.1], [0, 1.4, 0.86], 0xe7864c);
-        gl.material = glowMaterial(0xff9e65);
+      if (decoration === "pylons") {
+        box(p, [1.55, 2.3, 1.65], [0, 0.65, 0], 0x313b41, 0.1);
+        box(p, [1.65, 0.26, 1.75], [0, 1.85, 0], 0x718082, 0.07);
+        box(p, [0.75, 0.14, 1.75], [0, 2.05, 0], post);
+        for (let j = 0; j < 3; j++)
+          box(p, [0.1, 0.09, 1.76], [-0.5 + j * 0.5, 1.95, 0], 0x2b343b);
+        cylinder(p, 0.45, 1.5, [0, 2.3, 0], 0x3a474e, 8);
+        if (i % 2) {
+          const gl = box(p, [0.55, 0.35, 0.1], [0, 1.4, 0.86], edge);
+          gl.material = glowMaterial(glow);
+        }
+      } else if (decoration === "barricades") {
+        box(p, [2.6, 0.55, 0.7], [0, 0.27, 0], 0x4c5558, 0.08);
+        box(p, [2.7, 0.1, 0.8], [0, 0.6, 0], trim, 0.03);
+        box(p, [1.1, 0.12, 0.72], [0, 0.66, 0], post, 0.02);
+        for (const side of [-1, 1])
+          box(p, [0.18, 0.75, 0.18], [side * 1.2, 0.37, 0.2], 0x2b343b, 0.03);
+        if (i % 3 === 0) {
+          const crate = box(
+            p,
+            [0.7, 0.7, 0.7],
+            [0.55, 1.02, -0.15],
+            0x5f564d,
+            0.06,
+          );
+          crate.rotation.y = 0.35;
+        }
+      } else if (decoration === "vents") {
+        box(p, [1.7, 0.45, 1.7], [0, 0.22, 0], 0x313b41, 0.08);
+        for (let j = 0; j < 5; j++)
+          box(p, [0.12, 0.08, 1.5], [-0.6 + j * 0.3, 0.48, 0], 0x2b343b);
+        box(p, [1.8, 0.06, 0.16], [0, 0.48, -0.8], trim, 0.02);
+        cylinder(p, 0.22, 1.1, [0.55, 0.9, 0.6], 0x445055, 8);
+        const gl = box(p, [0.5, 0.18, 0.1], [0, 0.32, 0.86], edge);
+        gl.material = glowMaterial(glow);
+      } else if (decoration === "spires") {
+        box(p, [1.1, 0.5, 1.1], [0, 0.25, 0], 0x313b41, 0.08);
+        cylinder(p, 0.32, 5.6, [0, 3.2, 0], 0x3a474e, 8, 0.18);
+        box(p, [0.7, 0.14, 0.7], [0, 2.4, 0], trim, 0.02);
+        box(p, [0.5, 0.1, 0.5], [0, 4.4, 0], post, 0.02);
+        orb(p, 0.2, [0, 6.15, 0], glow, true);
+      } else {
+        // ruins: pylon stumps, a fallen cap on alternate slots and scattered rubble.
+        const height = 0.8 + (i % 3) * 0.45;
+        const stump = box(
+          p,
+          [1.55, height, 1.65],
+          [0, height / 2 - 0.1, 0],
+          0x313b41,
+          0.1,
+        );
+        stump.rotation.z = i % 2 ? 0.06 : -0.09;
+        if (i % 2) {
+          const cap = box(
+            p,
+            [1.65, 0.26, 1.75],
+            [1.4, 0.15, 0.6],
+            0x718082,
+            0.07,
+          );
+          cap.rotation.set(0.15, 0.4, 0.5);
+        } else box(p, [0.75, 0.14, 1.4], [0, height - 0.05, 0], post);
+        for (let k = 0; k < 4; k++) {
+          const rubble = box(
+            p,
+            [0.35 + k * 0.12, 0.25, 0.3],
+            [-1 + k * 0.7, 0.12, 1.1 + (k % 2) * 0.3],
+            k % 2 ? 0x44484a : 0x2b343b,
+            0.04,
+          );
+          rubble.rotation.y = k * 0.9 + i;
+        }
+        if (i % 4 === 0) {
+          const ember = box(p, [0.3, 0.12, 0.3], [-0.3, 0.06, -0.9], edge);
+          ember.material = glowMaterial(glow);
+        }
       }
       bake(p);
       scenery.add(p);
     }
     for (const side of [-1, 1]) {
-      for (let i = 0; i < 7; i++) {
-        const pipe = cylinder(
-          scenery,
-          0.3,
-          5,
-          [side * 20.4, 0.2, -16 + i * 5.1],
-          0x445055,
-          10,
-        );
-        pipe.rotation.x = Math.PI / 2;
-      }
-      for (let i = 0; i < 10; i++) {
+      if (decoration === "pylons" || decoration === "vents")
+        for (let i = 0; i < 7; i++) {
+          const pipe = cylinder(
+            scenery,
+            0.3,
+            5,
+            [side * 20.4, 0.2, -16 + i * 5.1],
+            0x445055,
+            10,
+          );
+          pipe.rotation.x = Math.PI / 2;
+        }
+      const crates = decoration === "barricades" ? 14 : 10;
+      for (let i = 0; i < crates; i++) {
         const size = 0.8 + (i % 3) * 0.43;
         const c = box(
           scenery,
           [size, 0.7 + (i % 4) * 0.3, size],
-          [side * (24 + (i % 3)), -0.1, -22 + i * 5],
+          [side * (24 + (i % 3)), -0.1, -22 + (i * 50) / crates],
           i % 2 ? 0x44484a : 0x5f564d,
         );
         c.rotation.y = i * 0.75;
       }
     }
-    bake(scenery);
-    this.arena.add(scenery);
-    const worldFloor = new THREE.Mesh(
-      new THREE.PlaneGeometry(180, 180),
-      new THREE.MeshStandardMaterial({ color: 0x19232b, roughness: 1 }),
-    );
-    worldFloor.rotation.x = -Math.PI / 2;
-    worldFloor.position.y = -1.6;
-    worldFloor.receiveShadow = true;
-    this.arena.add(worldFloor);
   }
   makeStage() {
     const group = new THREE.Group();
@@ -721,6 +914,16 @@ export class SurvivalScene {
       if (e.type === "spawn") {
         this.ring(e.x, e.y, 0xe99460, (e.radius ?? 0.6) * 1.5, 0.5, 0.9);
         this.spawnParticles(e.x, 0.15, e.y, 5, 0x9f8b73, 1, 0.6);
+      }
+      // Newer simulation events; compared as strings so this compiles before EventKind lists them.
+      const kind = e.type as string;
+      if (kind === "spawnMark")
+        this.spawnParticles(e.x, 0.1, e.y, 3, 0xe99460, 0.8, 0.45);
+      if (kind === "horde") {
+        // A horde ring closing on the player: one red pulse from the player outward.
+        this.ring(e.x, e.y, 0xff6e4e, (e.radius ?? 6) * 1.05, 0.6, 0.3);
+        this.spawnParticles(e.x, 0.6, e.y, 18, 0xff8a6a, 3, 0.6);
+        this.shake = Math.max(this.shake, 0.08);
       }
       if (e.type === "fire") {
         if (e.enemy && e.id !== undefined) {
@@ -987,10 +1190,24 @@ export class SurvivalScene {
             e.kind === "boss" ? `boss-${((e.bossTier - 1) % 10) + 1}` : e.kind;
           r = this.enemyPools.get(key)?.pop() ?? makeEnemy(e.kind, e.bossTier);
           r.root.userData.poolKey = key;
-          if (!r.root.userData.visualHeight)
-            r.root.userData.visualHeight = new THREE.Box3().setFromObject(
+          // Elites spawn with a larger radius than their kind; the rig grows to match.
+          const stats = ENEMY_STATS[e.kind];
+          const bulk =
+            stats && stats.radius > 0 && e.radius > 0
+              ? e.radius / stats.radius
+              : 1;
+          if (r.root.userData.baseScale === undefined)
+            r.root.userData.baseScale = r.root.scale.x;
+          const baseScale = r.root.userData.baseScale as number;
+          if (!r.root.userData.baseHeight) {
+            r.root.scale.setScalar(baseScale);
+            r.root.userData.baseHeight = new THREE.Box3().setFromObject(
               r.root,
             ).max.y;
+          }
+          r.root.scale.setScalar(baseScale * bulk);
+          r.root.userData.visualHeight =
+            (r.root.userData.baseHeight as number) * bulk;
           this.enemies.set(e.id, r);
           this.actors.add(r.root);
         }
@@ -1188,6 +1405,7 @@ export class SurvivalScene {
         if (drone.kind === "orbit_drone") mesh.rotation.y = t * 3;
       }
       this.updateHazards(run);
+      this.updateSpawnMarkers(run);
       const bullets = new Set(run.bullets.map((b) => b.id));
       for (const [id, m] of this.bulletMeshes)
         if (!bullets.has(id)) {
@@ -1419,6 +1637,76 @@ export class SurvivalScene {
       edge.material.opacity = hazard.triggered ? 0.7 : 0.45 + progress * 0.4;
     }
   }
+  /** Rings over queued spawns that tighten and brighten as the enemy's arrival nears. */
+  private updateSpawnMarkers(run: SurvivalRun) {
+    const queue = (run as { spawnQueue?: SpawnMarker[] }).spawnQueue ?? [];
+    const visible = new Set(queue.map((marker) => marker.id));
+    for (const [id, group] of this.spawnMarkerMeshes) {
+      if (visible.has(id)) continue;
+      this.disposeMarker(group);
+      this.spawnMarkerMeshes.delete(id);
+    }
+    for (const marker of queue) {
+      let group = this.spawnMarkerMeshes.get(marker.id);
+      if (!group) {
+        group = new THREE.Group();
+        const ring = new THREE.Mesh(
+          marker.elite ? this.thickRingGeometry : this.ringGeometry,
+          new THREE.MeshBasicMaterial({
+            color: 0xe99460,
+            transparent: true,
+            opacity: 0.25,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          }),
+        );
+        ring.rotation.x = -Math.PI / 2;
+        group.add(ring);
+        if (marker.horde) {
+          const halo = new THREE.Mesh(
+            this.ringGeometry,
+            new THREE.MeshBasicMaterial({
+              color: 0xff6e4e,
+              transparent: true,
+              opacity: 0.15,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            }),
+          );
+          halo.rotation.x = -Math.PI / 2;
+          halo.position.y = -0.005;
+          group.add(halo);
+        }
+        this.actors.add(group);
+        this.spawnMarkerMeshes.set(marker.id, group);
+      }
+      group.position.set(marker.x, 0.085, marker.y);
+      const progress = Math.min(
+        1,
+        Math.max(0, marker.age / Math.max(0.01, marker.delay)),
+      );
+      const scale = lerp(marker.radius * 2.2, marker.radius * 1.3, progress);
+      const ring = group.children[0] as THREE.Mesh<
+        THREE.BufferGeometry,
+        THREE.MeshBasicMaterial
+      >;
+      ring.scale.setScalar(scale);
+      ring.material.opacity = lerp(0.25, 0.85, progress);
+      const halo = group.children[1] as
+        THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+      if (halo) {
+        halo.scale.setScalar(scale * 1.45);
+        halo.material.opacity = 0.15 + progress * 0.45;
+      }
+    }
+  }
+  private disposeMarker(group: THREE.Group) {
+    group.removeFromParent();
+    group.traverse((object) => {
+      if (object instanceof THREE.Mesh)
+        (object.material as THREE.Material).dispose();
+    });
+  }
   private recycleEquipment(drone: THREE.Group) {
     drone.removeFromParent();
     const key = drone.userData.poolKey as string;
@@ -1481,6 +1769,9 @@ export class SurvivalScene {
       });
     }
     this.hazardMeshes.clear();
+    for (const group of this.spawnMarkerMeshes.values())
+      this.disposeMarker(group);
+    this.spawnMarkerMeshes.clear();
     for (const aura of this.enemyAuras.values()) aura.removeFromParent();
     this.enemyAuras.clear();
   }

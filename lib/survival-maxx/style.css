@@ -92,7 +92,7 @@
 
 .rz-hero-passive {
   width: 405px;
-  min-height: 48px;
+  min-height: 40px;
   line-height: 1.4;
   color: #c5d1c8 !important;
 }
@@ -113,8 +113,8 @@
 .rz-roster-summary {
   position: absolute;
   left: 65px;
-  bottom: 236px;
-  width: 730px;
+  bottom: 232px;
+  width: 300px;
   display: flex;
   justify-content: space-between;
   color: #b3bdb8;
@@ -916,7 +916,7 @@
   font-weight: 750;
   line-height: 1.05;
   letter-spacing: -5px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .rz-hero-details h1 > span,
@@ -937,8 +937,8 @@
   display: flex;
   align-items: center;
   gap: 17px;
-  margin-top: 22px;
-  padding-top: 18px;
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--line);
   width: 330px;
 }
@@ -979,7 +979,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 9px;
   color: #b6c7bb;
   font-size: 15px;
   line-height: 1.45;
@@ -1136,7 +1136,7 @@
   top: -2px;
   transform: translateX(-50%);
   text-align: center;
-  min-width: 155px;
+  min-width: 220px;
   padding: 10px 21px 9px;
   background: linear-gradient(
     180deg,
@@ -1309,37 +1309,101 @@
   letter-spacing: 1px;
 }
 
-.rz-combo {
+.rz-enemy-counter {
   position: absolute;
   top: 113px;
   right: 84px;
   text-align: right;
-  color: var(--orange);
+  color: var(--ink);
   opacity: 0;
   transform: translateY(-5px);
   transition:
     opacity 160ms ease,
-    transform 160ms ease;
+    transform 160ms ease,
+    color 160ms ease;
   text-shadow: 0 3px 12px #162322;
 }
 
-.rz-combo.is-visible {
+.rz-enemy-counter.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
 
-.rz-combo b {
+.rz-enemy-counter b {
   display: block;
   font-size: 41px;
   line-height: 1;
   letter-spacing: -2px;
+  font-variant-numeric: tabular-nums;
 }
 
-.rz-combo > span {
+.rz-enemy-counter > span {
   display: block;
   font-size: 9px;
   letter-spacing: 2.8px;
   margin-top: 5px;
+}
+
+.rz-enemy-counter.is-low {
+  color: var(--orange);
+  animation: rz-counter-pulse 1.4s ease-in-out infinite;
+}
+
+.rz-enemy-counter.is-horde {
+  color: #ff6e4e;
+  animation: rz-counter-pulse 0.5s ease-in-out infinite;
+}
+
+@keyframes rz-counter-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(0) scale(1.06);
+  }
+}
+
+.rz-ui.reduce-motion .rz-enemy-counter {
+  animation: none;
+}
+
+.rz-bag-buy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  margin-left: auto;
+  margin-right: 10px;
+  border: 1px solid #4e6a5c;
+  border-radius: 2px;
+  background: #1b262c;
+  color: var(--mint);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.rz-bag-buy .rz-icon {
+  width: 11px;
+  height: 11px;
+}
+
+.rz-bag-buy:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rz-bag-buy:not(:disabled):hover {
+  background: #24343a;
+}
+
+.rz-bag-buy.is-max {
+  color: #7d8f86;
+  border-color: #3a474d;
 }
 
 .rz-boss {
@@ -2672,9 +2736,10 @@
 .rz-build-sidebar > .rz-button {
   margin-top: auto;
   min-height: 39px;
-  padding: 0 15px;
+  padding: 0 10px;
   gap: 8px;
   font-size: 15px !important;
+  white-space: nowrap;
 }
 .rz-build-sidebar > .rz-button > .rz-icon {
   width: 19px;
@@ -3275,12 +3340,6 @@
 .rz-inspector-status .rz-family-tag {
   font-size: 11px;
 }
-.rz-inspector-behavior {
-  margin: 8px 0 0;
-  font-size: 14px;
-  line-height: 1.45;
-  color: #d3decf;
-}
 .rz-inspector-metrics {
   min-height: 28px;
   margin-top: 12px;
@@ -3544,56 +3603,81 @@
   }
 }
 
-/* The registry shares the real equipment art and rank calculations. */
-.rz-armory-categories {
+/* The game guide: nine tabs over a shared content region (top 216, height 447). */
+.rz-guide-tabs {
   position: absolute;
   left: 64px;
-  top: 117px;
-  width: 726px;
+  right: 64px;
+  top: 112px;
+  height: 40px;
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
-.rz-armory-categories > button {
-  min-width: 146px;
-  height: 43px;
-  border: 1px solid #40554a;
+.rz-guide-tabs > button {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 6px;
+  border: 1px solid #4a5963;
   border-radius: 3px;
   background: #222e3777;
   color: #b4c0c4;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
-  border-color: #4a5963;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.rz-armory-categories > button.is-selected {
+.rz-guide-tabs > button > .rz-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+}
+.rz-guide-tabs > button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rz-guide-tabs > button.is-selected {
   border-color: #cad5d3;
   color: #f3f1e8;
   background: #344149;
 }
-.rz-armory-categories > button:hover {
+.rz-guide-tabs > button.is-selected > .rz-icon {
+  opacity: 1;
+  color: var(--mint);
+}
+.rz-guide-tabs > button:hover {
   background: #303d46;
   color: #f3f1e8;
 }
 .rz-armory-filters {
   position: absolute;
-  top: 179px;
+  top: 166px;
   left: 64px;
-  width: 742px;
+  height: 36px;
   display: flex;
   gap: 7px;
+}
+.rz-armory-filters.is-hidden,
+.rz-armory-ranks.is-hidden {
+  display: none;
 }
 .rz-armory-filters > button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid #3e5548;
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid #45555f;
   border-radius: 3px;
   background: #1d283088;
   color: #b5c2c5;
   font-size: 13px;
-  border-color: #45555f;
 }
 .rz-armory-filters > button > .rz-icon {
   width: 14px;
@@ -3611,30 +3695,38 @@
 .rz-armory-ranks {
   position: absolute;
   right: 64px;
-  top: 119px;
-  width: 360px;
+  top: 166px;
+  width: 300px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .rz-armory-ranks > .rz-eyebrow {
-  display: block;
-  font-size: 11px;
-  letter-spacing: 1.7px;
+  flex: none;
+  width: 74px;
+  font-size: 10px;
+  letter-spacing: 1.4px;
   color: #afc1b1;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rz-armory-ranks > div {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 7px;
-  margin-top: 13px;
+  gap: 5px;
 }
 .rz-armory-ranks > div > button {
   display: grid;
   place-items: center;
-  height: 40px;
+  height: 36px;
   padding: 0;
-  border: 1px solid #435347;
+  border: 1px solid #485760;
   border-radius: 3px;
   background: #23303988;
-  border-color: #485760;
 }
 .rz-armory-ranks > div > button:hover {
   border-color: var(--rank);
@@ -3645,23 +3737,39 @@
   box-shadow: 0 2px var(--rank);
 }
 .rz-armory-ranks .rz-rank-badge > b {
-  height: 23px;
-  min-width: 27px;
-  font-size: 13px;
+  height: 21px;
+  min-width: 25px;
+  font-size: 12px;
+}
+.rz-guide-content {
+  position: absolute;
+  left: 64px;
+  right: 64px;
+  top: 216px;
+  height: 447px;
+}
+.rz-catalog-count {
+  position: absolute;
+  right: 390px;
+  top: -27px;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #8ea59a;
 }
 .rz-catalog-grid {
   position: absolute;
-  left: 64px;
-  top: 231px;
-  width: 742px;
-  height: 432px;
+  left: 0;
+  top: 0;
+  width: 762px;
+  height: 447px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: 128px;
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: 118px;
+  gap: 10px;
   align-content: start;
-  padding: 3px 11px 5px 3px;
-  overflow: auto;
+  padding: 3px 10px 5px 3px;
+  overflow: hidden auto;
   pointer-events: auto;
   scrollbar-width: thin;
   scrollbar-color: #677d89 #1a252e;
@@ -3674,23 +3782,22 @@
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   position: relative;
   min-width: 0;
   overflow: hidden;
-  padding: 7px 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--rank) 40%, #334c3b);
+  padding: 6px 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--rank, #8fa3a8) 36%, #475662);
   border-radius: 3px;
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--rank) 5%, #2a343d),
+    color-mix(in srgb, var(--rank, #8fa3a8) 5%, #2a343d),
     #1a252e
   );
-  border-color: color-mix(in srgb, var(--rank) 36%, #475662);
 }
 .rz-catalog-card:hover {
-  border-color: var(--rank);
-  background: color-mix(in srgb, var(--rank) 10%, #25333e);
+  border-color: var(--rank, #b9c8cc);
+  background: color-mix(in srgb, var(--rank, #8fa3a8) 10%, #25333e);
 }
 .rz-catalog-card.is-selected {
   border-color: #e4efdc;
@@ -3698,25 +3805,47 @@
   outline-offset: 1px;
 }
 .rz-catalog-card > img {
-  width: 144px;
-  height: 86px;
+  width: 118px;
+  height: 62px;
   object-fit: contain;
   pointer-events: none;
 }
 .rz-catalog-card > .rz-icon {
-  width: 68px;
-  height: 77px;
-  margin-bottom: 8px;
-  color: var(--rank);
+  width: 48px;
+  height: 54px;
+  margin-bottom: 4px;
+  color: var(--rank, #b9c8cc);
 }
 .rz-catalog-card > strong {
   max-width: 100%;
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #e4e9e5;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
+}
+.rz-catalog-card > small {
+  max-width: 100%;
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  color: #93a8a2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.rz-catalog-card.is-map,
+.rz-catalog-card.is-hero {
+  --rank: var(--card-accent);
+  box-shadow: inset 0 2px var(--card-accent);
+}
+.rz-catalog-card.is-map > .rz-icon,
+.rz-catalog-card.is-hero > .rz-icon {
+  color: var(--card-accent);
+}
+.rz-catalog-card.is-map > .rz-icon {
+  width: 36px;
+  height: 40px;
 }
 .rz-catalog-empty {
   grid-column: 1/-1;
@@ -3727,84 +3856,122 @@
 }
 .rz-catalog-detail {
   position: absolute;
-  left: 847px;
-  top: 231px;
-  right: 64px;
-  height: 432px;
-  overflow-y: auto;
+  left: 783px;
+  top: 0;
+  right: 0;
+  height: 447px;
+  overflow: hidden auto;
   padding: 0 19px 19px;
   background: linear-gradient(
     140deg,
-    color-mix(in srgb, var(--rank) 5%, #28333b),
+    color-mix(in srgb, var(--rank, #8fa3a8) 5%, #28333b),
     #1b2730
   );
-  border: 1px solid color-mix(in srgb, var(--rank) 50%, #253e2f);
-  border-top: 2px solid var(--rank);
+  border: 1px solid color-mix(in srgb, var(--rank, #8fa3a8) 48%, #4b5c66);
+  border-top: 2px solid var(--rank, #b9c8cc);
   border-radius: 3px;
   pointer-events: auto;
   scrollbar-width: thin;
   scrollbar-color: #677d89 #1a252e;
-  border-color: color-mix(in srgb, var(--rank) 48%, #4b5c66);
   overscroll-behavior: contain;
   touch-action: pan-y;
 }
+.rz-catalog-detail.is-map,
+.rz-catalog-detail.is-hero {
+  --rank: var(--card-accent);
+}
 .rz-catalog-art {
-  height: 144px;
+  height: 128px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 -12px;
 }
 .rz-catalog-art > img {
-  width: 275px;
-  height: 158px;
+  width: 260px;
+  height: 128px;
   object-fit: contain;
 }
 .rz-catalog-art > .rz-icon {
-  width: 109px;
-  height: 109px;
-  color: var(--rank);
+  width: 92px;
+  height: 92px;
+  color: var(--rank, #b9c8cc);
+}
+.rz-catalog-detail.is-map .rz-catalog-art > .rz-icon {
+  width: 64px;
+  height: 64px;
 }
 .rz-catalog-detail > h1 {
-  font-size: 29px;
+  font-size: 27px;
   font-weight: 650;
   line-height: 1.15;
-  letter-spacing: -0.9px;
-  margin-top: 10px;
+  letter-spacing: -0.8px;
+  margin-top: 8px;
 }
 .rz-catalog-detail > p {
-  margin-top: 10px;
+  margin-top: 8px;
   font-size: 14px;
   line-height: 1.5;
   color: #b9c6c9;
 }
 .rz-catalog-stats {
-  margin-top: 16px;
+  margin-top: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .rz-catalog-stats > div {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
-  font-size: 16px;
+  font-size: 14.5px;
+  line-height: 1.35;
   color: #e1ebdc;
 }
 .rz-catalog-stats .rz-metric-chip > b {
   display: none;
 }
 .rz-catalog-stats > div > .rz-icon {
-  width: 18px;
-  height: 18px;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
   color: #afc7b0;
 }
 .rz-catalog-detail > .rz-family-tags {
-  margin-top: 18px;
+  margin-top: 16px;
   gap: 13px;
 }
 .rz-catalog-detail > .rz-family-tags > .rz-family-tag {
   font-size: 13px;
+}
+.rz-catalog-mods {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+.rz-catalog-mods > .rz-eyebrow {
+  width: 100%;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  color: #93a8a2;
+}
+.rz-catalog-mods > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  border: 1px solid #45555f;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #cbd8d2;
+}
+.rz-catalog-mods > span > .rz-icon {
+  width: 14px;
+  height: 14px;
+  color: #afc7b0;
 }
 .rz-catalog-detail > small {
   display: block;
@@ -3812,6 +3979,268 @@
   font-size: 12px;
   line-height: 1.4;
   color: #a2b5ba;
+}
+.rz-insane-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--insane, #ff3df0);
+  border-radius: 3px;
+  color: var(--insane, #ff3df0);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px
+    color-mix(in srgb, var(--insane, #ff3df0) 60%, transparent);
+  background: color-mix(in srgb, var(--insane, #ff3df0) 10%, #1b2027);
+}
+.rz-insane-badge.is-compact {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  height: 12px;
+  min-width: 15px;
+  padding: 0 4px;
+  justify-content: center;
+  font-size: 8px;
+  letter-spacing: 0;
+}
+.rz-catalog-card.is-insane,
+.rz-catalog-detail.is-insane {
+  --rank: var(--insane, #ff3df0);
+}
+.rz-catalog-card.is-insane > .rz-insane-badge {
+  height: 16px;
+  padding: 0 6px;
+  font-size: 9px;
+}
+.rz-catalog-detail.is-insane > .rz-insane-badge {
+  margin-top: 4px;
+}
+/* Panel tabs: sets, enemies and how to play scroll as one column. */
+.rz-guide-panel {
+  position: absolute;
+  inset: 0;
+  overflow: hidden auto;
+  padding: 2px 14px 18px 2px;
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #677d89 #1a252e;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.rz-guide-panel > h2,
+.rz-howto-section > h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+  margin-top: 22px;
+}
+.rz-guide-panel > h2 > .rz-icon,
+.rz-howto-section > h2 > .rz-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--mint);
+}
+.rz-guide-intro {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #b3c2c3;
+  max-width: 960px;
+}
+.rz-set-row {
+  padding: 12px 16px 13px 15px;
+  margin-bottom: 10px;
+  border: 1px solid #3e4c55;
+  border-left: 3px solid var(--family);
+  border-radius: 3px;
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--family) 6%, #232d35),
+    #1a242c 70%
+  );
+}
+.rz-set-row > header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.rz-set-row > header > .rz-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--family);
+}
+.rz-set-row > header > h2 {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+  color: #eef3ea;
+}
+.rz-set-row > header > small {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #93a8a2;
+}
+.rz-set-tiers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+.rz-set-tier {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+.rz-set-tier > strong {
+  flex: none;
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid var(--family);
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  color: var(--family);
+  font-size: 12px;
+}
+.rz-set-tier > p {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #d4dfd8;
+}
+.rz-set-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+.rz-set-members > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px 0 5px;
+  border: 1px solid #45555f;
+  border-radius: 3px;
+  background: #1e2931aa;
+  font-size: 12px;
+  color: #cbd8d2;
+  white-space: nowrap;
+}
+.rz-set-members > span > .rz-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--family);
+}
+.rz-set-members > span > img {
+  width: 30px;
+  height: 20px;
+  object-fit: contain;
+}
+.rz-set-members > span > small {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #93a8a2;
+}
+.rz-set-members > span.is-hero {
+  border-color: color-mix(in srgb, var(--family) 60%, #45555f);
+}
+.rz-guide-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid #3e4c55;
+  border-radius: 3px;
+  background: #1b252daa;
+}
+.rz-guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.rz-guide-table th,
+.rz-guide-table td {
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #2f3b44;
+}
+.rz-guide-table thead th {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #93a8a2;
+  background: #202b33;
+  white-space: nowrap;
+}
+.rz-guide-table tbody th {
+  font-weight: 600;
+  color: #eef3ea;
+  white-space: nowrap;
+}
+.rz-guide-table td {
+  color: #c9d5d0;
+  font-variant-numeric: tabular-nums;
+}
+.rz-guide-table td:last-child {
+  color: #a9bab7;
+  min-width: 260px;
+}
+.rz-guide-table tbody tr:last-child th,
+.rz-guide-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.rz-guide-table tr.is-boss th {
+  color: var(--orange);
+}
+.rz-guide-bosses {
+  width: auto;
+  min-width: 320px;
+}
+.rz-guide-bosses td:last-child {
+  min-width: 0;
+  color: #eef3ea;
+}
+.rz-howto-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px 18px;
+}
+.rz-howto-section {
+  min-width: 0;
+  padding: 12px 16px 14px;
+  border: 1px solid #3e4c55;
+  border-radius: 3px;
+  background: #1b252daa;
+}
+.rz-howto-section > h2 {
+  margin-top: 0;
+  font-size: 17px;
+}
+.rz-howto-section > ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #c9d5d0;
+}
+.rz-howto-section > ul > li + li {
+  margin-top: 5px;
+}
+.rz-howto-section > ul > li::marker {
+  color: #6d8a7a;
 }
 
 .rz-stock-name > .rz-stock-info {
@@ -3895,4 +4324,563 @@
 
 .rz-preview-caption .rz-hero-record {
   margin-top: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Maps, hints, sets and insane gear.
+ * ------------------------------------------------------------------------- */
+/* Roster: hero signature and downside under the ability line. */
+.rz-hero-traits {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+  width: 400px;
+}
+.rz-hero-signature,
+.rz-hero-downside {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+  line-height: 1.35;
+  color: #b6c7bb;
+}
+.rz-hero-signature > .rz-icon,
+.rz-hero-downside > .rz-icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+.rz-hero-signature > .rz-icon {
+  color: var(--hero);
+}
+.rz-hero-downside > .rz-icon {
+  color: #e0a98b;
+}
+.rz-hero-signature b,
+.rz-hero-downside b {
+  color: #e6efe4;
+  font-weight: 650;
+  margin-right: 7px;
+}
+.rz-hero-downside b {
+  color: #ecc9b3;
+}
+/* Roster tiles: map clears as a segmented strip and an n/10 readout. */
+.rz-roster-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  display: flex;
+  gap: 2px;
+  padding: 0 1px;
+}
+.rz-roster-progress > i {
+  flex: 1;
+  background: #33414a;
+}
+.rz-roster-progress > i.is-done {
+  background: var(--mint);
+}
+.rz-roster-tile.is-locked .rz-roster-progress > i {
+  background: #2a353c;
+}
+.rz-roster-state > small {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+  color: #aebfb4;
+  font-variant-numeric: tabular-nums;
+  line-height: 13px;
+}
+/* Map picker sits between the character count and the roster. */
+.rz-map-picker {
+  position: absolute;
+  left: 380px;
+  bottom: 232px;
+  display: flex;
+  gap: 5px;
+  height: 30px;
+}
+.rz-map-chip {
+  position: relative;
+  width: 36px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #455058;
+  border-radius: 3px;
+  background: linear-gradient(145deg, #222b32f5, #171f25f5);
+  color: #c4cfca;
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+.rz-map-chip > span {
+  display: block;
+  line-height: 28px;
+}
+.rz-map-chip > .rz-icon {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 9px;
+  height: 9px;
+}
+.rz-map-chip:hover:not(:disabled) {
+  border-color: var(--map);
+  transform: translateY(-1px);
+}
+.rz-map-chip.is-cleared {
+  color: #dbeedd;
+}
+.rz-map-chip.is-cleared > .rz-icon {
+  color: var(--mint);
+}
+.rz-map-chip.is-current {
+  border-color: var(--map);
+  color: #f3f1e8;
+  background: color-mix(in srgb, var(--map) 16%, #202830);
+  box-shadow: inset 0 -2px var(--map);
+}
+.rz-map-chip.is-locked {
+  color: #6f7d82;
+  border-color: #333f46;
+  background: #171f25b0;
+}
+.rz-map-chip.is-locked > .rz-icon {
+  color: #6f7d82;
+}
+/* The map brief tops the deploy column. */
+.rz-map-brief {
+  width: 100%;
+  padding: 10px 14px 11px 13px;
+  border: 1px solid #40505a;
+  border-left: 3px solid var(--map);
+  border-radius: 3px;
+  background: linear-gradient(120deg, #1d262df2, #161e24f2);
+  text-align: left;
+}
+.rz-map-brief > .rz-eyebrow {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: #93a8a2;
+}
+.rz-map-brief > strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+  color: #f0f3ea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rz-map-brief > p > b {
+  margin-right: 6px;
+  font-weight: 650;
+  color: var(--map);
+}
+.rz-map-brief > p {
+  margin-top: 5px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #b6c3bf;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rz-map-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.rz-map-lines > span {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #3f4d56;
+  border-radius: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.2px;
+  color: #c2cfca;
+  background: #1a232a;
+  white-space: nowrap;
+}
+.rz-map-brief .rz-map-lines {
+  max-height: 22px;
+  overflow: hidden;
+}
+.rz-map-brief.is-locked {
+  border-color: #38444c;
+  border-left-color: color-mix(in srgb, var(--map) 45%, #38444c);
+}
+.rz-map-brief.is-locked > strong {
+  color: #b7c2bd;
+}
+/* HUD: the map name leads the wave label. */
+.rz-hud-map {
+  color: var(--map, #d6e0d4);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+/* Shop: set pips and the three-tier tooltip. */
+.rz-synergy-chip > .rz-synergy-pips {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  display: flex;
+  gap: 2px;
+  font-size: 0;
+  pointer-events: none;
+}
+.rz-synergy-pips > i {
+  flex: 1;
+  height: 2px;
+  background: #3a4850;
+}
+.rz-synergy-pips > i.is-tier {
+  background: #5b6f77;
+}
+.rz-synergy-pips > i.is-on {
+  background: color-mix(in srgb, var(--family) 70%, #7d8f95);
+}
+.rz-synergy-pips > i.is-on.is-tier {
+  background: var(--family);
+}
+.rz-synergy-tooltip > div.is-next > strong {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--family) 60%, #425e4c);
+}
+.rz-synergy-chip:hover .rz-synergy-tooltip,
+.rz-synergy-chip:focus-within .rz-synergy-tooltip {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.rz-synergy-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mint);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+}
+.rz-synergy-link > .rz-icon {
+  width: 13px;
+  height: 13px;
+}
+.rz-synergy-link:hover {
+  text-decoration: underline;
+}
+/* Offers that complete a set tier. */
+.rz-stock-card.is-set-tier {
+  border-color: color-mix(in srgb, var(--mint) 55%, #35414a);
+  box-shadow:
+    inset 0 2px color-mix(in srgb, var(--rank) 62%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--mint) 22%, transparent),
+    0 8px 20px #0002;
+}
+.rz-set-tier-flag {
+  position: absolute;
+  left: 8px;
+  top: 0;
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+.rz-set-tier-flag > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px 0 5px;
+  border: 1px solid color-mix(in srgb, var(--family) 65%, #2a3a33);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--family) 14%, #1a2429);
+  color: #e6f0e4;
+  font-size: 11px;
+  font-weight: 700;
+}
+.rz-set-tier-flag > span > .rz-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--family);
+}
+.rz-set-tier-flag > span > b::before {
+  content: "→ ";
+  font-weight: 500;
+  color: #a8bdb1;
+}
+/* Insane weapons: one per run, animated conic border. */
+@property --rz-insane-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.rz-stock-card.is-insane {
+  --insane: #ff3df0;
+  --rank: var(--insane);
+  isolation: isolate;
+  border-color: transparent;
+  box-shadow:
+    0 0 22px color-mix(in srgb, var(--insane) 35%, transparent),
+    0 8px 20px #0002;
+}
+.rz-stock-card.is-insane::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: 5px;
+  background: conic-gradient(
+    from var(--rz-insane-angle),
+    var(--insane),
+    #8de3ff 30%,
+    var(--insane) 55%,
+    #ffe293 78%,
+    var(--insane)
+  );
+  animation: rz-insane-spin 3.2s linear infinite;
+}
+.rz-stock-card.is-insane::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 4px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--insane) 9%, #252d34),
+    #182027 74%
+  );
+}
+.rz-stock-card.is-insane .rz-stock-name > span {
+  color: var(--insane);
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+@keyframes rz-insane-spin {
+  to {
+    --rz-insane-angle: 360deg;
+  }
+}
+.rz-hand-hud.is-insane,
+.rz-gear-cell.is-insane {
+  --rank: #ff3df0;
+  border-color: color-mix(in srgb, #ff3df0 70%, #22342a);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #ff3df0 35%, transparent),
+    0 0 10px color-mix(in srgb, #ff3df0 30%, transparent);
+}
+.rz-hand-hud.is-insane > .rz-icon,
+.rz-gear-cell.is-insane > .rz-icon {
+  color: #ff3df0;
+}
+.rz-gear-cell.is-insane .rz-insane-badge.is-compact {
+  right: 3px;
+  bottom: 3px;
+}
+/* Shop header: the map badge next to the title. */
+.rz-workshop-title {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.rz-shop-map {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 14px 0 12px;
+  border: 1px solid #40505a;
+  border-radius: 3px;
+  background: #1c252cd9;
+  pointer-events: auto;
+  cursor: help;
+}
+.rz-shop-map > i {
+  display: block;
+  width: 4px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--map);
+}
+.rz-shop-map > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: nowrap;
+}
+.rz-shop-map > span > b {
+  font-size: 15px;
+  font-weight: 650;
+  color: #eef3ea;
+  letter-spacing: -0.2px;
+}
+.rz-shop-map > span > small {
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--map);
+}
+.rz-shop-map:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.rz-shop-map-tooltip {
+  position: absolute;
+  top: 50px;
+  left: -1px;
+  width: 300px;
+  padding: 14px 16px;
+  background: #202b33;
+  border: 1px solid #697e88;
+  border-top: 2px solid var(--map);
+  border-radius: 3px;
+  box-shadow: 0 8px 24px #000a;
+  visibility: hidden;
+  opacity: 0;
+  z-index: 30;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.rz-shop-map:hover .rz-shop-map-tooltip,
+.rz-shop-map:focus .rz-shop-map-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+.rz-shop-map-tooltip > .rz-eyebrow {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--map);
+}
+.rz-shop-map-tooltip > p {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #d4dfd8;
+  white-space: normal;
+}
+.rz-shop-map-tooltip > .rz-map-lines {
+  margin-top: 10px;
+}
+/* Results: map and character unlocks side by side, stats in one row. */
+.rz-results-unlocks {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+.rz-results-unlocks > .rz-unlock-badge {
+  width: auto;
+  min-width: 300px;
+  max-width: 344px;
+  margin: 0;
+  padding: 10px 16px;
+  gap: 13px;
+}
+.rz-results-unlocks > .rz-unlock-badge > .rz-icon:first-child {
+  width: 38px;
+  height: 38px;
+}
+.rz-results-unlocks > .rz-unlock-badge strong {
+  font-size: 22px;
+  margin-top: 2px;
+}
+.rz-results-unlocks .rz-unlock-badge > div {
+  min-width: 0;
+}
+.rz-results-unlocks .rz-unlock-badge strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rz-unlock-swatch {
+  flex: none;
+  display: block;
+  width: 38px;
+  height: 38px;
+  border-radius: 3px;
+  background:
+    linear-gradient(135deg, transparent 55%, #ffffff22), var(--unlock);
+  box-shadow: inset 0 0 0 1px #ffffff2a;
+}
+.rz-results.has-unlock > h1 {
+  font-size: 56px;
+  margin-top: 10px;
+}
+.rz-results.has-unlock .rz-results-rule {
+  margin: 18px 0 16px;
+}
+.rz-results.has-unlock .rz-result-stats {
+  grid-template-columns: repeat(6, 1fr);
+  width: 700px;
+  row-gap: 0;
+}
+.rz-results.has-unlock .rz-result-stats > div:nth-child(3n + 1) {
+  border-left: 1px solid var(--line);
+}
+.rz-results.has-unlock .rz-result-stats > div:first-child {
+  border-left: 0;
+}
+.rz-results.has-unlock .rz-result-stats strong {
+  font-size: 30px;
+  margin-top: 6px;
+  letter-spacing: -1px;
+}
+.rz-results.has-unlock .rz-result-stats strong > small {
+  font-size: 13px;
+  margin-left: 3px;
+}
+.rz-results.has-unlock .rz-result-stats .rz-eyebrow {
+  font-size: 9px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.rz-results.has-unlock .rz-result-loadout {
+  margin-top: 14px;
+}
+.rz-results.has-unlock .rz-results-actions {
+  margin-top: 22px;
+}
+.rz-results-actions > .rz-button-secondary {
+  width: auto;
+  min-width: 0;
+  padding: 0 18px;
+  white-space: nowrap;
+}
+.rz-results.is-victory .rz-results-actions > .rz-button-primary {
+  width: 200px;
+}
+.rz-ui.reduce-motion .rz-stock-card.is-insane::before {
+  animation: none !important;
+}
+
+.rz-inspector-behavior {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #d3decf;
 }

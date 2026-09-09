@@ -21,6 +21,17 @@ interface Waypoint {
   input?: Input;
 }
 
+// Telegraphed spawns are visible rings on the floor; the bot treats them like
+// a hazard about to trigger. Player-owned hazards never hurt the player.
+function markersAsHazards(run: SurvivalRun) {
+  return run.spawnQueue.map((marker) => ({
+    x: marker.x,
+    y: marker.y,
+    radius: 1.1,
+    age: marker.age,
+    delay: marker.delay,
+  }));
+}
 // This is the same imperfect, five-reactions-per-second policy used by the
 // balance probe. It only reads visible enemies, projectiles and arena edges.
 function weave(run: SurvivalRun, waypoint: Waypoint): Input {
@@ -87,7 +98,10 @@ function weave(run: SurvivalRun, waypoint: Waypoint): Input {
       if (distance < 1.5) danger = true;
     }
   }
-  for (const hazard of run.hazards) {
+  for (const hazard of [
+    ...run.hazards.filter((h) => !h.owner),
+    ...markersAsHazards(run),
+  ]) {
     const dx = run.player.x - hazard.x,
       dy = run.player.y - hazard.y,
       d = Math.hypot(dx, dy) || 0.01,
@@ -145,7 +159,10 @@ function weave(run: SurvivalRun, waypoint: Waypoint): Input {
       const miss = Math.hypot(dx + rx * t, dy + ry * t);
       risk += Math.max(0, 1.05 - miss) * 9;
     }
-    for (const hazard of run.hazards) {
+    for (const hazard of [
+      ...run.hazards.filter((h) => !h.owner),
+      ...markersAsHazards(run),
+    ]) {
       if (hazard.age + 0.45 < hazard.delay) continue;
       const d = Math.hypot(
         run.player.x + vx * 0.4 - hazard.x,
@@ -172,25 +189,41 @@ function weave(run: SurvivalRun, waypoint: Waypoint): Input {
   return waypoint.input;
 }
 
+const patternMulti = (kind: WeaponId, level: number): number => {
+  const spec = WEAPONS[kind].pattern(level);
+  switch (spec.kind) {
+    case "bullet":
+      return (
+        spec.count *
+        (spec.children ? 1 + spec.children.count * spec.children.damage : 1) *
+        (spec.splash ? 1.6 : 1) *
+        (spec.bounces ? 1 + spec.bounces * 0.5 : 1) *
+        (spec.emit ? 3 : 1) *
+        (spec.trail ? 2.5 : 1)
+      );
+    case "chain":
+      return spec.jumps * 0.5;
+    case "bolts":
+      return spec.targets;
+    case "orbit":
+      return spec.count * 0.8;
+    case "strike":
+      return 1.6 * spec.shells;
+    case "melee":
+    case "cone":
+      return 1.6;
+    default:
+      return 1;
+  }
+};
 const equipmentScore = (item: Equipment): number => {
   if (item.category === "weapon") {
-    const w = WEAPONS[item.kind as WeaponId],
-      multi =
-        item.kind === "pistol"
-          ? 2
-          : item.kind === "shotgun"
-            ? 5
-            : item.kind === "frostgun"
-              ? 3
-              : item.kind === "arc"
-                ? 2
-                : item.kind === "blade"
-                  ? 1.6
-                  : 1;
+    const w = WEAPONS[item.kind as WeaponId];
     return (
       (w.damage / w.cooldown) *
-      multi *
-      rankScale(item.level) *
+      patternMulti(item.kind as WeaponId, item.level) *
+      (w.unique ? 1 : rankScale(item.level)) *
+      (w.unique ? 4 : 1) *
       Math.min(1, w.range / 9)
     );
   }
@@ -199,13 +232,17 @@ const equipmentScore = (item: Equipment): number => {
     rankScale(item.level) *
     (d.category === "drone" && d.drone?.damage
       ? 75
-      : item.kind === "power"
-        ? 65
-        : item.kind === "vitality"
-          ? 50
-          : item.kind === "plating"
-            ? 45
-            : 35)
+      : d.category === "drone"
+        ? 45
+        : d.category === "mod"
+          ? 40
+          : item.kind === "power"
+            ? 65
+            : item.kind === "vitality"
+              ? 50
+              : item.kind === "plating"
+                ? 45
+                : 35)
   );
 };
 function organize(run: SurvivalRun): void {
@@ -260,6 +297,7 @@ export function purchaseReviewShop(run: SurvivalRun): void {
     const priority = (offer: ShopOffer) => {
       if (offer.kind === "heal")
         return run.player.hp < run.player.maxHp * 0.65 ? 0 : 9;
+      if (offer.rarity === "insane") return 0.5;
       if (
         offer.kind === "item" &&
         ((offer.contentId === "vitality" && run.player.maxHp < 220) ||
@@ -370,6 +408,7 @@ export function purchaseReviewShop(run: SurvivalRun): void {
 export function prepareReviewWave(
   hero: HeroId,
   targetWave = CAMPAIGN_WAVES,
+  map = 1,
 ): SurvivalRun {
   if (
     !Number.isInteger(targetWave) ||
@@ -379,7 +418,7 @@ export function prepareReviewWave(
     throw new Error("Invalid review wave");
   // Fixed successful routes for visual QA, selected from the published balance
   // matrix. The full diagnostic still records failures on other seeds.
-  const run = new SurvivalRun(hero, hero === "volt" ? 17 : 1);
+  const run = new SurvivalRun(hero, hero === "volt" ? 17 : 1, map);
   for (let wave = 1; wave < targetWave; wave++) {
     if (!run.startWave())
       throw new Error(`Review could not start wave ${wave}`);
@@ -396,8 +435,8 @@ export function prepareReviewWave(
   return run;
 }
 
-export function prepareFinale(hero: HeroId): SurvivalRun {
-  return prepareReviewWave(hero, CAMPAIGN_WAVES);
+export function prepareFinale(hero: HeroId, map = 1): SurvivalRun {
+  return prepareReviewWave(hero, CAMPAIGN_WAVES, map);
 }
 
 /** DEV review input for the live simulation; this function never changes a run. */

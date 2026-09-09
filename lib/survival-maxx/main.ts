@@ -1,16 +1,32 @@
 import { SurvivalRun, type GameEvent, type Input } from "./model";
 import {
   HEROES,
+  HERO_ORDER,
   WEAPONS,
   ITEMS,
+  HINTS,
+  MAP_COUNT,
+  MAP_ORDER,
   CAMPAIGN_WAVES,
   BAG_CAPACITY,
   rankStatLines,
+  mapById,
+  mapStatLines,
   type HeroId,
   type WeaponId,
   type ItemId,
+  type EquipmentCategory,
+  type MapId,
 } from "./content";
-import { getUnlockedHeroes, recordProgress, recordClear } from "./progression";
+import {
+  getUnlockedHeroes,
+  getClearedHeroes,
+  getUnlockedMaps,
+  getClearedMaps,
+  canPlay,
+  recordProgress,
+  recordClear,
+} from "./progression";
 import { SurvivalScene } from "./scene";
 import { SurvivalUI, type SurvivalViewModel, type SurvivalScreen } from "./ui";
 import { Platform } from "./platform";
@@ -214,6 +230,7 @@ export async function createSurvivalMaxx(
   let ui: SurvivalUI | null = null;
   let run: SurvivalRun | null = null;
   let hero: HeroId = "ember";
+  let map: MapId = 1;
   let screen: SurvivalScreen = "home";
   let settingsBack: SurvivalScreen = "home";
   let armoryBack: SurvivalScreen = "characters";
@@ -239,19 +256,78 @@ export async function createSurvivalMaxx(
   let phase = "ready";
   let recordSaved = false;
   let endlessRun = false;
-  let firstRunHint = false;
-  let newUnlock: HeroId | undefined;
+  let newUnlock: { hero?: HeroId; map?: MapId } | undefined;
+  let hordeSeen = false;
   let backgrounded = false;
   platform.onMute = (value) => {
     audio.platformMuted = value;
     audio.sync();
   };
+  const cssHex = (value: number) =>
+    `#${Math.max(0, Math.min(0xffffff, Math.floor(value)))
+      .toString(16)
+      .padStart(6, "0")}`;
+  function mapView(id: MapId) {
+    const definition = mapById(id);
+    return {
+      id: definition.id,
+      index: MAP_ORDER.indexOf(definition.id) + 1,
+      name: definition.name,
+      tagline: definition.tagline,
+      accent: cssHex(definition.palette.accent),
+      rule: {
+        title: definition.rule.title,
+        description: definition.rule.description,
+      },
+      lines: mapStatLines(definition),
+    };
+  }
+  const seenHint = (id: string) => platform.save.hints.includes(id);
+  /**
+   * Shows a one-time hint from HINTS. Silent hints are only marked seen (the
+   * in-arena movement hint renders itself). A hint that would talk over an
+   * active notice waits for the next trigger instead of being lost.
+   */
+  function hintOnce(id: string, silent = false): boolean {
+    if (seenHint(id)) return false;
+    const hint = HINTS.find((entry) => entry.id === id);
+    if (!hint) return false;
+    if (!silent && notification && performance.now() < noticeUntil)
+      return false;
+    platform.save.hints.push(id);
+    platform.persist();
+    if (!silent) notify(hint.text, hint.duration ?? 5000);
+    return true;
+  }
+  function shopHints() {
+    if (!run || run.phase !== "shop") return;
+    const offers = run.offers;
+    if (offers.some((offer) => offer.rarity === "insane")) hintOnce("insane");
+    if (
+      offers.some(
+        (offer) =>
+          offer.kind === "item" &&
+          ITEMS[offer.contentId as ItemId]?.category === "mod",
+      )
+    )
+      hintOnce("mods");
+    if (run.synergies.some((set) => set.tier >= 1)) hintOnce("sets");
+    if (run.canBuySlot()) hintOnce("slot");
+  }
 
   function model(): SurvivalViewModel {
     const stats = run?.stats;
+    const activeMap = run?.mapId ?? map;
+    const clearedMaps: Partial<Record<HeroId, MapId[]>> = {};
+    const clearedBy: Partial<Record<MapId, HeroId[]>> = {};
+    for (const id of HERO_ORDER) {
+      const maps = getClearedMaps(platform.save, id);
+      clearedMaps[id] = maps;
+      for (const cleared of maps) (clearedBy[cleared] ??= []).push(id);
+    }
     const equipment = (
       entry: { id: number; kind: string; level: number; slot?: number },
-      category: "weapon" | "passive" | "drone",
+      category: EquipmentCategory,
       equipped = false,
     ) => ({
       ...entry,
@@ -279,8 +355,15 @@ export async function createSurvivalMaxx(
       wave: run?.wave ?? 0,
       totalWaves: CAMPAIGN_WAVES,
       unlockedHeroes: getUnlockedHeroes(platform.save),
-      clearedHeroes: platform.save.clearedHeroes,
+      clearedHeroes: getClearedHeroes(platform.save),
       heroRecords: platform.save.heroRecords,
+      selectedMap: map,
+      unlockedMaps: getUnlockedMaps(platform.save, hero),
+      clearedMaps,
+      clearedBy,
+      mapRecords: platform.save.mapRecords,
+      map: mapView(activeMap),
+      totalMaps: MAP_COUNT,
       newUnlock,
       endless: run?.endless ?? false,
       synergies: run?.synergies ?? [],
@@ -294,7 +377,8 @@ export async function createSurvivalMaxx(
       maxHp: run?.player.maxHp ?? HEROES[hero].maxHp,
       kills: run?.kills ?? 0,
       runTime: run?.totalTime ?? 0,
-      bestCombo: run?.bestCombo ?? 0,
+      fullClears: run?.fullClears ?? 0,
+      fastestClear: run?.fastestClear ?? Infinity,
       earned: Math.floor(run?.earnedSalvage ?? 0),
       time: run?.timeRemaining ?? 0,
       dash: run ? 1 - run.player.dashCooldown / run.stats.dashCooldown : 1,
@@ -307,7 +391,8 @@ export async function createSurvivalMaxx(
       inventory: run?.weapons.map((w) => equipment(w, "weapon", true)) ?? [],
       bag: run?.bag.map((entry) => equipment(entry, entry.category)) ?? [],
       weaponSlots: HEROES[hero].weaponSlots,
-      bagCapacity: BAG_CAPACITY,
+      bagCapacity:
+        run?.bagCapacity ?? BAG_CAPACITY + (hero === "flux" ? 2 : 0),
       stats: stats
         ? [
             {
@@ -368,19 +453,25 @@ export async function createSurvivalMaxx(
       locked: run?.offers.some((o) => o.locked) ?? false,
       rerollCost: run?.rerollCost ?? 0,
       notice: notification || platform.warning,
-      combo: run?.combo ?? 0,
+      enemiesRemaining: run?.remainingEnemies ?? 0,
+      waveBudget: run?.waveBudget ?? 0,
+      hordeWarning: run?.hordeWarning ?? 0,
+      canBuySlot: run?.canBuySlot() ?? false,
+      extraSlots: run?.extraSlots ?? 0,
       waveIntro:
-        run?.phase === "combat" && run.time < 1.5
-          ? `WAVE ${String(run?.wave ?? 1).padStart(2, "0")}`
-          : run?.phase === "combat" && run.isBossWave && run.time < 4.2
-            ? run.bossName
-            : shopAt
-              ? "WAVE CLEARED"
-              : "",
+        run?.phase === "combat" && run.wave === 1 && run.time < 0.9
+          ? run.map.name.toUpperCase()
+          : run?.phase === "combat" && run.time < (run.wave === 1 ? 2.1 : 1.5)
+            ? `WAVE ${String(run?.wave ?? 1).padStart(2, "0")}`
+            : run?.phase === "combat" && run.isBossWave && run.time < 4.2
+              ? run.bossName
+              : shopAt
+                ? "WAVE CLEARED"
+                : "",
       bossHp: run?.boss?.hp,
       bossMaxHp: run?.boss?.maxHp,
       hint:
-        firstRunHint &&
+        !seenHint("move") &&
         run?.phase === "combat" &&
         run.wave === 1 &&
         run.time > 1.2 &&
@@ -415,35 +506,45 @@ export async function createSurvivalMaxx(
   function notify(message: string, duration = 1700) {
     notification = message;
     noticeUntil = performance.now() + duration;
-    ui?.render(model());
+    // The HUD keeps its live nodes; every other screen re-renders in full.
+    if (screen === "playing") ui?.setNotice(message);
+    else ui?.render(model());
   }
 
   function saveResult() {
     if (recordSaved || !run) return;
     recordSaved = true;
-    recordProgress(platform.save, run.hero, run.wave);
-    if (run.phase === "won" && !run.endless)
-      newUnlock = recordClear(platform.save, run.hero) ?? undefined;
+    recordProgress(platform.save, run.hero, run.mapId, run.wave);
+    if (run.phase === "won" && !run.endless) {
+      const unlocked = recordClear(platform.save, run.hero, run.mapId);
+      newUnlock =
+        unlocked.hero || unlocked.map
+          ? {
+              ...(unlocked.hero ? { hero: unlocked.hero } : {}),
+              ...(unlocked.map ? { map: unlocked.map } : {}),
+            }
+          : undefined;
+    }
     platform.persist();
     if (run.phase === "won") platform.celebrate();
   }
 
   function startRun(endless = endlessRun) {
     if (!graphics) return;
-    if (!getUnlockedHeroes(platform.save).includes(hero)) return;
-    if (endless && !platform.save.clearedHeroes.includes(hero)) return;
+    if (!canPlay(platform.save, hero, map, endless)) return;
     endlessRun = endless;
     newUnlock = undefined;
-    run = new SurvivalRun(hero, Math.floor(Math.random() * 0xffffffff));
+    hordeSeen = false;
+    run = new SurvivalRun(hero, Math.floor(Math.random() * 0xffffffff), map);
     // Endless from the roster has no finish line from wave one.
     run.endless = endless;
     recordSaved = false;
     phase = "ready";
     shopAt = resultAt = 0;
+    graphics.setMap(run.map);
     graphics.reset();
     platform.save.totalRuns++;
     platform.persist();
-    firstRunHint = platform.save.totalRuns === 1;
     startWave();
   }
 
@@ -453,8 +554,8 @@ export async function createSurvivalMaxx(
     shopAt = resultAt = 0;
     notification = "";
     show("playing");
-    platform.context(run.wave);
-    recordProgress(platform.save, run.hero, run.wave);
+    platform.context(run.wave, run.mapId);
+    recordProgress(platform.save, run.hero, run.mapId, run.wave);
     platform.persist();
   }
 
@@ -477,18 +578,36 @@ export async function createSurvivalMaxx(
       case "selectHero":
         if (value && value in HEROES) {
           hero = value as HeroId;
+          // Keep the map choice when the new hero can play it; otherwise fall
+          // back to that hero's furthest map.
+          const maps = getUnlockedMaps(platform.save, hero);
+          if (!maps.includes(map)) map = maps.at(-1) ?? 1;
           show("characters");
         }
         break;
+      case "selectMap": {
+        const chosen = Number(value) as MapId;
+        if (getUnlockedMaps(platform.save, hero).includes(chosen)) {
+          map = chosen;
+          show("characters");
+        }
+        break;
+      }
       case "deploy":
         startRun(false);
+        break;
+      case "nextMap":
+        if (newUnlock?.map && canPlay(platform.save, hero, newUnlock.map)) {
+          map = newUnlock.map;
+          startRun(false);
+        }
         break;
       case "settings":
         settingsBack = screen;
         show("settings");
         break;
       case "armory":
-        armoryBack = screen;
+        if (screen !== "armory") armoryBack = screen;
         show("armory");
         break;
       case "back":
@@ -541,6 +660,13 @@ export async function createSurvivalMaxx(
       case "nextWave":
         startWave();
         break;
+      case "buySlot":
+        if (run?.buySlot()) {
+          audio.play("buy");
+          platform.persist();
+          ui.render(model());
+        }
+        break;
       case "retry":
         startRun();
         break;
@@ -570,6 +696,7 @@ export async function createSurvivalMaxx(
             notify(
               offer.kind === "heal" ? "Health restored" : `Bought ${offer.title}`,
             );
+            shopHints();
           } else notify("Can't buy this.");
         }
         break;
@@ -578,6 +705,7 @@ export async function createSurvivalMaxx(
           audio.play("reroll");
           notification = "";
           ui.render(model());
+          shopHints();
         }
         break;
       case "lock":
@@ -609,6 +737,7 @@ export async function createSurvivalMaxx(
         if (run?.sellEquipment(Number(value))) {
           audio.play("buy");
           ui.render(model());
+          shopHints();
         } else notify("Keep one weapon equipped");
         break;
     }
@@ -779,6 +908,10 @@ export async function createSurvivalMaxx(
       if (e.type === "lost") audio.play("defeat");
       if (e.type === "weave") audio.play("weave");
       if (e.type === "boss") audio.play("boss-warning");
+      if (e.type === "horde" && !hordeSeen) {
+        hordeSeen = true;
+        if (screen === "playing") hintOnce("horde");
+      }
       if (e.type === "telegraph" && e.kind === "boss")
         audio.play("boss-charge", 0.7);
       if (e.type === "fire" && e.enemy && e.kind === "boss")
@@ -807,16 +940,23 @@ export async function createSurvivalMaxx(
       if (shopAt && now >= shopAt) {
         shopAt = 0;
         show("shop");
-        if (firstRunHint && run.wave === 1)
-          notify(
-            "Buy gear with emeralds. Merge two matching pieces at the same rank to rank up.",
-            7000,
-          );
+        // The first shop retires the movement hint and introduces the shop.
+        hintOnce("move", true);
+        hintOnce("shop");
+        shopHints();
       }
       if (resultAt && now >= resultAt) {
         resultAt = 0;
         show("results");
+        if (run.phase === "won" && !run.endless) hintOnce("maps");
       }
+      if (
+        screen === "playing" &&
+        run.phase === "combat" &&
+        run.wave === 1 &&
+        run.time >= 10
+      )
+        hintOnce("counter");
       // Bars and counters follow the simulation every frame; the full view
       // model below refreshes the rest of the HUD on a slower cadence.
       if (screen === "playing")
@@ -830,7 +970,9 @@ export async function createSurvivalMaxx(
           bossMaxHp: run.boss?.maxHp,
           weaveCharge: run.weaveCharge,
           weaveTime: run.weaveTime,
-          combo: run.combo,
+          enemiesRemaining: run.remainingEnemies,
+          waveBudget: run.waveBudget,
+          hordeWarning: run.hordeWarning,
         });
     }
     if (run) {

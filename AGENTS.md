@@ -538,20 +538,30 @@ unmounts and a Next route does, twice under StrictMode:
   middleware) stayed behind; `review.ts` came along because the tests
   and the balance script drive its pilot.
 
-**Balance, 2026-09-09.** The first live playtest reached wave 26 at
-full health with 727 unspent emeralds, so the site copy is deliberately
-much harder than the CrazyGames build and the two now differ on
-purpose. Enemy health growth `age·0.18 + age²·0.009` → `age·0.3 +
-age²·0.02` (about +65% at wave 11, +90% at wave 30; the wave 1–3 grunt
-buffer is untouched), speed cap +55% → +85%, spawn groups of three
-after wave 8 (was four again from wave 19), spawn floor 0.8 → 0.95 s
-and the ramp stops at wave 18, live cap 60 → 48, bosses
-`2400·0.72·tier^1.6`. Three-seed matrix
-(`scripts/survival-maxx-balance.ts --seeds=1,17,73`): 30/30 bot clears,
-median 18.4 min combat, boss median 38 s (worst 112 s), per-character
-hits roughly tripled, unspent emeralds at wave 29 910 → 172. The bots
-dodge far better than people; treat their clears as a ceiling, not a
-target.
+**0.9 re-sync, 2026-09-09 (later the same day).** The site copy was
+re-synced to the upstream 0.9.0 release, which folded the site's harder
+curve into its own map-1 baseline and went further: every wave spawns a
+fixed enemy budget shown as a countdown (the timer still ends it),
+enemies arrive anywhere near the player after a telegraph ring with
+hordes and elites, 24 weapons (12 new plus the unique Eclipse), 45
+items (8 mods, 5 economy items, 10 drones), six-piece Set capstones,
+bag slots for 2000 emeralds, a signature and downside per character,
+ten maps as a per-character ladder (clearing map 1 still unlocks the
+next character), and a nine-tab Game guide (`guide.ts`, pure). Saves are
+version 3 under the same key; a version-2 site save migrates its cleared
+characters as map-1 clears. New engine files: `guide.ts`,
+`gear-icons.ts`, `equipment-parts.ts`, `*-art-expansion.ts`. The
+site-only tweaks (factory `main.ts`, localStorage `platform.ts`,
+`canExit` buttons, gear behaviour titles, the shared portrait cache,
+`forceContextLoss`) were re-applied on top; the earlier hand-tuned
+balance deltas are gone because upstream now ships a harder curve
+(`ENEMY_CURVE` in `content.ts`). Balance evidence lives upstream in
+`release/qa/0.9/BALANCE.md`; `scripts/survival-maxx-balance.ts` takes
+`--map=all` and `--policy=weave,camper`. A re-sync from upstream is:
+copy every `src/survival/*.ts` except `main.ts`/`platform.ts`, re-apply
+the tweaks above, copy `tests/*.test.ts` with vitest imports and
+`../../lib/survival-maxx/` paths, and rebuild `platform.test.ts` from
+the site seam tests plus the upstream chain tests.
 
 **Tests** in `test/survival-maxx/`: the upstream suites copied with
 vitest imports (simulation, economy, all ten earned campaigns into

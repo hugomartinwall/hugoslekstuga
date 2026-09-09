@@ -10,6 +10,14 @@ import {
   BOSS_NAMES,
   rankScale,
   rankStatLines,
+  rerollCost,
+  repairCost,
+  offerPrice,
+  REPAIR_HEAL,
+  SELL_RATE,
+  WAVE_CLEAR_BONUS,
+  WAVE_END_HEAL,
+  WEAVE,
   type DroneId,
   type PassiveStat,
   getSynergies,
@@ -20,6 +28,38 @@ import {
   type ItemId,
   type WeaponId,
   type FamilyId,
+  type BulletSpec,
+  type BulletChildren,
+  type WeaponDefinition,
+  type LineSpec,
+  type ConeSpec,
+  type ChainSpec,
+  type MeleeSpec,
+  type EquipmentCategory,
+  type MapDefinition,
+  type MapId,
+  mapById,
+  mapRamp,
+  threatWave,
+  waveBudget,
+  bossAddBudget,
+  spawnGroupSize,
+  hordeProgress,
+  hordeSize,
+  ENEMY_CAP,
+  SPAWN_TELEGRAPH,
+  HORDE_TELEGRAPH,
+  SPAWN_DISTANCE,
+  HORDE_RING,
+  eliteChance,
+  ELITE,
+  ENEMY_CURVE,
+  BAG_SLOT_COST,
+  MAX_EXTRA_SLOTS,
+  OFFENSIVE_DRONES,
+  type OrbitSpec,
+  type StrikeSpec,
+  type BoltsSpec,
 } from "./content";
 
 export type Phase = "ready" | "combat" | "shop" | "won" | "lost";
@@ -43,6 +83,9 @@ export interface Player extends Vec {
   vx: number;
   vy: number;
   abilityTime: number;
+  /** Shield charges that absorb one hit each. */
+  barrier: number;
+  barrierTimer: number;
 }
 export interface Enemy extends Vec {
   id: number;
@@ -78,6 +121,21 @@ export interface Enemy extends Vec {
   maxShield: number;
   healTimer: number;
   repairLockUntil?: number;
+  /** Counts toward the wave's enemy counter. Children and boss adds do not. */
+  budgeted?: boolean;
+  elite?: boolean;
+  freezeTime?: number;
+}
+/** A telegraphed spawn: the enemy arrives when `age` reaches `delay`. */
+export interface SpawnMarker extends Vec {
+  id: number;
+  kind: EnemyKind;
+  age: number;
+  delay: number;
+  budgeted: boolean;
+  elite: boolean;
+  horde: boolean;
+  radius: number;
 }
 export interface Bullet extends Vec {
   id: number;
@@ -95,6 +153,20 @@ export interface Bullet extends Vec {
   age: number;
   grazed: boolean;
   returning: boolean;
+  /** The pattern that fired it; enemy and ability bullets have none. */
+  behavior?: BulletSpec;
+  ownerId?: number;
+  timer?: number;
+  bounces?: number;
+  splits?: number;
+  child?: boolean;
+  orbitAngle?: number;
+  rearmAt?: number;
+  /** Distance flown, for range-scaling bonuses. */
+  travel?: number;
+  fused?: boolean;
+  emitTimer?: number;
+  trailTimer?: number;
 }
 export interface Pickup extends Vec {
   id: number;
@@ -105,7 +177,7 @@ export interface Pickup extends Vec {
 export interface Equipment {
   id: number;
   kind: WeaponId | ItemId;
-  category: "weapon" | "passive" | "drone";
+  category: EquipmentCategory;
   level: number;
 }
 export interface Drone extends Vec {
@@ -127,6 +199,11 @@ export interface Hazard extends Vec {
   kind: "blast" | "toxic";
   triggered: boolean;
   tick: number;
+  /** Player hazards hurt enemies and never the player. */
+  owner?: "player";
+  weapon?: WeaponId;
+  knock?: number;
+  tickRate?: number;
 }
 export interface Weapon {
   id: number;
@@ -135,6 +212,8 @@ export interface Weapon {
   cooldown: number;
   category: "weapon";
   slot: number;
+  /** Seconds until a Double shot echo fires. */
+  echo?: number;
 }
 export interface ShopOffer {
   id: number;
@@ -143,9 +222,11 @@ export interface ShopOffer {
   title: string;
   description: string;
   cost: number;
+  /** Price before discounts, so a new Discount re-prices the shelf. */
+  baseCost: number;
   sold: boolean;
   locked: boolean;
-  rarity: "common" | "rare" | "epic";
+  rarity: "common" | "rare" | "epic" | "insane";
   level: number;
 }
 export interface Stats {
@@ -164,6 +245,34 @@ export interface Stats {
   poisonDamage: number;
   slowFactor: number;
   toxicHealing: number;
+  critDamage: number;
+  shockDamage: number;
+  shockDepth: number;
+  burnExplode: number;
+  frostBonus: number;
+  poisonStacks: number;
+  plagueSpread: number;
+  droneRate: number;
+  droneDamage: number;
+  range: number;
+  knockback: number;
+  dotPower: number;
+  slowPower: number;
+  momentum: number;
+  thorns: number;
+  barrierRate: number;
+  ricochet: number;
+  split: number;
+  splash: number;
+  homing: number;
+  lifesteal: number;
+  echo: number;
+  pierceMod: number;
+  interest: number;
+  discount: number;
+  freeRerolls: number;
+  luck: number;
+  emergency: number;
 }
 export type EventKind =
   | "spawn"
@@ -187,7 +296,10 @@ export type EventKind =
   | "weave"
   | "status"
   | "heal"
-  | "shieldBreak";
+  | "shieldBreak"
+  | "spawnMark"
+  | "horde"
+  | "pull";
 export interface GameEvent extends Vec {
   type: EventKind;
   id?: number;
@@ -205,6 +317,25 @@ export interface GameEvent extends Vec {
   status?: "burn" | "poison" | "slow";
 }
 
+/** Set bonuses by tier (0 = none, 1 = two pieces, 2 = four, 3 = six). */
+const SET_ATTACK_SPEED = [0, 0.1, 0.22, 0.35],
+  SET_MOVE_SPEED = [0, 0.05, 0.1, 0.15],
+  SET_CRIT = [0, 0.1, 0.2, 0.3],
+  SET_SHOCK = [0, 0.1, 0.22, 0.35],
+  SET_PIERCE = [0, 0, 1, 2],
+  SET_BURN = [0, 6, 12, 20],
+  SET_POISON = [0, 4, 8, 12],
+  SET_SLOW = [1, 0.8, 0.65, 0.5],
+  SET_TOXIC_HEAL = [0, 0, 2, 4],
+  SET_CRIT_DAMAGE = [0.6, 0.6, 0.6, 1],
+  SET_SHOCK_DAMAGE = [0.45, 0.45, 0.45, 0.6],
+  SET_SHOCK_DEPTH = [1, 1, 1, 2],
+  SET_BURN_EXPLODE = [0, 0, 0, 0.3],
+  SET_FROST_BONUS = [0, 0, 0, 0.2],
+  SET_POISON_STACKS = [3, 3, 3, 5],
+  SET_PLAGUE = [0, 0, 0, 1],
+  SET_DRONE_RATE = [1, 1, 1, 2],
+  SET_DRONE_DAMAGE = [1, 1, 1, 1.5];
 const clamp = (n: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, n));
 const distance = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -214,6 +345,8 @@ const levelScale = rankScale;
 export class SurvivalRun {
   readonly hero: HeroId;
   readonly seed: number;
+  readonly map: MapDefinition;
+  readonly mapId: MapId;
   phase: Phase = "ready";
   wave = 0;
   time = 0;
@@ -224,9 +357,17 @@ export class SurvivalRun {
   earnedSalvage = 0;
   kills = 0;
   waveKills = 0;
-  combo = 0;
-  bestCombo = 0;
-  comboTime = 0;
+  /** Enemies this wave will spawn, and how many have been drawn from it. */
+  waveBudget = 0;
+  spawnedCount = 0;
+  hordesFired = 0;
+  hordeWarning = 0;
+  fullClears = 0;
+  fastestClear = Infinity;
+  waveOutcome: "timer" | "clear" | "boss" | null = null;
+  spawnQueue: SpawnMarker[] = [];
+  /** Bag slots bought this run. */
+  extraSlots = 0;
   player: Player;
   enemies: Enemy[] = [];
   bullets: Bullet[] = [];
@@ -255,10 +396,24 @@ export class SurvivalRun {
   private openingShooterSpawned = false;
   private pendingDash = false;
   private combatStats?: Stats;
+  private trickleTotal = 0;
+  private trickleInterval = 2;
+  private trickled = 0;
+  private stillTime = 0;
+  private scorchTick = 0;
+  private movingTime = 0;
+  private voltKills = 0;
+  private bloodlust = 0;
+  private bloodlustTime = 0;
+  private emergencyUsed = false;
+  private splashing = false;
 
-  constructor(hero: HeroId = "ember", seed = 1) {
+  constructor(hero: HeroId = "ember", seed = 1, map: MapId | number = 1) {
     this.hero = HEROES[hero] ? hero : "ember";
+    this.map = mapById(map);
+    this.mapId = this.map.id;
     this.seed = seed >>> 0;
+    this.extraSlots = this.hero === "flux" ? 2 : 0;
     this.randomState = this.seed || 0x6d2b79f5;
     const definition = HEROES[this.hero];
     this.player = {
@@ -274,6 +429,8 @@ export class SurvivalRun {
       vx: 0,
       vy: 0,
       abilityTime: 0,
+      barrier: 0,
+      barrierTimer: 0,
     };
     this.weapons = [
       {
@@ -330,6 +487,7 @@ export class SurvivalRun {
       storm = tier("storm"),
       frost = tier("frost"),
       toxic = tier("toxic");
+    const armor = (this.hero === "bastion" ? 8 : 0) + n("armor");
     return {
       damage:
         (1 +
@@ -337,66 +495,186 @@ export class SurvivalRun {
           (this.hero === "ember"
             ? 0.1
             : this.hero === "prism"
-              ? new Set(this.weapons.map((w) => w.kind)).size * 0.03
-              : 0)) *
-        (this.weaveTime > 0 ? 1.25 : 1),
+              ? new Set(this.weapons.map((w) => w.kind)).size * 0.05
+              : this.hero === "bastion"
+                ? armor * 0.01
+                : this.hero === "flux"
+                  ? -0.1
+                  : 0) +
+          (this.movingTime > 0.5 ? n("momentum") : 0)) *
+        (this.weaveTime > 0 ? 1 + WEAVE.bonus : 1),
       attackSpeed: Math.min(
         4.5,
-        1 + n("attackSpeed") + (drone === 2 ? 0.22 : drone === 1 ? 0.1 : 0),
+        (1 +
+          n("attackSpeed") +
+          SET_ATTACK_SPEED[drone] +
+          (this.hero === "reaper" ? Math.min(10, this.bloodlust) * 0.04 : 0)) *
+          (this.hero === "bastion" || this.hero === "frost" ? 0.85 : 1),
       ),
       speed:
         HEROES[this.hero].speed *
-        (1 +
-          Math.min(0.7, n("speed")) +
-          (drone === 2 ? 0.1 : drone === 1 ? 0.05 : 0)),
-      maxHp: HEROES[this.hero].maxHp + n("maxHp"),
-      armor: (this.hero === "bastion" ? 8 : 0) + n("armor"),
+        (1 + Math.min(0.7, n("speed")) + SET_MOVE_SPEED[drone]),
+      maxHp:
+        Math.round(
+          HEROES[this.hero].maxHp *
+            (this.hero === "volt" ? 0.8 : this.hero === "prism" ? 0.85 : 1),
+        ) + n("maxHp"),
+      armor,
       magnet: 3.8 * (1 + n("magnet") + (this.hero === "flux" ? 0.5 : 0)),
       dashCooldown: Math.max(
         1.2,
         HEROES[this.hero].dashCooldown / (1 + n("dashRecovery")),
       ),
       healing: n("healing"),
-      critChance: kinetic === 2 ? 0.2 : kinetic === 1 ? 0.1 : 0,
+      critChance: Math.min(0.75, SET_CRIT[kinetic] + n("critChance")),
       shockChance: Math.min(
         0.5,
-        (storm === 2 ? 0.22 : storm === 1 ? 0.1 : 0) +
-          (this.hero === "volt" ? 0.15 : 0),
+        SET_SHOCK[storm] + (this.hero === "volt" ? 0.15 : 0),
       ),
-      pierce: kinetic === 2 ? 1 : 0,
+      pierce: SET_PIERCE[kinetic],
       burnDamage:
-        Math.max(
-          thermal === 2 ? 12 : thermal === 1 ? 6 : 0,
-          this.hero === "cinder" ? 5 : 0,
-        ) + n("burnDamage"),
+        Math.max(SET_BURN[thermal], this.hero === "cinder" ? 5 : 0) +
+        n("burnDamage"),
       poisonDamage:
-        Math.max(
-          toxic === 2 ? 8 : toxic === 1 ? 4 : 0,
-          this.hero === "thorn" ? 4 : 0,
-        ) + n("poisonDamage"),
-      slowFactor: Math.min(
-        frost === 2 ? 0.65 : frost === 1 ? 0.8 : 1,
-        this.hero === "frost" ? 0.8 : 1,
-      ),
-      toxicHealing: toxic === 2 ? 2 : 0,
+        Math.max(SET_POISON[toxic], this.hero === "thorn" ? 4 : 0) +
+        n("poisonDamage"),
+      slowFactor: Math.min(SET_SLOW[frost], this.hero === "frost" ? 0.8 : 1),
+      toxicHealing: SET_TOXIC_HEAL[toxic],
+      critDamage: SET_CRIT_DAMAGE[kinetic] + Math.min(1.5, n("critDamage")),
+      shockDamage: SET_SHOCK_DAMAGE[storm],
+      shockDepth: SET_SHOCK_DEPTH[storm],
+      burnExplode: SET_BURN_EXPLODE[thermal],
+      frostBonus: SET_FROST_BONUS[frost],
+      poisonStacks: Math.max(SET_POISON_STACKS[toxic], this.hero === "thorn" ? 5 : 3),
+      plagueSpread: SET_PLAGUE[toxic],
+      droneRate: SET_DRONE_RATE[drone],
+      droneDamage: SET_DRONE_DAMAGE[drone],
+      range: 1 + n("range"),
+      knockback: n("knockback"),
+      dotPower: n("dotPower"),
+      slowPower: Math.min(0.35, n("slowPower")),
+      momentum: n("momentum"),
+      thorns: n("thorns"),
+      barrierRate: n("barrierRate"),
+      ricochet: n("ricochet"),
+      split: n("split"),
+      splash: Math.min(0.9, n("splash")),
+      homing: Math.min(14, n("homing")),
+      lifesteal: Math.min(0.04, n("lifesteal")),
+      echo: Math.min(0.6, n("echo")),
+      pierceMod: Math.min(4, n("pierce")),
+      interest: n("interest"),
+      discount: Math.min(0.35, n("discount")),
+      freeRerolls: Math.min(3, n("freeRerolls")),
+      luck: n("luck"),
+      emergency: Math.min(0.9, n("emergency")),
     };
   }
   get synergies() {
-    return getSynergies(this.weapons, this.bag);
+    // Prism's lattice lets stowed weapons count; everyone else counts hands only.
+    const weapons =
+      this.hero === "prism"
+        ? [
+            ...this.weapons,
+            ...this.bag
+              .filter((item) => item.category === "weapon")
+              .map((item) => ({ kind: item.kind as WeaponId })),
+          ]
+        : this.weapons;
+    return getSynergies(weapons, this.bag, HEROES[this.hero].setPiece);
   }
   get waveThreat() {
-    return THREATS.find((threat) => threat.wave === this.wave) ?? null;
+    return (
+      THREATS.find((threat) => threatWave(threat, this.map) === this.wave) ??
+      null
+    );
+  }
+  private threatUnlocked(kind: EnemyKind): boolean {
+    const threat = THREATS.find((t) => t.kind === kind);
+    return !!threat && threatWave(threat, this.map) <= this.wave;
+  }
+  /** Enemies still to come this wave: unspawned, telegraphed and alive. */
+  get remainingEnemies(): number {
+    return (
+      Math.max(0, this.waveBudget - this.spawnedCount) +
+      this.spawnQueue.filter((marker) => marker.budgeted).length +
+      this.enemies.filter((enemy) => enemy.budgeted && enemy.hp > 0).length
+    );
+  }
+  get enemiesAlive(): number {
+    return this.enemies.filter((enemy) => enemy.hp > 0).length;
+  }
+  get enemyCap(): number {
+    return ENEMY_CAP + 6 * this.tuning.spawnGroup;
+  }
+  get groupSize(): number {
+    return spawnGroupSize(this.wave) + this.tuning.spawnGroup;
+  }
+  /** A hook for difficulty experiments; the shipped game never scales by gear. */
+  get pressure(): number {
+    return 1;
+  }
+  get eliteChance(): number {
+    const base = eliteChance(this.wave);
+    return this.rule === "elites" ? Math.min(0.4, Math.max(0.2, base * 2)) : base;
+  }
+  get bagCapacity(): number {
+    return BAG_CAPACITY + this.extraSlots;
+  }
+  canBuySlot(): boolean {
+    return (
+      this.phase === "shop" &&
+      this.extraSlots < MAX_EXTRA_SLOTS &&
+      this.salvage >= BAG_SLOT_COST
+    );
+  }
+  buySlot(): boolean {
+    if (!this.canBuySlot()) return false;
+    this.salvage -= BAG_SLOT_COST;
+    this.extraSlots++;
+    this.emit({ type: "buy", ...this.player, amount: BAG_SLOT_COST });
+    return true;
   }
   get renderAlpha() {
     return clamp(this.accumulator * 60, 0, 1);
   }
   get isBossWave() {
-    return this.wave > 0 && this.wave % BOSS_INTERVAL === 0;
+    return this.wave > 0 && this.wave % this.bossInterval === 0;
   }
   get bossName() {
     return BOSS_NAMES[
-      (Math.max(1, Math.ceil(this.wave / BOSS_INTERVAL)) - 1) % BOSS_NAMES.length
+      (Math.max(1, Math.ceil(this.wave / this.bossInterval)) - 1) %
+        BOSS_NAMES.length
     ];
+  }
+  get tuning() {
+    return this.map.tuning;
+  }
+  get rule() {
+    return this.map.rule.id;
+  }
+  /** Waves between bosses on this map. */
+  get bossInterval() {
+    return this.rule === "gauntlet" ? 2 : BOSS_INTERVAL;
+  }
+  /** A map multiplier blended in over the opening waves. */
+  private scaled(key: "hp" | "damage" | "bossHp" | "budget"): number {
+    return 1 + (this.tuning[key] - 1) * mapRamp(this.wave);
+  }
+  private price(amount: number): number {
+    return Math.ceil(amount * this.tuning.prices);
+  }
+  /** Weapon and drone reach after map rules. */
+  private reach(range: number): number {
+    return range * (this.rule === "fog" ? 0.75 : 1);
+  }
+  /** Hand weapon reach: map rules plus the hero's own limits. */
+  private weaponReach(range: number): number {
+    return (
+      this.reach(range) *
+      (this.hero === "cinder" ? 0.8 : 1) *
+      (this.combatStats ?? this.stats).range
+    );
   }
   continueEndless(): boolean {
     if (this.phase !== "won" || this.wave !== CAMPAIGN_WAVES || this.endless)
@@ -408,7 +686,10 @@ export class SurvivalRun {
     return true;
   }
   get rerollCost() {
-    return 4 + this.wave + this.shopRolls * 3;
+    if (this.shopRolls < Math.floor(this.stats.freeRerolls)) return 0;
+    return this.price(
+      rerollCost(this.wave, this.shopRolls) * (this.hero === "flux" ? 0.5 : 1),
+    );
   }
   get boss() {
     return this.enemies.find((enemy) => enemy.kind === "boss");
@@ -434,10 +715,41 @@ export class SurvivalRun {
     this.wave++;
     this.phase = "combat";
     this.time = 0;
-    this.waveDuration = waveDuration(this.wave);
+    this.waveDuration = waveDuration(this.wave, this.bossInterval);
     this.timeRemaining = this.waveDuration;
     this.waveKills = 0;
     this.spawnTimer = 0.45;
+    this.waveOutcome = null;
+    this.spawnQueue = [];
+    this.spawnedCount = 0;
+    this.hordesFired = 0;
+    this.hordeWarning = 0;
+    this.trickled = 0;
+    this.emergencyUsed = false;
+    this.player.barrier = 0;
+    this.player.barrierTimer = 0;
+    this.stillTime = 0;
+    this.scorchTick = 0;
+    this.movingTime = 0;
+    this.waveBudget = Math.max(
+      5,
+      Math.round(
+        (this.isBossWave ? bossAddBudget(this.wave) : waveBudget(this.wave)) *
+          this.scaled("budget") *
+          this.pressure,
+      ),
+    );
+    {
+      const hordes = hordeProgress(this.wave).length * this.hordeSize,
+        opening = 4 + (this.waveThreat ? 1 : 0);
+      this.trickleTotal = Math.max(0, this.waveBudget - opening - hordes);
+      const groups = Math.max(1, Math.ceil(this.trickleTotal / this.groupSize));
+      this.trickleInterval = clamp(
+        (0.9 * this.waveDuration - 0.6) / groups,
+        0.55,
+        2.4,
+      );
+    }
     this.healTimer = 0;
     this.accumulator = 0;
     this.player.x = 0;
@@ -461,8 +773,6 @@ export class SurvivalRun {
       drone.prevY = drone.y;
       drone.cooldown = 0;
     }
-    this.combo = 0;
-    this.comboTime = 0;
     this.pendingDash = false;
     this.dashWasHeld = false;
     this.openingShooterSpawned = false;
@@ -480,10 +790,12 @@ export class SurvivalRun {
       6.5,
       Math.min(8, WEAPONS[HEROES[this.hero].weapon].range * 0.75),
     );
-    this.spawn("grunt", { x: -near, y: -0.8 });
-    this.spawn("grunt", { x: near, y: 1.2 });
-    this.spawn("grunt", { x: -1.2, y: -near - 1 });
-    this.spawn("grunt", { x: 1.6, y: near + 1 });
+    const opening = { budgeted: true };
+    this.spawn("grunt", { x: -near, y: -0.8 }, opening);
+    this.spawn("grunt", { x: near, y: 1.2 }, opening);
+    this.spawn("grunt", { x: -1.2, y: -near - 1 }, opening);
+    this.spawn("grunt", { x: 1.6, y: near + 1 }, opening);
+    this.spawnedCount = 4;
     return true;
   }
 
@@ -589,6 +901,7 @@ export class SurvivalRun {
           if (this.hero === "frost") {
             enemy.slowFactor = 0.4;
             enemy.slowTime = 3;
+            enemy.freezeTime = 1;
           }
           if (this.hero === "cinder") {
             enemy.burnDamage = Math.max(
@@ -669,7 +982,7 @@ export class SurvivalRun {
     if (offer.kind === "heal") return this.player.hp < this.player.maxHp;
     if (offer.kind === "weapon" && this.weapons.length < this.weaponSlots)
       return true;
-    return this.bag.length < BAG_CAPACITY;
+    return this.bag.length < this.bagCapacity;
   }
   buy(index: number): boolean {
     if (!this.canBuy(index)) return false;
@@ -681,7 +994,7 @@ export class SurvivalRun {
     if (offer.kind === "heal")
       this.player.hp = Math.min(
         this.player.maxHp,
-        this.player.hp + Math.ceil(this.player.maxHp * 0.45),
+        this.player.hp + Math.ceil(this.player.maxHp * REPAIR_HEAL),
       );
     else {
       const equipment: Equipment = {
@@ -723,6 +1036,7 @@ export class SurvivalRun {
       this.phase === "shop" &&
       !!item &&
       item.level < 6 &&
+      !(item.category === "weapon" && WEAPONS[item.kind as WeaponId].unique) &&
       this.equipment.some(
         (other) =>
           other.id !== id &&
@@ -817,9 +1131,7 @@ export class SurvivalRun {
         (item) =>
           item.id !== without &&
           item.category === "drone" &&
-          ["gun", "orbit", "shock"].includes(
-            ITEMS[item.kind as ItemId].drone!.attack,
-          ),
+          OFFENSIVE_DRONES.includes(ITEMS[item.kind as ItemId].drone!.attack),
       )
     );
   }
@@ -827,7 +1139,7 @@ export class SurvivalRun {
     return (
       this.phase === "shop" &&
       this.weapons.some((w) => w.id === id) &&
-      this.bag.length < BAG_CAPACITY &&
+      this.bag.length < this.bagCapacity &&
       this.stillArmed(id)
     );
   }
@@ -851,7 +1163,7 @@ export class SurvivalRun {
       item.category === "weapon"
         ? WEAPONS[item.kind as WeaponId].cost
         : ITEMS[item.kind as ItemId].cost;
-    return Math.max(1, Math.floor(price * rankScale(item.level) * 0.5));
+    return Math.max(1, Math.floor(price * rankScale(item.level) * SELL_RATE));
   }
   canSellEquipment(id: number): boolean {
     const item = this.equipmentById(id);
@@ -873,6 +1185,9 @@ export class SurvivalRun {
   private refreshInventory(oldMax = this.player.maxHp): void {
     this.combatStats = undefined;
     this.player.maxHp = this.stats.maxHp;
+    const discount = this.stats.discount;
+    for (const offer of this.offers)
+      if (!offer.sold) offer.cost = Math.ceil(offer.baseCost * (1 - discount));
     this.player.hp = Math.min(
       this.player.maxHp,
       this.player.hp + Math.max(0, this.player.maxHp - oldMax),
@@ -975,8 +1290,8 @@ export class SurvivalRun {
     p.abilityTime = Math.max(0, p.abilityTime - dt);
     p.hurtTime = Math.max(0, p.hurtTime - dt);
     p.dashCooldown = Math.max(0, p.dashCooldown - dt);
-    this.comboTime = Math.max(0, this.comboTime - dt);
-    if (!this.comboTime) this.combo = 0;
+    this.bloodlustTime = Math.max(0, this.bloodlustTime - dt);
+    if (!this.bloodlustTime) this.bloodlust = 0;
     if (this.pendingDash) {
       this.dash(input);
       this.pendingDash = false;
@@ -999,47 +1314,78 @@ export class SurvivalRun {
     p.x = clamp(p.x + p.vx * dt, -ARENA_RADIUS + 0.65, ARENA_RADIUS - 0.65);
     p.y = clamp(p.y + p.vy * dt, -ARENA_RADIUS + 0.65, ARENA_RADIUS - 0.65);
     if (length > 0.05) p.angle = Math.atan2(iy, ix);
-    const target = this.nearest(p, 16);
+    this.movingTime = length > 0.05 || p.dashTime > 0 ? this.movingTime + dt : 0;
+    if (this.rule === "scorched") {
+      // Standing still on the furnace floor burns through armor and i-frames.
+      this.stillTime =
+        length < 0.05 && p.dashTime <= 0 ? this.stillTime + dt : 0;
+      if (this.stillTime > 1) {
+        this.scorchTick -= dt;
+        if (this.scorchTick <= 0) {
+          this.scorchTick = 0.5;
+          const burn = p.maxHp * 0.02;
+          p.hp = Math.max(0, p.hp - burn);
+          this.emit({ type: "hurt", ...p, amount: burn, angle: p.angle });
+        }
+      }
+    }
+    const target = this.nearest(p, this.reach(16));
     if (target) p.angle = Math.atan2(target.y - p.y, target.x - p.x);
     this.healTimer += dt;
     if (this.healTimer >= 3) {
       this.healTimer -= 3;
       p.hp = Math.min(p.maxHp, p.hp + stats.healing * 3);
     }
+    if (stats.barrierRate > 0) {
+      p.barrierTimer += dt * stats.barrierRate;
+      if (p.barrierTimer >= 1) {
+        p.barrierTimer -= 1;
+        p.barrier = Math.min(1 + Math.floor(stats.barrierRate * 12), p.barrier + 1);
+      }
+    }
 
     if (this.isBossWave && !this.bossSpawned && this.time > 1.5) {
       this.spawn("boss");
       this.bossSpawned = true;
       this.emit({ type: "boss", x: 0, y: -15 });
-    }
-    if (this.waveThreat && !this.openingShooterSpawned && this.time >= 0.8) {
-      this.spawn(this.waveThreat.kind);
-      this.openingShooterSpawned = true;
-    }
-    if (this.time < this.waveDuration) {
-      this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0) {
-        this.spawnTimer += Math.max(
-          0.95,
-          2 - Math.min(this.wave, 18) * 0.055 - this.waveProgress * 0.35,
-        );
-        // Simultaneous entries create choices between directions, with enough
-        // travel time to read a gap. A lone trickle never pressures an auto-aim gun.
-        // Fewer, tougher enemies after the opening chapters: pressure comes
-        // from health and speed, not from crowd size.
-        const arrivals = this.wave === 1 ? 3 : this.wave < 9 ? 4 : 3;
-        for (let i = 0; i < arrivals && this.enemies.length < 48; i++)
-          this.spawn(this.chooseEnemy());
+      if (this.wave === CAMPAIGN_WAVES && this.rule === "twinFinale") {
+        this.spawn("boss", { x: 0, y: 15.5 }, { variant: 1 });
+        this.emit({ type: "boss", x: 0, y: 15 });
       }
     }
+    if (this.waveThreat && !this.openingShooterSpawned && this.time >= 0.8) {
+      this.enqueueSpawn(
+        this.waveThreat.kind,
+        this.pickSpawnPoint(false),
+        SPAWN_TELEGRAPH,
+        { budgeted: true },
+      );
+      this.openingShooterSpawned = true;
+    }
+    this.scheduleSpawns(dt);
+    this.activateSpawns(dt);
     this.moveDrones(dt);
     for (const weapon of this.weapons) {
       weapon.cooldown -= dt;
+      if (weapon.echo && weapon.echo > 0) {
+        weapon.echo -= dt;
+        if (weapon.echo <= 0) {
+          const target = this.nearest(
+            p,
+            this.weaponReach(WEAPONS[weapon.kind].range),
+          );
+          if (target) this.fire(weapon, target);
+        }
+      }
       if (weapon.cooldown <= 0) {
-        const target = this.nearest(p, WEAPONS[weapon.kind].range);
+        const target = this.nearest(
+          p,
+          this.weaponReach(WEAPONS[weapon.kind].range),
+        );
         if (target) {
           this.fire(weapon, target);
           weapon.cooldown = WEAPONS[weapon.kind].cooldown / stats.attackSpeed;
+          if (stats.echo > 0 && this.random() < stats.echo) weapon.echo = 0.08;
         } else weapon.cooldown = 0;
       }
     }
@@ -1053,57 +1399,245 @@ export class SurvivalRun {
       this.emit({ type: "lost", ...p });
       return;
     }
-    if (this.isBossWave && this.bossDefeated) {
-      this.completeWave();
+    if (this.isBossWave && this.bossDefeated && !this.boss) {
+      this.completeWave("boss");
       return;
     }
-    if (!this.isBossWave && this.time >= this.waveDuration) this.completeWave();
+    if (!this.isBossWave) {
+      if (this.time >= this.waveDuration) this.completeWave("timer");
+      else if (
+        this.spawnedCount >= this.waveBudget &&
+        !this.spawnQueue.length &&
+        !this.enemies.length
+      )
+        this.completeWave("clear");
+    }
+  }
+  get hordeSize(): number {
+    return Math.round(hordeSize(this.wave) * (1 + 0.15 * this.tuning.spawnGroup));
+  }
+  private get unspawned(): number {
+    return Math.max(0, this.waveBudget - this.spawnedCount);
+  }
+  /** Feeds the wave budget into the arena: a steady trickle plus hordes. */
+  private scheduleSpawns(dt: number): void {
+    this.hordeWarning = Math.max(0, this.hordeWarning - dt);
+    if (this.time >= this.waveDuration) return;
+    const progress = hordeProgress(this.wave);
+    if (
+      this.hordesFired < progress.length &&
+      this.waveProgress >= progress[this.hordesFired] &&
+      this.unspawned > 0
+    ) {
+      this.hordesFired++;
+      this.horde(Math.min(this.unspawned, this.hordeSize));
+    }
+    if (this.unspawned <= 0) return;
+    const group = this.groupSize;
+    this.spawnTimer -= dt;
+    // Never idle while budget remains: a fast player pulls the schedule forward,
+    // and a slow one still receives the whole wave before the timer runs out.
+    if (this.enemiesAlive + this.spawnQueue.length < 2 + group)
+      this.spawnTimer = Math.min(this.spawnTimer, 0.35);
+    const span = Math.max(1, 0.9 * this.waveDuration - 0.6),
+      expected = this.trickleTotal * clamp((this.time - 0.6) / span, 0, 1);
+    if (this.trickled < expected) this.spawnTimer = Math.min(this.spawnTimer, 0);
+    if (this.spawnTimer > 0) return;
+    this.spawnTimer += this.trickleInterval;
+    const behind = this.wave >= 3 && this.random() < 0.3,
+      point = this.pickSpawnPoint(behind);
+    for (let i = 0; i < group && this.unspawned > 0; i++) {
+      if (this.enemiesAlive + this.spawnQueue.length >= this.enemyCap) break;
+      const jitter = {
+        x: clamp(point.x + (this.random() * 2 - 1) * 1.2, -16.2, 16.2),
+        y: clamp(point.y + (this.random() * 2 - 1) * 1.2, -16.2, 16.2),
+      };
+      this.enqueueSpawn(this.chooseEnemy(), jitter, SPAWN_TELEGRAPH, {
+        budgeted: true,
+      });
+      this.trickled++;
+    }
+  }
+  /** A ring of enemies closes on the player after a longer telegraph. */
+  private horde(size: number): void {
+    const p = this.player,
+      radius = HORDE_RING.min + this.random() * (HORDE_RING.max - HORDE_RING.min),
+      phase = this.random() * Math.PI * 2,
+      room = this.enemyCap + 10 - this.enemiesAlive - this.spawnQueue.length,
+      count = Math.max(0, Math.min(size, room));
+    for (let i = 0; i < count; i++) {
+      const a = phase + (i / count) * Math.PI * 2;
+      this.enqueueSpawn(
+        this.hordeKind(),
+        {
+          x: clamp(p.x + Math.cos(a) * radius, -16.2, 16.2),
+          y: clamp(p.y + Math.sin(a) * radius, -16.2, 16.2),
+        },
+        HORDE_TELEGRAPH,
+        { budgeted: true, horde: true },
+      );
+    }
+    if (!count) return;
+    this.hordeWarning = 1.4;
+    this.emit({ type: "horde", x: p.x, y: p.y, radius });
+  }
+  private hordeKind(): EnemyKind {
+    const pool = THREATS.filter(
+      (t) =>
+        threatWave(t, this.map) <= this.wave &&
+        ["runner", "brute", "charger", "shielder"].includes(t.kind),
+    ).map((t) => t.kind);
+    const roll = this.random();
+    if (!pool.length || roll < 0.6) return "grunt";
+    if (roll < 0.85 && pool.includes("runner")) return "runner";
+    return pool[pool.length - 1];
+  }
+  /** Anywhere in the arena, never on top of the player, sometimes behind them. */
+  private pickSpawnPoint(behind: boolean): Vec {
+    const p = this.player,
+      facing =
+        Math.hypot(p.vx, p.vy) > 1 ? Math.atan2(p.vy, p.vx) : p.angle,
+      limit = 16.2;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const angle = behind
+          ? facing + Math.PI + (this.random() - 0.5) * ((100 * Math.PI) / 180)
+          : this.random() * Math.PI * 2,
+        radius =
+          SPAWN_DISTANCE.min +
+          this.random() * (SPAWN_DISTANCE.max - SPAWN_DISTANCE.min),
+        point = {
+          x: clamp(p.x + Math.cos(angle) * radius, -limit, limit),
+          y: clamp(p.y + Math.sin(angle) * radius, -limit, limit),
+        };
+      if (distance(point, p) >= SPAWN_DISTANCE.min) return point;
+    }
+    // Corners: step toward the centre, which always stays inside the arena.
+    const d = Math.hypot(p.x, p.y) || 1,
+      ux = d > 0.5 ? -p.x / d : 1,
+      uy = d > 0.5 ? -p.y / d : 0;
+    return {
+      x: clamp(p.x + ux * (SPAWN_DISTANCE.min + 0.5), -limit, limit),
+      y: clamp(p.y + uy * (SPAWN_DISTANCE.min + 0.5), -limit, limit),
+    };
+  }
+  private enqueueSpawn(
+    kind: EnemyKind,
+    point: Vec,
+    delay: number,
+    opts: { budgeted?: boolean; horde?: boolean } = {},
+  ): void {
+    const elite = kind !== "boss" && this.random() < this.eliteChance;
+    const marker: SpawnMarker = {
+      id: this.nextId++,
+      kind,
+      x: point.x,
+      y: point.y,
+      age: 0,
+      delay,
+      budgeted: !!opts.budgeted,
+      elite,
+      horde: !!opts.horde,
+      radius: ENEMY_STATS[kind].radius * (elite ? ELITE.radius : 1),
+    };
+    this.spawnQueue.push(marker);
+    if (marker.budgeted) this.spawnedCount++;
+    this.emit({
+      type: "spawnMark",
+      x: marker.x,
+      y: marker.y,
+      id: marker.id,
+      kind,
+      radius: marker.radius,
+      amount: delay,
+    });
+  }
+  private activateSpawns(dt: number): void {
+    const waiting: SpawnMarker[] = [];
+    for (const marker of this.spawnQueue) {
+      marker.age += dt;
+      const cap = this.enemyCap + (marker.horde ? 10 : 0);
+      if (marker.age < marker.delay || this.enemiesAlive >= cap) {
+        waiting.push(marker);
+        continue;
+      }
+      this.spawn(marker.kind, marker, {
+        budgeted: marker.budgeted,
+        elite: marker.elite,
+        grace: 0.35,
+        id: marker.id,
+      });
+    }
+    this.spawnQueue = waiting;
   }
 
   private chooseEnemy(): EnemyKind {
-    const unlocked = THREATS.filter((t) => t.wave <= this.wave),
+    if (this.rule === "stampede" && this.random() < 0.22) return "runner";
+    const unlocked = THREATS.filter(
+        (t) => threatWave(t, this.map) <= this.wave,
+      ),
       roll = this.random();
     if (!unlocked.length || roll < 0.4) return "grunt";
     const newest = unlocked[unlocked.length - 1];
     if (roll < 0.6) return newest.kind;
     return unlocked[Math.floor(this.random() * unlocked.length)].kind;
   }
-  private spawn(kind: EnemyKind, position?: Vec): void {
-    const side = Math.floor(this.random() * 4),
-      offset = (this.random() * 2 - 1) * 15;
-    let x = side === 0 ? -16.8 : side === 1 ? 16.8 : offset;
-    let y = side === 2 ? -16.8 : side === 3 ? 16.8 : offset;
-    if (kind === "boss") {
-      x = 0;
+  private spawn(
+    kind: EnemyKind,
+    position?: Vec,
+    opts: {
+      budgeted?: boolean;
+      elite?: boolean;
+      grace?: number;
+      variant?: number;
+      id?: number;
+    } = {},
+  ): void {
+    let x = 0,
       y = -15.5;
-    }
     if (position) {
       x = position.x;
       y = position.y;
-    }
-    if (!position && distance({ x, y }, this.player) < 7) {
-      x *= -1;
-      y *= -1;
+    } else if (kind !== "boss") {
+      const point = this.pickSpawnPoint(false);
+      x = point.x;
+      y = point.y;
     }
     const definition = ENEMY_STATS[kind];
     const age = this.wave - 1,
-      bossTier = Math.ceil(this.wave / BOSS_INTERVAL);
-    // Grunts gain a fixed opening buffer; their old growth stays intact so
-    // two opening volleys do not turn late waves into health sponges.
+      bossTier = Math.ceil(this.wave / this.bossInterval),
+      // Boss health follows the campaign clock, not the boss count, so a
+      // gauntlet's wave-30 boss matches a standard map's.
+      bossPower = Math.max(0.25, this.wave / BOSS_INTERVAL);
     const scaledHp =
       kind === "boss"
-        ? // Tiers arrive every third wave against younger builds; the base is
-          // lower than the boss table's nominal value and the curve is steeper.
-          definition.hp * 0.72 * Math.pow(bossTier, 1.6)
-        : definition.hp +
-          (kind === "grunt" ? 24 : definition.hp) *
-            (age * 0.3 + age * age * 0.02);
-    const hp =
+        ? definition.hp *
+          ENEMY_CURVE.bossBase *
+          Math.pow(bossPower, ENEMY_CURVE.bossPower) *
+          this.scaled("bossHp")
+        : (definition.hp +
+            (kind === "grunt" ? 24 : definition.hp) *
+              (age * ENEMY_CURVE.hpLinear +
+                age * age * ENEMY_CURVE.hpQuadratic)) *
+          this.scaled("hp");
+    let hp =
       kind === "grunt"
-        ? Math.max(scaledHp, Math.min(120, 50 + age * 36))
+        ? Math.max(scaledHp, Math.min(120, 50 + age * 36) * this.scaled("hp"))
         : scaledHp;
+    if (opts.elite) hp *= ELITE.hp;
+    const variant =
+        kind === "boss" ? (opts.variant ?? (bossTier - 1) % 10) : 0,
+      warded = kind === "boss" && this.rule === "wardedBosses",
+      shield =
+        kind === "shielder"
+          ? hp * 0.75
+          : kind === "boss"
+            ? Math.max(
+                [6, 8].includes(variant + 1) ? hp * 0.15 : 0,
+                warded ? hp * 0.3 : 0,
+              )
+            : 0;
     const enemy: Enemy = {
-      id: this.nextId++,
+      id: opts.id ?? this.nextId++,
       kind,
       x,
       y,
@@ -1114,7 +1648,7 @@ export class SurvivalRun {
       telegraph: 0,
       attackTimer: kind === "boss" ? 2 : 1.8 + this.random() * 2,
       stateTime: 0.5,
-      radius: definition.radius,
+      radius: definition.radius * (opts.elite ? ELITE.radius : 1),
       vx: 0,
       vy: 0,
       hitTime: 0,
@@ -1129,23 +1663,15 @@ export class SurvivalRun {
       slowTime: 0,
       slowFactor: 1,
       bossTier: kind === "boss" ? bossTier : 0,
-      bossVariant: kind === "boss" ? (bossTier - 1) % 10 : 0,
+      bossVariant: variant,
       attackCount: 0,
       statusTick: 0,
-      spawnTime: 0.6,
-      shield:
-        kind === "shielder"
-          ? hp * 0.75
-          : kind === "boss" && [6, 8].includes(((bossTier - 1) % 10) + 1)
-            ? hp * 0.15
-            : 0,
-      maxShield:
-        kind === "shielder"
-          ? hp * 0.75
-          : kind === "boss" && [6, 8].includes(((bossTier - 1) % 10) + 1)
-            ? hp * 0.15
-            : 0,
+      spawnTime: opts.grace ?? 0.6,
+      shield,
+      maxShield: shield,
       healTimer: 2.5,
+      budgeted: !!opts.budgeted,
+      elite: !!opts.elite,
     };
     this.enemies.push(enemy);
     this.emit({
@@ -1154,17 +1680,39 @@ export class SurvivalRun {
       y,
       id: enemy.id,
       kind,
-      radius: definition.radius,
+      radius: enemy.radius,
     });
   }
 
   private fire(weapon: Weapon, target: Enemy): void {
     const p = this.player,
       definition = WEAPONS[weapon.kind],
+      spec = definition.pattern(weapon.level),
       damage =
         definition.damage *
-        levelScale(weapon.level) *
-        (this.combatStats ?? this.stats).damage;
+        (definition.unique ? 1 : levelScale(weapon.level)) *
+        (this.combatStats ?? this.stats).damage *
+        (this.hero === "wisp"
+          ? 0.75
+          : this.hero === "reaper" && definition.range > 6
+            ? 0.7
+            : 1);
+    if (spec.kind === "bullet" && spec.aimCluster) {
+      // The densest cluster in reach, not the nearest straggler.
+      let best = target,
+        bestCount = -1;
+      for (const enemy of this.enemies) {
+        if (enemy.hp <= 0 || distance(enemy, p) > this.weaponReach(definition.range)) continue;
+        const count = this.enemies.filter(
+          (other) => other.hp > 0 && distance(other, enemy) < 5,
+        ).length;
+        if (count > bestCount) {
+          bestCount = count;
+          best = enemy;
+        }
+      }
+      target = best;
+    }
     const aim = Math.atan2(target.y - p.y, target.x - p.x);
     this.emit({
       type: "fire",
@@ -1175,148 +1723,295 @@ export class SurvivalRun {
       level: weapon.level,
       targetId: target.id,
     });
-    if (weapon.kind === "pistol") {
-      for (const spread of [-0.045, 0.045])
-        this.spawnBullet(
-          p,
-          aim + spread,
-          "pistol",
+    switch (spec.kind) {
+      case "bullet":
+        this.fireBullets(weapon, spec, aim, damage);
+        break;
+      case "orbit":
+        this.fireOrbit(weapon, spec, damage);
+        break;
+      case "strike":
+        this.fireStrike(weapon, spec, target, damage);
+        break;
+      case "bolts":
+        this.fireBolts(weapon, spec, damage);
+        break;
+      case "line":
+        this.fireLine(
+          weapon,
+          { ...spec, reach: this.weaponReach(spec.reach) },
+          aim,
           damage,
-          24,
-          0.68,
-          weapon.level >= 3 ? 2 : 1,
-          weapon.level,
         );
-    } else if (weapon.kind === "shotgun") {
-      const pellets = weapon.level >= 3 ? 7 : 5;
-      for (let i = 0; i < pellets; i++)
-        this.spawnBullet(
-          p,
-          aim + (i - (pellets - 1) / 2) * 0.12,
-          "shotgun",
+        break;
+      case "cone":
+        this.fireCone(
+          weapon,
+          { ...spec, reach: this.weaponReach(spec.reach) },
+          aim,
           damage,
-          21,
-          0.44,
-          1,
-          weapon.level,
         );
-    } else if (weapon.kind === "rocket")
-      this.spawnBullet(p, aim, "rocket", damage, 12, 1.7, 1, weapon.level);
-    else if (weapon.kind === "frostgun") {
-      for (const spread of [-0.1, 0, 0.1])
-        this.spawnBullet(
-          p,
-          aim + spread,
-          "frostgun",
+        break;
+      case "chain":
+        this.fireChain(
+          weapon,
+          {
+            ...spec,
+            jumps: spec.jumps + (this.hero === "volt" ? 1 : 0),
+            reach: this.weaponReach(spec.reach),
+          },
+          target,
           damage,
-          22,
-          0.62,
-          1,
-          weapon.level,
         );
-    } else if (weapon.kind === "needle")
-      this.spawnBullet(p, aim, "needle", damage, 27, 0.58, 2, weapon.level);
-    else if (weapon.kind === "boomerang")
-      this.spawnBullet(p, aim, "boomerang", damage, 16, 1.7, 20, weapon.level);
-    else if (weapon.kind === "railgun" || weapon.kind === "beam") {
-      const range = definition.range + (weapon.level - 1) * 0.7;
+        break;
+      case "melee":
+        this.fireMelee(
+          weapon,
+          { ...spec, reach: this.weaponReach(spec.reach) },
+          aim,
+          damage,
+        );
+        break;
+      default:
+        this.fireMelee(
+          weapon,
+          {
+            kind: "melee",
+            reach: this.weaponReach(definition.range),
+            knock: 1,
+          },
+          aim,
+          damage,
+        );
+    }
+  }
+  private fireBullets(
+    weapon: Weapon,
+    spec: BulletSpec,
+    aim: number,
+    damage: number,
+  ): void {
+    if (spec.maxActive) {
+      const active = this.bullets
+        .filter((b) => b.ownerId === weapon.id && !b.child && b.life > 0)
+        .sort((a, b) => b.age - a.age);
+      for (let i = 0; i <= active.length - spec.maxActive; i++)
+        active[i].life = 0;
+    }
+    for (let i = 0; i < spec.count; i++)
+      this.spawnBullet(
+        this.player,
+        aim + (i - (spec.count - 1) / 2) * spec.spread,
+        weapon.kind,
+        damage,
+        spec.speed,
+        spec.life,
+        spec.pierce,
+        weapon.level,
+        spec,
+        weapon.id,
+      );
+  }
+  private fireLine(
+    weapon: Weapon,
+    spec: LineSpec,
+    aim: number,
+    damage: number,
+  ): void {
+    const p = this.player,
+      range = spec.reach;
+    this.emit({
+      type: "arc",
+      ...p,
+      targetX: p.x + Math.cos(aim) * range,
+      targetY: p.y + Math.sin(aim) * range,
+      weapon: weapon.kind,
+      id: weapon.id,
+      level: weapon.level,
+    });
+    for (const enemy of this.enemies) {
+      const dx = enemy.x - p.x,
+        dy = enemy.y - p.y,
+        along = dx * Math.cos(aim) + dy * Math.sin(aim),
+        across = Math.abs(-dx * Math.sin(aim) + dy * Math.cos(aim));
+      if (along >= 0 && along < range && across < enemy.radius + 0.2)
+        this.hitEnemy(enemy, damage, p, spec.knock, true, weapon.kind);
+    }
+  }
+  private fireCone(
+    weapon: Weapon,
+    spec: ConeSpec,
+    aim: number,
+    damage: number,
+  ): void {
+    const p = this.player,
+      radius = spec.reach;
+    this.emit({
+      type: "slash",
+      ...p,
+      angle: aim,
+      radius,
+      weapon: weapon.kind,
+      id: weapon.id,
+      level: weapon.level,
+    });
+    for (const enemy of this.enemies)
+      if (
+        distance(enemy, p) < radius + enemy.radius &&
+        Math.cos(Math.atan2(enemy.y - p.y, enemy.x - p.x) - aim) > spec.arc
+      )
+        this.hitEnemy(enemy, damage, p, spec.knock, true, weapon.kind);
+  }
+  private fireChain(
+    weapon: Weapon,
+    spec: ChainSpec,
+    target: Enemy,
+    damage: number,
+  ): void {
+    let from: Vec = this.player,
+      next: Enemy | undefined = target;
+    const hit: number[] = [];
+    for (let chain = 0; chain < spec.jumps; chain++) {
+      if (!next) break;
+      const enemy: Enemy = next;
       this.emit({
         type: "arc",
-        ...p,
-        targetX: p.x + Math.cos(aim) * range,
-        targetY: p.y + Math.sin(aim) * range,
+        x: from.x,
+        y: from.y,
+        targetX: enemy.x,
+        targetY: enemy.y,
+        targetId: enemy.id,
         weapon: weapon.kind,
         id: weapon.id,
         level: weapon.level,
       });
-      for (const enemy of this.enemies) {
-        const dx = enemy.x - p.x,
-          dy = enemy.y - p.y,
-          along = dx * Math.cos(aim) + dy * Math.sin(aim),
-          across = Math.abs(-dx * Math.sin(aim) + dy * Math.cos(aim));
-        if (along >= 0 && along < range && across < enemy.radius + 0.2)
-          this.hitEnemy(
-            enemy,
-            damage,
-            p,
-            weapon.kind === "railgun" ? 3 : 0.5,
-            true,
-            weapon.kind,
-          );
-      }
-    } else if (weapon.kind === "flame") {
-      const radius = definition.range + (weapon.level - 1) * 0.35;
-      this.emit({
-        type: "slash",
-        ...p,
-        angle: aim,
-        radius,
-        weapon: "flame",
-        id: weapon.id,
-        level: weapon.level,
-      });
-      for (const enemy of this.enemies)
-        if (
-          distance(enemy, p) < radius + enemy.radius &&
-          Math.cos(Math.atan2(enemy.y - p.y, enemy.x - p.x) - aim) > 0.78
-        )
-          this.hitEnemy(enemy, damage, p, 0.4, true, "flame");
-    } else if (weapon.kind === "arc") {
-      let from: Vec = p,
-        next: Enemy | undefined = target;
-      const hit: number[] = [];
-      for (let chain = 0; chain < 3 + weapon.level; chain++) {
-        if (!next) break;
-        const enemy: Enemy = next;
-        this.emit({
-          type: "arc",
-          x: from.x,
-          y: from.y,
-          targetX: enemy.x,
-          targetY: enemy.y,
-          targetId: enemy.id,
-          weapon: "arc",
-          id: weapon.id,
-          level: weapon.level,
-        });
-        hit.push(enemy.id);
-        this.hitEnemy(
-          enemy,
-          damage * Math.pow(0.86, chain),
-          from,
-          0.35,
-          true,
-          "arc",
-        );
-        from = { x: enemy.x, y: enemy.y };
-        next = this.nearest(from, 4.2 + weapon.level * 0.35, hit);
-      }
-    } else {
-      const radius = definition.range + (weapon.level - 1) * 0.35;
-      this.emit({
-        type: "slash",
-        ...p,
-        angle: aim,
-        radius,
-        weapon: weapon.kind,
-        id: weapon.id,
-        level: weapon.level,
-      });
-      for (const enemy of this.enemies)
-        if (distance(enemy, p) < radius + enemy.radius && enemy.hp > 0) {
-          if (weapon.kind === "blade") {
-            const angle = Math.atan2(enemy.y - p.y, enemy.x - p.x) - aim;
-            if (Math.cos(angle) < -0.3) continue;
-          }
-          this.hitEnemy(
-            enemy,
-            damage,
-            p,
-            weapon.kind === "blade" ? 3 : 1,
-            true,
-            weapon.kind,
-          );
+      hit.push(enemy.id);
+      this.hitEnemy(
+        enemy,
+        damage * Math.pow(spec.falloff, chain),
+        from,
+        spec.knock,
+        true,
+        weapon.kind,
+      );
+      from = { x: enemy.x, y: enemy.y };
+      next = this.nearest(from, spec.reach, hit);
+    }
+  }
+  private fireMelee(
+    weapon: Weapon,
+    spec: MeleeSpec,
+    aim: number,
+    damage: number,
+  ): void {
+    const p = this.player,
+      radius = spec.reach;
+    this.emit({
+      type: "slash",
+      ...p,
+      angle: aim,
+      radius,
+      weapon: weapon.kind,
+      id: weapon.id,
+      level: weapon.level,
+    });
+    for (const enemy of this.enemies)
+      if (distance(enemy, p) < radius + enemy.radius && enemy.hp > 0) {
+        if (spec.arc !== undefined) {
+          const angle = Math.atan2(enemy.y - p.y, enemy.x - p.x) - aim;
+          if (Math.cos(angle) < spec.arc) continue;
         }
+        this.hitEnemy(enemy, damage, p, spec.knock, true, weapon.kind);
+      }
+  }
+  private fireOrbit(weapon: Weapon, spec: OrbitSpec, damage: number): void {
+    for (const bullet of this.bullets)
+      if (bullet.ownerId === weapon.id && bullet.behavior?.orbit) bullet.life = 0;
+    for (let i = 0; i < spec.count; i++) {
+      const angle = this.time * spec.angular + (i / spec.count) * Math.PI * 2;
+      this.spawnBullet(
+        this.player,
+        angle,
+        weapon.kind,
+        damage,
+        0,
+        spec.life,
+        999,
+        weapon.level,
+        {
+          kind: "bullet",
+          count: spec.count,
+          spread: 0,
+          speed: 0,
+          life: spec.life,
+          pierce: 999,
+          radius: 0.42,
+          knock: 1.2,
+          orbit: { radius: spec.radius, angular: spec.angular, rearm: spec.rearm },
+        },
+        weapon.id,
+      );
+      const bullet = this.bullets[this.bullets.length - 1];
+      bullet.orbitAngle = angle;
+      bullet.rearmAt = spec.rearm;
+      bullet.x = this.player.x + Math.cos(angle) * spec.radius;
+      bullet.y = this.player.y + Math.sin(angle) * spec.radius;
+    }
+  }
+  private fireStrike(
+    weapon: Weapon,
+    spec: StrikeSpec,
+    target: Enemy,
+    damage: number,
+  ): void {
+    const targets: Enemy[] = [target];
+    if (spec.shells > 1) {
+      const next = this.nearest(
+        this.player,
+        this.weaponReach(WEAPONS[weapon.kind].range),
+        [target.id],
+      );
+      if (next) targets.push(next);
+    }
+    for (const enemy of targets)
+      this.addHazard(
+        { x: enemy.x + enemy.vx * spec.delay * 0.5, y: enemy.y + enemy.vy * spec.delay * 0.5 },
+        spec.radius,
+        damage,
+        "blast",
+        spec.delay,
+        { owner: "player", weapon: weapon.kind, knock: spec.knock },
+      );
+  }
+  private fireBolts(weapon: Weapon, spec: BoltsSpec, damage: number): void {
+    const p = this.player,
+      reach = this.weaponReach(WEAPONS[weapon.kind].range),
+      targets = this.enemies
+        .filter((enemy) => enemy.hp > 0 && distance(enemy, p) <= reach)
+        .sort((a, b) => sqDistance(a, p) - sqDistance(b, p))
+        .slice(0, spec.targets);
+    for (const enemy of targets) {
+      this.emit({
+        type: "arc",
+        x: enemy.x,
+        y: enemy.y - 7,
+        targetX: enemy.x,
+        targetY: enemy.y,
+        targetId: enemy.id,
+        weapon: weapon.kind,
+        id: weapon.id,
+        level: weapon.level,
+      });
+      this.emit({
+        type: "explosion",
+        x: enemy.x,
+        y: enemy.y,
+        radius: spec.splash,
+        weapon: weapon.kind,
+      });
+      for (const other of this.enemies)
+        if (other.hp > 0 && distance(other, enemy) < spec.splash + other.radius)
+          this.hitEnemy(other, damage, enemy, spec.knock, true, weapon.kind);
     }
   }
   private spawnBullet(
@@ -1328,6 +2023,9 @@ export class SurvivalRun {
     life: number,
     pierce: number,
     level: number,
+    behavior?: BulletSpec,
+    ownerId?: number,
+    child = false,
   ): void {
     this.bullets.push({
       id: this.nextId++,
@@ -1338,18 +2036,68 @@ export class SurvivalRun {
       enemy: weapon === "enemy",
       weapon,
       damage,
-      radius: weapon === "rocket" ? 0.3 : weapon === "enemy" ? 0.22 : 0.12,
+      radius: behavior?.radius ?? (weapon === "enemy" ? 0.22 : 0.12),
       life,
       angle,
       pierce:
         pierce +
-        (weapon === "enemy" ? 0 : (this.combatStats ?? this.stats).pierce),
+        (weapon === "enemy"
+          ? 0
+          : (this.combatStats ?? this.stats).pierce +
+            Math.floor((this.combatStats ?? this.stats).pierceMod)),
       hitIds: [],
       level,
       age: 0,
       grazed: false,
       returning: false,
+      behavior,
+      ownerId,
+      timer: 0,
+      bounces:
+        (behavior?.bounces ?? 0) +
+        (weapon === "enemy" || child
+          ? 0
+          : Math.min(6, Math.floor((this.combatStats ?? this.stats).ricochet))),
+      splits:
+        weapon === "enemy" || child || behavior?.noContact
+          ? 0
+          : Math.min(6, Math.floor((this.combatStats ?? this.stats).split)),
+      child,
+      orbitAngle: 0,
+      rearmAt: 0,
+      emitTimer: behavior?.emit?.every ?? 0,
+      trailTimer: 0,
     });
+  }
+  /** Fragments and wasps: child bullets that never split again. */
+  private burst(bullet: Bullet, children: BulletChildren, aim: number): void {
+    for (let i = 0; i < children.count; i++) {
+      const angle = children.radial
+        ? aim + (i / children.count) * Math.PI * 2
+        : aim + (i - (children.count - 1) / 2) * 0.35;
+      this.spawnBullet(
+        bullet,
+        angle,
+        bullet.weapon,
+        bullet.damage * children.damage,
+        children.speed,
+        children.life,
+        children.pierce,
+        bullet.level,
+        {
+          kind: "bullet",
+          count: 1,
+          spread: 0,
+          speed: children.speed,
+          life: children.life,
+          pierce: children.pierce,
+          radius: 0.12,
+          homing: children.homing,
+        },
+        bullet.ownerId,
+        true,
+      );
+    }
   }
 
   private moveDrones(dt: number): void {
@@ -1371,9 +2119,14 @@ export class SurvivalRun {
           definition.damage *
           rankScale(drone.level) *
           stats.damage *
+          stats.droneDamage *
           (this.hero === "wisp" ? 1.4 : 1),
-        target = this.nearest(drone, definition.range);
-      if (definition.attack === "repair") {
+        target = this.nearest(drone, this.reach(definition.range));
+      if (definition.attack === "guard") {
+        this.player.barrier = Math.min(2, this.player.barrier + 1);
+        drone.pulse = 0.35;
+        this.emit({ type: "pickup", x: drone.x, y: drone.y, id: drone.id, amount: 0 });
+      } else if (definition.attack === "repair") {
         if (this.player.hp < this.player.maxHp) {
           this.player.hp = Math.min(
             this.player.maxHp,
@@ -1392,7 +2145,41 @@ export class SurvivalRun {
         for (const pickup of this.pickups)
           if (distance(pickup, drone) < 3) pickup.age = 20;
       } else if (!target) continue;
-      else if (definition.attack === "gun") {
+      else if (definition.attack === "flame") {
+        const aim = Math.atan2(target.y - drone.y, target.x - drone.x),
+          reach = this.reach(definition.range);
+        drone.aimAngle = aim;
+        this.emit({ type: "slash", x: drone.x, y: drone.y, id: drone.id, weapon: "flame", radius: reach, angle: aim, level: drone.level });
+        for (const enemy of this.enemies)
+          if (
+            enemy.hp > 0 &&
+            distance(enemy, drone) < reach + enemy.radius &&
+            Math.cos(Math.atan2(enemy.y - drone.y, enemy.x - drone.x) - aim) > 0.78
+          )
+            this.hitEnemy(enemy, power, drone, 0.4, true, "flame");
+      } else if (definition.attack === "pulse") {
+        const reach = this.reach(definition.range);
+        this.emit({ type: "slash", x: drone.x, y: drone.y, id: drone.id, weapon: "frostgun", radius: reach, angle, level: drone.level });
+        for (const enemy of this.enemies)
+          if (enemy.hp > 0 && distance(enemy, drone) < reach + enemy.radius)
+            this.hitEnemy(enemy, power, drone, 1, true, "frostgun");
+      } else if (definition.attack === "strike") {
+        let farthest = target,
+          far = 0;
+        const reach = this.reach(definition.range);
+        for (const enemy of this.enemies) {
+          const d = distance(enemy, drone);
+          if (enemy.hp > 0 && d <= reach && d > far) {
+            far = d;
+            farthest = enemy;
+          }
+        }
+        drone.aimAngle = Math.atan2(farthest.y - drone.y, farthest.x - drone.x);
+        this.addHazard(farthest, 2, power, "blast", 0.8, { owner: "player", weapon: "rocket", knock: 4 });
+      } else if (definition.attack === "spray") {
+        drone.aimAngle = Math.atan2(target.y - drone.y, target.x - drone.x);
+        this.addHazard(target, 1.6, power, "toxic", 0, { owner: "player", weapon: "needle", duration: 4, tickRate: 0.25, knock: 0 });
+      } else if (definition.attack === "gun") {
         const aim = Math.atan2(target.y - drone.y, target.x - drone.x);
         drone.aimAngle = aim;
         this.spawnBullet(drone, aim, "pistol", power, 24, 0.7, 1, drone.level);
@@ -1451,7 +2238,10 @@ export class SurvivalRun {
       drone.cooldown =
         definition.cooldown /
         (this.player.abilityTime > 0 && this.hero === "wisp" ? 3 : 1) /
-        (definition.attack === "repair" ? 1 : stats.attackSpeed);
+        (this.hero === "wisp" ? 1.5 : 1) /
+        (definition.attack === "repair" || definition.attack === "guard"
+          ? 1
+          : stats.attackSpeed * stats.droneRate);
     }
   }
   private addHazard(
@@ -1460,6 +2250,13 @@ export class SurvivalRun {
     damage: number,
     kind: "blast" | "toxic",
     delay = 0.9,
+    opts: {
+      owner?: "player";
+      weapon?: WeaponId;
+      knock?: number;
+      duration?: number;
+      tickRate?: number;
+    } = {},
   ): void {
     this.hazards.push({
       id: this.nextId++,
@@ -1470,9 +2267,13 @@ export class SurvivalRun {
       kind,
       delay,
       age: 0,
-      duration: kind === "toxic" ? 4 : 0.18,
+      duration: opts.duration ?? (kind === "toxic" ? 4 : 0.18),
       triggered: false,
       tick: 0,
+      owner: opts.owner,
+      weapon: opts.weapon,
+      knock: opts.knock,
+      tickRate: opts.tickRate,
     });
   }
   private moveHazards(dt: number): void {
@@ -1486,15 +2287,22 @@ export class SurvivalRun {
           x: hazard.x,
           y: hazard.y,
           radius: hazard.radius,
-          enemy: true,
-          weapon: "enemy",
+          enemy: !hazard.owner,
+          weapon: hazard.owner ? hazard.weapon : "enemy",
         });
       }
       hazard.tick -= dt;
       if (hazard.tick <= 0) {
-        if (distance(hazard, this.player) < hazard.radius + this.player.radius)
+        if (hazard.owner === "player") {
+          for (const enemy of this.enemies)
+            if (enemy.hp > 0 && distance(hazard, enemy) < hazard.radius + enemy.radius)
+              this.hitEnemy(enemy, hazard.damage, hazard, hazard.knock ?? 1, true, hazard.weapon);
+        } else if (
+          distance(hazard, this.player) <
+          hazard.radius + this.player.radius
+        )
           this.hurtPlayer(hazard.damage, hazard);
-        hazard.tick = hazard.kind === "toxic" ? 1 : 99;
+        hazard.tick = hazard.tickRate ?? (hazard.kind === "toxic" ? 1 : 99);
       }
     }
     this.hazards = this.hazards.filter((h) => h.age < h.delay + h.duration);
@@ -1533,6 +2341,7 @@ export class SurvivalRun {
       enemy.slowTime = Math.max(0, enemy.slowTime - dt);
       if (enemy.poisonTime <= 0) enemy.poisonStacks = 0;
       if (enemy.slowTime <= 0) enemy.slowFactor = 1;
+      if (enemy.freezeTime) enemy.freezeTime = Math.max(0, enemy.freezeTime - dt);
       if (enemy.hp <= 0) continue;
       const def = ENEMY_STATS[enemy.kind],
         dx = p.x - enemy.x,
@@ -1583,10 +2392,17 @@ export class SurvivalRun {
         enemy.shield = enemy.maxShield * 0.35;
         enemy.healTimer = 8;
       }
+      const bonus = this.tuning.speedBonus;
       let speed =
           def.speed *
-          (1 + Math.min(0.85, (this.wave - 1) * 0.034)) *
-          enemy.slowFactor,
+          (1 +
+            Math.min(
+              ENEMY_CURVE.speedCap + bonus,
+              (this.wave - 1) * ENEMY_CURVE.speedPerWave + bonus,
+            )) *
+          enemy.slowFactor *
+          (enemy.elite ? ELITE.speed : 1) *
+          (enemy.freezeTime ? 0 : 1),
         mx = dx / d,
         my = dy / d;
       if (enemy.kind === "grunt" && this.wave >= 2) {
@@ -1684,7 +2500,19 @@ export class SurvivalRun {
                 enemy.angle,
                 "enemy",
                 def.damage * this.enemyDamageScale(),
-                enemy.kind === "sniper" ? 23 : 7,
+                enemy.kind === "sniper"
+                  ? ENEMY_CURVE.sniperBulletSpeed +
+                    Math.min(
+                      ENEMY_CURVE.sniperBulletSpeedBonusCap,
+                      Math.max(0, this.wave - 28) *
+                        ENEMY_CURVE.sniperBulletSpeedPerWave,
+                    )
+                  : ENEMY_CURVE.shooterBulletSpeed +
+                    Math.min(
+                      ENEMY_CURVE.shooterBulletSpeedBonusCap,
+                      Math.max(0, this.wave - 10) *
+                        ENEMY_CURVE.shooterBulletSpeedPerWave,
+                    ),
                 5,
                 enemy.kind === "sniper" ? 3 : 1,
                 1,
@@ -1705,7 +2533,16 @@ export class SurvivalRun {
           }
         }
       } else if (enemy.state === "charge") {
-        speed = (enemy.kind === "boss" ? 8.5 : 10) * enemy.slowFactor;
+        speed =
+          (enemy.kind === "boss"
+            ? 8.5
+            : ENEMY_CURVE.chargerSpeed +
+              Math.min(
+                ENEMY_CURVE.chargerSpeedBonusCap,
+                Math.max(0, this.wave - 13) * ENEMY_CURVE.chargerSpeedPerWave,
+              )) *
+          enemy.slowFactor *
+          (enemy.freezeTime ? 0 : 1);
         mx = Math.cos(enemy.angle);
         my = Math.sin(enemy.angle);
         if (enemy.stateTime <= 0) {
@@ -1718,7 +2555,16 @@ export class SurvivalRun {
         if (enemy.stateTime <= 0) {
           enemy.state = "walk";
           enemy.attackTimer =
-            enemy.kind === "boss" ? 2.2 : enemy.kind === "sniper" ? 3.5 : 2.6;
+            enemy.kind === "boss"
+              ? 2.2
+              : enemy.kind === "sniper"
+                ? 3.5
+                : Math.max(
+                    ENEMY_CURVE.shooterIntervalFloor,
+                    ENEMY_CURVE.shooterInterval -
+                      Math.max(0, this.wave - 10) *
+                        ENEMY_CURVE.shooterIntervalPerWave,
+                  );
         }
       }
       const accel = 1 - Math.exp(-dt * (enemy.state === "charge" ? 20 : 10));
@@ -1747,7 +2593,22 @@ export class SurvivalRun {
         enemy.spawnTime <= 0 &&
         distance(enemy, p) < enemy.radius + p.radius
       ) {
+        const before = p.hurtTime;
         this.hurtPlayer(def.damage * this.enemyDamageScale(), enemy);
+        const thorns = Math.floor((this.combatStats ?? this.stats).thorns);
+        if (thorns > 0 && before <= 0 && p.hurtTime > 0) {
+          const stats = this.combatStats ?? this.stats;
+          enemy.poisonTime = 3;
+          enemy.poisonDamage = Math.max(
+            enemy.poisonDamage,
+            Math.max(4, stats.poisonDamage) * stats.damage,
+          );
+          enemy.poisonStacks = Math.min(
+            stats.poisonStacks,
+            enemy.poisonStacks + thorns,
+          );
+          enemy.lastWeapon ??= "needle";
+        }
         if (p.dashTime <= 0) {
           const overlap = enemy.radius + p.radius - distance(enemy, p);
           enemy.x -= mx * overlap * 0.5;
@@ -1802,12 +2663,15 @@ export class SurvivalRun {
     }
     if (variant === 4 && this.enemies.length < 55) {
       for (let i = 0; i < 2; i++)
-        this.spawn(this.wave >= 21 ? "splitter" : "grunt", {
+        this.spawn(this.threatUnlocked("splitter") ? "splitter" : "grunt", {
           x: enemy.x + (i ? 2 : -2),
           y: enemy.y + 1,
         });
     }
-    if ((variant === 5 || variant === 7) && count % 3 === 0) {
+    if (
+      (variant === 5 || variant === 7 || this.rule === "wardedBosses") &&
+      count % 3 === 0
+    ) {
       enemy.shield = Math.max(enemy.shield, enemy.maxShield * 0.3);
     }
     if (variant === 7) {
@@ -1867,10 +2731,64 @@ export class SurvivalRun {
       angle: enemy.angle,
     });
   }
+  private steer(bullet: Bullet, rate: number, dt: number): void {
+    const target = this.nearest(bullet, 9, bullet.hitIds);
+    if (!target) return;
+    const speed = Math.hypot(bullet.vx, bullet.vy);
+    if (speed < 0.01) return;
+    const desired = Math.atan2(target.y - bullet.y, target.x - bullet.x),
+      current = Math.atan2(bullet.vy, bullet.vx),
+      delta = Math.atan2(Math.sin(desired - current), Math.cos(desired - current)),
+      turn = clamp(delta, -rate * dt, rate * dt),
+      angle = current + turn;
+    bullet.vx = Math.cos(angle) * speed;
+    bullet.vy = Math.sin(angle) * speed;
+    bullet.angle = angle;
+  }
+  /** Detonate a splash bullet at its position; returns true if it exploded. */
+  private detonate(bullet: Bullet): boolean {
+    const b = bullet.behavior;
+    if (!b?.splash) return false;
+    this.emit({ type: "explosion", ...bullet, radius: b.splash, weapon: bullet.weapon });
+    for (const target of this.enemies)
+      if (target.hp > 0 && distance(bullet, target) < b.splash + target.radius)
+        this.hitEnemy(
+          target,
+          bullet.damage,
+          bullet,
+          b.knock ?? 6,
+          true,
+          bullet.weapon as WeaponId,
+        );
+    if (b.bolts)
+      for (const target of this.enemies)
+        if (target.hp > 0 && distance(bullet, target) < b.bolts.reach) {
+          this.emit({
+            type: "arc",
+            x: bullet.x,
+            y: bullet.y,
+            targetX: target.x,
+            targetY: target.y,
+            targetId: target.id,
+            weapon: bullet.weapon,
+          });
+          this.hitEnemy(
+            target,
+            bullet.damage * b.bolts.damage,
+            bullet,
+            2,
+            true,
+            bullet.weapon as WeaponId,
+          );
+        }
+    return true;
+  }
   private moveBullets(dt: number): void {
+    const stats = this.combatStats ?? this.stats;
     for (const bullet of this.bullets) {
       bullet.age += dt;
-      if (bullet.weapon === "boomerang" && bullet.age >= 0.6) {
+      const b = bullet.behavior;
+      if (b?.returning && bullet.age >= 0.6) {
         if (!bullet.returning) {
           bullet.returning = true;
           bullet.hitIds = [];
@@ -1883,10 +2801,122 @@ export class SurvivalRun {
         bullet.angle = Math.atan2(dy, dx);
         if (d < 0.7) bullet.life = 0;
       }
-      bullet.x += bullet.vx * dt;
-      bullet.y += bullet.vy * dt;
+      if (b?.orbit) {
+        bullet.orbitAngle = (bullet.orbitAngle ?? 0) + b.orbit.angular * dt;
+        bullet.x = this.player.x + Math.cos(bullet.orbitAngle) * b.orbit.radius;
+        bullet.y = this.player.y + Math.sin(bullet.orbitAngle) * b.orbit.radius;
+        bullet.angle = bullet.orbitAngle + Math.PI / 2;
+        if (bullet.age >= (bullet.rearmAt ?? 0)) {
+          bullet.hitIds = [];
+          bullet.rearmAt = bullet.age + b.orbit.rearm;
+        }
+      }
+      if (b?.grow) bullet.radius += b.grow * dt;
+      if (!bullet.enemy) {
+        const homing = Math.max(b?.homing ?? 0, bullet.child ? 0 : stats.homing);
+        if (homing > 0 && !b?.stationary && !bullet.fused)
+          this.steer(bullet, homing, dt);
+      }
+      if (b?.fuse && !bullet.fused && bullet.age >= b.fuse) {
+        bullet.fused = true;
+        if (b.children) {
+          this.burst(bullet, b.children, bullet.angle);
+          bullet.life = 0;
+          continue;
+        }
+        bullet.vx = 0;
+        bullet.vy = 0;
+        bullet.timer = b.pull?.duration ?? 0;
+        if (b.pull) this.emit({ type: "pull", ...bullet, radius: b.pull.radius, weapon: bullet.weapon });
+      }
+      if (bullet.fused && b?.pull) {
+        for (const enemy of this.enemies) {
+          if (enemy.hp <= 0) continue;
+          const dx = bullet.x - enemy.x,
+            dy = bullet.y - enemy.y,
+            d = Math.hypot(dx, dy);
+          if (d < b.pull.radius && d > 0.3) {
+            const weight = enemy.kind === "boss" ? 0.04 : enemy.kind === "brute" ? 0.35 : 1;
+            enemy.knockX += (dx / d) * b.pull.force * dt * weight * 3;
+            enemy.knockY += (dy / d) * b.pull.force * dt * weight * 3;
+          }
+        }
+        bullet.timer = (bullet.timer ?? 0) - dt;
+        if (bullet.timer <= 0) {
+          this.detonate(bullet);
+          bullet.life = 0;
+          continue;
+        }
+      }
+      if (b?.emit && !bullet.enemy) {
+        bullet.emitTimer = (bullet.emitTimer ?? b.emit.every) - dt;
+        if (bullet.emitTimer <= 0) {
+          bullet.emitTimer += b.emit.every;
+          const amount = bullet.damage * b.emit.damage;
+          if (b.emit.kind === "crush") {
+            for (const enemy of this.enemies)
+              if (enemy.hp > 0 && distance(enemy, bullet) < b.emit.reach + enemy.radius)
+                this.hitEnemy(enemy, amount, bullet, 0, true, bullet.weapon as WeaponId);
+          } else {
+            const target = this.nearest(bullet, b.emit.reach);
+            if (target) {
+              const aim = Math.atan2(target.y - bullet.y, target.x - bullet.x);
+              bullet.angle = b.stationary ? aim : bullet.angle;
+              if (b.emit.kind === "zap") {
+                this.emit({
+                  type: "arc",
+                  x: bullet.x,
+                  y: bullet.y,
+                  targetX: target.x,
+                  targetY: target.y,
+                  targetId: target.id,
+                  weapon: bullet.weapon,
+                });
+                this.hitEnemy(target, amount, bullet, 0.3, true, bullet.weapon as WeaponId);
+              } else {
+                this.emit({ type: "fire", ...bullet, angle: aim, weapon: bullet.weapon, id: bullet.ownerId });
+                this.spawnBullet(
+                  bullet,
+                  aim,
+                  bullet.weapon,
+                  amount,
+                  24,
+                  0.6,
+                  1,
+                  bullet.level,
+                  undefined,
+                  bullet.ownerId,
+                  true,
+                );
+              }
+            }
+          }
+        }
+      }
+      if (b?.trail && !bullet.enemy) {
+        bullet.trailTimer = (bullet.trailTimer ?? 0) - dt;
+        if (bullet.trailTimer <= 0) {
+          bullet.trailTimer += b.trail.every;
+          this.addHazard(bullet, b.trail.radius, bullet.damage * b.trail.damage, "blast", 0, {
+            owner: "player",
+            weapon: bullet.weapon as WeaponId,
+            duration: b.trail.duration,
+            tickRate: 0.25,
+            knock: 0,
+          });
+        }
+      }
+      if (!b?.stationary && !b?.orbit) {
+        bullet.x += bullet.vx * dt;
+        bullet.y += bullet.vy * dt;
+        bullet.travel = (bullet.travel ?? 0) + Math.hypot(bullet.vx, bullet.vy) * dt;
+      }
       bullet.life -= dt;
-      if (bullet.life <= 0) continue;
+      if (bullet.life <= 0) {
+        if (b?.stationary && b.splash && !b.noContact && bullet.age >= b.life)
+          this.detonate(bullet);
+        continue;
+      }
       if (bullet.enemy) {
         const d = distance(bullet, this.player),
           away =
@@ -1903,11 +2933,11 @@ export class SurvivalRun {
         ) {
           bullet.grazed = true;
           if (this.weaveTime <= 0) {
-            this.weaveCharge = Math.min(1, this.weaveCharge + 1 / 3);
+            this.weaveCharge = Math.min(1, this.weaveCharge + 1 / WEAVE.dodges);
             if (this.weaveCharge >= 0.999) {
               this.weaveCharge = 0;
-              this.weaveTime = 3.5;
-              this.emit({ type: "weave", ...this.player, amount: 1.25 });
+              this.weaveTime = WEAVE.duration;
+              this.emit({ type: "weave", ...this.player, amount: 1 + WEAVE.bonus });
             }
           }
         }
@@ -1922,7 +2952,7 @@ export class SurvivalRun {
             if (bullet.pierce <= 0) bullet.life = 0;
           }
         }
-      } else {
+      } else if (!b?.noContact) {
         for (const enemy of this.enemies) {
           if (
             enemy.hp <= 0 ||
@@ -1931,26 +2961,46 @@ export class SurvivalRun {
           )
             continue;
           bullet.hitIds.push(enemy.id);
-          if (bullet.weapon === "rocket") {
-            const radius = 2.5 + bullet.level * 0.35;
-            this.emit({
-              type: "explosion",
-              ...bullet,
-              radius,
-              weapon: "rocket",
-            });
-            for (const target of this.enemies)
-              if (distance(bullet, target) < radius + target.radius)
-                this.hitEnemy(target, bullet.damage, bullet, 6, true, "rocket");
-          } else
+          const knock = b?.knock ?? 0.55;
+          if (this.hero === "ember")
+            bullet.damage *= 1 + Math.min(0.4, (bullet.travel ?? 0) * 0.02);
+          if (b?.splash) this.detonate(bullet);
+          else
             this.hitEnemy(
               enemy,
               bullet.damage,
               bullet,
-              bullet.weapon === "shotgun" ? 2.2 : 0.55,
+              knock,
               true,
               bullet.weapon as WeaponId,
             );
+          if (b?.children && !bullet.fused) {
+            bullet.fused = true;
+            this.burst(bullet, b.children, bullet.angle);
+            bullet.life = 0;
+            break;
+          }
+          if ((bullet.splits ?? 0) > 0) {
+            const fragments = Math.min(6, 1 + (bullet.splits ?? 0));
+            bullet.splits = 0;
+            this.burst(
+              bullet,
+              { count: fragments, damage: 0.35, speed: 18, life: 0.45, pierce: 1, radial: true },
+              bullet.angle,
+            );
+          }
+          if ((bullet.bounces ?? 0) > 0) {
+            const next = this.nearest(bullet, 8, bullet.hitIds);
+            if (next) {
+              bullet.bounces = (bullet.bounces ?? 0) - 1;
+              const speed = Math.hypot(bullet.vx, bullet.vy) || 1,
+                angle = Math.atan2(next.y - bullet.y, next.x - bullet.x);
+              bullet.vx = Math.cos(angle) * speed;
+              bullet.vy = Math.sin(angle) * speed;
+              bullet.angle = angle;
+              continue;
+            }
+          }
           bullet.pierce--;
           if (bullet.pierce <= 0) {
             bullet.life = 0;
@@ -1976,15 +3026,30 @@ export class SurvivalRun {
     const stats = this.combatStats ?? this.stats;
     const critical =
       effects && stats.critChance > 0 && this.random() < stats.critChance;
-    if (critical) damage *= 1.6;
+    if (critical) damage *= 1 + stats.critDamage;
     if (weapon) enemy.lastWeapon = weapon;
+    if (!dot) {
+      // Hero signatures and downsides on direct hits.
+      const range = distance(enemy, this.player);
+      if (this.hero === "ember" && range < 3) damage *= 0.9;
+      if (this.hero === "thorn") damage *= 0.8;
+      if (this.hero === "reaper" && range < 4) damage *= 1.3;
+      if (this.hero === "cinder" && enemy.burnTime > 0) damage *= 1.25;
+      if (this.hero === "frost" && enemy.slowTime > 0) damage *= 1.25;
+      if (enemy.slowTime > 0) damage *= 1 + stats.frostBonus;
+    }
     if (effects) {
       const burn =
-        Math.max(stats.burnDamage, weapon === "flame" ? 6 : 0) * stats.damage;
+        Math.max(stats.burnDamage, weapon === "flame" ? 6 : 0) *
+        stats.damage *
+        (1 + stats.dotPower);
       const poison =
         Math.max(stats.poisonDamage, weapon === "needle" ? 4 : 0) *
-        stats.damage;
-      const slow = Math.min(stats.slowFactor, weapon === "frostgun" ? 0.7 : 1);
+        stats.damage *
+        (1 + stats.dotPower);
+      let slow = Math.min(stats.slowFactor, weapon === "frostgun" ? 0.7 : 1);
+      if (slow < 1 && this.hero === "frost") slow = Math.max(0.1, 1 - (1 - slow) * 1.5);
+      if (slow < 1) slow = Math.max(0.1, slow - stats.slowPower);
       if (burn > 0) {
         if (enemy.burnTime <= 0) enemy.burnDamage = 0;
         if (enemy.burnTime <= 0)
@@ -2010,7 +3075,10 @@ export class SurvivalRun {
           });
         enemy.poisonTime = 3;
         enemy.poisonDamage = Math.max(enemy.poisonDamage, poison);
-        enemy.poisonStacks = Math.min(3, enemy.poisonStacks + 1);
+        enemy.poisonStacks = Math.min(
+          stats.poisonStacks,
+          enemy.poisonStacks + 1,
+        );
       }
       if (slow < 1) {
         if (enemy.slowTime <= 0)
@@ -2060,7 +3128,8 @@ export class SurvivalRun {
       d = Math.hypot(dx, dy) || 1;
     const weight =
       (enemy.kind === "boss" ? 0.04 : enemy.kind === "brute" ? 0.35 : 1) *
-      (this.hero === "bastion" ? 1.4 : 1);
+      (this.hero === "bastion" ? 1.4 : 1) *
+      (1 + stats.knockback);
     enemy.knockX += (dx / d) * knock * weight;
     enemy.knockY += (dy / d) * knock * weight;
     this.emit({
@@ -2072,6 +3141,18 @@ export class SurvivalRun {
       kind: enemy.kind,
       critical,
     });
+    if (!dot && stats.lifesteal > 0 && damage > 0)
+      this.player.hp = Math.min(
+        this.player.maxHp,
+        this.player.hp + damage * stats.lifesteal,
+      );
+    if (effects && !dot && stats.splash > 0 && !this.splashing) {
+      this.splashing = true;
+      for (const other of this.enemies)
+        if (other.hp > 0 && other.id !== enemy.id && distance(other, enemy) < 1.6 + other.radius)
+          this.hitEnemy(other, damage * stats.splash, enemy, 0.3, false, weapon);
+      this.splashing = false;
+    }
     if (enemy.hp <= 0) {
       if (enemy.kind === "splitter" && this.enemies.length < 64) {
         for (let i = 0; i < 3; i++) {
@@ -2084,9 +3165,59 @@ export class SurvivalRun {
       }
       this.kills++;
       this.waveKills++;
-      this.combo++;
-      this.comboTime = 2.8;
-      this.bestCombo = Math.max(this.bestCombo, this.combo);
+      if (this.hero === "reaper") {
+        this.bloodlust = Math.min(10, this.bloodlust + 1);
+        this.bloodlustTime = 3;
+      }
+      if (this.hero === "volt" && ++this.voltKills % 5 === 0) {
+        this.emit({ type: "explosion", ...this.player, radius: 4, weapon: "arc" });
+        for (const other of this.enemies)
+          if (other.hp > 0 && other.id !== enemy.id && distance(other, this.player) < 4)
+            this.hitEnemy(other, 40 * stats.damage, this.player, 2, false, "arc");
+      }
+      if (
+        this.rule === "volatile" &&
+        (enemy.kind === "grunt" || enemy.kind === "runner") &&
+        this.hazards.length < 24
+      )
+        this.addHazard(
+          { x: enemy.x, y: enemy.y },
+          1.3,
+          ENEMY_STATS.grunt.damage * 0.8 * this.enemyDamageScale(),
+          "blast",
+          0.45,
+        );
+      if (enemy.burnTime > 0 && (this.hero === "cinder" || stats.burnExplode > 0)) {
+        if (stats.burnExplode > 0) {
+          this.emit({ type: "explosion", x: enemy.x, y: enemy.y, radius: 2, weapon: "flame" });
+          for (const other of this.enemies)
+            if (other.hp > 0 && other.id !== enemy.id && distance(other, enemy) < 2 + other.radius)
+              this.hitEnemy(other, enemy.maxHp * stats.burnExplode, enemy, 1, false, "flame");
+        }
+        if (this.hero === "cinder") {
+          const next = this.nearest(enemy, 2 + 0.5, [enemy.id]);
+          if (next) {
+            next.burnTime = Math.max(next.burnTime, enemy.burnTime);
+            next.burnDamage = Math.max(next.burnDamage, enemy.burnDamage);
+            next.lastWeapon ??= enemy.lastWeapon;
+          }
+        }
+      }
+      if (
+        dot === "poison" &&
+        enemy.poisonStacks > 0 &&
+        (this.hero === "thorn" || stats.plagueSpread)
+      )
+        for (const other of this.enemies)
+          if (other.hp > 0 && other.id !== enemy.id && distance(other, enemy) < 2.5) {
+            other.poisonTime = Math.max(other.poisonTime, 3);
+            other.poisonDamage = Math.max(other.poisonDamage, enemy.poisonDamage);
+            other.poisonStacks = Math.min(
+              stats.poisonStacks,
+              Math.max(other.poisonStacks, enemy.poisonStacks),
+            );
+            other.lastWeapon ??= enemy.lastWeapon;
+          }
       this.emit({
         type: "kill",
         x: enemy.x,
@@ -2110,7 +3241,7 @@ export class SurvivalRun {
         id: this.nextId++,
         x: enemy.x,
         y: enemy.y,
-        value: ENEMY_STATS[enemy.kind].salvage,
+        value: ENEMY_STATS[enemy.kind].salvage * (enemy.elite ? ELITE.salvage : 1),
         age: 0,
         kind: "salvage",
       });
@@ -2124,32 +3255,61 @@ export class SurvivalRun {
           kind: "heal",
         });
     }
-    if (effects && stats.shockChance > 0 && this.random() < stats.shockChance) {
-      const next = this.nearest(enemy, 4.5, [enemy.id]);
-      if (next) {
-        this.emit({
-          type: "arc",
-          x: enemy.x,
-          y: enemy.y,
-          targetX: next.x,
-          targetY: next.y,
-          weapon: "arc",
-        });
-        this.hitEnemy(next, damage * 0.45, enemy, 0.4, false, "arc");
-      }
-    }
+    if (effects && stats.shockChance > 0 && this.random() < stats.shockChance)
+      this.shock(enemy, damage, stats, 1);
+  }
+  /** The storm set's chain proc; deeper tiers let it jump again. */
+  private shock(from: Enemy, damage: number, stats: Stats, depth: number): void {
+    const next = this.nearest(from, 4.5, [from.id]);
+    if (!next) return;
+    this.emit({
+      type: "arc",
+      x: from.x,
+      y: from.y,
+      targetX: next.x,
+      targetY: next.y,
+      weapon: "arc",
+    });
+    const dealt = damage * stats.shockDamage;
+    this.hitEnemy(next, dealt, from, 0.4, false, "arc");
+    if (depth < stats.shockDepth && this.random() < stats.shockChance)
+      this.shock(next, dealt, stats, depth + 1);
   }
   private enemyDamageScale(): number {
     const age = this.wave - 1;
-    return 1 + age * 0.035 + age * age * 0.0015;
+    return (
+      (1 +
+        age * ENEMY_CURVE.damageLinear +
+        age * age * ENEMY_CURVE.damageQuadratic) *
+      this.scaled("damage")
+    );
   }
   private hurtPlayer(damage: number, origin: Vec): void {
     const p = this.player;
     if (p.hurtTime > 0 || p.dashTime > 0 || p.hp <= 0) return;
+    const stats = this.combatStats ?? this.stats;
+    if (p.barrier > 0) {
+      p.barrier--;
+      p.hurtTime = 0.7;
+      this.emit({ type: "shieldBreak", ...p, id: 0, kind: "grunt" });
+      return;
+    }
     const reduced =
-      damage * (1 - Math.min(0.65, this.stats.armor / (this.stats.armor + 35)));
+      damage *
+      (1 - Math.min(ENEMY_CURVE.armorCap, stats.armor / (stats.armor + 35)));
     p.hp = Math.max(0, p.hp - reduced);
     p.hurtTime = 0.7;
+    if (
+      stats.emergency > 0 &&
+      !this.emergencyUsed &&
+      p.hp > 0 &&
+      p.hp < p.maxHp * 0.25
+    ) {
+      this.emergencyUsed = true;
+      const heal = Math.round(p.maxHp * stats.emergency);
+      p.hp = Math.min(p.maxHp, p.hp + heal);
+      this.emit({ type: "heal", ...p, id: 0, amount: heal, kind: "grunt" });
+    }
     this.emit({
       type: "hurt",
       ...p,
@@ -2190,19 +3350,27 @@ export class SurvivalRun {
   }
   private bankSalvage(amount: number): void {
     const multiplier =
-      1 + (this.passiveStats.salvage ?? 0) + (this.hero === "flux" ? 0.25 : 0);
+      (1 + (this.passiveStats.salvage ?? 0) + (this.hero === "flux" ? 0.25 : 0)) *
+      this.tuning.salvage;
     // Fractional bonuses accumulate instead of making low-value pickups worthless.
     const before = Math.floor(this.earnedSalvage);
     this.earnedSalvage += amount * multiplier;
     this.salvage += Math.floor(this.earnedSalvage) - before;
   }
-  private completeWave(): void {
+  private completeWave(reason: "timer" | "clear" | "boss"): void {
+    this.waveOutcome = reason;
+    if (reason === "clear") {
+      this.fullClears++;
+      this.fastestClear = Math.min(this.fastestClear, this.time);
+    }
+    this.spawnQueue = [];
+    this.hordeWarning = 0;
     this.weaveTime = 0;
     this.weaveCharge = 0;
     this.combatStats = undefined;
     for (const pickup of this.pickups)
       if (pickup.kind === "salvage") this.bankSalvage(pickup.value);
-    this.bankSalvage(9 + this.wave * 2);
+    this.bankSalvage(WAVE_CLEAR_BONUS(this.wave));
     this.pickups = [];
     this.bullets = [];
     this.hazards = [];
@@ -2218,7 +3386,7 @@ export class SurvivalRun {
     this.enemies = [];
     this.player.hp = Math.min(
       this.player.maxHp,
-      this.player.hp + Math.ceil(this.player.maxHp * 0.1),
+      this.player.hp + Math.ceil(this.player.maxHp * WAVE_END_HEAL),
     );
     this.player.dashTime = 0;
     this.player.vx = 0;
@@ -2230,6 +3398,9 @@ export class SurvivalRun {
     } else {
       this.phase = "shop";
       this.shopRolls = 0;
+      const interest = this.stats.interest;
+      if (interest > 0)
+        this.bankSalvage(Math.min(interest * 500, this.salvage * interest));
       this.makeShop(true);
     }
   }
@@ -2246,22 +3417,73 @@ export class SurvivalRun {
         shelf[slot] = this.makeOffer(slot, used);
         used.add(shelf[slot]!.contentId);
       }
+    // A unique weapon late in a run: rare, once, and never over a locked offer.
+    const unique = (Object.values(WEAPONS) as WeaponDefinition[]).find((w) => w.unique);
+    if (
+      unique &&
+      this.wave >= (unique.minWave ?? 1) &&
+      !this.equipment.some((e) => e.kind === unique.id) &&
+      !shelf.some((o) => o?.contentId === unique.id) &&
+      !shelf[2]?.locked &&
+      this.random() < (this.shopRolls ? 0.015 : 0.06)
+    ) {
+      const cost = this.offerCost(unique.cost, 6);
+      shelf[2] = {
+        id: this.nextId++,
+        kind: "weapon",
+        contentId: unique.id,
+        title: unique.name,
+        description: rankStatLines(unique.id, 6).slice(0, 1).join(" · "),
+        cost,
+        baseCost: cost,
+        sold: false,
+        locked: false,
+        rarity: "insane",
+        level: 6,
+      };
+    }
     this.offers = shelf as ShopOffer[];
+  }
+  private pickWeighted<T extends string>(ids: T[], weight: (id: T) => number): T {
+    const weights = ids.map((id) => Math.max(0, weight(id))),
+      total = weights.reduce((a, b) => a + b, 0);
+    let roll = this.random() * total;
+    for (let i = 0; i < ids.length; i++) {
+      roll -= weights[i];
+      if (roll < 0) return ids[i];
+    }
+    return ids[ids.length - 1];
+  }
+  /** Gear from families the build already leans into shows up a little more. */
+  private affinity(families: FamilyId[]): number {
+    const sets = this.synergies;
+    return Math.min(
+      3,
+      families.filter((id) => (sets.find((s) => s.id === id)?.count ?? 0) >= 2)
+        .length,
+    );
   }
   private makeOffer(slot: number, used: Set<string>): ShopOffer {
     const common = {
       id: this.nextId++,
       sold: false,
       locked: false,
-      rarity: "common" as "common" | "rare" | "epic",
+      rarity: "common" as ShopOffer["rarity"],
     };
-    const maxRank = Math.min(5, 1 + Math.floor(this.wave / 6));
-    let level = Math.max(1, maxRank - (this.random() < 0.45 ? 1 : 0));
+    const maxRank = Math.min(5, 1 + Math.floor(this.wave / 6)),
+      luck = this.stats.luck,
+      discount = this.stats.discount;
+    let level = Math.max(1, maxRank - (this.random() < 0.45 - luck ? 1 : 0));
+    if (luck > 0 && level < 5 && this.random() < luck) level++;
     const wantWeapon =
       slot === 0 || (slot === 1 && (this.wave === 1 || this.random() < 0.55));
     if (wantWeapon) {
       const ids = (Object.keys(WEAPONS) as WeaponId[]).filter(
-        (id) => !used.has(id),
+        (id) =>
+          !used.has(id) &&
+          !WEAPONS[id].unique &&
+          (WEAPONS[id].weight ?? 1) > 0 &&
+          (WEAPONS[id].minWave ?? 1) <= this.wave,
       );
       const matches = this.equipment.filter(
         (e) =>
@@ -2284,16 +3506,23 @@ export class SurvivalRun {
         );
         const list =
           this.wave === 1 && slot === 1 && newIds.length ? newIds : ids;
-        kind = list[Math.floor(this.random() * list.length)];
+        kind = this.pickWeighted(
+          list,
+          (id) =>
+            (WEAPONS[id].weight ?? 1) *
+            (1 + 0.25 * this.affinity(WEAPONS[id].families)),
+        );
       }
-      const definition = WEAPONS[kind];
+      const definition = WEAPONS[kind],
+        baseCost = this.offerCost(definition.cost, level);
       return {
         ...common,
         kind: "weapon",
         contentId: kind,
         title: definition.name,
         description: rankStatLines(kind, level).slice(0, 2).join(" · "),
-        cost: this.offerCost(definition.cost, level),
+        cost: Math.ceil(baseCost * (1 - discount)),
+        baseCost,
         level,
         rarity: level >= 4 ? "epic" : level >= 3 ? "rare" : "common",
       };
@@ -2308,11 +3537,17 @@ export class SurvivalRun {
         kind: "heal",
         contentId: "heal",
         title: "Repair",
-        description: "Restore 45% of max health",
-        cost: 8 + this.wave * 2,
+        description: `Restore ${Math.round(REPAIR_HEAL * 100)}% of max health`,
+        cost: Math.ceil(this.price(repairCost(this.wave)) * (1 - discount)),
+        baseCost: this.price(repairCost(this.wave)),
         level: 1,
       };
-    const ids = (Object.keys(ITEMS) as ItemId[]).filter((id) => !used.has(id));
+    const ids = (Object.keys(ITEMS) as ItemId[]).filter(
+      (id) =>
+        !used.has(id) &&
+        (ITEMS[id].weight ?? 1) > 0 &&
+        (ITEMS[id].minWave ?? 1) <= this.wave,
+    );
     const matches = this.bag.filter(
       (e) =>
         e.category !== "weapon" &&
@@ -2327,22 +3562,34 @@ export class SurvivalRun {
       ];
       kind = selected.kind as ItemId;
       level = selected.level;
-    } else kind = ids[Math.floor(this.random() * ids.length)];
-    const definition = ITEMS[kind];
+    } else
+      kind = this.pickWeighted(
+        ids,
+        (id) =>
+          (ITEMS[id].weight ?? 1) * (1 + 0.25 * this.affinity(ITEMS[id].families)),
+      );
+    const definition = ITEMS[kind],
+      baseCost = this.offerCost(
+        definition.cost,
+        level,
+        definition.category === "drone",
+      );
     return {
       ...common,
       kind: "item",
       contentId: kind,
       title: definition.name,
       description: rankStatLines(kind, level).slice(0, 2).join(" · "),
-      cost: this.offerCost(definition.cost, level),
+      cost: Math.ceil(baseCost * (1 - discount)),
+      baseCost,
       level,
       rarity: level >= 4 ? "epic" : level >= 3 ? "rare" : "common",
     };
   }
-  private offerCost(base: number, level: number): number {
-    return Math.ceil(
-      (base + this.wave * 1.3) * [1, 1.35, 1.9, 2.8, 4.1, 6][level - 1],
+  private offerCost(base: number, level: number, drone = false): number {
+    return this.price(
+      offerPrice(base, this.wave, level) *
+        (drone && this.hero === "wisp" ? 0.75 : 1),
     );
   }
 }
