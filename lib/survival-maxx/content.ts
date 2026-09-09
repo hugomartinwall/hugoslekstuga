@@ -1833,7 +1833,7 @@ export const FAMILIES: Record<FamilyId, FamilyDefinition> = {
     thresholds: {
       2: "+10% attack speed. +5% movement speed.",
       4: "+22% attack speed. +10% movement speed.",
-      6: "+35% attack speed. +15% movement speed. Drones attack twice as often and deal 50% more damage.",
+      6: "+35% attack speed. +15% movement speed. Drones attack 60% more often and deal 35% more damage.",
     },
   },
 };
@@ -1959,13 +1959,9 @@ export const BOSS_NAMES = [
   "Lifebinder",
   "The Crucible",
 ];
+/** Waves grow from 30 s to almost a minute; boss waves spawn adds for 60 s. */
 export const waveDuration = (wave: number, interval = BOSS_INTERVAL) =>
-  wave % interval === 0
-    ? 45
-    : Math.min(
-        45,
-        30 + ((wave - 1) % BOSS_INTERVAL) * 3 + Math.floor((wave - 1) / 10) * 2,
-      );
+  wave % interval === 0 ? 60 : Math.min(58, 29 + wave);
 /* ---------------------------------------------------------------------------
  * Maps. Every map is a full campaign against the same enemy roster; each one
  * multiplies the base curve and adds one rule. Map 1 is the base curve itself.
@@ -2119,7 +2115,7 @@ export const MAPS: MapDefinition[] = [
       0xf0e3b8,
     ),
     decoration: "barricades",
-    tuning: tuning(1.08, 1.06, 0.03, 0, 1.04, 1.08, 1.05, 1.03, 0),
+    tuning: tuning(1.03, 1.03, 0.02, 0, 1.01, 1.02, 1.05, 1.03, 0),
   },
   {
     id: 3,
@@ -2137,7 +2133,7 @@ export const MAPS: MapDefinition[] = [
       0xd9a274,
     ),
     decoration: "vents",
-    tuning: tuning(1.16, 1.12, 0.05, 0, 1.08, 1.16, 1.1, 1.06, -3),
+    tuning: tuning(1.05, 1.04, 0.03, 0, 1.03, 1.04, 1.1, 1.06, -3),
   },
   {
     id: 4,
@@ -2155,7 +2151,7 @@ export const MAPS: MapDefinition[] = [
       0xa8d8ea,
     ),
     decoration: "spires",
-    tuning: tuning(1.25, 1.18, 0.07, 1, 1.12, 1.25, 1.15, 1.1, -1),
+    tuning: tuning(1.12, 1.1, 0.05, 0, 1.07, 1.08, 1.15, 1.1, -1),
   },
   {
     id: 5,
@@ -2174,7 +2170,7 @@ export const MAPS: MapDefinition[] = [
       0xf2cf86,
     ),
     decoration: "pylons",
-    tuning: tuning(1.4, 1.3, 0.09, 1, 1.18, 1.4, 1.2, 1.14, -1),
+    tuning: tuning(1.18, 1.14, 0.07, 1, 1.1, 1.11, 1.2, 1.14, -1),
   },
   {
     id: 6,
@@ -2193,7 +2189,7 @@ export const MAPS: MapDefinition[] = [
       0xff8a55,
     ),
     decoration: "vents",
-    tuning: tuning(1.65, 1.55, 0.11, 1, 1.26, 1.7, 1.26, 1.18, -2),
+    tuning: tuning(1.28, 1.23, 0.09, 1, 1.14, 1.14, 1.26, 1.18, -2),
   },
   {
     id: 7,
@@ -2211,7 +2207,7 @@ export const MAPS: MapDefinition[] = [
       0xa9e27a,
     ),
     decoration: "ruins",
-    tuning: tuning(1.9, 1.75, 0.13, 1, 1.35, 2, 1.32, 1.22, -2),
+    tuning: tuning(1.36, 1.29, 0.11, 1, 1.17, 1.18, 1.32, 1.22, -2),
   },
   {
     id: 8,
@@ -2229,7 +2225,7 @@ export const MAPS: MapDefinition[] = [
       0xdbe8ee,
     ),
     decoration: "spires",
-    tuning: tuning(2.2, 2, 0.18, 2, 1.42, 2.35, 1.38, 1.26, -2),
+    tuning: tuning(1.46, 1.37, 0.13, 1, 1.21, 1.22, 1.38, 1.26, -2),
   },
   {
     id: 9,
@@ -2247,7 +2243,7 @@ export const MAPS: MapDefinition[] = [
       0xd0d0e0,
     ),
     decoration: "barricades",
-    tuning: tuning(2.55, 2.3, 0.21, 2, 1.5, 2.75, 1.44, 1.3, -3),
+    tuning: tuning(1.7, 1.55, 0.15, 2, 1.3, 1.3, 1.44, 1.3, -3),
   },
   {
     id: 10,
@@ -2265,7 +2261,7 @@ export const MAPS: MapDefinition[] = [
       0xcf9cff,
     ),
     decoration: "ruins",
-    tuning: tuning(3, 2.7, 0.25, 2, 1.6, 3.3, 1.5, 1.35, -3),
+    tuning: tuning(1.95, 1.75, 0.2, 2, 1.4, 1.4, 1.5, 1.35, -3),
   },
 ];
 export const mapById = (id: number): MapDefinition =>
@@ -2322,7 +2318,7 @@ export const rerollCost = (wave: number, rolls: number) =>
 export const REPAIR_HEAL = 0.45;
 export const repairCost = (wave: number) => 8 + wave * 2;
 export const SELL_RATE = 0.5;
-export const WAVE_CLEAR_BONUS = (wave: number) => 9 + wave * 2;
+export const WAVE_CLEAR_BONUS = (wave: number) => 8 + wave * 1.5;
 export const WAVE_END_HEAL = 0.1;
 export const WEAVE = { dodges: 3, bonus: 0.25, duration: 3.5 } as const;
 export const ENEMY_STATS: Record<
@@ -2353,30 +2349,41 @@ export const ENEMY_STATS: Record<
  * timer; the HUD counts them down. The timer still ends the wave.
  * ------------------------------------------------------------------------- */
 export const waveBudget = (wave: number) =>
-  Math.round(36 + 3.5 * wave + 0.11 * wave * wave);
-/** Boss waves spawn adds during their first 45 seconds. */
+  Math.round(30 + 4 * wave + 0.2 * wave * wave);
+/** Boss waves spawn adds during their first minute. */
 export const bossAddBudget = (wave: number) => Math.round(waveBudget(wave) * 0.55);
 export const spawnGroupSize = (wave: number) => 3 + Math.floor((wave - 1) / 9);
 export const hordeCount = (wave: number) => (wave < 3 ? 1 : wave < 15 ? 2 : 3);
 export const hordeProgress = (wave: number): number[] =>
   wave < 3 ? [0.55] : wave < 15 ? [0.35, 0.7] : [0.25, 0.55, 0.85];
 export const hordeSize = (wave: number) =>
-  Math.max(4, Math.min(28, Math.round(waveBudget(wave) * 0.12)));
+  Math.max(5, Math.min(36, Math.round(waveBudget(wave) * 0.14)));
 export const ENEMY_CAP = 60;
 export const SPAWN_TELEGRAPH = 0.7;
 export const HORDE_TELEGRAPH = 1;
-/** Enemies spawn anywhere this far from the player. */
+/** Enemies spawn anywhere this far from the player; the far edge closes in late. */
 export const SPAWN_DISTANCE = { min: 5, max: 14 } as const;
-export const HORDE_RING = { min: 7, max: 9 } as const;
+export const spawnDistanceMax = (wave: number) =>
+  Math.max(10, SPAWN_DISTANCE.max - 0.2 * Math.max(0, wave - 10));
+/** Horde rings; the last horde of a wave closes tighter. */
+export const HORDE_RING = { min: 7, max: 9, inner: { min: 5.5, max: 7 } } as const;
 export const eliteChance = (wave: number) =>
-  wave < 8 ? 0 : Math.min(0.15, 0.03 + (wave - 10) * 0.006);
-export const ELITE = { hp: 2.2, speed: 1.25, radius: 1.35, salvage: 3 } as const;
-/** The base enemy curve (map 1). Maps multiply on top of it. */
+  wave < 8 ? 0 : Math.min(0.3, 0.04 + (wave - 8) * 0.012);
+export const ELITE = { hp: 3, speed: 1.3, radius: 1.35, salvage: 3 } as const;
+/** After this wave, one trickle group in three brings a ranged enemy. */
+export const RANGED_GROUPS_FROM = 12;
+/** Each drone after the second fires slower: rate × DRONE_STACK_RATE^(n−2). */
+export const DRONE_STACK_RATE = 0.78;
+export const droneStackRate = (index: number) =>
+  index < 2 ? 1 : Math.pow(DRONE_STACK_RATE, index - 1);
 export const ENEMY_CURVE = {
   hpLinear: 0.3,
   hpQuadratic: 0.02,
   bossBase: 0.72,
   bossPower: 1.6,
+  /** Extra non-boss health per wave after `chapterStart`, on top of the base curve. */
+  chapterHp: 0.05,
+  chapterStart: 9,
   speedPerWave: 0.03,
   speedCap: 0.85,
   damageLinear: 0.045,

@@ -9,6 +9,7 @@ import { SurvivalRun } from "../lib/survival-maxx/model";
 import {
   createReviewPilot,
   purchaseReviewShop,
+  type ReviewBuild,
 } from "../lib/survival-maxx/review";
 const option = (name: string) =>
   process.argv.find((arg) => arg.startsWith(`--${name}=`))?.split("=")[1];
@@ -33,6 +34,7 @@ const maps =
       ? option("map")!.split(",").map(Number)
       : [1];
 const pressure = Number(option("pressure") ?? 1);
+const build = (option("build") ?? "default") as ReviewBuild;
 // The camper parks at an arena edge and only sidesteps bullets. It must die.
 function camper(run: SurvivalRun) {
   const p = run.player;
@@ -119,7 +121,7 @@ for (const hero of heroes)
         const before = run.salvage,
           phase = run.phase,
           hpAtEnd = run.player.hp;
-        if (run.phase === "shop") purchaseReviewShop(run);
+        if (run.phase === "shop") purchaseReviewShop(run, build);
         if (
           !firstLegendaryWave &&
           run.equipment.some((item) => item.level === 6)
@@ -127,6 +129,7 @@ for (const hero of heroes)
           firstLegendaryWave = run.wave;
         rows.push({
           map,
+          build,
           hero,
           seed,
           policy,

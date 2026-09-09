@@ -274,7 +274,15 @@ function organize(run: SurvivalRun): void {
     else break;
   }
 }
-export function purchaseReviewShop(run: SurvivalRun): void {
+export type ReviewBuild = "default" | "drones";
+/**
+ * The bot's shopping heuristic. `drones` buys every drone it can (the
+ * stationary "turret" build a camper would stack) before anything else.
+ */
+export function purchaseReviewShop(
+  run: SurvivalRun,
+  build: ReviewBuild = "default",
+): void {
   organize(run);
   const buildValue = (item: Equipment): number => {
     if (item.category === "weapon")
@@ -298,6 +306,12 @@ export function purchaseReviewShop(run: SurvivalRun): void {
       if (offer.kind === "heal")
         return run.player.hp < run.player.maxHp * 0.65 ? 0 : 9;
       if (offer.rarity === "insane") return 0.5;
+      if (build === "drones" && offer.kind === "item") {
+        const category = ITEMS[offer.contentId as ItemId].category;
+        if (category === "drone") return 0.2;
+        if (ITEMS[offer.contentId as ItemId].families.includes("drone"))
+          return 0.8;
+      }
       if (
         offer.kind === "item" &&
         ((offer.contentId === "vitality" && run.player.maxHp < 220) ||
@@ -405,6 +419,13 @@ export function purchaseReviewShop(run: SurvivalRun): void {
   organize(run);
 }
 
+/** Seeds from the published map-1 matrix on which each hero's bot clears the campaign. */
+const REVIEW_SEEDS: Partial<Record<HeroId, number>> = {
+  volt: 17,
+  cinder: 73,
+  thorn: 5,
+  flux: 17,
+};
 export function prepareReviewWave(
   hero: HeroId,
   targetWave = CAMPAIGN_WAVES,
@@ -418,7 +439,7 @@ export function prepareReviewWave(
     throw new Error("Invalid review wave");
   // Fixed successful routes for visual QA, selected from the published balance
   // matrix. The full diagnostic still records failures on other seeds.
-  const run = new SurvivalRun(hero, hero === "volt" ? 17 : 1, map);
+  const run = new SurvivalRun(hero, REVIEW_SEEDS[hero] ?? 1, map);
   for (let wave = 1; wave < targetWave; wave++) {
     if (!run.startWave())
       throw new Error(`Review could not start wave ${wave}`);

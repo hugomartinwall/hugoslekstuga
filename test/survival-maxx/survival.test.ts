@@ -3,6 +3,7 @@ import { test } from "vitest";
 import {
   BAG_CAPACITY,
   BOSS_INTERVAL,
+  WAVE_CLEAR_BONUS,
   CAMPAIGN_WAVES,
   HEROES,
   HERO_ORDER,
@@ -697,7 +698,9 @@ test("opening grunts survive one starter volley without bloating late-wave healt
   late.wave = lateAge;
   late.startWave();
   const oldLateHealth =
-    24 * (1 + lateAge * 0.3 + lateAge * lateAge * 0.02);
+    24 *
+    (1 + lateAge * 0.3 + lateAge * lateAge * 0.02) *
+    (1 + Math.max(0, CAMPAIGN_WAVES - 2 - 9) * 0.05);
   assert.ok(
     late.enemies[0].maxHp < oldLateHealth * 1.1,
     "early pressure cannot multiply late grunt durability",
@@ -850,7 +853,7 @@ test("wave transition banks drops once, clears danger and keeps purchases shop-o
   run.time = run.waveDuration - 0.01;
   run.step(1 / 60);
   assert.equal(run.phase, "shop");
-  assert.ok(run.salvage >= 28);
+  assert.ok(run.salvage >= 17 + Math.floor(WAVE_CLEAR_BONUS(1)));
   assert.equal(
     run.enemies.length +
       run.bullets.length +

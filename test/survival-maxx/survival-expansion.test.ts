@@ -8,6 +8,7 @@ import {
   FAMILY_ORDER,
   SET_TIERS,
   BAG_CAPACITY,
+  WAVE_CLEAR_BONUS,
   type ItemId,
   type WeaponId,
   type FamilyId,
@@ -244,7 +245,10 @@ test("economy items: interest, discount, free reroll, luck and second chance", (
   interest.salvage = 200;
   interest.time = interest.waveDuration;
   interest.step(1 / 60);
-  assert.ok(interest.salvage >= 200 + 10 + 9 + 2, `interest banked ${interest.salvage}`);
+  assert.ok(
+    interest.salvage >= 200 + 10 + Math.floor(WAVE_CLEAR_BONUS(1)),
+    `interest banked ${interest.salvage}`,
+  );
 
   const discount = shop();
   const before = discount.offers.map((o) => o.cost);
@@ -358,8 +362,8 @@ test("six pieces of one family reach tier three and its capstone", () => {
       assert.ok(stats.plagueSpread > 0);
     }
     if (family === "drone") {
-      assert.equal(stats.droneRate, 2);
-      assert.equal(stats.droneDamage, 1.5);
+      assert.ok(Math.abs(stats.droneRate - 1.6) < 1e-9);
+      assert.ok(Math.abs(stats.droneDamage - 1.35) < 1e-9);
     }
   }
   assert.deepEqual([...SET_TIERS], [2, 4, 6]);

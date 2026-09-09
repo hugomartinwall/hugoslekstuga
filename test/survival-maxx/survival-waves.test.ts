@@ -71,9 +71,9 @@ const disarm = (run: SurvivalRun) => {
 };
 
 test("each wave has a fixed budget that the counter drains and the timer still ends", () => {
-  assert.equal(waveBudget(1), 40);
-  assert.equal(waveBudget(10), 82);
-  assert.equal(waveBudget(20), 150);
+  assert.equal(waveBudget(1), 34);
+  assert.equal(waveBudget(10), 90);
+  assert.equal(waveBudget(20), 190);
   assert.equal(bossAddBudget(30), Math.round(waveBudget(30) * 0.55));
   const run = new SurvivalRun("ember", 3);
   run.startWave();
@@ -191,9 +191,9 @@ test("hordes ring the player at fixed progress points with a longer telegraph", 
 
 test("elites appear at the documented rate and hit harder, faster and richer", () => {
   assert.equal(eliteChance(5), 0);
-  assert.ok(Math.abs(eliteChance(10) - 0.03) < 1e-9);
-  assert.ok(Math.abs(eliteChance(20) - 0.09) < 1e-9);
-  assert.equal(eliteChance(40), 0.15);
+  assert.ok(Math.abs(eliteChance(10) - 0.064) < 1e-9);
+  assert.ok(Math.abs(eliteChance(20) - 0.184) < 1e-9);
+  assert.equal(eliteChance(40), 0.3);
   const run = new SurvivalRun("ember", 21);
   run.wave = 24;
   run.startWave();
@@ -219,7 +219,7 @@ test("elites appear at the documented rate and hit harder, faster and richer", (
   }
   assert.ok(total > 60);
   const rate = elites / total;
-  assert.ok(rate > 0.05 && rate < 0.2, `elite rate ${rate}`);
+  assert.ok(rate > 0.14 && rate < 0.36, `elite rate ${rate}`);
   const elite = new SurvivalRun("ember", 21);
   elite.startWave();
   elite.enemies = [foe(3, 0, { elite: true, hp: 1 })];

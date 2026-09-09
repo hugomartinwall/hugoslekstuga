@@ -563,6 +563,18 @@ the tweaks above, copy `tests/*.test.ts` with vitest imports and
 `../../lib/survival-maxx/` paths, and rebuild `platform.test.ts` from
 the site seam tests plus the upstream chain tests.
 
+**0.9.1 re-sync, 2026-09-09 (evening).** Upstream 0.9.1 added a
+projectile renderer (`projectile-art.ts`, `projectiles.ts`: per-weapon
+bodies, trails, glows, hand-muzzle origin), a signature effect layer in
+`scene.ts` for every weapon, drone and hero (new events `bounce`,
+`burst`, `crush`, `strike`, `barrier`; `sounds()` in the factory
+`main.ts` was re-copied from upstream), and a steadier difficulty curve
+(58 s late waves, chapter health term, more elites, ranged groups, drone
+stacking with diminishing returns). Same re-sync recipe as above; the
+upstream dev review panel (weapon/drone selects) is not part of the
+factory and was not ported. Balance gates live upstream in
+`release/qa/0.9.1/BALANCE.md`.
+
 **Tests** in `test/survival-maxx/`: the upstream suites copied with
 vitest imports (simulation, economy, all ten earned campaigns into
 Endless, hero and equipment surface audits, weapon poses, motion,

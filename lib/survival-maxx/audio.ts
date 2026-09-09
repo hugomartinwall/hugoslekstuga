@@ -182,7 +182,11 @@ export class AudioEngine {
       "boss-phase": 1,
       thump: 0.09,
       eclipse: 1.2,
+      "eclipse-collapse": 1,
       horde: 1.5,
+      bounce: 0.04,
+      pop: 0.06,
+      chime: 0.2,
     };
     if (now - (this.lastPlayed.get(name) ?? -100) < (limits[name] ?? 0.035))
       return;
@@ -217,8 +221,9 @@ export class AudioEngine {
         });
         break;
       case "eclipse":
-        // Charge: a rising filtered-noise sweep over a sub drone, then the
-        // crack and a shimmer as the ring collapses.
+        // Charge (on fire): a rising filtered-noise sweep over a sub drone.
+        // The crack lives in "eclipse-collapse" so it lands on the real
+        // collapse instead of a fixed delay.
         this.noise({
           duration: 1.5,
           gain: 0.22 * v,
@@ -243,20 +248,21 @@ export class AudioEngine {
           type: "triangle",
           attack: 0.4,
         });
+        break;
+      case "eclipse-collapse":
+        // Collapse: the crack and a shimmer as the ring folds in.
         this.noise({
           duration: 0.32,
           gain: 0.62 * v,
           frequency: 3800,
           end: 120,
           filter: "lowpass",
-          delay: 1.5,
         });
         this.tone({
           frequency: 160,
           end: 30,
           duration: 0.5,
           gain: 0.6 * v,
-          delay: 1.5,
         });
         [1760, 2217, 2637, 3520].forEach((frequency, index) =>
           this.tone({
@@ -264,10 +270,54 @@ export class AudioEngine {
             end: frequency * 1.01,
             duration: 0.9 - index * 0.12,
             gain: 0.045 * v,
-            delay: 1.56 + index * 0.05,
+            delay: 0.06 + index * 0.05,
             attack: 0.02,
           }),
         );
+        break;
+      case "bounce":
+        // Ricochet: a short, quiet triangle blip dropping in pitch.
+        this.tone({
+          frequency: 1400 * jitter,
+          end: 900,
+          duration: 0.05,
+          gain: 0.04 * v,
+          type: "triangle",
+        });
+        break;
+      case "pop":
+        // Hive and shatter bursts: a filtered noise burst with a tone drop.
+        this.noise({
+          duration: 0.07,
+          gain: 0.1 * v,
+          frequency: 2600 * jitter,
+          end: 700,
+          filter: "bandpass",
+          q: 1.4,
+        });
+        this.tone({
+          frequency: 760 * jitter,
+          end: 320,
+          duration: 0.06,
+          gain: 0.06 * v,
+          type: "triangle",
+        });
+        break;
+      case "chime":
+        // Barrier charge: two sines a fifth apart, gentle attack.
+        this.tone({
+          frequency: 880,
+          duration: 0.25,
+          gain: 0.05 * v,
+          attack: 0.01,
+        });
+        this.tone({
+          frequency: 1320,
+          duration: 0.25,
+          gain: 0.035 * v,
+          attack: 0.015,
+          delay: 0.02,
+        });
         break;
       case "horde":
         // Two-note warning sting: a swarm is on its way.

@@ -902,7 +902,24 @@ export async function createSurvivalMaxx(
       if (e.type === "hurt") audio.play("damage");
       if (e.type === "dash") audio.play("dash");
       if (e.type === "pickup") audio.play("pickup", 0.5);
-      if (e.type === "explosion") audio.play("rocket", 0.8);
+      if (e.type === "explosion")
+        audio.play(
+          e.weapon === "eclipse"
+            ? "eclipse-collapse"
+            : e.weapon === "spore_mine"
+              ? "needle"
+              : "rocket",
+          0.8,
+        );
+      if (e.type === "bounce") audio.play("bounce", 0.5);
+      if (e.type === "burst") audio.play("pop", 0.5);
+      if (e.type === "crush") audio.play("thump", 0.45);
+      if (e.type === "strike")
+        audio.play(e.weapon === "needle" ? "needle" : "thump", e.weapon === "needle" ? 0.4 : 0.45);
+      if (e.type === "barrier") audio.play("chime", 0.6);
+      if (e.type === "shieldBreak" && e.id === 0) audio.play("frost", 0.5);
+      if (e.type === "pull" && e.weapon !== "eclipse") audio.play("frost", 0.5);
+      if (e.type === "heal" && e.id === 0) audio.play("win", 0.4);
       if (e.type === "waveStart") audio.play("start");
       if (e.type === "waveEnd" || e.type === "won") audio.play("win");
       if (e.type === "lost") audio.play("defeat");
@@ -918,6 +935,7 @@ export async function createSurvivalMaxx(
         audio.play("boss-burst", 0.7);
     }
   }
+
 
   function frame(now: number) {
     if (destroyed || !ui || !graphics) return;

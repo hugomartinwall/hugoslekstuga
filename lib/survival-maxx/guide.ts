@@ -60,6 +60,7 @@ import {
   type SetTierSize,
   type WeaponDefinition,
   type WeaponId,
+  DRONE_STACK_RATE,
 } from "./content";
 
 export type GuideTab =
@@ -388,6 +389,12 @@ function itemLines(item: ItemDefinition, rank: number): GuideLine[] {
     );
     if (d.range > 0) lines.push(line("railgun", `Range ${num(d.range)}`));
     if (d.cooldown > 0) lines.push(line("haste", `Acts every ${seconds(d.cooldown)}`));
+    lines.push(
+      line(
+        "drone",
+        `Each drone after your second acts ${pct(1 - DRONE_STACK_RATE)} slower than the one before it.`,
+      ),
+    );
   }
   lines.push(line("coin", `From ${num(offerPrice(item.cost, 1, rank))} emeralds at wave 1`));
   lines.push(
@@ -647,6 +654,7 @@ export function howToSections(): HowToSection[] {
         `Selling returns ${pct(SELL_RATE)} of the price.`,
         `The bag holds ${num(BAG_CAPACITY)} items, drones and mods. Buy up to ${num(MAX_EXTRA_SLOTS)} extra slots per run at ${num(BAG_SLOT_COST)} emeralds each.`,
         `${handsSummary()} Weapons in the bag are inactive and do not count toward sets.`,
+        `Drones stack with diminishing returns: each drone after your second acts ${pct(1 - DRONE_STACK_RATE)} slower than the one before it.`,
       ],
     },
     {

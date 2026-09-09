@@ -142,7 +142,7 @@ test("map multipliers scale health, damage, bosses, budget, emeralds and prices 
     run.time = run.waveDuration;
     run.step(1 / 60);
   }
-  assert.equal(shopHard.salvage, Math.floor(shopBase.salvage * t.salvage));
+  assert.ok(Math.abs(shopHard.salvage - shopBase.salvage * t.salvage) <= 1);
   assert.equal(shopHard.rerollCost, Math.ceil(shopBase.rerollCost * t.prices));
   assert.ok(shopHard.offers[0].cost > shopBase.offers[0].cost);
   // The ramp softens the opening.
@@ -251,7 +251,7 @@ test("Fog shortens weapon and drone reach by a quarter", () => {
 test("Boss Gauntlet has a boss every two waves without inflating boss health", () => {
   const run = atWave(9, 2);
   assert.equal(run.isBossWave, true);
-  assert.equal(run.waveDuration, 45);
+  assert.equal(run.waveDuration, 60);
   advance(run, 1.6);
   assert.ok(run.boss);
   const standard = atWave(1, 3);

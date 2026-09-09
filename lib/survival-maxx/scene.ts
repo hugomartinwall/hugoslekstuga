@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { interpolatedPosition } from "./motion";
 import { poseHeldWeapon, weaponRecovery, weaponScale } from "./weapon-pose";
+import { ProjectileRenderer, type ProjectileContext } from "./projectiles";
+import { MUZZLE_FLASH, flashClassFor, glowTexture } from "./projectile-art";
 import {
   box,
   cylinder,
@@ -18,7 +20,7 @@ import {
   COLORS,
   type Rig,
 } from "./meshes";
-import type { SurvivalRun, GameEvent } from "./model";
+import type { SurvivalRun, GameEvent, EventKind, Bullet, Enemy } from "./model";
 import {
   HEROES,
   WEAPONS,
@@ -28,6 +30,8 @@ import {
   ENEMY_STATS,
   type HeroId,
   type EnemyKind,
+  type WeaponId,
+  type FamilyId,
   type MapDefinition,
   type MapPalette,
   type MapDecoration,
@@ -58,13 +62,118 @@ type Particle = {
   size: number;
   color: THREE.Color;
   gravity: number;
+  /** Velocity damping per second. */
+  drag: number;
+  /** Tumble rate multiplier. */
+  spin: number;
+  /** Spiral around a centre instead of flying ballistically. */
+  orbit?: { cx: number; cz: number; angle: number; radius: number; rate: number; shrink: number };
 };
+type ParticleOptions = {
+  /** Emission direction in the sim's XZ angle; scattered everywhere when unset. */
+  direction?: number;
+  /** Half-angle of the emission cone, radians. */
+  spread?: number;
+  /** Start out along the cone and fly back into the origin. */
+  inward?: boolean;
+  drag?: number;
+  gravity?: number;
+  /** Mean lifetime, seconds. */
+  life?: number;
+  /** Extra upward velocity. */
+  lift?: number;
+  spin?: number;
+  /** Spawn on a circle of this radius around the origin. */
+  radius?: number;
+};
+/** Everything a fused or deployed bullet keeps around itself between frames. */
+type BulletFx = {
+  kind: "well" | "hum" | "base";
+  group: THREE.Group;
+  materials: THREE.MeshBasicMaterial[];
+  timer: number;
+  eclipse: boolean;
+  /** Fused well floor growth, 0..1. */
+  grow: number;
+};
+/** A shell lobbed on a parabola from a muzzle to a strike point. */
+type Lob = {
+  mesh: THREE.Mesh;
+  material: THREE.MeshBasicMaterial;
+  fromX: number;
+  fromY: number;
+  fromZ: number;
+  toX: number;
+  toZ: number;
+  age: number;
+  duration: number;
+  smoke: number;
+  weapon: WeaponId | "enemy";
+  color: number;
+};
+/** Status ring, elite ring and the slow emitter timers for one enemy. */
+type StatusFx = {
+  group: THREE.Group;
+  status: THREE.Mesh;
+  elite: THREE.Mesh;
+  materials: THREE.MeshBasicMaterial[];
+  emit: number;
+};
+/** Per-batch state shared by the event handlers. */
+type EventBatch = { arcOrigins: Set<number> };
+/** A pull well the enemy loop leans rigs toward this frame. */
+type Well = { x: number; y: number; radius: number; eclipse: boolean };
+const WHITE = 0xffffff;
+const MAGENTA = 0xff3df0;
+const CYAN = 0x8ef2ff;
+const ICE = 0x9eeaff;
+const EMBER = 0xff9b48;
+const SPORE = 0xabe477;
+const SMOKE = 0x8f8780;
+const DUST = 0x9f8b73;
+const STATUS_COLOR = { frozen: 0x9eeaff, burn: 0xff8a3a, poison: 0x8be07a, slow: 0x87dbfa };
+const heroTint = (hero: HeroId) => COLORS[hero] ?? 0xffd18e;
+/** The family a weapon's hit feedback follows: its first family, kinetic for enemy shots. */
+const familyOf = (weapon: GameEvent["weapon"]): FamilyId =>
+  weapon && weapon !== "enemy" && weapon in WEAPONS
+    ? (WEAPONS[weapon].families[0] ?? "kinetic")
+    : "kinetic";
+const weaponColor = (weapon: GameEvent["weapon"]) =>
+  weapon && weapon !== "enemy" && weapon in WEAPONS
+    ? Number(WEAPONS[weapon].color.replace("#", "0x"))
+    : 0xffd18e;
+const scratchFrom = new THREE.Vector3();
+const scratchTo = new THREE.Vector3();
+const scratchMid = new THREE.Vector3();
+type Flash = {
+  object: THREE.Sprite | THREE.Mesh;
+  material: THREE.SpriteMaterial | THREE.MeshBasicMaterial;
+  cone: boolean;
+  life: number;
+  max: number;
+  size: number;
+};
+/** One colour object per particle tint; particles never mutate theirs. */
+const particleColors = new Map<number, THREE.Color>();
+const particleColor = (hex: number) => {
+  let c = particleColors.get(hex);
+  if (!c) {
+    c = new THREE.Color(hex);
+    particleColors.set(hex, c);
+  }
+  return c;
+};
+const muzzleScratch = new THREE.Vector3();
 type Ring = {
   mesh: THREE.Mesh;
+  material: THREE.MeshBasicMaterial;
   life: number;
   max: number;
   radius: number;
   start: number;
+  /** Scale from `start` to `radius` over the life; false keeps the placed scale. */
+  animate: boolean;
+  opacity: number;
 };
 type FloatLabel = {
   sprite: THREE.Sprite;
@@ -123,7 +232,30 @@ export class SurvivalScene {
   equipmentPool = new Map<string, THREE.Group[]>();
   /** Equipment portraits are rendered once per page and shared by every scene. */
   art: Record<string, string>;
-  bulletMeshes = new Map<number, THREE.Mesh>();
+  projectiles = new ProjectileRenderer(this.actors);
+  projectileContext: ProjectileContext = {
+    alpha: 1,
+    time: 0,
+    dt: 0,
+    cameraQuaternion: new THREE.Quaternion(),
+    reducedMotion: false,
+    muzzleWorld: (ownerId, out) => this.muzzleWorld(ownerId, out),
+    isDrone: (ownerId) => this.drones.has(ownerId),
+    puff: (x, y, z, col, size, life) =>
+      this.spawnParticles(x, y, z, 1, col, 0.6, size, {
+        drag: 2.5,
+        gravity: 0,
+        life,
+        lift: 0.5,
+        spin: 0.4,
+      }),
+  };
+  /** Pooled additive muzzle discs and cones; at most 24 alive. */
+  flashes: Flash[] = [];
+  flashPool: Flash[] = [];
+  flashConeGeometry = new THREE.ConeGeometry(0.5, 1, 8, 1, true)
+    .translate(0, -0.5, 0)
+    .rotateX(-Math.PI / 2);
   pickupMeshes = new Map<number, THREE.Mesh>();
   telegraphs = new Map<number, THREE.Mesh>();
   telegraphMaterial = new THREE.MeshBasicMaterial({
@@ -217,12 +349,54 @@ export class SurvivalScene {
   pointer = new THREE.Vector2();
   plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   point = new THREE.Vector3();
-  bulletGeometry = new THREE.SphereGeometry(0.11, 6, 4);
   pickupGeometry = new THREE.OctahedronGeometry(0.2);
   hazardDisc = new THREE.CircleGeometry(1, 48);
   ringGeometry = new THREE.RingGeometry(0.91, 1, 64);
   /** Heavier ring for elite spawn marks. */
   thickRingGeometry = new THREE.RingGeometry(0.84, 1, 64);
+  /** Filled ground disc for flashes and the well's dark floor. */
+  discGeometry = new THREE.CircleGeometry(1, 40);
+  /** Unit bolt segment: radius 1, spanning z = 0..1 so lookAt + scale.z = length. */
+  segmentGeometry = new THREE.CylinderGeometry(1, 1, 1, 5, 1)
+    .rotateX(Math.PI / 2)
+    .translate(0, 0, 0.5);
+  /** Blade sweep: a partial ring, placed by rotation and scale. */
+  sweepGeometry = new THREE.RingGeometry(0.56, 0.84, 36, 1, -0.92, 1.84);
+  bubbleGeometry = new THREE.SphereGeometry(1, 20, 14);
+  shardGeometry = new THREE.OctahedronGeometry(0.16);
+  shellGeometry = new THREE.SphereGeometry(0.17, 8, 6);
+  /** Geometries the ring list may reference; anything else it holds gets disposed with the ring. */
+  sharedGeometries = new Set<THREE.BufferGeometry>([
+    this.ringGeometry,
+    this.thickRingGeometry,
+    this.hazardDisc,
+    this.discGeometry,
+    this.segmentGeometry,
+    this.sweepGeometry,
+  ]);
+  /** Pooled ring/bolt/disc materials, keyed by blending; nothing is allocated per event once warm. */
+  materialPool: { normal: THREE.MeshBasicMaterial[]; additive: THREE.MeshBasicMaterial[] } = {
+    normal: [],
+    additive: [],
+  };
+  /** Rings, bolts and discs share one capped list. */
+  static readonly RING_CAP = 160;
+  static readonly PARTICLE_CAP = 850;
+  bulletFx = new Map<number, BulletFx>();
+  statusRings = new Map<number, StatusFx>();
+  shieldBubbles = new Map<number, THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>();
+  lobs: Lob[] = [];
+  lobPool: Lob[] = [];
+  playerBubble: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  barrierShards: THREE.Mesh[] = [];
+  abilityRing: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  bloodRing: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  /** Wells the enemy loop leans rigs toward; rebuilt every frame. */
+  wells: Well[] = [];
+  /** Seconds left on the camera view punch (Eclipse collapse). */
+  punch = 0;
+  viewPunch = 0;
+  lastEmber = 0;
   glows: THREE.Sprite[] = [];
   constructor(private container: HTMLElement) {
     this.art = portraitCache ??= equipmentPortraits();
@@ -316,6 +490,9 @@ export class SurvivalScene {
     this.particleMesh.count = 0;
     this.particleMesh.frustumCulled = false;
     this.fx.add(this.particleMesh);
+    this.playerBubble = this.makePlayerBubble();
+    this.abilityRing = this.makeAuraRing(this.thickRingGeometry, CYAN, 0.55);
+    this.bloodRing = this.makeAuraRing(this.thickRingGeometry, 0x9b1030, 0.6);
     const positions = new Float32Array(240 * 3);
     for (let i = 0; i < positions.length; i += 3) {
       positions[i] = (Math.random() - 0.5) * 70;
@@ -348,10 +525,12 @@ export class SurvivalScene {
   }
   updateProjection() {
     const aspect = this.viewportWidth / this.viewportHeight;
-    this.camera.left = (-this.viewSize * aspect) / 2;
-    this.camera.right = (this.viewSize * aspect) / 2;
-    this.camera.top = this.viewSize / 2;
-    this.camera.bottom = -this.viewSize / 2;
+    // The view punch (Eclipse collapse) briefly tightens the frame.
+    const size = this.viewSize - (this.viewPunch || 0);
+    this.camera.left = (-size * aspect) / 2;
+    this.camera.right = (size * aspect) / 2;
+    this.camera.top = size / 2;
+    this.camera.bottom = -size / 2;
     this.camera.updateProjectionMatrix();
   }
   setScreen(screen: string, hero: HeroId) {
@@ -823,25 +1002,249 @@ export class SurvivalScene {
     col: number,
     force = 3,
     size = 0.65,
+    options?: ParticleOptions,
   ) {
-    for (let i = 0; i < count && this.particles.length < 850; i++) {
-      const a = Math.random() * Math.PI * 2;
+    const spread = options?.spread ?? Math.PI;
+    const gravity = options?.gravity ?? 7;
+    const particleTint = particleColor(col);
+    const cap = SurvivalScene.PARTICLE_CAP;
+    for (let i = 0; i < count && this.particles.length < cap; i++) {
+      const a =
+        options?.direction !== undefined
+          ? options.direction + (Math.random() - 0.5) * 2 * spread
+          : Math.random() * Math.PI * 2;
       const speed = force * (0.25 + Math.random() * 0.75);
-      const life = 0.25 + Math.random() * 0.5;
+      const life =
+        options?.life !== undefined
+          ? options.life * (0.6 + Math.random() * 0.8)
+          : 0.25 + Math.random() * 0.5;
+      let px = x,
+        pz = z,
+        vx = Math.cos(a) * speed,
+        vz = Math.sin(a) * speed;
+      if (options?.radius) {
+        const ring = Math.random() * Math.PI * 2;
+        px += Math.cos(ring) * options.radius;
+        pz += Math.sin(ring) * options.radius;
+      }
+      if (options?.inward) {
+        const reach = force * (0.3 + Math.random() * 0.25);
+        px += Math.cos(a) * reach;
+        pz += Math.sin(a) * reach;
+        vx = -vx;
+        vz = -vz;
+      }
       this.particles.push({
-        x,
+        x: px,
         y,
-        z,
-        vx: Math.cos(a) * speed,
-        vy: Math.random() * force * 0.8,
-        vz: Math.sin(a) * speed,
+        z: pz,
+        vx,
+        vy:
+          Math.random() * force * (gravity === 0 ? 0.2 : 0.8) +
+          (options?.lift ?? 0),
+        vz,
         life,
         max: life,
         size: size * (0.4 + Math.random() * 0.6),
-        color: new THREE.Color(col),
-        gravity: 7,
+        color: particleTint,
+        gravity,
+        drag: options?.drag ?? 0,
+        spin: options?.spin ?? 1,
       });
     }
+  }
+  /** One additive disc (sprite) or cone at a muzzle, from a pool capped at 24. */
+  private flash(
+    cone: boolean,
+    at: THREE.Vector3,
+    angle: number,
+    col: number,
+    size: number,
+    life: number,
+  ) {
+    if (this.flashes.length >= 24) return;
+    let entry = this.flashPool.find((f) => f.cone === cone);
+    if (entry) this.flashPool.splice(this.flashPool.indexOf(entry), 1);
+    else if (cone) {
+      const material = new THREE.MeshBasicMaterial({
+        color: col,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+        side: THREE.DoubleSide,
+      });
+      material.userData.owned = true;
+      entry = {
+        object: new THREE.Mesh(this.flashConeGeometry, material),
+        material,
+        cone: true,
+        life,
+        max: life,
+        size,
+      };
+    } else {
+      const material = new THREE.SpriteMaterial({
+        map: glowTexture(),
+        color: col,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      material.userData.owned = true;
+      entry = {
+        object: new THREE.Sprite(material),
+        material,
+        cone: false,
+        life,
+        max: life,
+        size,
+      };
+    }
+    entry.life = entry.max = life;
+    entry.size = size;
+    entry.material.color.setHex(col);
+    entry.material.opacity = 1;
+    entry.object.position.copy(at);
+    if (cone) entry.object.rotation.set(0, Math.PI / 2 - angle, 0);
+    entry.object.scale.setScalar(size);
+    this.fx.add(entry.object);
+    this.flashes.push(entry);
+  }
+  /** The muzzle flash for a fire event, from the per-family table. */
+  private flashFor(e: GameEvent, muzzle: THREE.Vector3, col: number) {
+    const boss =
+      !!e.enemy && e.id !== undefined && this.enemies.get(e.id)?.kind === "boss";
+    const drone = !e.enemy && e.id !== undefined && this.drones.has(e.id);
+    const spec = MUZZLE_FLASH[flashClassFor(e.weapon, !!e.enemy, boss, drone)];
+    const rank = 1 + Math.min(5, Math.max(0, (e.level ?? 1) - 1)) * 0.12;
+    const angle = e.angle ?? 0;
+    const reduced = this.reducedMotion;
+    this.spawnParticles(
+      muzzle.x,
+      muzzle.y,
+      muzzle.z,
+      Math.round(spec.particles * rank * (reduced ? 0.5 : 1)),
+      col,
+      spec.force * rank,
+      spec.size,
+      {
+        direction: spec.inward || spec.upward ? undefined : angle,
+        spread: spec.spread,
+        inward: spec.inward,
+        lift: spec.upward ? spec.force : 0,
+        gravity: spec.upward ? 2 : undefined,
+        drag: spec.inward ? 2 : undefined,
+        life: spec.life,
+      },
+    );
+    if (spec.disc) this.flash(false, muzzle, angle, col, spec.disc * rank, 0.09);
+    if (spec.cone && !reduced)
+      this.flash(true, muzzle, angle, col, spec.cone * rank, 0.08);
+    if (spec.ring) this.ring(muzzle.x, muzzle.z, col, spec.ring * rank, 0.25, 0.3);
+    if (spec.smoke && !reduced)
+      this.spawnParticles(muzzle.x, muzzle.y, muzzle.z, spec.smoke, 0x8f8780, 1.4, 0.7, {
+        direction: angle,
+        spread: 0.5,
+        drag: 3,
+        gravity: 0,
+        life: 0.55,
+        lift: 0.7,
+        spin: 0.4,
+      });
+    if (spec.shake && !reduced) this.shake = Math.max(this.shake, spec.shake);
+  }
+  /**
+   * Particles that spiral in toward (x, z): `rate` radians per second around the
+   * centre, `shrink` units per second inward. Used by the wells and Flux's vacuum.
+   */
+  private spawnVortex(
+    x: number,
+    z: number,
+    col: number,
+    radius: number,
+    count: number,
+    rate: number,
+    shrink: number,
+    life: number,
+    size: number,
+    y = 0.4,
+  ) {
+    const particleTint = particleColor(col);
+    const cap = SurvivalScene.PARTICLE_CAP;
+    for (let i = 0; i < count && this.particles.length < cap; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = radius * (0.7 + Math.random() * 0.3);
+      const max = life * (0.6 + Math.random() * 0.8);
+      this.particles.push({
+        x: x + Math.cos(angle) * r,
+        y: y + Math.random() * 0.5,
+        z: z + Math.sin(angle) * r,
+        vx: 0,
+        vy: 0.2 + Math.random() * 0.4,
+        vz: 0,
+        life: max,
+        max,
+        size: size * (0.4 + Math.random() * 0.6),
+        color: particleTint,
+        gravity: 0,
+        drag: 0,
+        spin: 1.5,
+        orbit: { cx: x, cz: z, angle, radius: r, rate, shrink },
+      });
+    }
+  }
+  /** Particles a continuous emitter may still add without starving event bursts of the cap. */
+  budget(reserve = 250) {
+    return Math.max(0, SurvivalScene.PARTICLE_CAP - reserve - this.particles.length);
+  }
+  private acquireMaterial(additive: boolean, col: number, opacity: number) {
+    const pool = additive ? this.materialPool.additive : this.materialPool.normal;
+    let m = pool.pop();
+    if (!m) {
+      m = new THREE.MeshBasicMaterial({
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        toneMapped: !additive,
+        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+      });
+      m.userData.additive = additive;
+    }
+    m.color.setHex(col);
+    m.opacity = opacity;
+    return m;
+  }
+  private releaseMaterial(m: THREE.MeshBasicMaterial) {
+    (m.userData.additive ? this.materialPool.additive : this.materialPool.normal).push(m);
+  }
+  /** Adds a ring-list entry; over the cap the oldest entry retires first. */
+  private pushRing(
+    mesh: THREE.Mesh,
+    material: THREE.MeshBasicMaterial,
+    life: number,
+    radius: number,
+    start: number,
+    animate: boolean,
+  ) {
+    if (this.rings.length >= SurvivalScene.RING_CAP) this.retireRing(this.rings.shift()!);
+    this.fx.add(mesh);
+    this.rings.push({
+      mesh,
+      material,
+      life,
+      max: life,
+      radius,
+      start,
+      animate,
+      opacity: material.opacity,
+    });
+  }
+  private retireRing(r: Ring) {
+    r.mesh.removeFromParent();
+    if (!this.sharedGeometries.has(r.mesh.geometry)) r.mesh.geometry.dispose();
+    this.releaseMaterial(r.material);
   }
   private ring(
     x: number,
@@ -850,21 +1253,108 @@ export class SurvivalScene {
     radius: number,
     duration = 0.4,
     start = 0.1,
+    opacity = 0.85,
+    additive = false,
   ) {
+    const material = this.acquireMaterial(additive, col, opacity);
+    const mesh = new THREE.Mesh(this.ringGeometry, material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, 0.08, y);
+    mesh.scale.setScalar(start);
+    this.pushRing(mesh, material, duration, radius, start, true);
+  }
+  /** A filled additive ground disc that fades: impact flashes and well floors. */
+  private groundFlash(x: number, y: number, col: number, radius: number, duration = 0.2) {
+    const material = this.acquireMaterial(true, col, 0.7);
+    const mesh = new THREE.Mesh(this.discGeometry, material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, 0.07, y);
+    mesh.scale.setScalar(radius);
+    this.pushRing(mesh, material, this.reducedMotion ? duration * 0.6 : duration, radius, radius, false);
+  }
+  /** A vertical additive disc facing along `angle`: muzzle puffs, bounce splats, chimes. */
+  private disc(x: number, h: number, z: number, col: number, radius: number, duration: number, angle: number) {
+    const material = this.acquireMaterial(true, col, 0.8);
+    const mesh = new THREE.Mesh(this.discGeometry, material);
+    mesh.position.set(x, h, z);
+    mesh.rotation.set(0, Math.PI / 2 - angle, 0);
+    mesh.scale.setScalar(radius);
+    this.pushRing(mesh, material, duration, radius, radius, false);
+  }
+  /**
+   * A bolt from one point to another built from the shared unit cylinder: one
+   * straight segment, or three jittered segments for lightning. Never allocates geometry.
+   */
+  private bolt(from: THREE.Vector3, to: THREE.Vector3, col: number, radius: number, life: number, jitter: number) {
+    const segments = jitter > 0 ? 3 : 1;
+    const dx = to.x - from.x,
+      dz = to.z - from.z;
+    const length = Math.hypot(dx, to.y - from.y, dz);
+    if (length < 1e-4) return;
+    const px = -dz / (Math.hypot(dx, dz) || 1),
+      pz = dx / (Math.hypot(dx, dz) || 1);
+    let ax = from.x,
+      ay = from.y,
+      az = from.z;
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      let bx = lerp(from.x, to.x, t),
+        by = lerp(from.y, to.y, t),
+        bz = lerp(from.z, to.z, t);
+      if (i < segments) {
+        const off = (Math.random() - 0.5) * 2 * jitter;
+        bx += px * off;
+        bz += pz * off;
+        by += (Math.random() - 0.5) * jitter;
+      }
+      const material = this.acquireMaterial(true, col, 0.95);
+      const mesh = new THREE.Mesh(this.segmentGeometry, material);
+      mesh.position.set(ax, ay, az);
+      scratchTo.set(bx, by, bz);
+      mesh.lookAt(scratchTo);
+      mesh.scale.set(radius, radius, Math.hypot(bx - ax, by - ay, bz - az));
+      this.pushRing(mesh, material, life, 1, 1, false);
+      ax = bx;
+      ay = by;
+      az = bz;
+    }
+  }
+  private makePlayerBubble() {
     const mesh = new THREE.Mesh(
-      this.ringGeometry,
+      this.bubbleGeometry,
+      new THREE.MeshBasicMaterial({
+        color: CYAN,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    );
+    mesh.scale.setScalar(1.05);
+    mesh.visible = false;
+    this.fx.add(mesh);
+    return mesh;
+  }
+  private makeAuraRing(geometry: THREE.BufferGeometry, col: number, opacity: number) {
+    const mesh = new THREE.Mesh(
+      geometry,
       new THREE.MeshBasicMaterial({
         color: col,
         transparent: true,
-        opacity: 0.85,
+        opacity,
         depthWrite: false,
         side: THREE.DoubleSide,
+        toneMapped: false,
       }),
     );
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x, 0.08, y);
+    mesh.position.y = 0.06;
+    mesh.visible = false;
     this.fx.add(mesh);
-    this.rings.push({ mesh, life: duration, max: duration, radius, start });
+    return mesh;
+  }
+  private addShake(amount: number) {
+    if (!this.reducedMotion) this.shake = Math.max(this.shake, amount);
   }
   private label(amount: number, x: number, y: number, critical = false) {
     if (this.labels.length > 32) return;
@@ -898,199 +1388,903 @@ export class SurvivalScene {
     this.fx.add(sprite);
     this.labels.push({ sprite, life: 0.55, max: 0.55, z: y });
   }
+  /** Every simulation event kind routes here; kinds without a visual are explicit no-ops. */
+  private static readonly HANDLERS: Record<
+    EventKind,
+    (scene: SurvivalScene, e: GameEvent, col: number, batch: EventBatch) => void
+  > = {
+    spawn: (s, e) => s.onSpawn(e),
+    fire: (s, e, col) => s.onFire(e, col),
+    hit: (s, e, col) => s.onHit(e, col),
+    kill: (s, e) => s.onKill(e),
+    hurt: (s, e) => s.onHurt(e),
+    dash: (s, e) => s.onDash(e),
+    pickup: (s, e) => s.onPickup(e),
+    explosion: (s, e, col) => s.onExplosion(e, col),
+    arc: (s, e, col, batch) => s.onArc(e, col, batch),
+    slash: (s, e, col) => s.onSlash(e, col),
+    waveStart: (s, e) => s.onWaveStart(e),
+    waveEnd: (s, e) => s.onWaveEnd(e),
+    buy: () => undefined,
+    upgrade: () => undefined,
+    boss: (s, e) => s.onBoss(e),
+    lost: (s, e) => s.onLost(e),
+    won: (s, e) => s.onWon(e),
+    telegraph: () => undefined,
+    weave: (s, e) => s.onWeave(e),
+    status: (s, e) => s.onStatus(e),
+    heal: (s, e) => s.onHeal(e),
+    shieldBreak: (s, e) => s.onShieldBreak(e),
+    spawnMark: (s, e) => s.onSpawnMark(e),
+    horde: (s, e) => s.onHorde(e),
+    pull: (s, e, col) => s.onPull(e, col),
+    bounce: (s, e, col) => s.onBounce(e, col),
+    burst: (s, e, col) => s.onBurst(e, col),
+    crush: (s, e) => s.onCrush(e),
+    strike: (s, e, col) => s.onStrike(e, col),
+    barrier: (s, e) => s.onBarrier(e),
+  };
   handleEvents(events: GameEvent[]) {
-    const arcOrigins = new Set<number>();
+    const batch: EventBatch = { arcOrigins: new Set() };
     for (const e of events) {
-      const col = e.enemy
-        ? 0xff7355
-        : e.weapon && e.weapon in WEAPONS
-          ? Number(
-              WEAPONS[e.weapon as keyof typeof WEAPONS].color.replace(
-                "#",
-                "0x",
-              ),
-            )
-          : 0xffd18e;
-      if (e.type === "spawn") {
-        this.ring(e.x, e.y, 0xe99460, (e.radius ?? 0.6) * 1.5, 0.5, 0.9);
-        this.spawnParticles(e.x, 0.15, e.y, 5, 0x9f8b73, 1, 0.6);
-      }
-      // Newer simulation events; compared as strings so this compiles before EventKind lists them.
-      const kind = e.type as string;
-      if (kind === "spawnMark")
-        this.spawnParticles(e.x, 0.1, e.y, 3, 0xe99460, 0.8, 0.45);
-      if (kind === "horde") {
-        // A horde ring closing on the player: one red pulse from the player outward.
-        this.ring(e.x, e.y, 0xff6e4e, (e.radius ?? 6) * 1.05, 0.6, 0.3);
-        this.spawnParticles(e.x, 0.6, e.y, 18, 0xff8a6a, 3, 0.6);
-        this.shake = Math.max(this.shake, 0.08);
-      }
-      if (e.type === "fire") {
-        if (e.enemy && e.id !== undefined) {
-          const rig = this.enemies.get(e.id);
-          if (rig) rig.recoil = 1;
+      const col = e.enemy ? 0xff7355 : weaponColor(e.weapon);
+      SurvivalScene.HANDLERS[e.type]?.(this, e, col, batch);
+    }
+  }
+  /** Particle counts halve under reduced motion. */
+  private count(n: number) {
+    return this.reducedMotion ? Math.ceil(n / 2) : n;
+  }
+  private onSpawn(e: GameEvent) {
+    this.ring(e.x, e.y, 0xe99460, (e.radius ?? 0.6) * 1.5, 0.5, 0.9);
+    this.spawnParticles(e.x, 0.15, e.y, this.count(5), DUST, 1, 0.6);
+  }
+  private onSpawnMark(e: GameEvent) {
+    this.spawnParticles(e.x, 0.1, e.y, this.count(3), 0xe99460, 0.8, 0.45);
+  }
+  private onHorde(e: GameEvent) {
+    // A horde ring closing on the player: one red pulse from the player outward.
+    this.ring(e.x, e.y, 0xff6e4e, (e.radius ?? 6) * 1.05, 0.6, 0.3);
+    this.spawnParticles(e.x, 0.6, e.y, this.count(18), 0xff8a6a, 3, 0.6);
+    this.addShake(0.08);
+  }
+  private onFire(e: GameEvent, col: number) {
+    if (e.enemy && e.id !== undefined) {
+      const rig = this.enemies.get(e.id);
+      if (rig) rig.recoil = 1;
+    }
+    // A deployed turret's shots carry `source`; the hand that placed it stays still.
+    if (!e.enemy && e.id !== undefined && e.source === undefined && this.heldWeapons.has(e.id))
+      this.weaponMotion.set(e.id, 1);
+    const muzzle = this.eventMuzzle(e, muzzleScratch);
+    this.flashFor(e, muzzle, col);
+    if (e.enemy) return;
+    const angle = e.angle ?? 0;
+    switch (e.weapon) {
+      case "eclipse":
+        // Charge: an imploding magenta ring and a white vortex at the muzzle.
+        this.ring(muzzle.x, muzzle.z, MAGENTA, 0.3, 0.35, 3.2, 0.9, true);
+        this.spawnVortex(muzzle.x, muzzle.z, WHITE, 1.6, this.count(12), 9, 3.5, 0.4, 0.4, muzzle.y - 0.3);
+        break;
+      case "boomerang":
+        // Whoosh: a disc at the hand and a few sparks swept sideways.
+        this.disc(muzzle.x, muzzle.y, muzzle.z, col, 0.55, 0.12, angle);
+        this.spawnParticles(muzzle.x, muzzle.y, muzzle.z, this.count(4), col, 2, 0.35, {
+          direction: angle + Math.PI / 2,
+          spread: 0.4,
+          gravity: 0,
+          drag: 3,
+          life: 0.2,
+        });
+        break;
+      case "sentry":
+        if (e.source === undefined) {
+          this.ring(e.x, e.y, heroTint(this.heroId), 1.6, 0.4, 0.2);
+          this.spawnParticles(e.x, 0.3, e.y, this.count(8), col, 2.5, 0.45);
         }
-        if (!e.enemy && e.id !== undefined) this.weaponMotion.set(e.id, 1);
-        const muzzle = this.eventMuzzle(e);
-        this.spawnParticles(
-          muzzle.x,
-          muzzle.y,
-          muzzle.z,
-          e.weapon === "shotgun" ? 9 : 3,
-          col,
-          2,
-          0.5,
-        );
-      }
-      if (e.type === "hit") {
-        this.spawnParticles(e.x, 1, e.y, 4, col, 2.5, 0.5);
-        if (e.amount) this.label(e.amount, e.x, e.y, e.amount > 45);
-      }
-      if (e.type === "kill") {
-        this.spawnParticles(
-          e.x,
-          0.85,
-          e.y,
-          e.kind === "boss" ? 70 : 15,
-          0xa28d76,
-          e.kind === "boss" ? 9 : 4,
-          0.9,
-        );
-        this.spawnParticles(e.x, 0.7, e.y, 5, 0xffb575, 3, 0.45);
-        if (e.kind === "brute" || e.kind === "boss")
-          this.shake = Math.max(this.shake, 0.15);
-      }
-      if (e.type === "hurt") {
-        this.shake = 0.3;
-        this.damageFlash = 0.52;
-        this.ring(e.x, e.y, 0xff6d52, 1.5, 0.24);
-        this.spawnParticles(e.x, 1, e.y, 16, 0xff9377, 4, 0.7);
-      }
-      if (e.type === "dash") {
-        this.ring(e.x, e.y, COLORS[this.heroId], e.radius ?? 2, 0.35);
-        this.spawnParticles(e.x, 0.6, e.y, 26, COLORS[this.heroId], 4, 0.75);
-      }
-      if (e.type === "explosion") {
-        this.ring(e.x, e.y, col, e.radius ?? 3, 0.38);
-        this.spawnParticles(e.x, 0.4, e.y, 32, col, 7, 1.1);
-        this.shake = Math.max(this.shake, 0.14);
-      }
-      if (e.type === "arc" && e.targetX !== undefined) {
-        const first = !e.enemy && e.id !== undefined && !arcOrigins.has(e.id);
-        if (first) {
-          arcOrigins.add(e.id!);
-          this.weaponMotion.set(e.id!, 1);
-        }
-        const origin = first
-          ? this.eventMuzzle(e)
-          : new THREE.Vector3(e.x, 1.2, e.y);
-        const points = [];
-        for (let i = 0; i < 7; i++) {
-          const t = i / 6;
-          points.push(
-            new THREE.Vector3(
-              lerp(origin.x, e.targetX, t) +
-                (i && i < 6 && e.weapon !== "beam" && e.weapon !== "railgun"
-                  ? (Math.random() - 0.5) * 0.45
-                  : 0),
-              lerp(origin.y, 1.2, t) + (i % 2) * 0.12,
-              lerp(origin.z, e.targetY!, t),
-            ),
-          );
-        }
-        const curve = new THREE.CatmullRomCurve3(points);
-        const mesh = new THREE.Mesh(
-          new THREE.TubeGeometry(
-            curve,
-            12,
-            e.weapon === "beam" ? 0.11 : e.weapon === "railgun" ? 0.07 : 0.065,
-            4,
-            false,
-          ),
-          new THREE.MeshBasicMaterial({
-            color: col,
-            transparent: true,
-            toneMapped: false,
-            depthWrite: false,
-          }),
-        );
-        this.fx.add(mesh);
-        this.rings.push({ mesh, life: 0.16, max: 0.16, radius: 1, start: 1 });
-      }
-      if (e.type === "slash") {
-        if (e.id !== undefined) this.weaponMotion.set(e.id, 1);
-        if (e.weapon === "flame") {
-          for (let i = 0; i < 7; i++) {
-            const a = (e.angle ?? 0) + (Math.random() - 0.5) * 0.65;
-            const d = 0.6 + Math.random() * (e.radius ?? 4);
-            this.spawnParticles(
-              e.x + Math.cos(a) * d,
-              0.5 + Math.random() * 0.7,
-              e.y + Math.sin(a) * d,
-              2,
-              i % 2 ? 0xff9b48 : 0xffdb88,
-              1.2,
-              1.15,
-            );
-          }
-        } else if (e.weapon === "blade") {
-          const radius = e.radius ?? 3.4;
-          const arc = new THREE.Mesh(
-            new THREE.RingGeometry(
-              radius * 0.56,
-              radius * 0.84,
-              36,
-              1,
-              -(e.angle ?? 0) - 0.92,
-              1.84,
-            ),
-            new THREE.MeshBasicMaterial({
-              color: col,
-              transparent: true,
-              opacity: 0.7,
-              depthWrite: false,
-              side: THREE.DoubleSide,
-              toneMapped: false,
-            }),
-          );
-          arc.rotation.x = -Math.PI / 2;
-          arc.position.set(e.x, 1.25, e.y);
-          this.fx.add(arc);
-          this.rings.push({
-            mesh: arc,
-            life: 0.17,
-            max: 0.17,
-            start: 1,
-            radius: 1,
+        break;
+      case "spore_mine":
+        this.spawnParticles(e.x, 0.4, e.y, this.count(6), SPORE, 1.2, 0.6, {
+          drag: 2,
+          gravity: 0,
+          life: 0.5,
+          lift: 0.4,
+        });
+        break;
+      case "halo":
+        this.ring(e.x, e.y, heroTint(this.heroId), 1.8, 0.4, 0.4, 0.8);
+        break;
+      case "thumper":
+        this.ring(e.x, e.y, col, 6.5, 0.45, 0.6);
+        this.spawnParticles(e.x, 0.15, e.y, this.count(14), DUST, 1.6, 0.6, {
+          radius: 1.2,
+          gravity: 4,
+          life: 0.4,
+        });
+        this.addShake(0.12);
+        break;
+      case "shotgun":
+        this.addShake(0.04);
+        break;
+      case "railgun":
+        this.addShake(0.08);
+        break;
+      case "gravity":
+        this.spawnVortex(muzzle.x, muzzle.z, col, 0.9, this.count(6), 8, 2, 0.3, 0.3, muzzle.y - 0.2);
+        break;
+    }
+  }
+  private onHit(e: GameEvent, col: number) {
+    if (e.status) {
+      // DoT ticks: one rising tinted particle; a label only once the number reads.
+      const tint = e.status === "burn" ? EMBER : e.status === "poison" ? SPORE : ICE;
+      this.spawnParticles(e.x, 1.3, e.y, 1, tint, 0.6, 0.45, {
+        gravity: 0,
+        lift: 1.2,
+        life: 0.45,
+        drag: 1,
+      });
+      if (e.amount && e.amount >= 3) this.label(e.amount, e.x, e.y);
+      return;
+    }
+    const critical = !!e.critical;
+    if (e.weapon === "eclipse") {
+      this.spawnParticles(e.x, 1, e.y, this.count(3), WHITE, 2.5, 0.4, { gravity: 0, drag: 3, life: 0.2 });
+      this.spawnParticles(e.x, 1, e.y, this.count(3), MAGENTA, 2.5, 0.45);
+    } else
+      switch (familyOf(e.weapon)) {
+        case "thermal":
+          this.spawnParticles(e.x, 0.9, e.y, this.count(4), EMBER, 2, 0.5, {
+            gravity: 1,
+            lift: 1.5,
+            life: 0.4,
           });
-        } else this.ring(e.x, e.y, col, e.radius ?? 3.4, 0.2, 0.7);
+          this.ring(e.x, e.y, 0xff7a3a, 0.9, 0.18, 0.3, 0.6);
+          break;
+        case "storm":
+          this.spawnParticles(e.x, 1.1, e.y, this.count(3), CYAN, 3, 0.4, { gravity: 0, drag: 3, life: 0.2 });
+          scratchFrom.set(e.x, 1.7, e.y);
+          scratchTo.set(e.x + (Math.random() - 0.5) * 1.2, 0.8, e.y + (Math.random() - 0.5) * 1.2);
+          this.bolt(scratchFrom, scratchTo, CYAN, 0.03, 0.1, 0.15);
+          break;
+        case "frost":
+          this.spawnParticles(e.x, 1, e.y, this.count(4), ICE, 2, 0.4);
+          this.spawnParticles(e.x, 0.6, e.y, this.count(2), 0xd8f6ff, 0.8, 0.7, {
+            gravity: 0,
+            drag: 2,
+            life: 0.5,
+            lift: 0.4,
+          });
+          break;
+        case "toxic":
+          this.spawnParticles(e.x, 0.8, e.y, this.count(3), SPORE, 0.9, 0.45, {
+            gravity: 0,
+            lift: 1.4,
+            life: 0.5,
+            drag: 1,
+          });
+          break;
+        default:
+          this.spawnParticles(e.x, 1, e.y, this.count(4), col, 2.5, 0.5);
       }
-      if (e.type === "status")
-        this.spawnParticles(
-          e.x,
-          1.4,
-          e.y,
-          3,
-          e.status === "burn"
-            ? 0xffaa53
-            : e.status === "poison"
-              ? 0xabe477
-              : 0x9eeaff,
-          1,
-          0.65,
-        );
-      if (e.type === "pickup") {
-        this.spawnParticles(e.x, 0.4, e.y, 4, 0x24f4a2, 1.3, 0.5);
+    if (critical) {
+      this.ring(e.x, e.y, WHITE, 1.1, 0.22, 0.4, 0.9);
+      this.spawnParticles(e.x, 1.1, e.y, this.count(6), WHITE, 3.5, 0.45);
+    }
+    if (e.amount) this.label(e.amount, e.x, e.y, critical);
+  }
+  private onKill(e: GameEvent) {
+    const boss = e.kind === "boss";
+    this.spawnParticles(e.x, 0.85, e.y, this.count(boss ? 70 : 15), 0xa28d76, boss ? 9 : 4, 0.9);
+    this.spawnParticles(e.x, 0.7, e.y, this.count(5), 0xffb575, 3, 0.45);
+    if (e.kind === "brute" || boss) this.addShake(0.15);
+  }
+  private onHurt(e: GameEvent) {
+    this.addShake(0.3);
+    this.damageFlash = 0.52;
+    this.ring(e.x, e.y, 0xff6d52, 1.5, 0.24);
+    this.spawnParticles(e.x, 1, e.y, this.count(16), 0xff9377, 4, 0.7);
+  }
+  private onDash(e: GameEvent) {
+    const tint = heroTint(this.heroId);
+    const angle = e.angle ?? 0;
+    switch (this.heroId) {
+      case "ember":
+        // Crossfire: a fan of sparks and a muzzle disc along the volley.
+        this.ring(e.x, e.y, tint, e.radius ?? 1, 0.3);
+        this.disc(e.x + Math.cos(angle) * 0.7, 1.3, e.y + Math.sin(angle) * 0.7, tint, 0.6, 0.12, angle);
+        this.spawnParticles(e.x, 1.2, e.y, this.count(14), tint, 4, 0.5, { direction: angle, spread: 0.5, gravity: 2 });
+        break;
+      case "volt": {
+        this.ring(e.x, e.y, tint, e.radius ?? 5, 0.35);
+        this.spawnParticles(e.x, 0.8, e.y, this.count(16), CYAN, 4, 0.5, { gravity: 0, drag: 2, life: 0.3 });
+        for (let i = 0; i < 8; i++) {
+          const a = (i * Math.PI) / 4 + Math.random() * 0.3;
+          scratchFrom.set(e.x, 1.2, e.y);
+          scratchTo.set(e.x + Math.cos(a) * 1.8, 0.5, e.y + Math.sin(a) * 1.8);
+          this.bolt(scratchFrom, scratchTo, CYAN, 0.035, 0.12, 0.2);
+        }
+        break;
       }
-      if (e.type === "weave") {
-        this.ring(e.x, e.y, 0x87f1e1, 2.6, 0.35);
-        this.spawnParticles(e.x, 0.5, e.y, 16, 0x79e5ee, 3, 0.55);
+      case "bastion":
+        this.ring(e.x, e.y, 0xc9a27a, 1.6, 0.35, 0.5, 0.6);
+        this.spawnParticles(e.x, 0.15, e.y, this.count(12), DUST, 2.5, 0.65, { gravity: 3, life: 0.45 });
+        break;
+      case "thorn":
+        this.ring(e.x, e.y, SPORE, 2.5, 0.35, 0.3);
+        for (let i = 0; i < 12; i++)
+          this.spawnParticles(e.x, 0.9, e.y, 1, SPORE, 5, 0.45, { direction: (i * Math.PI) / 6, spread: 0.05, gravity: 2 });
+        break;
+      case "prism":
+        for (const [i, c] of [0xff8080, 0x80ff9a, 0x80b8ff].entries())
+          this.ring(e.x, e.y, c, 1.6 + i * 0.6, 0.35 + i * 0.05, 0.2, 0.8);
+        this.spawnParticles(e.x, 0.8, e.y, this.count(12), tint, 3, 0.5);
+        break;
+      default:
+        // Cinder, Frost, Reaper and Flux draw their signature in onExplosion; Wisp's Swarm ring is per-frame.
+        this.ring(e.x, e.y, tint, e.radius ?? 2, 0.35);
+        this.spawnParticles(e.x, 0.6, e.y, this.count(this.heroId === "wisp" ? 12 : 26), tint, 4, 0.75);
+    }
+  }
+  private onPickup(e: GameEvent) {
+    if (e.id !== undefined && this.drones.has(e.id)) {
+      // A repair drone's pulse heals the player.
+      const p = this.player.root.position;
+      this.ring(p.x, p.z, 0xbdf5c8, 1.6, 0.35, 0.6, 0.7);
+      this.spawnParticles(p.x, 0.5, p.z, this.count(6), 0xbdf5c8, 1, 0.45, { gravity: 0, lift: 1.4, life: 0.5 });
+      return;
+    }
+    this.spawnParticles(e.x, 0.4, e.y, this.count(4), 0x24f4a2, 1.3, 0.5);
+  }
+  private onExplosion(e: GameEvent, col: number) {
+    const radius = e.radius ?? 3;
+    if (e.enemy) {
+      this.ring(e.x, e.y, 0xff6e4e, radius, 0.38);
+      this.spawnParticles(e.x, 0.4, e.y, this.count(24), 0xff8a6a, 6, 1);
+      this.addShake(0.1);
+      return;
+    }
+    // Bullet detonations carry the bullet's id; hero abilities and hazards do not.
+    const ability = e.id === undefined;
+    switch (e.weapon) {
+      case "gravity":
+        this.ring(e.x, e.y, col, 0.3, 0.25, radius * 1.2, 0.9, true);
+        this.ring(e.x, e.y, col, 2.4, 0.4);
+        this.spawnParticles(e.x, 0.4, e.y, this.count(28), col, 7, 0.9);
+        this.addShake(0.18);
+        return;
+      case "eclipse":
+        this.groundFlash(e.x, e.y, WHITE, 6, 0.3);
+        this.ring(e.x, e.y, MAGENTA, 9, 0.55, 0.5, 0.9);
+        this.ring(e.x, e.y, WHITE, 5, 0.4, 0.3, 0.9, true);
+        this.spawnParticles(e.x, 0.5, e.y, this.count(30), MAGENTA, 9, 1);
+        this.spawnParticles(e.x, 0.5, e.y, this.count(30), WHITE, 8, 0.7, { gravity: 2, drag: 1 });
+        if (!this.reducedMotion) {
+          this.spawnParticles(e.x, 0.4, e.y, 12, SMOKE, 2, 1.2, { drag: 2, gravity: 0, life: 0.9, lift: 1, spin: 0.4 });
+          this.punch = 0.4;
+        }
+        this.addShake(0.5);
+        return;
+      case "spore_mine":
+        this.ring(e.x, e.y, SPORE, radius, 0.4);
+        this.spawnParticles(e.x, 0.4, e.y, this.count(18), SPORE, 2.2, 0.55, { drag: 2, gravity: 0, life: 0.8, lift: 0.6 });
+        return;
+      case "rocket":
+      case "mortar":
+        this.ring(e.x, e.y, 0x6b5a4a, radius, 0.45, 0.3, 0.7);
+        this.groundFlash(e.x, e.y, 0xffa040, radius * 0.8, 0.22);
+        this.spawnParticles(e.x, 0.4, e.y, this.count(20), col, 7, 1);
+        if (!this.reducedMotion)
+          this.spawnParticles(e.x, 0.4, e.y, 8, SMOKE, 2, 1.1, { drag: 2, gravity: 0, life: 0.8, lift: 1.2, spin: 0.4 });
+        this.addShake(e.weapon === "mortar" ? 0.16 : 0.14);
+        return;
+      case "flare":
+        if (ability) {
+          this.ring(e.x, e.y, EMBER, radius, 0.3, 0.4, 0.6);
+          this.spawnParticles(e.x, 0.3, e.y, this.count(6), EMBER, 1, 0.5, { gravity: 0, lift: 1.5, life: 0.5 });
+          return;
+        }
+        break;
+      case "arc":
+        if (ability) {
+          // Volt's nova: every fifth kill.
+          this.ring(e.x, e.y, CYAN, radius, 0.35, 0.3, 0.9);
+          this.spawnParticles(e.x, 0.8, e.y, this.count(20), CYAN, 5, 0.5, { gravity: 0, drag: 2, life: 0.3 });
+          for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3 + Math.random() * 0.4;
+            scratchFrom.set(e.x, 1.3, e.y);
+            scratchTo.set(e.x + Math.cos(a) * radius * 0.7, 0.4, e.y + Math.sin(a) * radius * 0.7);
+            this.bolt(scratchFrom, scratchTo, CYAN, 0.04, 0.14, 0.25);
+          }
+          this.addShake(0.12);
+          return;
+        }
+        break;
+      case "flame":
+        if (ability) {
+          // Cinder's Flashover, or a burn detonation.
+          this.ring(e.x, e.y, EMBER, radius, 0.35, 0.3, 0.8);
+          this.groundFlash(e.x, e.y, 0xff7a3a, radius * 0.6, 0.2);
+          this.spawnParticles(e.x, 0.5, e.y, this.count(radius > 3 ? 20 : 10), EMBER, 4, 0.8, { gravity: 0, lift: 2, drag: 1, life: 0.5 });
+          this.spawnParticles(e.x, 0.5, e.y, this.count(6), 0xffdb88, 3, 0.5, { gravity: 0, lift: 1.5, drag: 1, life: 0.4 });
+          return;
+        }
+        break;
+      case "frostgun":
+        if (ability) {
+          // Frost's Cold snap.
+          this.ring(e.x, e.y, ICE, radius, 0.4, 0.3, 0.9);
+          this.spawnParticles(e.x, 0.6, e.y, this.count(20), ICE, 5, 0.5);
+          this.spawnParticles(e.x, 0.3, e.y, this.count(8), 0xd8f6ff, 1.2, 0.9, { gravity: 0, drag: 1.5, life: 0.7, lift: 0.4 });
+          return;
+        }
+        break;
+      case "blade":
+        if (ability) {
+          // Reaper's Harvest.
+          this.ring(e.x, e.y, 0x2a0810, radius, 0.4, 0.3, 0.8);
+          this.ring(e.x, e.y, 0x9b1030, radius * 0.7, 0.3, 0.2, 0.8);
+          this.spawnParticles(e.x, 0.7, e.y, this.count(14), 0x9b1030, 4, 0.6);
+          return;
+        }
+        break;
+      case "boomerang":
+        if (ability) {
+          // Flux's Vacuum: everything streaks inward.
+          this.ring(e.x, e.y, heroTint(this.heroId), 0.5, 0.4, radius, 0.9, true);
+          this.spawnParticles(e.x, 0.6, e.y, this.count(24), heroTint(this.heroId), 8, 0.45, {
+            inward: true,
+            gravity: 0,
+            drag: 0.5,
+            life: 0.35,
+          });
+          return;
+        }
+        break;
+      case "shatter":
+        this.groundFlash(e.x, e.y, WHITE, radius * 0.7, 0.15);
+        this.spawnParticles(e.x, 0.6, e.y, this.count(12), ICE, 5, 0.45);
+        return;
+    }
+    this.ring(e.x, e.y, col, radius, 0.38);
+    this.spawnParticles(e.x, 0.4, e.y, this.count(32), col, 7, 1.1);
+    this.addShake(0.14);
+  }
+  private onArc(e: GameEvent, col: number, batch: EventBatch) {
+    if (e.targetX === undefined || e.targetY === undefined) return;
+    const first = !e.enemy && e.id !== undefined && !batch.arcOrigins.has(e.id);
+    if (first) {
+      batch.arcOrigins.add(e.id!);
+      if (this.heldWeapons.has(e.id!)) this.weaponMotion.set(e.id!, 1);
+    }
+    const origin = first ? this.eventMuzzle(e, scratchFrom) : scratchFrom.set(e.x, 1.2, e.y);
+    const target = scratchTo.set(e.targetX, 1.05, e.targetY);
+    switch (e.weapon) {
+      case "skyfall":
+        // A bolt from the sky onto the target: white ground flash and a storm ring.
+        scratchMid.set(e.targetX, 7.5, e.targetY);
+        target.y = 0.3;
+        this.bolt(scratchMid, target, WHITE, 0.09, 0.18, 0);
+        this.groundFlash(e.targetX, e.targetY, WHITE, 1.4, 0.18);
+        this.ring(e.targetX, e.targetY, col, 2.2, 0.35, 0.3, 0.8);
+        this.spawnParticles(e.targetX, 0.5, e.targetY, this.count(6), CYAN, 3, 0.4, { gravity: 0, drag: 3, life: 0.25 });
+        return;
+      case "eclipse":
+        origin.y = 0.9;
+        this.bolt(origin, target, MAGENTA, 0.07, 0.18, 0);
+        this.spawnParticles(e.targetX, 1, e.targetY, this.count(4), CYAN, 3, 0.4, { gravity: 0, drag: 3, life: 0.2 });
+        return;
+      case "beam":
+      case "railgun":
+        this.bolt(origin, target, col, e.weapon === "beam" ? 0.11 : 0.07, 0.16, 0);
+        this.spawnParticles(e.targetX, 1, e.targetY, this.count(3), col, 3, 0.4, { gravity: 1, life: 0.25 });
+        if (first) {
+          this.disc(origin.x, origin.y, origin.z, col, 0.45, 0.1, e.angle ?? Math.atan2(target.z - origin.z, target.x - origin.x));
+          if (e.weapon === "railgun") this.addShake(0.08);
+        }
+        return;
+      case "flame":
+        // Cinder's burn spread: an orange bolt to the neighbour.
+        this.bolt(origin, target, EMBER, 0.05, 0.2, 0.25);
+        this.spawnParticles(e.targetX, 0.9, e.targetY, this.count(3), EMBER, 1, 0.45, { gravity: 0, lift: 1.5, life: 0.4 });
+        return;
+    }
+    this.bolt(origin, target, col, 0.065, 0.16, 0.45);
+    this.spawnParticles(e.targetX, 1, e.targetY, this.count(2), col, 3, 0.4, { gravity: 0, drag: 3, life: 0.2 });
+  }
+  private onSlash(e: GameEvent, col: number) {
+    if (e.id !== undefined && this.heldWeapons.has(e.id)) this.weaponMotion.set(e.id, 1);
+    const angle = e.angle ?? 0;
+    const radius = e.radius ?? 3.4;
+    const drone = e.id !== undefined ? this.drones.get(e.id) : undefined;
+    const height = drone ? drone.position.y : 0.9;
+    switch (e.weapon) {
+      case "flame": {
+        // A directional cone of rising fire in two tints plus a pale shimmer.
+        const cone = { direction: angle, spread: 0.3, gravity: 0, lift: 0.9, drag: 1.2, life: 0.45 };
+        this.spawnParticles(e.x, height, e.y, this.count(5), 0xff9b48, radius * 1.3, 1.0, cone);
+        this.spawnParticles(e.x, height, e.y, this.count(5), 0xffdb88, radius * 1.3, 0.9, cone);
+        this.spawnParticles(e.x, height + 0.2, e.y, this.count(3), 0xffe9c0, radius * 1.6, 0.5, { ...cone, life: 0.3 });
+        return;
       }
-      if (e.type === "waveEnd") {
-        this.ring(e.x, e.y, 0xace5c2, 18, 1.1);
-        this.spawnParticles(e.x, 2, e.y, 35, 0xffd58a, 6, 0.8);
+      case "blade": {
+        const material = this.acquireMaterial(false, col, 0.7);
+        material.toneMapped = false;
+        const sweep = new THREE.Mesh(this.sweepGeometry, material);
+        sweep.rotation.set(-Math.PI / 2, 0, -angle);
+        sweep.position.set(e.x, drone ? height : 1.25, e.y);
+        sweep.scale.setScalar(radius);
+        this.pushRing(sweep, material, 0.17, radius, radius, false);
+        return;
+      }
+      case "frostgun":
+        // A frost drone's pulse: a cyan ring and drifting mist.
+        this.ring(e.x, e.y, ICE, radius, 0.35, 0.3, 0.8);
+        this.spawnParticles(e.x, height, e.y, this.count(6), 0xd8f6ff, 1.2, 0.7, { gravity: 0, drag: 1.5, life: 0.5, lift: 0.4 });
+        return;
+    }
+    this.ring(e.x, e.y, col, radius, 0.2, 0.7);
+  }
+  private onStatus(e: GameEvent) {
+    const tint = e.status === "burn" ? 0xffaa53 : e.status === "poison" ? SPORE : ICE;
+    this.spawnParticles(e.x, 1.4, e.y, this.count(3), tint, 1, 0.65);
+    if (e.status === "poison" && e.radius) {
+      // Contagion: the plague jumps to neighbours in this radius.
+      this.ring(e.x, e.y, SPORE, e.radius, 0.35, 0.4, 0.7);
+      this.spawnParticles(e.x, 0.6, e.y, this.count(10), SPORE, 1.2, 0.4, { gravity: 0, lift: 1.2, drag: 1, life: 0.6, radius: 0.5 });
+    }
+  }
+  private onHeal(e: GameEvent) {
+    if (e.id === 0) {
+      // Second chance.
+      this.groundFlash(e.x, e.y, 0xbdf5c8, 2.4, 0.35);
+      this.ring(e.x, e.y, 0xbdf5c8, 3, 0.5, 0.4, 0.9);
+      this.spawnParticles(e.x, 0.5, e.y, this.count(20), 0xbdf5c8, 2, 0.55, { gravity: 0, lift: 2, drag: 1, life: 0.7 });
+      return;
+    }
+    this.ring(e.x, e.y, 0xb4e397, 1.4, 0.4, 0.5, 0.7);
+    this.spawnParticles(e.x, 0.6, e.y, this.count(5), 0xb4e397, 0.8, 0.45, { gravity: 0, lift: 1.4, life: 0.5 });
+  }
+  private onShieldBreak(e: GameEvent) {
+    if (e.id === 0) {
+      // The player's bubble pops.
+      this.ring(e.x, e.y, CYAN, 1.8, 0.3, 0.9, 0.9, true);
+      this.spawnParticles(e.x, 1, e.y, this.count(12), CYAN, 4, 0.45, { gravity: 3 });
+      this.addShake(0.08);
+      return;
+    }
+    this.ring(e.x, e.y, CYAN, 1.3, 0.3, 0.4, 0.8);
+    this.spawnParticles(e.x, 1, e.y, this.count(8), CYAN, 3, 0.4, { gravity: 2 });
+  }
+  private onBarrier(e: GameEvent) {
+    this.ring(e.x, e.y, CYAN, 1.5, 0.3, 0.9, 0.8, true);
+    this.spawnParticles(e.x, 1.1, e.y, this.count(6), CYAN, 0.8, 0.35, { gravity: 0, drag: 2, life: 0.4, radius: 1.1, lift: 0.6 });
+  }
+  private onPull(e: GameEvent, col: number) {
+    const eclipse = e.weapon === "eclipse";
+    this.ring(e.x, e.y, eclipse ? MAGENTA : col, 0.5, eclipse ? 0.45 : 0.4, eclipse ? 7 : (e.radius ?? 4), 0.9, true);
+    this.spawnVortex(e.x, e.y, eclipse ? WHITE : col, e.radius ?? 4, this.count(10), 5, (e.radius ?? 4) * 1.4, 0.7, 0.45);
+  }
+  private onCrush(e: GameEvent) {
+    this.ring(e.x, e.y, WHITE, e.radius ?? 2.2, 0.25, 0.5, 0.9, true);
+    this.groundFlash(e.x, e.y, MAGENTA, (e.radius ?? 2.2) * 0.7, 0.15);
+    this.addShake(0.05);
+  }
+  private onBurst(e: GameEvent, col: number) {
+    if (e.weapon === "hive") {
+      this.ring(e.x, e.y, 0xffd66b, 1.2, 0.3, 0.3, 0.8);
+      this.spawnParticles(e.x, 0.9, e.y, this.count(10), col, 3, 0.4, { gravity: 1, drag: 1, life: 0.35 });
+      // Two stacked ringlets climbing off the pod.
+      for (const h of [0.6, 1.0]) {
+        const material = this.acquireMaterial(true, 0xffd66b, 0.8);
+        const ringlet = new THREE.Mesh(this.ringGeometry, material);
+        ringlet.rotation.x = -Math.PI / 2;
+        ringlet.position.set(e.x, h, e.y);
+        ringlet.scale.setScalar(0.2);
+        this.pushRing(ringlet, material, 0.3, 1, 0.2, true);
+      }
+      return;
+    }
+    if (e.weapon === "shatter") {
+      this.groundFlash(e.x, e.y, WHITE, 1.2, 0.15);
+      this.spawnParticles(e.x, 0.9, e.y, this.count(14), ICE, 5, 0.45, { gravity: 4 });
+      return;
+    }
+    this.ring(e.x, e.y, col, 1, 0.25, 0.3, 0.7);
+    this.spawnParticles(e.x, 0.8, e.y, this.count(Math.min(12, (e.amount ?? 4) * 2)), col, 3, 0.4);
+  }
+  private onBounce(e: GameEvent, col: number) {
+    const angle = e.angle ?? 0;
+    this.spawnParticles(e.x, 0.5, e.y, this.count(5), col, 3, 0.35, { direction: angle, spread: 0.35, gravity: 4, life: 0.25 });
+    this.disc(e.x, 0.5, e.y, col, 0.35, 0.12, angle);
+  }
+  private onStrike(e: GameEvent, col: number) {
+    if (e.targetX === undefined || e.targetY === undefined) return;
+    const from = this.eventMuzzle(e, scratchFrom);
+    const toxic = e.weapon === "needle";
+    const tint = toxic ? SPORE : col;
+    let lob = this.lobPool.pop();
+    if (!lob) {
+      const material = new THREE.MeshBasicMaterial({
+        color: tint,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      lob = {
+        mesh: new THREE.Mesh(this.shellGeometry, material),
+        material,
+        fromX: 0,
+        fromY: 0,
+        fromZ: 0,
+        toX: 0,
+        toZ: 0,
+        age: 0,
+        duration: 0.7,
+        smoke: 0,
+        weapon: "mortar",
+        color: tint,
+      };
+    }
+    lob.material.color.setHex(tint);
+    lob.material.opacity = 1;
+    lob.fromX = from.x;
+    lob.fromY = from.y;
+    lob.fromZ = from.z;
+    lob.toX = e.targetX;
+    lob.toZ = e.targetY;
+    lob.age = 0;
+    lob.duration = Math.max(0.3, e.amount ?? 0.7);
+    lob.smoke = 0;
+    lob.weapon = e.weapon ?? "mortar";
+    lob.color = tint;
+    lob.mesh.scale.setScalar(toxic ? 0.8 : 1 + Math.min(4, (e.level ?? 1) - 1) * 0.1);
+    lob.mesh.position.copy(from);
+    this.fx.add(lob.mesh);
+    this.lobs.push(lob);
+    if (!toxic) this.spawnParticles(from.x, from.y, from.z, this.count(4), SMOKE, 1.2, 0.6, { drag: 3, gravity: 0, life: 0.5, lift: 0.8, spin: 0.4 });
+  }
+  private onWaveStart(e: GameEvent) {
+    this.ring(e.x, e.y, heroTint(this.heroId), 6, 0.6, 0.5, 0.8);
+    this.spawnParticles(e.x, 0.5, e.y, this.count(12), heroTint(this.heroId), 2, 0.5, { gravity: 0, lift: 1.5, life: 0.6 });
+  }
+  private onBoss(e: GameEvent) {
+    this.ring(e.x, e.y, 0xff3b2e, 12, 1.0, 0.5, 0.8);
+    this.groundFlash(e.x, e.y, 0xff3b2e, 4, 0.6);
+    this.addShake(0.2);
+  }
+  private onLost(e: GameEvent) {
+    this.ring(e.x, e.y, 0x2a0810, 4, 0.9, 0.3, 0.9);
+    this.spawnParticles(e.x, 0.6, e.y, this.count(24), 0x8a7f74, 1.5, 0.7, { gravity: 0, drag: 1, life: 1.2, lift: 0.8 });
+  }
+  private onWon(e: GameEvent) {
+    this.groundFlash(e.x, e.y, 0xffd58a, 3, 0.6);
+    this.ring(e.x, e.y, 0xffd58a, 14, 1.2, 0.5, 0.9);
+    this.spawnParticles(e.x, 1, e.y, this.count(40), 0xffd58a, 6, 0.7);
+  }
+  private onWeave(e: GameEvent) {
+    this.ring(e.x, e.y, 0x87f1e1, 2.6, 0.35);
+    this.spawnParticles(e.x, 0.5, e.y, this.count(16), 0x79e5ee, 3, 0.55);
+  }
+  private onWaveEnd(e: GameEvent) {
+    this.ring(e.x, e.y, 0xace5c2, 18, 1.1);
+    this.spawnParticles(e.x, 2, e.y, this.count(35), 0xffd58a, 6, 0.8);
+  }
+  private makeBulletFx(kind: BulletFx["kind"], eclipse: boolean): BulletFx {
+    const group = new THREE.Group();
+    const materials: THREE.MeshBasicMaterial[] = [];
+    const part = (geometry: THREE.BufferGeometry, col: number, opacity: number, additive = false) => {
+      const material = this.acquireMaterial(additive, col, opacity);
+      materials.push(material);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.x = -Math.PI / 2;
+      group.add(mesh);
+      return mesh;
+    };
+    if (kind === "well") {
+      part(this.discGeometry, eclipse ? 0x120616 : 0x0a0714, 0).position.y = 0.005;
+      part(this.ringGeometry, eclipse ? MAGENTA : 0xd1b5ff, 0.6, true).position.y = 0.02;
+      part(this.thickRingGeometry, eclipse ? WHITE : 0xd1b5ff, 0.5, true).position.y = 0.03;
+    } else if (kind === "hum") part(this.thickRingGeometry, CYAN, 0.55, true).rotation.x = -Math.PI / 2 + 0.6;
+    else if (kind === "base") part(this.ringGeometry, heroTint(this.heroId), 0.5, true);
+    this.fx.add(group);
+    return { kind, group, materials, timer: 0, eclipse, grow: 0 };
+  }
+  private disposeBulletFx(fx: BulletFx) {
+    fx.group.removeFromParent();
+    for (const m of fx.materials) this.releaseMaterial(m);
+    fx.group.clear();
+  }
+  /** Continuous effects around deployed and fused bullets: wells, hum rings, sheds and turret bases. */
+  private updateBulletFx(run: SurvivalRun, dt: number, t: number, alpha: number) {
+    this.wells.length = 0;
+    const reduced = this.reducedMotion;
+    const keep = new Set<number>();
+    for (const b of run.bullets as Bullet[]) {
+      if (b.enemy || b.child) continue;
+      const spec = b.behavior;
+      const kind: BulletFx["kind"] | "shed" | null = spec?.pull
+        ? "well"
+        : b.weapon === "tesla_orb"
+          ? "hum"
+          : b.weapon === "sentry" && spec?.stationary
+            ? "base"
+            : b.weapon === "halo"
+              ? "shed"
+              : null;
+      if (!kind) continue;
+      const eclipse = b.weapon === "eclipse";
+      let fx = this.bulletFx.get(b.id);
+      if (!fx) {
+        fx = this.makeBulletFx(kind === "shed" ? "hum" : kind, eclipse);
+        if (kind === "shed") fx.group.visible = false;
+        this.bulletFx.set(b.id, fx);
+      }
+      keep.add(b.id);
+      const at = interpolatedPosition(b, alpha);
+      fx.timer -= dt;
+      fx.group.position.set(at.x, 0.06, at.y);
+      if (kind === "well" && spec?.pull) {
+        const col = eclipse ? (fx.timer < -0.02 ? MAGENTA : WHITE) : 0xd1b5ff;
+        const [disc, rim, inner] = fx.group.children as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[];
+        if (b.fused) {
+          const radius = spec.pull.radius;
+          fx.grow = Math.min(1, fx.grow + dt * 3);
+          disc.visible = rim.visible = inner.visible = true;
+          disc.scale.setScalar(Math.max(0.01, lerp(0.3, eclipse ? 3.9 : radius * 0.55, fx.grow)));
+          disc.material.opacity = 0.55 * fx.grow;
+          const pulse = reduced ? 0 : Math.sin(t * 7);
+          rim.scale.setScalar(radius * (1 + pulse * 0.025));
+          rim.material.opacity = 0.4 + fx.grow * 0.3;
+          inner.scale.setScalar(radius * (0.45 - pulse * 0.06));
+          inner.rotation.z = t * (eclipse ? 2.5 : 1.2);
+          if (fx.timer <= 0 && this.budget() > 0) {
+            fx.timer += reduced ? 0.1 : eclipse ? 0.025 : 0.05;
+            this.spawnVortex(at.x, at.y, col, radius * 0.9, 1, 6, radius * 1.6, 0.6, 0.35);
+          }
+          this.wells.push({ x: at.x, y: at.y, radius, eclipse });
+        } else {
+          disc.visible = rim.visible = inner.visible = false;
+          if (fx.timer <= 0 && this.budget() > 0) {
+            fx.timer += reduced ? 0.16 : 0.08;
+            this.spawnVortex(at.x, at.y, col, 0.9, 1, 10, 1.5, 0.35, 0.3, 0.7);
+          }
+        }
+      } else if (kind === "hum") {
+        const ring = fx.group.children[0] as THREE.Mesh;
+        fx.group.position.y = 0.9;
+        ring.scale.setScalar(0.55 + (reduced ? 0 : Math.sin(t * 9) * 0.06));
+        ring.rotation.z = reduced ? 0 : t * 4;
+        if (fx.timer <= 0 && this.budget() > 0) {
+          fx.timer += reduced ? 0.18 : 0.09;
+          this.spawnParticles(at.x, 0.9, at.y, 1, CYAN, 2, 0.3, { gravity: 0, drag: 4, life: 0.2 });
+        }
+      } else if (kind === "shed") {
+        if (fx.timer <= 0 && this.budget() > 0) {
+          fx.timer += reduced ? 0.12 : 0.06;
+          this.spawnParticles(at.x, 0.8, at.y, 1, ICE, 0.5, 0.3, { gravity: 1, drag: 1, life: 0.4 });
+        }
+      } else {
+        const ring = fx.group.children[0] as THREE.Mesh;
+        ring.scale.setScalar(0.75 + (reduced ? 0 : Math.sin(t * 4) * 0.03));
+        ring.rotation.z = reduced ? 0 : t * 1.5;
       }
     }
+    for (const [id, fx] of this.bulletFx)
+      if (!keep.has(id)) {
+        this.disposeBulletFx(fx);
+        this.bulletFx.delete(id);
+      }
+  }
+  /** Shells in flight from a strike to their target. */
+  private updateLobs(dt: number) {
+    const reduced = this.reducedMotion;
+    this.lobs = this.lobs.filter((lob) => {
+      lob.age += dt;
+      const u = Math.min(1, lob.age / lob.duration);
+      const distance = Math.hypot(lob.toX - lob.fromX, lob.toZ - lob.fromZ);
+      const height = 1.2 + distance * 0.16;
+      lob.mesh.position.set(
+        lerp(lob.fromX, lob.toX, u),
+        lerp(lob.fromY, 0.25, u) + height * 4 * u * (1 - u),
+        lerp(lob.fromZ, lob.toZ, u),
+      );
+      const toxic = lob.weapon === "needle";
+      if (!reduced) {
+        lob.smoke -= dt;
+        if (lob.smoke <= 0 && this.budget() > 0) {
+          lob.smoke += 0.045;
+          const p = lob.mesh.position;
+          this.spawnParticles(p.x, p.y, p.z, 1, toxic ? SPORE : SMOKE, 0.5, toxic ? 0.3 : 0.55, {
+            drag: 3,
+            gravity: toxic ? 4 : 0,
+            life: 0.45,
+            lift: toxic ? 0 : 0.5,
+            spin: 0.4,
+          });
+        }
+      }
+      if (u < 1) return true;
+      if (toxic) this.spawnParticles(lob.toX, 0.3, lob.toZ, this.count(8), SPORE, 2, 0.35, { gravity: 5, life: 0.4 });
+      lob.mesh.removeFromParent();
+      this.lobPool.push(lob);
+      return false;
+    });
+  }
+  private makeStatusFx(): StatusFx {
+    const group = new THREE.Group();
+    const materials: THREE.MeshBasicMaterial[] = [];
+    const status = new THREE.Mesh(this.ringGeometry, this.acquireMaterial(false, ICE, 0.6));
+    const elite = new THREE.Mesh(this.thickRingGeometry, this.acquireMaterial(false, 0xffd166, 0.7));
+    materials.push(status.material, elite.material);
+    status.rotation.x = elite.rotation.x = -Math.PI / 2;
+    elite.position.y = -0.005;
+    group.add(status, elite);
+    return { group, status, elite, materials, emit: 0 };
+  }
+  private disposeStatusFx(fx: StatusFx) {
+    fx.group.removeFromParent();
+    for (const m of fx.materials) this.releaseMaterial(m);
+  }
+  /** Status ring, elite ring, shield bubble and slow emitters for one enemy; returns the rig tint. */
+  private updateEnemyStatus(
+    e: Enemy,
+    r: Rig,
+    x: number,
+    z: number,
+    dt: number,
+    t: number,
+  ): { hurt: boolean; color: number; intensity: number } {
+    const reduced = this.reducedMotion;
+    const frozen = (e.freezeTime ?? 0) > 0,
+      burn = e.burnTime > 0,
+      poison = e.poisonTime > 0,
+      slow = e.slowTime > 0;
+    const statusColor = frozen
+      ? STATUS_COLOR.frozen
+      : burn
+        ? STATUS_COLOR.burn
+        : poison
+          ? STATUS_COLOR.poison
+          : slow
+            ? STATUS_COLOR.slow
+            : 0;
+    const needs = statusColor !== 0 || !!e.elite;
+    let fx = this.statusRings.get(e.id);
+    if (needs && !fx) {
+      fx = this.makeStatusFx();
+      this.statusRings.set(e.id, fx);
+      this.actors.add(fx.group);
+    }
+    if (fx) {
+      if (!needs) {
+        this.disposeStatusFx(fx);
+        this.statusRings.delete(e.id);
+      } else {
+        fx.group.position.set(x, 0.065, z);
+        const wobble = reduced ? 0 : Math.sin(t * 7 + e.id);
+        fx.status.visible = statusColor !== 0;
+        if (fx.status.visible) {
+          (fx.status.material as THREE.MeshBasicMaterial).color.setHex(statusColor);
+          (fx.status.material as THREE.MeshBasicMaterial).opacity = 0.5 + wobble * 0.15;
+          fx.status.scale.setScalar(e.radius * (2.4 + wobble * 0.25));
+        }
+        fx.elite.visible = !!e.elite;
+        if (fx.elite.visible) {
+          fx.elite.scale.setScalar(e.radius * 3);
+          fx.elite.rotation.z = reduced ? 0 : t * 0.8;
+        }
+        if (!reduced && (burn || poison)) {
+          fx.emit -= dt;
+          if (fx.emit <= 0 && this.budget() > 0) {
+            fx.emit += burn ? 0.12 : 0.18;
+            const height = (r.root.userData.visualHeight ?? 2) * (0.3 + Math.random() * 0.5);
+            this.spawnParticles(x, height, z, 1, burn ? EMBER : STATUS_COLOR.poison, 0.6, burn ? 0.4 : 0.35, {
+              gravity: 0,
+              lift: burn ? 1.6 : 1,
+              life: burn ? 0.5 : 0.6,
+              drag: 1,
+            });
+          }
+        }
+      }
+    }
+    if (e.maxShield > 0) {
+      let bubble = this.shieldBubbles.get(e.id);
+      if (!bubble) {
+        // Additive and faint: a glow around the body rather than a white dome over the crowd.
+        bubble = new THREE.Mesh(
+          this.bubbleGeometry,
+          new THREE.MeshBasicMaterial({
+            color: 0x5fb8e6,
+            transparent: true,
+            opacity: 0.1,
+            depthWrite: false,
+            toneMapped: false,
+            blending: THREE.AdditiveBlending,
+          }),
+        );
+        this.actors.add(bubble);
+        this.shieldBubbles.set(e.id, bubble);
+      }
+      const height = r.root.userData.visualHeight ?? 2;
+      bubble.visible = e.shield > 0;
+      bubble.position.set(x, height * 0.5, z);
+      const pulse = reduced ? 0 : Math.sin(t * 5 + e.id) * 0.03;
+      bubble.scale.set(e.radius * 1.9 * (1 + pulse), height * 0.58, e.radius * 1.9 * (1 + pulse));
+      bubble.material.opacity = 0.04 + 0.07 * Math.min(1, e.shield / e.maxShield);
+    }
+    if (e.hitTime > 0) return { hurt: true, color: 0xffd0a8, intensity: 0.22 };
+    if (frozen) return { hurt: true, color: STATUS_COLOR.frozen, intensity: 0.55 };
+    if (burn) return { hurt: true, color: STATUS_COLOR.burn, intensity: 0.3 };
+    if (poison) return { hurt: true, color: STATUS_COLOR.poison, intensity: 0.28 };
+    return { hurt: false, color: 0xffd0a8, intensity: 0.22 };
+  }
+  /** Lean a rig toward every well it stands in, pulling a little dust with it. */
+  private strain(r: Rig, e: { x: number; y: number; angle: number }, x: number, z: number, dt: number) {
+    if (this.reducedMotion) return;
+    for (const w of this.wells) {
+      const d = Math.hypot(w.x - x, w.y - z);
+      if (d >= w.radius || d < 0.2) continue;
+      const lean = (w.eclipse ? 0.4 : 0.28) * (1 - d / w.radius);
+      const toward = Math.atan2(w.y - z, w.x - x);
+      const rel = toward - e.angle;
+      r.body.rotation.x += lean * Math.cos(rel);
+      r.body.rotation.z += lean * Math.sin(rel);
+      if (Math.random() < dt * 6 && this.budget() > 0)
+        this.spawnParticles(x, 0.15, z, 1, DUST, 3, 0.4, { direction: toward, spread: 0.2, gravity: 0, life: 0.35 });
+    }
+  }
+  /** The player's bubble, barrier shards, ability and blood rings, and Bastion's dust trail. */
+  private updatePlayerFx(run: SurvivalRun, dt: number, t: number, x: number, z: number) {
+    const p = run.player;
+    const reduced = this.reducedMotion;
+    const bubble = this.playerBubble;
+    const scale = this.player.root.scale.x;
+    bubble.visible = p.barrier > 0;
+    if (bubble.visible) {
+      bubble.position.set(x, 1.15 * scale, z);
+      bubble.scale.setScalar(1.05 * scale * (1 + (reduced ? 0 : Math.sin(t * 5) * 0.03)));
+      bubble.material.opacity = 0.16 + (reduced ? 0 : Math.sin(t * 5) * 0.04);
+    }
+    const want = bubble.visible ? Math.min(6, Math.round(p.barrier)) : 0;
+    while (this.barrierShards.length < want) {
+      const shard = new THREE.Mesh(this.shardGeometry, glowMaterial(CYAN));
+      this.fx.add(shard);
+      this.barrierShards.push(shard);
+    }
+    this.barrierShards.forEach((shard, i) => {
+      shard.visible = i < want;
+      if (!shard.visible) return;
+      const a = t * 2.2 + (i * Math.PI * 2) / want;
+      shard.position.set(x + Math.cos(a) * 1.35 * scale, (1.1 + Math.sin(t * 3 + i) * 0.15) * scale, z + Math.sin(a) * 1.35 * scale);
+      shard.rotation.y = t * 3;
+    });
+    const ability = this.abilityRing;
+    ability.visible = this.heroId === "wisp" && p.abilityTime > 0;
+    if (ability.visible) {
+      ability.position.set(x, 0.06, z);
+      ability.scale.setScalar(2.4 + (reduced ? 0 : Math.sin(t * 8) * 0.1));
+      ability.rotation.z = reduced ? 0 : t * 2;
+      ability.material.opacity = 0.35 + (reduced ? 0 : Math.sin(t * 8) * 0.15);
+    }
+    const stacks = run.bloodlustStacks;
+    const blood = this.bloodRing;
+    blood.visible = this.heroId === "reaper" && stacks > 0;
+    if (blood.visible) {
+      blood.position.set(x, 0.06, z);
+      blood.scale.setScalar(1.2 + stacks * 0.12);
+      blood.material.opacity = 0.15 + stacks * 0.055;
+      blood.material.color.setHex(mixHex(0x6a0a1e, 0xff2a4a, stacks / 10));
+    }
+    if (p.dashTime > 0 && this.heroId === "bastion" && !reduced && t - this.lastEmber > 0.06) {
+      this.lastEmber = t;
+      this.ring(x, z, 0xc9a27a, 1.6, 0.3, 0.5, 0.5);
+      this.spawnParticles(x, 0.15, z, 4, DUST, 2, 0.6, { gravity: 3, life: 0.4 });
+    }
+    this.punch = Math.max(0, this.punch - dt);
+    this.viewPunch = reduced || this.punch <= 0 ? 0 : Math.sin((this.punch / 0.4) * Math.PI) * 1.4;
   }
   update(dt: number, run: SurvivalRun | null) {
     this.time += dt;
@@ -1170,8 +2364,11 @@ export class SurvivalScene {
       }
       if (p.dashTime > 0 && t - this.lastDash > 0.018) {
         this.lastDash = t;
-        this.spawnParticles(p.x, 0.8, p.y, 5, COLORS[this.heroId], 1, 0.75);
+        this.spawnParticles(p.x, 0.8, p.y, this.count(5), COLORS[this.heroId], 1, 0.75);
       }
+      this.updatePlayerFx(run, dt, t, visualPlayer.x, visualPlayer.y);
+      // Wells first, so the enemy loop can lean rigs toward them this frame.
+      this.updateBulletFx(run, dt, t, alpha);
       const alive = new Set(run.enemies.map((e) => e.id));
       for (const [id, r] of this.enemies)
         if (!alive.has(id)) {
@@ -1180,6 +2377,17 @@ export class SurvivalScene {
           if (!this.enemyPools.has(key)) this.enemyPools.set(key, []);
           this.enemyPools.get(key)!.push(r);
           this.enemies.delete(id);
+        }
+      for (const [id, fx] of this.statusRings)
+        if (!alive.has(id)) {
+          this.disposeStatusFx(fx);
+          this.statusRings.delete(id);
+        }
+      for (const [id, bubble] of this.shieldBubbles)
+        if (!alive.has(id)) {
+          bubble.removeFromParent();
+          bubble.material.dispose();
+          this.shieldBubbles.delete(id);
         }
       let barIndex = 0,
         shieldIndex = 0;
@@ -1214,6 +2422,7 @@ export class SurvivalScene {
         const speed = Math.hypot(e.vx, e.vy);
         const visual = at(e);
         r.root.position.set(visual.x, 0, visual.y);
+        const tint = this.updateEnemyStatus(e, r, visual.x, visual.y, dt, t);
         animateRig(
           r,
           t + e.id * 0.37,
@@ -1221,8 +2430,11 @@ export class SurvivalScene {
           e.angle,
           dt,
           e.state === "charge",
-          e.hitTime > 0,
+          tint.hurt,
+          tint.color,
+          tint.intensity,
         );
+        if (this.wells.length) this.strain(r, e, visual.x, visual.y, dt);
         // Two instanced draws supply all enemy health bars, even in a large crowd.
         if (barIndex < 160 && e.hp > 0) {
           const width =
@@ -1394,52 +2606,28 @@ export class SurvivalScene {
           this.actors.add(mesh);
           this.drones.set(drone.id, mesh);
         }
-        mesh.scale.setScalar(0.57 + (drone.level - 1) * 0.025);
+        // Spin-up: the drone swells and kicks its yaw while `pulse` decays after an attack.
+        const pulse = this.reducedMotion ? 0 : drone.pulse;
+        mesh.scale.setScalar((0.57 + (drone.level - 1) * 0.025) * (1 + pulse * 0.5));
         const position = at(drone);
         mesh.position.set(
           position.x,
-          1.2 + Math.sin(t * 3 + index) * 0.1,
+          1.2 + Math.sin(t * 3 + index) * 0.1 + pulse * 0.3,
           position.y,
         );
-        mesh.rotation.y = Math.PI / 2 - drone.aimAngle;
+        mesh.rotation.y = Math.PI / 2 - drone.aimAngle + pulse * 3;
         if (drone.kind === "orbit_drone") mesh.rotation.y = t * 3;
       }
-      this.updateHazards(run);
+      this.updateHazards(run, dt);
       this.updateSpawnMarkers(run);
-      const bullets = new Set(run.bullets.map((b) => b.id));
-      for (const [id, m] of this.bulletMeshes)
-        if (!bullets.has(id)) {
-          m.removeFromParent();
-          this.bulletMeshes.delete(id);
-        }
-      for (const b of run.bullets) {
-        let mesh = this.bulletMeshes.get(b.id);
-        if (!mesh) {
-          mesh = new THREE.Mesh(
-            this.bulletGeometry,
-            glowMaterial(
-              b.enemy
-                ? 0xff7355
-                : Number(
-                    WEAPONS[b.weapon as keyof typeof WEAPONS]?.color.replace(
-                      "#",
-                      "0x",
-                    ) ?? 0xffe0a3,
-                  ),
-            ),
-          );
-          this.actors.add(mesh);
-          this.bulletMeshes.set(b.id, mesh);
-        }
-        const visualBullet = at(b);
-        mesh.position.set(visualBullet.x, b.enemy ? 0.9 : 1.1, visualBullet.y);
-        mesh.scale.set(
-          b.enemy ? 2 : 1,
-          b.enemy ? 2 : 1,
-          b.weapon === "rocket" ? 4 : 2.6,
-        );
-        mesh.rotation.y = Math.PI / 2 - b.angle;
-      }
+      const ctx = this.projectileContext;
+      ctx.alpha = alpha;
+      ctx.time = t;
+      ctx.dt = dt;
+      ctx.reducedMotion = this.reducedMotion;
+      ctx.cameraQuaternion.copy(this.camera.quaternion);
+      this.projectiles.update(run.bullets, ctx);
+      this.updateLobs(dt);
       const pickups = new Set(run.pickups.map((p) => p.id));
       for (const [id, m] of this.pickupMeshes)
         if (!pickups.has(id)) {
@@ -1481,14 +2669,36 @@ export class SurvivalScene {
       );
     this.camera.lookAt(this.cameraTarget);
     this.ambient.rotation.y = this.reducedMotion ? 0 : t * 0.007;
+    this.tickEffects(dt);
+    this.renderer.render(this.scene, this.camera);
+  }
+  /** Advances particles, rings, labels and flashes by dt; separate from update so tests can drive it without a renderer. */
+  tickEffects(dt: number) {
     this.particles = this.particles.filter((p) => p.life > 0);
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
       p.life -= dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.z += p.vz * dt;
+      if (p.orbit) {
+        // Spiral inward: the angle advances and the radius shrinks; only y is ballistic.
+        const o = p.orbit;
+        o.angle += o.rate * dt;
+        o.radius = Math.max(0, o.radius - o.shrink * dt);
+        p.x = o.cx + Math.cos(o.angle) * o.radius;
+        p.z = o.cz + Math.sin(o.angle) * o.radius;
+        p.y += p.vy * dt;
+        if (o.radius <= 0.05) p.life = Math.min(p.life, 0.08);
+      } else {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
+      }
       p.vy -= p.gravity * dt;
+      if (p.drag) {
+        const k = Math.max(0, 1 - p.drag * dt);
+        p.vx *= k;
+        p.vy *= k;
+        p.vz *= k;
+      }
       if (p.y < 0.07) {
         p.y = 0.07;
         p.vy = Math.abs(p.vy) * 0.25;
@@ -1496,7 +2706,7 @@ export class SurvivalScene {
         p.vz *= 0.92;
       }
       scratch.position.set(p.x, p.y, p.z);
-      scratch.rotation.set(p.life * 4, p.life * 5, p.life * 3);
+      scratch.rotation.set(p.life * 4 * p.spin, p.life * 5 * p.spin, p.life * 3 * p.spin);
       scratch.scale.setScalar(p.size * Math.min(1, p.life * 4));
       scratch.updateMatrix();
       this.particleMesh.setMatrixAt(i, scratch.matrix);
@@ -1509,16 +2719,12 @@ export class SurvivalScene {
     this.rings = this.rings.filter((r) => {
       r.life -= dt;
       if (r.life <= 0) {
-        r.mesh.removeFromParent();
-        if (r.mesh.geometry !== this.ringGeometry) r.mesh.geometry.dispose();
-        (r.mesh.material as THREE.Material).dispose();
+        this.retireRing(r);
         return false;
       }
       const progress = 1 - r.life / r.max;
-      if (r.mesh.geometry === this.ringGeometry)
-        r.mesh.scale.setScalar(lerp(r.start, r.radius, progress));
-      (r.mesh.material as THREE.MeshBasicMaterial).opacity =
-        (1 - progress) * 0.8;
+      if (r.animate) r.mesh.scale.setScalar(lerp(r.start, r.radius, progress));
+      r.material.opacity = (1 - progress) * r.opacity;
       return true;
     });
     this.labels = this.labels.filter((l) => {
@@ -1532,25 +2738,50 @@ export class SurvivalScene {
       l.sprite.material.opacity = Math.min(1, l.life * 4);
       return true;
     });
-    this.renderer.render(this.scene, this.camera);
+    this.flashes = this.flashes.filter((f) => {
+      f.life -= dt;
+      if (f.life <= 0) {
+        f.object.removeFromParent();
+        this.flashPool.push(f);
+        return false;
+      }
+      const progress = 1 - f.life / f.max;
+      f.material.opacity = 1 - progress;
+      const grow = f.size * (0.55 + progress * 0.45);
+      if (f.cone) f.object.scale.set(grow * 0.5, grow * 0.5, grow);
+      else f.object.scale.set(grow, grow, 1);
+      return true;
+    });
   }
-  private eventMuzzle(event: GameEvent) {
-    const enemyMuzzle =
-      event.enemy && event.id !== undefined
-        ? (this.enemies.get(event.id)?.root.userData.muzzleObject as
-            THREE.Object3D | undefined)
-        : undefined;
-    if (enemyMuzzle) return enemyMuzzle.getWorldPosition(new THREE.Vector3());
-    const mesh =
-      !event.enemy && event.id !== undefined
-        ? (this.heldWeapons.get(event.id) ?? this.drones.get(event.id))
-        : undefined;
+  /** The object carrying a player-side owner's muzzle: a held weapon or a drone. */
+  private muzzleOf(ownerId: number) {
+    return this.heldWeapons.get(ownerId) ?? this.drones.get(ownerId);
+  }
+  /** World position of an owner's barrel: held weapon, drone, or a deployed turret. */
+  muzzleWorld(ownerId: number, out: THREE.Vector3) {
+    const mesh = this.muzzleOf(ownerId);
     const muzzle = mesh?.userData.muzzle as THREE.Vector3 | undefined;
     if (mesh && muzzle) {
       mesh.updateWorldMatrix(true, false);
-      return mesh.localToWorld(muzzle.clone());
+      mesh.localToWorld(out.copy(muzzle));
+      return true;
     }
-    return new THREE.Vector3(event.x, 1.45, event.y);
+    return this.projectiles.muzzle(ownerId, out);
+  }
+  /** Where a fire event's flash belongs: the firing turret, the enemy's barrel, or the hand. */
+  private eventMuzzle(event: GameEvent, out = new THREE.Vector3()) {
+    if (event.source !== undefined && this.projectiles.muzzle(event.source, out))
+      return out;
+    if (event.enemy) {
+      const enemyMuzzle =
+        event.id !== undefined
+          ? (this.enemies.get(event.id)?.root.userData.muzzleObject as
+              THREE.Object3D | undefined)
+          : undefined;
+      if (enemyMuzzle) return enemyMuzzle.getWorldPosition(out);
+    } else if (event.id !== undefined && this.muzzleWorld(event.id, out))
+      return out;
+    return out.set(event.x, 1.45, event.y);
   }
   private previewScale(rig: Rig) {
     return (
@@ -1579,7 +2810,7 @@ export class SurvivalScene {
     mesh.userData.kind = kind;
     return mesh;
   }
-  private updateHazards(run: SurvivalRun) {
+  private updateHazards(run: SurvivalRun, dt = 0) {
     const visible = new Set(run.hazards.map((hazard) => hazard.id));
     for (const [id, group] of this.hazardMeshes) {
       if (visible.has(id)) continue;
@@ -1594,7 +2825,15 @@ export class SurvivalScene {
       let group = this.hazardMeshes.get(hazard.id);
       if (!group) {
         group = new THREE.Group();
-        const tint = hazard.kind === "toxic" ? 0xafdb66 : 0xff6e4e;
+        // Flare's scorch trail reads as fire; other player blasts amber; enemy blasts red.
+        const tint =
+          hazard.kind === "toxic"
+            ? 0xafdb66
+            : hazard.weapon === "flare"
+              ? EMBER
+              : hazard.owner === "player"
+                ? 0xffa860
+                : 0xff6e4e;
         const fill = new THREE.Mesh(
           this.hazardDisc,
           new THREE.MeshBasicMaterial({
@@ -1635,6 +2874,21 @@ export class SurvivalScene {
       fill.scale.setScalar(hazard.triggered ? 1 : Math.max(0.02, progress));
       fill.material.opacity = hazard.triggered ? 0.22 : 0.08 + progress * 0.13;
       edge.material.opacity = hazard.triggered ? 0.7 : 0.45 + progress * 0.4;
+      // Embers rise off a burning scorch; budget-gated and off under reduced motion.
+      if (
+        hazard.weapon === "flare" &&
+        hazard.triggered &&
+        !this.reducedMotion &&
+        Math.random() < dt * 8 &&
+        this.budget() > 0
+      )
+        this.spawnParticles(hazard.x, 0.2, hazard.y, 1, EMBER, 0.4, 0.4, {
+          radius: hazard.radius * 0.8,
+          gravity: 0,
+          lift: 1.4,
+          life: 0.6,
+          drag: 1,
+        });
     }
   }
   /** Rings over queued spawns that tighten and brighten as the enemy's arrival nears. */
@@ -1716,6 +2970,30 @@ export class SurvivalScene {
   dispose() {
     this.resizeObserver.disconnect();
     this.reset();
+    this.projectiles.dispose();
+    for (const f of this.flashPool) f.material.dispose();
+    this.flashPool = [];
+    this.flashConeGeometry.dispose();
+    for (const m of [...this.materialPool.normal, ...this.materialPool.additive]) m.dispose();
+    this.materialPool.normal = [];
+    this.materialPool.additive = [];
+    for (const lob of this.lobPool) lob.material.dispose();
+    this.lobPool = [];
+    this.playerBubble.material.dispose();
+    this.abilityRing.material.dispose();
+    this.bloodRing.material.dispose();
+    for (const shard of this.barrierShards) shard.removeFromParent();
+    this.barrierShards = [];
+    // Shard and bubble materials come from the geometry.ts glow cache and stay.
+    for (const geometry of [
+      this.discGeometry,
+      this.segmentGeometry,
+      this.sweepGeometry,
+      this.bubbleGeometry,
+      this.shardGeometry,
+      this.shellGeometry,
+    ])
+      geometry.dispose();
     this.scene.environment?.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
@@ -1731,25 +3009,41 @@ export class SurvivalScene {
     this.enemies.clear();
     this.healthBack.count = this.healthFill.count = this.shieldFill.count = 0;
     this.damageFlash = 0;
-    for (const m of [
-      ...this.bulletMeshes.values(),
-      ...this.pickupMeshes.values(),
-      ...this.telegraphs.values(),
-    ])
+    for (const m of [...this.pickupMeshes.values(), ...this.telegraphs.values()])
       m.removeFromParent();
-    this.bulletMeshes.clear();
+    this.projectiles.reset();
     this.pickupMeshes.clear();
     this.telegraphs.clear();
     this.particles = [];
     this.particleMesh.count = 0;
     this.shake = 0;
-    for (const ring of this.rings) {
-      ring.mesh.removeFromParent();
-      if (ring.mesh.geometry !== this.ringGeometry)
-        ring.mesh.geometry.dispose();
-      (ring.mesh.material as THREE.Material).dispose();
+    for (const f of this.flashes) {
+      f.object.removeFromParent();
+      this.flashPool.push(f);
     }
+    this.flashes = [];
+    for (const ring of this.rings) this.retireRing(ring);
     this.rings = [];
+    for (const fx of this.bulletFx.values()) this.disposeBulletFx(fx);
+    this.bulletFx.clear();
+    for (const fx of this.statusRings.values()) this.disposeStatusFx(fx);
+    this.statusRings.clear();
+    for (const bubble of this.shieldBubbles.values()) {
+      bubble.removeFromParent();
+      bubble.material.dispose();
+    }
+    this.shieldBubbles.clear();
+    for (const lob of this.lobs) {
+      lob.mesh.removeFromParent();
+      this.lobPool.push(lob);
+    }
+    this.lobs = [];
+    this.wells.length = 0;
+    this.playerBubble.visible = false;
+    for (const shard of this.barrierShards) shard.visible = false;
+    this.abilityRing.visible = false;
+    this.bloodRing.visible = false;
+    this.punch = this.viewPunch = 0;
     for (const label of this.labels) {
       label.sprite.removeFromParent();
       label.sprite.material.dispose();
