@@ -138,6 +138,18 @@ export default function Dialog({
     const wanted = panel?.querySelector<HTMLElement>("[data-autofocus]");
     (wanted ?? focusables()[0] ?? panel)?.focus();
 
+    // A group of radios with none checked is still one stop: the browser
+    // goes in at its first radio on the way forward and at its last on
+    // the way back. For the trap, any radio of such a group stands for
+    // the group.
+    const sameGroup = (a: Element | null, b: Element | null) =>
+      a instanceof HTMLInputElement &&
+      b instanceof HTMLInputElement &&
+      a.type === "radio" &&
+      b.type === "radio" &&
+      a.name !== "" &&
+      a.name === b.name;
+
     const onKey = (e: KeyboardEvent) => {
       // With another dialog open over this one, the keys are its.
       if (!onTop()) return;
@@ -161,10 +173,12 @@ export default function Dialog({
       const first = items[0];
       const last = items[items.length - 1];
       const active = document.activeElement;
-      if (e.shiftKey && (active === first || !panel.contains(active))) {
+      const atFirst = active === first || sameGroup(active, first);
+      const atLast = active === last || sameGroup(active, last);
+      if (e.shiftKey && (atFirst || !panel.contains(active))) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && (active === last || !panel.contains(active))) {
+      } else if (!e.shiftKey && (atLast || !panel.contains(active))) {
         e.preventDefault();
         first.focus();
       }
@@ -229,7 +243,15 @@ export default function Dialog({
       const wanted = typeof back === "function" ? back() : back;
       // Without scrolling: the visitor may have scrolled on since they
       // last touched that element, and the page must not jump back to it.
-      if (wanted && before && document.contains(before)) {
+      // And not to something that has been hidden meanwhile (the corner
+      // mascot on a page with its own): focus on a thing nobody can see
+      // swallows the next key.
+      if (
+        wanted &&
+        before &&
+        document.contains(before) &&
+        !before.closest('[aria-hidden="true"]')
+      ) {
         before.focus({ preventScroll: true });
       }
     };
@@ -243,12 +265,19 @@ export default function Dialog({
     if (!open) return;
     const panel = panelRef.current;
     if (!panel) return;
+    // With layout offsets, not a transform: the browser snaps a box to
+    // the pixel grid BEFORE it applies a transform, so a half-pixel
+    // `translate` moved the painted panel off the grid again and smeared
+    // the very hairlines this is here to keep sharp. (The panel is
+    // position: relative already, through card-chunk.)
     const snap = () => {
-      panel.style.translate = "";
+      panel.style.left = "";
+      panel.style.top = "";
       const r = panel.getBoundingClientRect();
       const fx = r.left - Math.floor(r.left);
       const fy = r.top - Math.floor(r.top);
-      if (fx > 0.01 || fy > 0.01) panel.style.translate = `${-fx}px ${-fy}px`;
+      if (fx > 0.01) panel.style.left = `${-fx}px`;
+      if (fy > 0.01) panel.style.top = `${-fy}px`;
     };
     snap();
     const ro = new ResizeObserver(snap);
@@ -274,6 +303,9 @@ export default function Dialog({
       className={`scrim-chunk z-[60] flex px-4 pb-[max(1rem,env(safe-area-inset-bottom))] ${place}`}
       onMouseDown={(e) => {
         if (e.target !== e.currentTarget) return;
+        // The main button only: a right-click or a middle-click outside
+        // the panel is not "close this".
+        if (e.button !== 0) return;
         // A dialog opened by a tap would be closed by that same tap: its
         // follow-up mouse-down lands on the scrim that has just appeared.
         // So the scrim does not close anything in its first moment. (Done
