@@ -1030,6 +1030,15 @@ export default function BrandDot({
     dragRef.current = null;
   };
 
+  // When he goes into hiding he must not keep the focus: a hidden button
+  // that owns the keyboard swallows Space and Enter on the page (and it is
+  // an aria-hidden element holding focus).
+  useEffect(() => {
+    if (!(traveling || stagePresent)) return;
+    const node = btnRef.current;
+    if (node && document.activeElement === node) node.blur();
+  }, [traveling, stagePresent]);
+
   // He is a button and the first Tab stop on every page, but everything
   // above is a pointer handler, so from the keyboard he did nothing at
   // all. Enter or Space is a tap (the colour cycles); with Shift it is a
