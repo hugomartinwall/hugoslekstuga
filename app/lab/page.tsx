@@ -1,4 +1,6 @@
 import Link from "next/link";
+import PixelIcon from "@/components/PixelIcon";
+import Panel from "@/components/ui/Panel";
 
 type Experiment = {
   slug: string;
@@ -20,9 +22,9 @@ const EXPERIMENTS: Experiment[] = [
 
 export default function LabIndex() {
   return (
-    <div className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
+    <div className="page-col px-5 py-14 sm:px-8 sm:py-20">
       <header className="flex flex-col gap-3">
-        <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl">
+        <h1 className="font-display text-5xl leading-[0.95] sm:text-6xl">
           Lab
         </h1>
         <p className="max-w-xl text-base leading-relaxed text-ink-soft sm:text-lg">
@@ -41,24 +43,31 @@ export default function LabIndex() {
       <ul className="mt-10 grid grid-cols-1 gap-3">
         {EXPERIMENTS.map((e) => (
           <li key={e.slug}>
-            <Link
+            <Panel
+              as={Link}
               href={`/lab/${e.slug}`}
-              className="card-chunk flex items-start gap-4 rounded-[var(--radius-card)] bg-cream p-5 transition-colors hover:bg-cream-deep"
+              className="flex items-center gap-4 p-5"
             >
+              {/* The spark is the kit's stand-in icon, on the lab's acid. */}
               <span
                 aria-hidden
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-ink bg-yellow font-display text-xl font-extrabold text-ink"
+                className="notch-sm flex h-12 w-12 shrink-0 items-center justify-center bg-yellow text-cream"
               >
-                ✱
+                <PixelIcon name="advice" size={36} />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="font-display text-xl font-extrabold leading-tight tracking-tight">
-                  {e.title}
+                <p className="font-display text-2xl leading-none">{e.title}</p>
+                <p className="mt-1 text-sm leading-snug text-ink-soft">
+                  {e.blurb}
                 </p>
-                <p className="text-sm text-ink-soft">{e.blurb}</p>
               </div>
-              <span className="text-xs font-semibold text-ink-muted">→</span>
-            </Link>
+              {/* The kit has no forward arrow: its back arrow, mirrored. */}
+              <PixelIcon
+                name="back"
+                size={12}
+                className="shrink-0 -scale-x-100 text-ink-muted"
+              />
+            </Panel>
           </li>
         ))}
       </ul>
