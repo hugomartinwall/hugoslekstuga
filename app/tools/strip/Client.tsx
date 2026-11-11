@@ -1,8 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import Slider from "@/components/Slider";
+import { ChipGroup } from "@/components/ui/Chip";
+import Dropzone from "@/components/ui/Dropzone";
+import Keycap from "@/components/ui/Keycap";
+import Panel from "@/components/ui/Panel";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
@@ -36,6 +40,20 @@ const CATEGORY_TINT: Record<Finding["category"], string> = {
   software: "bg-orange-soft",
   other: "bg-yellow-soft",
 };
+
+/**
+ * A picture on the page: fitted whole inside a square-cornered hairline
+ * frame of a set size, on a 4px page-dark mount. The mount is what keeps
+ * a picture that almost fills its frame from looking like a frame with
+ * two thick sides. Each use adds the frame's size.
+ *
+ * The text classes only show when the browser cannot draw the file (a
+ * HEIC in Chrome, say). The frame then holds the file's name, and they
+ * keep it small, muted and wrapped; left alone it is large, white and
+ * cut off where the frame ends.
+ */
+const THUMB =
+  "border border-line bg-cream object-contain p-1 text-xs text-ink-muted wrap-anywhere";
 
 const CATEGORY_LABEL: Record<Finding["category"], string> = {
   gps: "Location",
@@ -128,6 +146,18 @@ function extForType(type: string): "png" | "jpg" | "webp" {
   return "jpg";
 }
 
+/**
+ * The format chips and the dropzone are native radio and file inputs
+ * now. They used to be buttons and an input that could not take the
+ * focus, and a paste with the focus on one of them loaded the image.
+ * (The same test, by the same name, as Pixla's.)
+ */
+function isChipOrPicker(t: HTMLElement): boolean {
+  if (t.tagName !== "INPUT") return false;
+  const type = (t as HTMLInputElement).type;
+  return type === "radio" || type === "file";
+}
+
 export default function StripPage() {
   const tool = findTool("strip")!;
   const [filename, setFilename] = useState<string>("");
@@ -188,10 +218,16 @@ export default function StripPage() {
     [clearStripped],
   );
 
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const f = e.dataTransfer.files?.[0];
-    if (f && f.type.startsWith("image/")) handleFile(f);
+  // The kit's dropzone hands over files without saying how they arrived.
+  // This page has always taken whatever the picker returns, but only an
+  // image from a drop. So a drop is noted on its way down to the dropzone
+  // (capture) and the note is cleared on its way back up.
+  const dropped = useRef(false);
+  const onFiles = (files: File[]) => {
+    const f = files[0];
+    if (!f) return;
+    if (dropped.current && !f.type.startsWith("image/")) return;
+    handleFile(f);
   };
 
   // Paste-from-clipboard. Screenshots are the natural feed for strip —
@@ -224,6 +260,25 @@ export default function StripPage() {
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, [handleFile]);
+
+  // The listener above steps aside for every <input>, and on the kit the
+  // format chips and the dropzone are inputs (see isChipOrPicker). This
+  // answers for those two only, so ⌘V with the focus on either still
+  // loads the image and the listener itself stays exactly as it was.
+  // (Pixla lets the same two through inside its listener instead.)
+  const onPasteInControl = (e: React.ClipboardEvent) => {
+    if (!isChipOrPicker(e.target as HTMLElement)) return;
+    for (const item of Array.from(e.clipboardData.items)) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) {
+          e.preventDefault();
+          handleFile(f);
+          return;
+        }
+      }
+    }
+  };
 
   const stripAndDownload = useCallback(async () => {
     if (!imageUrl || stripping) return;
@@ -292,51 +347,64 @@ export default function StripPage() {
 
   return (
     <ToolFrame tool={tool}>
-      <div className="flex flex-col gap-5">
-        <label
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          className="card-chunk flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border-dashed bg-cream-deep p-6 text-center transition-colors hover:bg-tomato-soft"
-        >
-          <span className="font-display text-base font-extrabold">
-            Drop or paste an image
-          </span>
-          <span className="text-xs text-ink-muted">
-            JPEG, PNG, HEIC · stays in your browser
-          </span>
-          <span className="text-[10px] text-ink-muted">
-            <kbd className="rounded border border-ink-soft bg-cream-deep px-1.5 py-0.5 font-mono">
-              ⌘V
-            </kbd>{" "}
-            also works
-          </span>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-            }}
-            className="hidden"
-          />
-        </label>
-
-        {error && (
-          <p className="rounded-[var(--radius-card)] border-2 border-tomato bg-tomato-soft p-2 text-sm">
-            {error}
-          </p>
-        )}
+      <div
+        className="flex flex-col gap-4 sm:gap-5"
+        onDropCapture={() => {
+          dropped.current = true;
+        }}
+        onDrop={() => {
+          dropped.current = false;
+        }}
+        onPaste={onPasteInControl}
+      >
+        {/* Roomy while it is the whole page, a slim bar once there is a
+            picture: then the first screen belongs to the picture and the
+            key that strips it. The bar is built like Pixla's: the hint
+            drops a size, and the key legend, which sits on its own line
+            in the roomy dropzone, runs on after it. The legend is a
+            keyboard shortcut, so it is not shown where there is no
+            keyboard; there the hint, if it has to wrap, breaks in the
+            middle (balanced) instead of leaving one word behind. */}
+        <Dropzone
+          title="Drop or paste an image"
+          hint={
+            <span
+              className={
+                imageUrl
+                  ? "block text-xs leading-5 pointer-coarse:text-balance"
+                  : "block text-balance"
+              }
+            >
+              JPEG, PNG, HEIC · stays in your browser{" "}
+              <span
+                className={`h-5 items-center gap-1.5 text-xs text-ink-muted pointer-coarse:hidden ${
+                  imageUrl
+                    ? "mx-1.5 inline-flex align-top whitespace-nowrap"
+                    : "mt-2 flex justify-center"
+                }`}
+              >
+                <kbd className="kbd-chunk">⌘V</kbd> also works
+              </span>
+            </span>
+          }
+          accept="image/*"
+          onFiles={onFiles}
+          size={imageUrl ? "slim" : "roomy"}
+        />
 
         {imageUrl && (
-          <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-cream-deep p-4 sm:flex-row sm:items-start">
+          <Panel className="flex items-start gap-3 p-3 sm:gap-4 sm:p-4">
+            {/* The frame is a set size, so a panorama, a portrait and an
+                icon all leave the panel the same height and nothing is
+                ever stretched out of shape. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl}
               alt={filename}
-              className="max-h-48 rounded-md border border-line"
+              className={`h-25 w-25 shrink-0 sm:h-40 sm:w-56 ${THUMB}`}
             />
-            <div className="flex-1 text-sm">
-              <p className="font-mono text-xs text-ink-muted">{filename}</p>
+            <div className="min-w-0 flex-1 text-sm">
+              <p className="wrap-anywhere text-xs text-ink-muted">{filename}</p>
               <p className="text-xs text-ink-muted">
                 {Math.ceil(originalSize / 1024).toLocaleString()} KB
               </p>
@@ -359,56 +427,37 @@ export default function StripPage() {
                 )}
               </div>
             </div>
-          </div>
+          </Panel>
         )}
 
-        {findings.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {findings.map((f, i) => (
-              <li
-                key={`${f.label}-${i}`}
-                className={`fade-rise card-chunk flex items-center justify-between gap-3 rounded-[var(--radius-card)] p-3 ${CATEGORY_TINT[f.category]}`}
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
-                <div className="flex flex-col">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                    {CATEGORY_LABEL[f.category]} · {f.label}
-                  </span>
-                  <span className="font-mono text-sm">{f.value}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
+        {/* The order from here on is: how to save it, the keys, what went
+            wrong, the result, and only then the list of what was found.
+            The list can run to a dozen rows, and it used to sit between
+            "Strip below to clear." and the key that does it. */}
         {imageUrl && (
-          <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-dashed border-ink-muted bg-cream-deep p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                Format
-              </span>
-              {FORMAT_OPTIONS.map((opt) => {
-                const active = format === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setFormat(opt.value)}
-                    className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
-                      active
-                        ? "bg-tomato text-cream"
-                        : "bg-cream-deep hover:bg-tomato-soft"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-              <span className="text-[10px] text-ink-muted">
-                {format === "auto"
-                  ? `→ ${extForType(resolvedOutType).toUpperCase()} (matches input)`
-                  : `→ ${extForType(resolvedOutType).toUpperCase()}`}
-              </span>
+          <Panel className="flex flex-col gap-4 p-3 sm:p-4">
+            <div className="flex flex-col gap-1.5">
+              {/* Label on the left, what it comes to on the right: the
+                  same line the quality slider has. */}
+              <div className="flex items-center justify-between gap-3">
+                <span id="strip-format-label" className="label-pixel">
+                  Format
+                </span>
+                <span className="text-xs text-ink-muted">
+                  {format === "auto"
+                    ? `→ ${extForType(resolvedOutType).toUpperCase()} (matches input)`
+                    : `→ ${extForType(resolvedOutType).toUpperCase()}`}
+                </span>
+              </div>
+              {/* On a phone the four share the row edge to edge, with a
+                  little less padding so they still fit one row at 320px. */}
+              <ChipGroup
+                labelledBy="strip-format-label"
+                options={FORMAT_OPTIONS}
+                value={format}
+                onChange={setFormat}
+                chipClassName="max-sm:flex-auto max-sm:px-2"
+              />
             </div>
             {showQualitySlider && (
               <Slider
@@ -419,73 +468,101 @@ export default function StripPage() {
                 step={1}
                 unit="%"
                 onChange={setQuality}
-                color="tomato"
                 hint="Higher = bigger file, closer to source. PNG is lossless and ignores this."
               />
             )}
-          </div>
+          </Panel>
         )}
 
         {imageUrl && (
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {/* Busy, not unavailable: it keeps most of its colour and the
+                pointer says "working". The width is held from `sm` up so
+                the key does not shrink around "…stripping…" and jolt the
+                one beside it. */}
+            <Keycap
+              tone="accent"
+              size="lg"
               onClick={stripAndDownload}
               disabled={stripping}
-              className="btn-chunk rounded-[var(--radius-button)] bg-tomato px-6 py-2 font-display text-base font-extrabold text-cream disabled:cursor-progress disabled:opacity-80"
+              className="disabled:cursor-progress disabled:opacity-80 sm:min-w-60"
             >
               {stripping ? "…stripping…" : "Strip and prepare ↯"}
-            </button>
+            </Keycap>
             {stripped && (
-              <button
-                type="button"
-                onClick={downloadStripped}
-                className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-5 py-2 font-display text-sm font-extrabold"
-              >
+              <Keycap size="lg" onClick={downloadStripped}>
                 Download clean ({Math.ceil(stripped.size / 1024)} KB)
-              </button>
+              </Keycap>
             )}
           </div>
         )}
 
+        {/* Under the key that caused it, where the eye already is. */}
+        {error && (
+          <Panel
+            as="p"
+            tone="danger"
+            className="px-4 py-3 text-sm [--ring-c:var(--color-tomato)]"
+          >
+            {error}
+          </Panel>
+        )}
+
         {stripped && (
-          <div className="card-chunk flex flex-col gap-3 rounded-[var(--radius-card)] bg-cream-deep p-4">
+          <Panel className="flex flex-col gap-3 p-3 sm:p-4">
             <div className="grid grid-cols-2 gap-3">
-              <figure className="flex flex-col gap-1">
-                <figcaption className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-                  Before
-                </figcaption>
+              <figure className="flex min-w-0 flex-col gap-1">
+                <figcaption className="label-pixel">Before</figcaption>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={imageUrl}
                   alt="before"
-                  className="max-h-40 w-full rounded-md border border-line object-contain"
+                  className={`h-28 w-full sm:h-40 ${THUMB}`}
                 />
-                <span className="text-[10px] text-ink-muted">
+                <span className="text-xs text-ink-muted">
                   {Math.ceil(originalSize / 1024).toLocaleString()} KB ·{" "}
                   {findings.length} bit{findings.length === 1 ? "" : "s"} of metadata
                 </span>
               </figure>
-              <figure className="flex flex-col gap-1">
-                <figcaption className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-                  After
-                </figcaption>
+              <figure className="flex min-w-0 flex-col gap-1">
+                <figcaption className="label-pixel">After</figcaption>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={stripped.url}
                   alt="after"
-                  className="max-h-40 w-full rounded-md border border-line object-contain"
+                  className={`h-28 w-full sm:h-40 ${THUMB}`}
                 />
-                <span className="text-[10px] text-ink-muted">
+                <span className="text-xs text-ink-muted">
                   {Math.ceil(stripped.size / 1024).toLocaleString()} KB ·{" "}
                   <span className="font-semibold text-green">clean</span>
                 </span>
               </figure>
             </div>
-            <p className="text-[10px] text-ink-muted">
+            <p className="text-xs text-ink-muted">
               Pixels intact, metadata gone.
             </p>
-          </div>
+          </Panel>
+        )}
+
+        {/* Two to a row from `sm` up. The first column is rounded down to a
+            whole pixel and the second takes the rest: split evenly, an odd
+            width would start the right-hand column on a half pixel and
+            smear its hairlines. */}
+        {findings.length > 0 && (
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-[round(down,calc((100%_-_0.5rem)_/_2),1px)_minmax(0,1fr)]">
+            {findings.map((f, i) => (
+              <li
+                key={`${f.label}-${i}`}
+                className={`fade-rise card-chunk flex min-w-0 flex-col gap-1 px-4 py-3 ${CATEGORY_TINT[f.category]}`}
+                style={{ animationDelay: `${i * 50}ms` }}
+              >
+                <span className="label-pixel text-ink-soft">
+                  {CATEGORY_LABEL[f.category]} · {f.label}
+                </span>
+                <span className="wrap-anywhere text-sm">{f.value}</span>
+              </li>
+            ))}
+          </ul>
         )}
 
         <p className="text-xs text-ink-muted">
