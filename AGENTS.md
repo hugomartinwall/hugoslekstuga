@@ -132,8 +132,8 @@ Turbopack sometimes misses a write; a second write fixes it.
 **Gone, do not bring back**: `rounded-full` / `rounded-md` / `rounded-[12px]`
 on controls, `border-2 border-ink`, `border-dashed`, `shadow-chunk`,
 `bg-ink/50` scrims, `backdrop-blur`, and `rounded-[var(--radius-card)]` /
-`rounded-[var(--radius-button)]` (both tokens are 0px — the utilities
-were no-ops).
+`rounded-[var(--radius-button)]` (the two tokens were 0px, so the
+utilities were no-ops; the tokens are deleted now).
 
 A dev-only bench at `/lab/kit` shows every piece in every accent.
 

@@ -43,11 +43,6 @@
   /* The house mono IS the body face, so `font-mono` stays in the family
      instead of falling to whatever the OS calls monospace. */
   --font-mono: var(--font-sans), ui-monospace, monospace;
-
-  /* Corners are stepped, not rounded — radius zeroed, notches below. */
-  --radius-card: 0px;
-  --radius-button: 0px;
-
 }
 
 /* Non-theme plumbing: pixel-notched corners + the Bayer dither tile.
