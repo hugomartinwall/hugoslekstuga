@@ -446,10 +446,13 @@ body {
     transition: transform 160ms steps(2, jump-end);
   }
 
+  /* :where() keeps this at the weight of one class and one state, so the
+     selected ring and the focus ring below (same weight, later in the
+     file) still win under the pointer. Spelled out with the element
+     names, hover outranked both: a chosen card turned grey the moment
+     the mouse was on it, which is exactly when you have just clicked it. */
   @media (hover: hover) {
-    a.card-chunk:hover,
-    button.card-chunk:hover:not(:disabled),
-    label.card-chunk:hover {
+    :where(a, button:not(:disabled), label).card-chunk:hover {
       transform: translateY(-2px);
       --ring-c: var(--color-ink-muted);
     }

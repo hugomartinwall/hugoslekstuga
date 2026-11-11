@@ -401,10 +401,6 @@ export default function LoremPage() {
           >
             {FLAVOURS.map((f) => {
               const selected = safeFlavourId === f.id;
-              // The kit's hover ring (grey) outranks both its selected ring
-              // and its focus ring, so the card you just picked would sit
-              // there grey until the mouse left. Selected stays in the
-              // accent under the mouse, and focus always wins.
               return (
                 <Panel
                   key={f.id}
@@ -413,9 +409,7 @@ export default function LoremPage() {
                   tone={selected ? "soft" : "page"}
                   aria-pressed={selected}
                   onClick={() => handleFlavour(f.id)}
-                  className={`flex flex-col items-start gap-1.5 p-3 text-left focus-visible:[--ring-c:var(--color-blue)] sm:p-4 ${
-                    selected ? "hover:[--ring-c:var(--accent)]" : ""
-                  }`}
+                  className="flex flex-col items-start gap-1.5 p-3 text-left sm:p-4"
                 >
                   <span className="font-display text-xl leading-none">
                     {f.label}
