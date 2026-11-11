@@ -325,6 +325,7 @@ export default function LoremPage() {
   const [output, setOutput] = useState<Output | null>(null);
   const [copied, setCopied] = useState(false);
   const flavourLabelId = useId();
+  const lengthLabelId = useId();
 
   const cfg = modeConfig(mode);
 
@@ -428,9 +429,11 @@ export default function LoremPage() {
             label and the Heading toggle share the top line and the four
             lengths sit under them (two by two on a phone). */}
         <Panel className="flex flex-wrap items-center gap-2 p-3 sm:p-4">
-          <span className="label-pixel md:min-w-13">Length</span>
+          <span id={lengthLabelId} className="label-pixel md:min-w-13">
+            Length
+          </span>
           <ChipGroup
-            label="Length"
+            labelledBy={lengthLabelId}
             options={MODE_OPTIONS}
             value={mode}
             onChange={handleMode}
