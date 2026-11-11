@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
  * A modal dialog: a flat dark scrim, a raised stepped panel, and the
  * behaviour a dialog owes its user — focus moves in and is kept in,
  * Escape and a click on the scrim close it, the page behind does not
- * scroll, and focus returns to where it was.
+ * scroll or hear the keys typed here, and focus returns to where it was.
  *
  * Portalled to <body>, so a transformed ancestor (the tool page's
  * entrance animation leaves one) cannot trap it in a column.
@@ -84,13 +84,34 @@ export default function Dialog({
     };
     document.addEventListener("keydown", onKey, true);
 
+    // Keys pressed while a dialog is open belong to the dialog. Page-level
+    // shortcuts listen on `window`: without this a game's WASD or a tool's
+    // Space also acts on every letter typed into the search field. This
+    // runs after everything inside the dialog has seen the key. Chords
+    // with Ctrl or Cmd still pass (the palette's own Ctrl-K toggle), and
+    // so does every keyup, so a key held down before the dialog opened is
+    // still released for whoever was tracking it.
+    const keepKeysIn = (e: KeyboardEvent) => {
+      if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
+    };
+    document.addEventListener("keydown", keepKeysIn);
+
+    // Lock the page behind. Where scrollbars take up room, hiding one
+    // would widen the page and shift a centred column: pad by the same
+    // amount so nothing behind the scrim moves.
     const html = document.documentElement;
+    const body = document.body;
     const prevOverflow = html.style.overflow;
+    const prevPad = body.style.paddingRight;
+    const scrollbar = window.innerWidth - html.clientWidth;
     html.style.overflow = "hidden";
+    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
 
     return () => {
       document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keydown", keepKeysIn);
       html.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPad;
       if (before && document.contains(before)) before.focus();
     };
   }, [open]);
