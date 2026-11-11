@@ -806,7 +806,8 @@ body {
     .chip-chunk[aria-current="true"],
     .chip-chunk:has(> input:checked),
     .chip-chunk.is-on,
-    .btn-chunk[aria-pressed="true"] {
+    .btn-chunk[aria-pressed="true"],
+    .btn-chunk.is-on {
       forced-color-adjust: none;
       background: Highlight;
       color: HighlightText;
