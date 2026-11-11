@@ -10,6 +10,10 @@ import { useId, useState, type ReactNode } from "react";
  *
  * It hands back the files and nothing else. Paste handling, format
  * rules and what happens next stay with the tool.
+ *
+ * `size`
+ *   roomy   the default: the dropzone is what the page is about
+ *   slim    a bar: there is already a picture and this is "another one"
  */
 export default function Dropzone({
   title,
@@ -17,6 +21,7 @@ export default function Dropzone({
   accept,
   multiple = false,
   onFiles,
+  size = "roomy",
   className = "",
   children,
 }: {
@@ -25,6 +30,7 @@ export default function Dropzone({
   accept?: string;
   multiple?: boolean;
   onFiles: (files: File[]) => void;
+  size?: "roomy" | "slim";
   className?: string;
   /** Extra content under the hint (a key legend, a note). */
   children?: ReactNode;
@@ -38,16 +44,21 @@ export default function Dropzone({
         e.preventDefault();
         setOver(true);
       }}
-      onDragLeave={() => setOver(false)}
+      onDragLeave={(e) => {
+        // Leaving for one of its own children (the title, the hint) is
+        // not leaving: without this the lit frame flickers as a dragged
+        // file crosses the words.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) onFiles(multiple ? files : files.slice(0, 1));
       }}
-      className={`card-chunk flex flex-col items-center justify-center gap-2 px-6 py-10 text-center ${
-        over ? "is-on bg-(--accent-soft)" : "bg-cream-deep"
-      } ${className}`.trim()}
+      className={`card-chunk flex flex-col items-center justify-center gap-2 px-6 text-center ${
+        size === "slim" ? "py-3" : "py-10"
+      } ${over ? "is-on bg-(--accent-soft)" : "bg-cream-deep"} ${className}`.trim()}
     >
       <input
         id={id}

@@ -350,7 +350,7 @@ export default function PixlaPage() {
             const f = files[0];
             if (f) handleFile(f);
           }}
-          className={hasImage ? "py-3!" : undefined}
+          size={hasImage ? "slim" : "roomy"}
         />
 
         {error && (

@@ -607,6 +607,17 @@ body {
     background: var(--accent);
   }
 
+  /* Focus on a switch is drawn on its track, in the kit's cyan, like
+     every other control: the plain rectangular outline round the whole
+     row was the one focus mark of that kind left. */
+  [role="switch"]:focus-visible {
+    outline: none;
+  }
+
+  [role="switch"]:focus-visible > .switch-chunk {
+    box-shadow: inset 0 0 0 2px var(--color-blue);
+  }
+
   /* ── Small parts ──────────────────────────────────────────────────── */
   /* The one micro-label: Silkscreen, tracked, muted. */
   .label-pixel {
@@ -728,9 +739,28 @@ body {
     .chip-chunk:has(> input:focus-visible),
     .card-chunk:focus-visible,
     .card-chunk:has(> input:focus-visible),
-    .field-chunk:focus-within {
+    .field-chunk:focus-within,
+    [role="switch"]:focus-visible {
       outline: 3px solid Highlight;
       outline-offset: 2px;
+    }
+
+    /* The switch track and the key legend are drawn with shadows, which
+       this mode drops: give them an edge, and the thumb a system colour. */
+    .switch-chunk,
+    .kbd-chunk {
+      outline: 1px solid CanvasText;
+      outline-offset: -1px;
+    }
+
+    .switch-chunk::before {
+      forced-color-adjust: none;
+      background: GrayText;
+    }
+
+    [aria-checked="true"] > .switch-chunk::before {
+      forced-color-adjust: none;
+      background: Highlight;
     }
   }
 }

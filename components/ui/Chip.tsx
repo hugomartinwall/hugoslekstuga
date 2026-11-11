@@ -87,9 +87,13 @@ export function ChipGroup<T extends string | number>({
           title={o.title}
           className={`chip-chunk ${chipClassName}`.trim()}
         >
+          {/* The title is on the input as well as on the label: the
+              label's shows the tooltip, the input's is what a screen
+              reader reads as the option's description. */}
           <input
             type="radio"
             name={name}
+            title={o.title}
             checked={o.value === value}
             disabled={o.disabled}
             onChange={() => onChange(o.value)}
