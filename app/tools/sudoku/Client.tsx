@@ -8,12 +8,12 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentPropsWithoutRef,
 } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import PixelIcon from "@/components/PixelIcon";
 import Keycap from "@/components/ui/Keycap";
 import Panel from "@/components/ui/Panel";
+import Tag from "@/components/ui/Tag";
 import Switch from "@/components/ui/Switch";
 import { accentVars } from "@/lib/colors";
 import { findTool } from "@/lib/tools";
@@ -1141,13 +1141,11 @@ function DifficultyPicker({
 
       {/* Today's puzzle — same board for everyone on this date,
           generated locally from a seed (no server round-trip). The
-          solved-state mark persists in localStorage. The card is a bright
-          fill, where the kit's cyan focus ring would be lost, so on focus
-          it gets the same dark band a keycap has. */}
+          solved-state mark persists in localStorage. */}
       <button
         type="button"
         onClick={onStartDaily}
-        className="card-chunk flex items-center justify-between gap-4 bg-yellow px-5 py-4 text-left text-cream focus-visible:shadow-[inset_0_0_0_4px_var(--color-cream)]"
+        className="card-chunk flex items-center justify-between gap-4 bg-yellow px-5 py-4 text-left text-cream"
       >
         <span className="flex min-w-0 flex-col gap-1.5">
           <span className="flex flex-wrap items-center gap-2 font-display text-xl leading-none">
@@ -1165,7 +1163,7 @@ function DifficultyPicker({
             Same medium puzzle for everyone today · {todayKey}
           </span>
         </span>
-        <PixelIcon name="back" size={24} className="shrink-0 -scale-x-100" />
+        <PixelIcon name="forward" size={24} className="shrink-0" />
       </button>
 
       <div
@@ -1226,6 +1224,9 @@ function DifficultyPicker({
         />
       </div>
 
+      {/* Guarded for the way back: "Another one" and "New puzzle" sit
+          where this key appears, and a double tap on either used to
+          start a game before anything was chosen. */}
       <Keycap
         tone="accent"
         size="lg"
@@ -1235,33 +1236,6 @@ function DifficultyPicker({
         Start
       </Keycap>
     </div>
-  );
-}
-
-/**
- * A small stepped tag: a status word, not a control. The kit has no
- * static badge, so this is two nested notches. The outer one shows as
- * a 1px ring that follows the steps, the inner one is the fill.
- */
-function Tag({
-  ring = "bg-line",
-  fill = "bg-cream",
-  text = "label-pixel text-ink",
-  className = "",
-  children,
-  ...rest
-}: {
-  /** Background class for the 1px ring. */
-  ring?: string;
-  /** Background class for the fill. */
-  fill?: string;
-  /** Classes for the words. */
-  text?: string;
-} & ComponentPropsWithoutRef<"span">) {
-  return (
-    <span className={`notch-sm inline-flex p-px ${ring} ${className}`} {...rest}>
-      <span className={`notch-sm px-2 py-0.5 ${fill} ${text}`}>{children}</span>
-    </span>
   );
 }
 
@@ -1322,10 +1296,11 @@ function StatusBar({
       </div>
       {almostThere && (
         <Tag
-          ring="bg-yellow"
-          fill="bg-yellow-soft"
-          text="whitespace-nowrap text-[11px] font-bold leading-4 tracking-wide text-ink"
-          className="absolute right-0 top-full -mt-2.5"
+          // The kit tag in this page's acid, with its words kept as a
+          // sentence in the body face (a tag is pixel capitals by
+          // default). The two `!` settle a tie with the tag's own fill
+          // and ring.
+          className="absolute top-full right-0 -mt-2.5 bg-yellow-soft! font-sans text-[11px] leading-4 font-bold tracking-wide whitespace-nowrap normal-case [--ring-c:var(--color-yellow)]!"
         >
           almost there — {emptyUserCells}{" "}
           {emptyUserCells === 1 ? "cell" : "cells"} to go
@@ -1419,7 +1394,9 @@ function Board({
     <div
       role="grid"
       aria-label="Sudoku board"
-      className="card-chunk mx-auto grid w-full max-w-[min(100%,32rem)] grid-cols-9 overflow-hidden bg-cream"
+      // The frame is as heavy and as bright as the 3×3 dividers that
+      // run into it, so the board reads as a closed grid, not an open #.
+      className="card-chunk mx-auto grid w-full max-w-[min(100%,32rem)] grid-cols-9 overflow-hidden bg-cream [--ring-c:var(--color-ink)] [--ring-w:2px]"
       style={{
         aspectRatio: "1 / 1",
         // Equal-1fr rows are non-negotiable. Without an explicit row
@@ -1717,11 +1694,7 @@ function NumberPad({
           onClick={() => onSetNotesMode((n) => !n)}
           disabled={disabled}
           aria-pressed={notesMode}
-          // One key, two roles: a double tap used to pause and resume
-          // again. The guard restarts each time the role changes.
-          className={`flex-auto md:basis-full ${
-            paused ? "press-guard-alt" : "press-guard"
-          }`}
+          className="flex-auto md:basis-full"
         >
           <span className="min-w-[10ch] text-center">
             {notesMode ? "Notes: on" : "Notes: off"}
@@ -1753,7 +1726,11 @@ function NumberPad({
           onClick={onPause}
           disabled={disabled && !paused}
           aria-pressed={paused}
-          className="flex-auto md:basis-full"
+          // One key, two roles: a double tap used to pause and resume
+          // again. The guard restarts each time the role changes.
+          className={`flex-auto md:basis-full ${
+            paused ? "press-guard-alt" : "press-guard"
+          }`}
         >
           <span className="min-w-[6ch] text-center">
             {paused ? "Resume" : "Pause"}
@@ -1817,7 +1794,6 @@ function WinPanel({
   mistakes,
   hintsUsed,
   bestTime,
-      id={RESULT_ID}
   isNewBest,
   daily,
   onNewGame,
@@ -1841,6 +1817,7 @@ function WinPanel({
   useShowResult();
   return (
     <Panel
+      id={RESULT_ID}
       tone="soft"
       className={`fade-rise [--ring-c:var(--accent)] ${RESULT_PANEL}`}
     >
@@ -1879,6 +1856,29 @@ function WinPanel({
           <Stat
             label="Best"
             value={formatDuration(bestTime)}
+            mono
+            muted
+            align="result"
+          />
+        )}
+      </div>
+      {hintsUsed > 0 && (
+        <p className="max-w-xs text-[11px] text-ink-soft md:col-span-2 md:max-w-none">
+          Best-time records are reserved for runs with no hints — keep
+          trying.
+        </p>
+      )}
+      <Keycap
+        tone="accent"
+        onClick={onNewGame}
+        className="md:col-start-2 md:row-start-1"
+      >
+        Another one
+      </Keycap>
+    </Panel>
+  );
+}
+
 /** The id both result panels carry (only one is ever on the page). */
 const RESULT_ID = "sudoku-result";
 
@@ -1901,31 +1901,6 @@ function useShowResult() {
   }, []);
 }
 
-            mono
-            muted
-            align="result"
-          />
-        )}
-      </div>
-      {hintsUsed > 0 && (
-        <p className="max-w-xs text-[11px] text-ink-soft md:col-span-2 md:max-w-none">
-          Best-time records are reserved for runs with no hints — keep
-          trying.
-        </p>
-      )}
-      <Keycap
-        tone="accent"
-        onClick={onNewGame}
-        className="md:col-start-2 md:row-start-1"
-      >
-  useShowResult();
-        Another one
-      </Keycap>
-      id={RESULT_ID}
-    </Panel>
-  );
-}
-
 /** Layout shared by the two result panels (see WinPanel). They sit in
  *  the game grid straight after the board: under it on a phone, across
  *  both columns from `md`. */
@@ -1943,8 +1918,10 @@ function LossPanel({
   onRestart: () => void;
   onNewGame: () => void;
 }) {
+  useShowResult();
   return (
     <Panel
+      id={RESULT_ID}
       tone="danger"
       className={`[--ring-c:var(--color-tomato)] ${RESULT_PANEL}`}
     >
