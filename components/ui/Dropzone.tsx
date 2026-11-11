@@ -8,8 +8,10 @@ import { useId, useState, type ReactNode } from "react";
  * so the keyboard reaches the picker; while something is dragged over,
  * the frame turns the accent colour.
  *
- * It hands back the files and nothing else. Paste handling, format
- * rules and what happens next stay with the tool.
+ * It hands back the files and how they came, and nothing else. Paste
+ * handling, format rules and what happens next stay with the tool. The
+ * picker has already filtered by `accept`; a drop has not, so a tool
+ * that must not take just anything checks what was dropped.
  *
  * `size`
  *   roomy   the default: the dropzone is what the page is about
@@ -29,7 +31,7 @@ export default function Dropzone({
   hint?: ReactNode;
   accept?: string;
   multiple?: boolean;
-  onFiles: (files: File[]) => void;
+  onFiles: (files: File[], from: "drop" | "picker") => void;
   size?: "roomy" | "slim";
   className?: string;
   /** Extra content under the hint (a key legend, a note). */
@@ -54,7 +56,7 @@ export default function Dropzone({
         e.preventDefault();
         setOver(false);
         const files = Array.from(e.dataTransfer.files);
-        if (files.length > 0) onFiles(multiple ? files : files.slice(0, 1));
+        if (files.length > 0) onFiles(multiple ? files : files.slice(0, 1), "drop");
       }}
       className={`card-chunk flex flex-col items-center justify-center gap-2 px-6 text-center ${
         size === "slim" ? "py-3" : "py-10"
@@ -68,7 +70,7 @@ export default function Dropzone({
         className="sr-only"
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
-          if (files.length > 0) onFiles(files);
+          if (files.length > 0) onFiles(files, "picker");
           // Let the same file be chosen twice in a row.
           e.target.value = "";
         }}

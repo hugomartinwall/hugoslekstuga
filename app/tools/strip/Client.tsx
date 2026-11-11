@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import Slider from "@/components/Slider";
 import { ChipGroup } from "@/components/ui/Chip";
@@ -208,13 +208,12 @@ export default function StripPage() {
   );
 
   // This page has always taken whatever the picker returns, but only an
-  // image from a drop. So a drop is noted on its way down to the dropzone
-  // (capture) and the note is cleared on its way back up.
-  const dropped = useRef(false);
-  const onFiles = (files: File[]) => {
+  // image from a drop (the picker filters by itself; a drop can be any
+  // file at all).
+  const onFiles = (files: File[], from: "drop" | "picker") => {
     const f = files[0];
     if (!f) return;
-    if (dropped.current && !f.type.startsWith("image/")) return;
+    if (from === "drop" && !f.type.startsWith("image/")) return;
     handleFile(f);
   };
 
@@ -311,16 +310,7 @@ export default function StripPage() {
 
   return (
     <ToolFrame tool={tool}>
-      <div
-        className="flex flex-col gap-4 sm:gap-5"
-        onDropCapture={() => {
-          dropped.current = true;
-        }}
-        onDrop={() => {
-          dropped.current = false;
-        }}
-        onPaste={onPasteInControl}
-      >
+      <div className="flex flex-col gap-4 sm:gap-5">
         {/* Roomy while it is the whole page, a slim bar once there is a
             picture: then the first screen belongs to the picture and the
             key that strips it. The bar is built like Pixla's: the hint
