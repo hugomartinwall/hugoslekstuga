@@ -26,7 +26,7 @@ export default function NotFound() {
     // Coral is this page's accent: the tag, the lost word and the one
     // primary key all read it from here. The top padding is what keeps
     // the column out of Hugo's corner (he ends 62px down, at any width).
-    <div
+    <main
       style={accentVars("tomato")}
       className="page-col px-5 pt-20 pb-14 sm:px-8 sm:pb-20"
     >
@@ -97,6 +97,6 @@ export default function NotFound() {
           })}
         </ul>
       </section>
-    </div>
+    </main>
   );
 }

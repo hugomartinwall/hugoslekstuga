@@ -2,6 +2,7 @@ import Link from "next/link";
 import PixelIcon from "@/components/PixelIcon";
 import IconTile from "@/components/ui/IconTile";
 import Panel from "@/components/ui/Panel";
+import { accentVars } from "@/lib/colors";
 
 type Experiment = {
   slug: string;
@@ -23,7 +24,7 @@ const EXPERIMENTS: Experiment[] = [
 
 export default function LabIndex() {
   return (
-    <div className="page-col px-5 py-14 sm:px-8 sm:py-20">
+    <main className="page-col px-5 py-14 sm:px-8 sm:py-20">
       <header className="flex flex-col gap-3">
         <h1 className="font-display text-5xl leading-[0.95] sm:text-6xl">
           Lab
@@ -47,10 +48,12 @@ export default function LabIndex() {
             <Panel
               as={Link}
               href={`/lab/${e.slug}`}
+              style={accentVars("yellow")}
               className="flex items-center gap-4 p-5"
             >
-              {/* The spark is the kit's stand-in icon, on the lab's acid. */}
-              <IconTile name="advice" size="lg" className="bg-yellow" />
+              {/* The spark is the kit's stand-in icon, on the lab's acid:
+                  the tile reads the accent set on the card. */}
+              <IconTile name="advice" size="lg" />
               <div className="min-w-0 flex-1">
                 <p className="font-display text-2xl leading-none">{e.title}</p>
                 <p className="mt-1 text-sm leading-snug text-ink-soft">
@@ -66,6 +69,6 @@ export default function LabIndex() {
           </li>
         ))}
       </ul>
-    </div>
+    </main>
   );
 }
