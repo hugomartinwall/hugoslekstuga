@@ -428,9 +428,12 @@ export default function AboutPage() {
         </ul>
         <p className="mt-8 text-sm text-ink-muted">
           The shelf space went to the {tools.length} toys out front{" "}
+          {/* The arrow is 14px wide. The padding grows what a finger can
+              press to 46px and the same negative margin gives the space
+              back, so nothing on the line moves. */}
           <Link
             href="/"
-            className="font-semibold text-ink underline decoration-line underline-offset-4 hover:text-tomato"
+            className="-m-4 inline-block p-4 font-semibold text-ink underline decoration-line underline-offset-4 hover:text-tomato"
           >
             →
           </Link>
