@@ -627,8 +627,41 @@ body {
   /* On a tinted surface (a soft or danger panel) the muted grey is about
      4.4:1, under the 4.5:1 that 10px text needs. There the label takes
      the softer ink, about 7:1. */
-  .tinted .label-pixel {
+  .tinted .label-pixel:not(.tag-chunk) {
     color: var(--color-ink-soft);
+  }
+
+  /* ── Tag ──────────────────────────────────────────────────────────── */
+  /* A tag's own spacing and its four surfaces (components/ui/Tag). They
+     are rules here and not utilities in the component, so that a utility
+     at the call site always wins: when two utilities set one property
+     the stylesheet's order decides, not the caller, and a tag asked to
+     be smaller silently stayed its default size. After .label-pixel on
+     purpose: a tag's words are full ink, not the label's muted grey. */
+  .tag-chunk {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+  }
+
+  .tag-chunk.tag-accent {
+    background-color: var(--accent-soft);
+    --ring-c: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+
+  .tag-chunk.tag-danger {
+    background-color: var(--color-tomato-soft);
+    --ring-c: color-mix(in srgb, var(--color-tomato) 45%, transparent);
+  }
+
+  .tag-chunk.tag-solid {
+    background-color: var(--color-ink);
+    color: var(--color-cream);
+    --ring-c: transparent;
   }
 
   /* A key legend (⌘K, esc): a tiny keycap, in the pixel face. */

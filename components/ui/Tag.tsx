@@ -15,12 +15,10 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 export type TagTone = "neutral" | "accent" | "danger" | "solid";
 
 const TONE: Record<TagTone, string> = {
-  neutral: "bg-cream text-ink",
-  accent:
-    "bg-(--accent-soft) text-ink [--ring-c:color-mix(in_srgb,var(--accent)_45%,transparent)]",
-  danger:
-    "bg-tomato-soft text-ink [--ring-c:color-mix(in_srgb,var(--color-tomato)_45%,transparent)]",
-  solid: "bg-ink text-cream [--ring-c:transparent]",
+  neutral: "",
+  accent: "tag-accent",
+  danger: "tag-danger",
+  solid: "tag-solid",
 };
 
 export default function Tag({
@@ -33,9 +31,13 @@ export default function Tag({
   className?: string;
   children: ReactNode;
 } & Omit<ComponentPropsWithoutRef<"span">, "className" | "children">) {
+  // Spacing and surfaces are kit rules (.tag-chunk in globals.css), not
+  // utilities, so any utility in `className` wins over them.
   return (
     <span
-      className={`plate-chunk label-pixel inline-flex w-fit items-center gap-1.5 px-2 py-1 ${TONE[tone]} ${className}`.trim()}
+      className={`plate-chunk label-pixel tag-chunk ${TONE[tone]} ${className}`
+        .replace(/\s+/g, " ")
+        .trim()}
       {...rest}
     >
       {children}

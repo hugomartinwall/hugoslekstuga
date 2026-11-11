@@ -1298,9 +1298,8 @@ function StatusBar({
         <Tag
           // The kit tag in this page's acid, with its words kept as a
           // sentence in the body face (a tag is pixel capitals by
-          // default). The two `!` settle a tie with the tag's own fill
-          // and ring.
-          className="absolute top-full right-0 -mt-2.5 bg-yellow-soft! font-sans text-[11px] leading-4 font-bold tracking-wide whitespace-nowrap normal-case [--ring-c:var(--color-yellow)]!"
+          // default).
+          className="absolute top-full right-0 -mt-2.5 bg-yellow-soft font-sans text-[11px] leading-4 font-bold tracking-wide whitespace-nowrap normal-case [--ring-c:var(--color-yellow)]"
         >
           almost there — {emptyUserCells}{" "}
           {emptyUserCells === 1 ? "cell" : "cells"} to go
