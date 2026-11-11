@@ -11,33 +11,30 @@ import { useRouter } from "next/navigation";
 import { tools, type Tool } from "@/lib/tools";
 import { isGameSlug, pathFor } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
-import { drawCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
-import { getWordmarkRect, type WordmarkRect } from "@/lib/wordmark-bridge";
+import { drawArcadeCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
+import { screenFor, STILL_T } from "@/lib/hugo/cabinet-screens";
+import { cabinetRow, swarmCenterY, type CabinetRow } from "@/lib/home-layout";
+import { iconForSlug, iconRuns } from "@/lib/pixel-icons";
+import { getWordmarkRect } from "@/lib/wordmark-bridge";
 import { clamp } from "@/lib/math";
 
 /**
- * Free-floating swarm of tool dots.
+ * The homepage room: a swarm of tools above a row of arcade cabinets.
  *
- * No edges, no clusters, no legend. Each dot shows its name underneath
- * so you don't have to hover to read it. Physics is just three forces:
+ * Two kinds of thing live here, and they behave differently on purpose:
  *
- *   1. centre pull   — gentle gravity toward the canvas centre
- *   2. cursor pull   — when your cursor is on the canvas, dots are
- *                      drawn toward it as well (the "interactive
- *                      gravity"). Move your mouse, the swarm leans;
- *                      move it off, the swarm drifts back to centre.
- *   3. mutual repel  — dots push apart so labels don't overlap.
+ *   TOOLS are orbs. They float: a gentle pull toward the middle of the
+ *   free band, a mutual repel so labels do not overlap, a slow wander,
+ *   drag-to-fling, click-to-open. Each shows its name underneath.
  *
- * Plus drag-to-fling, click-to-open, idle wobble.
+ *   GAMES are furniture. They stand in a row along the floor at about
+ *   twice the size, stay put, and each screen plays a small scene from
+ *   its own game (lib/hugo/cabinet-screens.ts). Where they stand comes
+ *   from lib/home-layout.ts, which the title and the hints read too.
+ *
+ * The swarm is kept fully on screen — labels included — and out of the
+ * cabinet row, the title, the corner mascot and the top-right keys.
  */
-
-/**
- * Anchored "nav" roles. These dots float in the swarm but pull
- * toward fixed anchor points along the top edge instead of the
- * canvas centre, and click-routes to navigation actions rather than
- * a tool page. They replace the old top-nav links.
- */
-type AnchorRole = "search" | "about";
 
 type Node = {
   tool: Tool;
@@ -56,16 +53,21 @@ type Node = {
   dragLastT: number;
   dragLastX: number;
   dragLastY: number;
-  /** Anchored "nav" role — present only for the two pseudo-tool
-   *  dots that live up top (Search and About). When set, gravity
-   *  targets this node's own anchor instead of the canvas centre,
-   *  and click-handling routes to a palette / route instead of a
-   *  tool page. */
-  role?: AnchorRole;
+  /** A game: it stands in the arcade row instead of floating. Its
+   *  position is set from the row layout every frame, physics never
+   *  touches it, and it cannot be dragged. */
+  cabinet?: boolean;
+  /** Half the width of the name label under the node — the swarm is
+   *  clamped by this, not by the orb, so no label leaves the screen. */
+  labelHalf: number;
+  /** performance.now() of the last explode — the cabinet hops. */
+  hopAt?: number;
 };
 
 type Drag = {
   slug: string;
+  /** A press on a cabinet: it can become a click, never a drag. */
+  fixed: boolean;
   pointerId: number;
   startX: number;
   startY: number;
@@ -110,61 +112,63 @@ const LABEL_OFFSET = NODE_R + 18; // distance from node centre to label baseline
 // The wall bounce is softened so a thrown dot kisses the wall
 // instead of springing off.
 /**
- * Physics constants are tuned for a ~400px canvas — what you get on
- * mobile portrait. At larger canvases the absolute pull becomes
- * proportionally too gentle and the swarm clusters into a small puddle
- * in the corner instead of filling the canvas. PHYSICS_BASELINE is the
- * canvas size where the constants below feel right; on bigger canvases
- * we scale REPEL up (so dots push each other apart further) and
- * CENTER_PULL down (so gravity doesn't keep them packed). The end
- * result: the swarm fills 60–80% of the viewport at any size.
+ * Pull toward the centre of the free band, per frame per px of distance.
+ * The repel is DERIVED from it (see `repelFor`), so the swarm fills the
+ * same share of the room at any size instead of puddling in the middle
+ * of a phone or lining the walls of a 1080p monitor.
  */
-const PHYSICS_BASELINE = 400;
 const CENTER_PULL = 0.0003;
-const REPEL = 100;
-/** Anchored nav dots get a much stronger pull toward their own
- *  anchor than tool dots get toward the canvas centre — they stay
- *  perched up top even as the swarm jostles them. */
-const ANCHOR_PULL = 0.008;
+/** How far the swarm should spread from the centre, as a share of the
+ *  room's width and of the free band's height. */
+const FILL_X = 0.34;
+const FILL_Y = 0.38;
+/** Repel force is capped below this distance so two orbs dropped on
+ *  each other part firmly instead of being fired across the room. */
+const REPEL_MIN_DIST = 20;
 
 /**
- * The two top-edge "nav" pseudo-tools — Search opens the ⌘K palette
- * (no route push), About goes to /about. They render as ordinary
- * swarm dots so they read as part of the playhouse, but their
- * physics anchors them to fixed spots along the top.
+ * The repel strength that makes N orbs settle on a ring of radius R.
+ * For N equal bodies on a ring, each one's pull c·R balances the radial
+ * part of the others' k/d² pushes: R³ = k·S/(4c), S = Σ 1/sin(πj/N).
  */
-const ANCHOR_TOOLS: Record<AnchorRole, Tool> = {
-  search: {
-    slug: "$search",
-    title: "Search",
-    tagline: "Find a tool by name.",
-    description: "Opens the ⌘K palette — type to filter every tool.",
-    color: "yellow",
-    emoji: "⌕",
-  },
-  about: {
-    slug: "$about",
-    title: "About",
-    tagline: "What this place is.",
-    description: "The story, the rules, the things you won't find here.",
-    color: "pink",
-    emoji: "i",
-  },
+function repelFor(count: number, radius: number): number {
+  if (count < 2) return 0;
+  let sum = 0;
+  for (let j = 1; j < count; j++) sum += 1 / Math.sin((Math.PI * j) / count);
+  return (4 * CENTER_PULL * radius * radius * radius) / sum;
+}
+
+/** The corner mascot's box (top-left) — orbs keep out of it. */
+const HUGO_ZONE: Zone = {
+  x: 0,
+  y: 0,
+  w: 92,
+  h: 92,
+  open: { right: true, bottom: true },
+};
+/** The top-right keys (search, about, the forbidden button). */
+const KEYS_ZONE_W = 348;
+const KEYS_ZONE_H = 116;
+
+/** A box the swarm keeps out of. `open` names the sides an orb can be
+ *  pushed out through — a box in a corner of the room only has two. */
+type Zone = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  open?: { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean };
 };
 
-/** Anchor coordinates for each nav dot. Computed from canvas size so
- *  the dots track viewport resizes. Search sits left-of-centre along
- *  the top; About sits right-of-centre. y=110 puts the dot's top edge
- *  at ~84, comfortably below the ~68px corner buttons and Hugo's
- *  ~55px brand mark — at 375px viewport the old y=70 packed the
- *  anchored dots side-by-side with the Explode / Surprise pills. */
-function anchorPos(role: AnchorRole, w: number): { x: number; y: number } {
-  const y = 110;
-  if (role === "search") {
-    return { x: Math.max(140, Math.min(w * 0.34, w - 280)), y };
-  }
-  return { x: Math.max(220, Math.min(w * 0.66, w - 160)), y };
-}
+/** Where the swarm may be, and where its centre is. */
+type Bounds = {
+  width: number;
+  /** The y the swarm must stay above: the top of the arcade row's band. */
+  bottom: number;
+  cx: number;
+  cy: number;
+};
+
 const DAMPING = 0.92;
 /** Velocity retained after bouncing off a wall. 0.45 = 45% kept —
  *  enough to register as a bounce, soft enough not to feel rubbery. */
@@ -210,6 +214,10 @@ const MIN_H = 480;
  *  avoidance turns porous — orbs may drift behind the title (the
  *  wordmark canvas paints above the map, so they slide under it). */
 const WORDMARK_PAD = NODE_R + 26;
+/** How far a name label reaches below its orb's edge. */
+const LABEL_HANG = 30;
+/** The strip under the title where the attract hint blinks. */
+const HINT_BAND = 30;
 const WORDMARK_PAD_MIN = 8;
 /** Below this canvas width the avoidance goes porous: shrunken pad,
  *  halved push, no drift-heading deflection. */
@@ -220,12 +228,25 @@ function wordmarkPad(width: number): number {
   return WORDMARK_PAD_MIN + (WORDMARK_PAD - WORDMARK_PAD_MIN) * t;
 }
 
-/** Physics radius per node — games render as 1.5× arcade cabinets,
- *  so walls and clamps must honour the bigger footprint. */
-function nodeRadius(n: Node): number {
-  const isGame = isGameSlug(n.tool.slug);
-  return isGame ? NODE_R * 1.5 : NODE_R;
+/** Estimated half-width of a name label (10px Silkscreen, tracked):
+ *  about 8.2px a character. An estimate on purpose — measuring text
+ *  waits on a web font, and a few px either way only moves a clamp. */
+function labelHalfWidth(title: string): number {
+  return Math.max(NODE_R, (title.length * 8.2 + 6) / 2);
 }
+
+/** Icon bitmaps as runs, computed once per slug. */
+const ICON_RUNS = new Map<string, { y: number; x: number; w: number }[]>();
+function runsFor(slug: string) {
+  let runs = ICON_RUNS.get(slug);
+  if (!runs) {
+    runs = iconRuns(iconForSlug(slug, false));
+    ICON_RUNS.set(slug, runs);
+  }
+  return runs;
+}
+
+const GAME_COUNT = tools.filter((t) => isGameSlug(t.slug)).length;
 
 /** The eight nav-dot colours in the same order BrandDot stores them
  *  in. Reading the persisted index from localStorage and looking up
@@ -265,12 +286,6 @@ function readNavDotColor(): string {
 
 type ToolMapProps = {
   /**
-   * When true: drop the card styling (border, shadow, rounded corners,
-   * background). Map fills its parent's box completely. Used by the
-   * homepage where the map IS the page.
-   */
-  fullBleed?: boolean;
-  /**
    * Increment to trigger an explosion from the parent. The page
    * renders its own explode button positioned alongside the Surprise
    * ball; it pokes this counter and every dot is flung outward from
@@ -280,7 +295,6 @@ type ToolMapProps = {
 };
 
 export default function ToolMap({
-  fullBleed = false,
   explodeTrigger = 0,
 }: ToolMapProps = {}) {
   const router = useRouter();
@@ -325,6 +339,8 @@ export default function ToolMap({
    *  prototype. The SVG above keeps hit-targets, emoji, labels, rings
    *  and all interaction — zero behaviour moved. */
   const trailCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  /** This frame's arcade row (the loop refreshes it from the room size). */
+  const rowRef = useRef<CabinetRow>(cabinetRow(800, 600, GAME_COUNT));
   /** Tracks whether the last frame had a tool active (hovered or
    *  dragged) so we know when to dispatch the null event signalling
    *  end-of-hover to BrandDot. */
@@ -391,11 +407,15 @@ export default function ToolMap({
     const rect = containerRef.current?.getBoundingClientRect();
     const actualW = rect && rect.width > MIN_W ? rect.width : w;
     const actualH = rect && rect.height > MIN_H ? rect.height : h;
+    const row = cabinetRow(actualW, actualH, GAME_COUNT);
     const cx = actualW / 2;
-    const cy = actualH / 2;
+    const cy = swarmCenterY(actualH, row.reserve);
     const t0 = performance.now();
-    nodesRef.current = tools.map((t, i) => {
-      const angle = (i / tools.length) * Math.PI * 2;
+    const floaters = tools.filter((t) => !isGameSlug(t.slug));
+    const games = tools.filter((t) => isGameSlug(t.slug));
+    // Tools burst out of the middle of the free band.
+    nodesRef.current = floaters.map((t, i) => {
+      const angle = (i / floaters.length) * Math.PI * 2;
       return {
         tool: t,
         x: cx + (Math.random() - 0.5) * 20,
@@ -411,30 +431,29 @@ export default function ToolMap({
         dragLastT: 0,
         dragLastX: 0,
         dragLastY: 0,
+        labelHalf: labelHalfWidth(t.title),
       };
     });
-    // Spawn the two anchored nav dots near their final positions so
-    // they don't drift in from the centre on mount. Their gravity to
-    // the anchor still settles them precisely.
-    const anchorRoles: AnchorRole[] = ["search", "about"];
-    anchorRoles.forEach((role, i) => {
-      const a = anchorPos(role, actualW);
+    // Games switch on in the row, left to right, after the tools.
+    games.forEach((t, i) => {
+      const c = row.centers[i];
       nodesRef.current.push({
-        tool: ANCHOR_TOOLS[role],
-        x: a.x,
-        y: a.y,
+        tool: t,
+        x: c.x,
+        y: c.y,
         vx: 0,
         vy: 0,
         pinned: false,
-        phase: Math.random() * Math.PI * 2,
-        entranceStart: t0 + (tools.length + i) * ENTRANCE_STAGGER,
-        hasSparkled: false,
+        phase: 0,
+        entranceStart: t0 + (floaters.length + i * 2) * ENTRANCE_STAGGER,
+        hasSparkled: true,
         dragVx: 0,
         dragVy: 0,
         dragLastT: 0,
         dragLastX: 0,
         dragLastY: 0,
-        role,
+        cabinet: true,
+        labelHalf: row.w / 2,
       });
     });
     nodeBySlug.current = new Map(nodesRef.current.map((n) => [n.tool.slug, n]));
@@ -503,7 +522,7 @@ export default function ToolMap({
 
     const fire = () => {
       // Pick a random non-pinned tool. Skip pinned (currently dragged).
-      const candidates = nodesRef.current.filter((n) => !n.pinned);
+      const candidates = nodesRef.current.filter((n) => !n.pinned && !n.cabinet);
       if (candidates.length === 0) return;
       const node =
         candidates[Math.floor(Math.random() * candidates.length)];
@@ -588,6 +607,10 @@ export default function ToolMap({
       if (!detail) return;
       const node = nodeBySlug.current.get(detail.slug);
       if (!node) return;
+      if (node.cabinet) {
+        node.hopAt = performance.now();
+        return;
+      }
       node.vx += detail.vx;
       node.vy += detail.vy;
     };
@@ -621,18 +644,44 @@ export default function ToolMap({
         ctx.fillRect(0, 0, size.w, size.h);
       }
       const hov = hoveredRef.current || dragRef.current?.slug || null;
+      const row = rowRef.current;
+      const screenT = reduceMotionRef.current ? STILL_T : nowTs / 1000;
       for (const n of nodesRef.current) {
         const entrance = getEntrance(n, nowTs);
         if (entrance <= 0.02) continue;
-        const isGame = isGameSlug(n.tool.slug);
         const isHov = hov === n.tool.slug;
+        const color = COLOR_HEX[n.tool.color];
+        ctx.globalAlpha = hov !== null && !isHov ? 0.55 : 1;
+        if (n.cabinet) {
+          // A machine, not an orb: it stands still, its screen plays its
+          // own game, and the forbidden button makes it hop.
+          const hopK = n.hopAt ? (nowTs - n.hopAt) / EXPLODE_WINDOW_MS : 1;
+          const hop = hopK >= 0 && hopK < 1 ? Math.sin(hopK * Math.PI) * 22 : 0;
+          const scale = entrance * (isHov ? 1.04 : 1);
+          const cy = n.y - hop + (1 - entrance) * 24;
+          const glowR = row.h * (isHov ? 1.05 : 0.86);
+          const grad = ctx.createRadialGradient(n.x, cy, 4, n.x, cy, glowR);
+          grad.addColorStop(0, withAlpha(color, isHov ? 0.3 : 0.2));
+          grad.addColorStop(1, withAlpha(color, 0));
+          ctx.fillStyle = grad;
+          ctx.fillRect(n.x - glowR, cy - glowR, glowR * 2, glowR * 2);
+          const painter = screenFor(n.tool.slug);
+          drawArcadeCabinet(
+            ctx,
+            n.x,
+            cy,
+            row.unit * scale,
+            color,
+            (put) => painter(put, screenT),
+            isHov,
+          );
+          continue;
+        }
         const scale =
           entrance *
           (isHov ? 1.08 : 1) *
           (bouncingRef.current === n.tool.slug ? 1.3 : 1);
-        const r = (isGame ? NODE_R * 1.5 : NODE_R) * scale;
-        const color = COLOR_HEX[n.tool.color];
-        ctx.globalAlpha = hov !== null && !isHov ? 0.55 : 1;
+        const r = NODE_R * scale;
         // Bloom — the hover feedback lives here now.
         const glowR = r * (isHov ? 2.2 : 1.8);
         const grad = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, glowR);
@@ -640,13 +689,7 @@ export default function ToolMap({
         grad.addColorStop(1, withAlpha(color, 0));
         ctx.fillStyle = grad;
         ctx.fillRect(n.x - glowR, n.y - glowR, glowR * 2, glowR * 2);
-        if (isGame) {
-          // Games are machines, not orbs — a mini cabinet with its
-          // marquee and screen glowing in the game family's magenta.
-          drawCabinet(ctx, n.x, n.y, 3 * scale, color);
-        } else {
-          pixelDisc(ctx, n.x, n.y, r, color);
-        }
+        pixelDisc(ctx, n.x, n.y, r, color);
       }
       ctx.globalAlpha = 1;
     };
@@ -656,7 +699,7 @@ export default function ToolMap({
       // node moves at one pixel-rate regardless of how often pointermove
       // fires. This is what eliminates the jittery teleport-feel.
       const drag = dragRef.current;
-      if (drag) {
+      if (drag && !drag.fixed) {
         const dragNode = nodeBySlug.current.get(drag.slug);
         if (dragNode) {
           dragNode.x += (drag.targetX - dragNode.x) * DRAG_LERP;
@@ -664,31 +707,75 @@ export default function ToolMap({
         }
       }
 
+      // The arcade row: where the cabinets stand this frame. Recomputed
+      // from the room size so a resize re-seats them at once.
+      const row = cabinetRow(size.w, size.h, GAME_COUNT);
+      rowRef.current = row;
+      let seat = 0;
+      for (const n of nodesRef.current) {
+        if (!n.cabinet) continue;
+        const c = row.centers[seat++];
+        if (c) {
+          n.x = c.x;
+          n.y = c.y;
+        }
+        n.labelHalf = row.w / 2;
+      }
+      const bounds: Bounds = {
+        width: size.w,
+        bottom: size.h - row.reserve,
+        cx: size.w / 2,
+        cy: swarmCenterY(size.h, row.reserve),
+      };
+      const zones: Zone[] = [
+        HUGO_ZONE,
+        {
+          x: size.w - KEYS_ZONE_W,
+          y: 0,
+          w: KEYS_ZONE_W,
+          h: KEYS_ZONE_H,
+          open: { left: true, bottom: true },
+        },
+      ];
+
       // Attract-mode drift — every free orb patrols the room at a slow
-      // constant speed with a softly wandering heading, bouncing its
-      // heading off the walls. This is what keeps the screen alive
-      // (and the phosphor trails fed) even when nobody's touching it.
-      // On the homepage the marquee publishes its rect (viewport ==
-      // canvas coords there); patrols that wander into it get their
-      // heading steered back out so they don't park on the title.
-      const avoid = getWordmarkRect();
+      // constant speed with a softly wandering heading, turning back at
+      // the edges of the band it lives in. This is what keeps the screen
+      // alive (and the phosphor trails fed) even when nobody's touching
+      // it. The marquee publishes its rect (viewport == canvas coords
+      // here); patrols that wander into it get their heading steered
+      // back out so they don't park on the title.
+      // The title's keep-out box is taller than the title: a name label
+      // hangs under every orb, so an orb above needs that much more room,
+      // and the hint line blinks just underneath.
+      const mark = getWordmarkRect();
+      const avoid = mark
+        ? {
+            x: mark.x,
+            y: mark.y - LABEL_HANG,
+            w: mark.w,
+            h: mark.h + LABEL_HANG + HINT_BAND,
+          }
+        : null;
       const pad = wordmarkPad(size.w);
       const narrow = size.w < WORDMARK_NARROW_W;
       if (!reduceMotionRef.current) {
         for (const n of nodesRef.current) {
-          if (n.pinned || n.role) continue;
+          if (n.pinned || n.cabinet) continue;
           let heading = n.heading ?? n.phase * Math.PI * 2;
           heading += (Math.random() - 0.5) * DRIFT_TURN;
           n.x += Math.cos(heading) * DRIFT_SPEED;
           n.y += Math.sin(heading) * DRIFT_SPEED;
-          const m = NODE_R + 12;
-          if ((n.x < m && Math.cos(heading) < 0) || (n.x > size.w - m && Math.cos(heading) > 0)) {
+          const mx = n.labelHalf + 14;
+          const my = NODE_R + 14;
+          const floor = bounds.bottom - LABEL_OFFSET - 14;
+          if ((n.x < mx && Math.cos(heading) < 0) || (n.x > size.w - mx && Math.cos(heading) > 0)) {
             heading = Math.PI - heading;
           }
-          if ((n.y < m && Math.sin(heading) < 0) || (n.y > size.h - m && Math.sin(heading) > 0)) {
+          if ((n.y < my && Math.sin(heading) < 0) || (n.y > floor && Math.sin(heading) > 0)) {
             heading = -heading;
           }
-          // Narrow canvases skip the deflection entirely — the pushed
+          // Narrow rooms skip the deflection entirely — the pushed
           // pad in step() is enough, and patrols may cross behind the
           // marquee instead of pinning against its band.
           if (
@@ -706,6 +793,19 @@ export default function ToolMap({
               ) +
               (Math.random() - 0.5) * 0.4;
           }
+          for (const z of zones) {
+            const zp = NODE_R + 10;
+            if (
+              n.x > z.x - zp &&
+              n.x < z.x + z.w + zp &&
+              n.y > z.y - zp &&
+              n.y < z.y + z.h + zp
+            ) {
+              heading =
+                Math.atan2(n.y - (z.y + z.h / 2), n.x - (z.x + z.w / 2)) +
+                (Math.random() - 0.5) * 0.4;
+            }
+          }
           n.heading = heading;
         }
       }
@@ -715,7 +815,7 @@ export default function ToolMap({
         explodeAtRef.current > 0 &&
         performance.now() - explodeAtRef.current < EXPLODE_WINDOW_MS;
       const vCap = inExplode ? EXPLODE_MAX_V : MAX_V;
-      step(nodesRef.current, size.w, size.h, wobbleAmplitude, vCap, avoid, pad);
+      step(nodesRef.current, bounds, wobbleAmplitude, vCap, avoid, pad, zones);
 
       // Paint the phosphor screen from the freshly stepped positions.
       paintTrails(performance.now());
@@ -821,8 +921,16 @@ export default function ToolMap({
       ) {
         drag.moved = true;
       }
-      const newX = clamp(localX - drag.offsetX, NODE_R, size.w - NODE_R);
-      const newY = clamp(localY - drag.offsetY, NODE_R, size.h - NODE_R);
+      // A cabinet is furniture: the press can still turn into a click,
+      // but it does not come along with the pointer.
+      if (drag.fixed) return;
+      const floor = size.h - rowRef.current.reserve - LABEL_OFFSET - 8;
+      const newX = clamp(
+        localX - drag.offsetX,
+        node.labelHalf + 6,
+        size.w - node.labelHalf - 6,
+      );
+      const newY = clamp(localY - drag.offsetY, NODE_R + 6, floor);
 
       // Track velocity in cursor-space (used for momentum on release).
       const now = performance.now();
@@ -858,6 +966,7 @@ export default function ToolMap({
       (e.currentTarget as SVGGElement).blur?.();
       dragRef.current = {
         slug,
+        fixed: Boolean(node.cabinet),
         pointerId: e.pointerId,
         startX: localX,
         startY: localY,
@@ -867,6 +976,7 @@ export default function ToolMap({
         targetX: node.x,
         targetY: node.y,
       };
+      if (node.cabinet) return;
       node.pinned = true;
       node.vx = 0;
       node.vy = 0;
@@ -932,22 +1042,9 @@ export default function ToolMap({
       if (!node) return;
       setBouncingSlug(slug);
       triggerClickFx(slug);
-      // Special anchored nav dots: Search opens the ⌘K palette
-      // (no flight, no route push), About navigates to /about with
-      // the standard Hugo fetch.
-      if (node.role === "search") {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("hugoslekstuga:open-search"),
-          );
-        }
-        return;
-      }
       const rect = containerRef.current?.getBoundingClientRect();
       const navDot = document.querySelector<HTMLElement>("[data-brand-dot]");
-      // About uses a fixed pathname rather than pathFor(slug).
-      const targetPath =
-        node.role === "about" ? "/about" : pathFor(slug);
+      const targetPath = pathFor(slug);
       if (rect && navDot && typeof window !== "undefined") {
         // Freeze the nav position at click time. The nav doesn't move
         // mid-flight, but reading once and reusing keeps the contract
@@ -1008,7 +1105,7 @@ export default function ToolMap({
         (e.currentTarget as Element).releasePointerCapture(e.pointerId);
       } catch {}
       const node = nodeBySlug.current.get(drag.slug);
-      if (node) {
+      if (node && !drag.fixed) {
         node.pinned = false;
         node.vx = clamp(node.dragVx, -25, 25);
         node.vy = clamp(node.dragVy, -25, 25);
@@ -1028,7 +1125,7 @@ export default function ToolMap({
       nodesRef.current,
       particlesRef.current,
       size.w / 2,
-      size.h / 2,
+      swarmCenterY(size.h, rowRef.current.reserve),
     );
   }, [size.w, size.h]);
 
@@ -1044,14 +1141,7 @@ export default function ToolMap({
   return (
     <div
       ref={containerRef}
-      className={
-        fullBleed
-          ? "relative h-full w-full overflow-hidden"
-          : "card-chunk relative w-full overflow-hidden rounded-[var(--radius-card)] bg-cream"
-      }
-      style={
-        fullBleed ? undefined : { height: "min(80vh, 720px)", minHeight: "480px" }
-      }
+      className="relative h-full w-full overflow-hidden"
     >
       {/* The phosphor screen — orb bodies, glow, and their decay
           trails live here (painted by the rAF loop). Sits under the
@@ -1094,7 +1184,10 @@ export default function ToolMap({
           })}
         </g>
 
-        {/* Nodes */}
+        {/* Nodes. Every one is a <g data-slug data-r transform="translate(x, y) …">
+            in this one <svg>: Hugo's parkour reads exactly that to turn the
+            room into its first level (cabinets also carry data-w / data-h,
+            their flat top is a platform). Keep the contract if you edit. */}
         <g>
           {nodesRef.current.map((n) => {
             const isHovered = hovered === n.tool.slug;
@@ -1102,18 +1195,15 @@ export default function ToolMap({
             const opacity = dim ? 0.55 : 1;
             const entrance = getEntrance(n, now);
             const isBouncing = bouncingSlug === n.tool.slug;
-            const baseScale = entrance;
-            const hoverScale = isHovered ? 1.08 : 1;
-            const bounceScale = isBouncing ? 1.3 : 1;
-            const scale = baseScale * hoverScale * bounceScale;
-            // Games are a different category of thing
-            // — the canvas paints them as mini arcade cabinets instead
-            // of orbs, so they read as machines at a glance.
-            const isGame = isGameSlug(n.tool.slug);
-            const r = isGame ? NODE_R * 1.5 : NODE_R;
-            const labelY = isGame ? r + 18 : LABEL_OFFSET;
-            const emojiSize = isGame ? 28 : 20;
             const color = COLOR_HEX[n.tool.color];
+            const row = rowRef.current;
+            const isGame = Boolean(n.cabinet);
+            const scale = isGame
+              ? entrance * (isHovered ? 1.04 : 1)
+              : entrance * (isHovered ? 1.08 : 1) * (isBouncing ? 1.3 : 1);
+            const halfW = isGame ? row.w / 2 : NODE_R;
+            const halfH = isGame ? row.h / 2 : NODE_R;
+            const labelY = isGame ? halfH + 18 : LABEL_OFFSET;
 
             return (
               <g
@@ -1123,7 +1213,7 @@ export default function ToolMap({
                 onPointerEnter={() => setHovered(n.tool.slug)}
                 onPointerLeave={() => setHovered((h) => (h === n.tool.slug ? null : h))}
                 style={{
-                  cursor: dragRef.current ? "grabbing" : "pointer",
+                  cursor: dragRef.current && !isGame ? "grabbing" : "pointer",
                   opacity,
                   transition: "opacity 220ms ease",
                 }}
@@ -1131,7 +1221,9 @@ export default function ToolMap({
                 role="button"
                 aria-label={`Open ${n.tool.title}`}
                 data-slug={n.tool.slug}
-                data-r={r}
+                data-r={halfH}
+                data-w={isGame ? row.w : undefined}
+                data-h={isGame ? row.h : undefined}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
@@ -1143,21 +1235,39 @@ export default function ToolMap({
                     pixel core, or the cabinet for games) is painted on
                     the canvas below, where motion smears into phosphor
                     trails. The class gives keyboard focus a ring. */}
-                <circle r={r} fill="transparent" className="swarm-hit" />
-                {/* Games show a screen instead of a glyph. */}
-                {!isGame && (
-                  <text
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize={emojiSize}
-                    fill={preferredTextHex(n.tool.color)}
-                    pointerEvents="none"
-                    style={{ fontFamily: "var(--font-display)", fontWeight: 700 }}
-                  >
-                    {n.tool.emoji}
-                  </text>
+                {isGame ? (
+                  <rect
+                    x={-halfW}
+                    y={-halfH}
+                    width={halfW * 2}
+                    height={halfH * 2}
+                    fill="transparent"
+                    className="swarm-hit"
+                  />
+                ) : (
+                  <circle r={NODE_R} fill="transparent" className="swarm-hit" />
                 )}
-                {/* Always-visible name label below the dot */}
+                {/* A tool wears its 12×12 icon, two px to the cell; a
+                    game shows its screen instead (painted on the canvas). */}
+                {!isGame && (
+                  <g
+                    transform="translate(-12, -12) scale(2)"
+                    fill={preferredTextHex(n.tool.color)}
+                    shapeRendering="crispEdges"
+                    pointerEvents="none"
+                  >
+                    {runsFor(n.tool.slug).map((r) => (
+                      <rect
+                        key={`${r.y}-${r.x}`}
+                        x={r.x}
+                        y={r.y}
+                        width={r.w}
+                        height={1}
+                      />
+                    ))}
+                  </g>
+                )}
+                {/* Always-visible name label below */}
                 <text
                   y={labelY}
                   textAnchor="middle"
@@ -1174,20 +1284,20 @@ export default function ToolMap({
                   {n.tool.title}
                 </text>
                 {/* Fresh arrival — a pixel price-tag pinned to the top-right
-                    of the orb. Registry-driven (Tool.isNew); square corners
+                    corner. Registry-driven (Tool.isNew); square corners
                     are the skin. */}
                 {n.tool.isNew && (
                   <g
-                    transform={`translate(${r * 0.62}, ${-r * 0.72})`}
+                    transform={`translate(${halfW - (isGame ? 8 : 10)}, ${-halfH - (isGame ? 2 : -7)})`}
                     pointerEvents="none"
                   >
-                    <rect x={-15} y={-7} width={30} height={14} fill={color} />
+                    <rect x={-15} y={-7} width={30} height={14} fill={isGame ? INK_HEX : color} />
                     <text
                       textAnchor="middle"
                       dominantBaseline="central"
                       y={0.5}
                       fontSize={8}
-                      fill={preferredTextHex(n.tool.color)}
+                      fill={CREAM_HEX}
                       style={{
                         fontFamily: "var(--font-pixel)",
                         fontWeight: 700,
@@ -1205,37 +1315,22 @@ export default function ToolMap({
 
         {/* Particles (over nodes) */}
         <g pointerEvents="none">
-          {particlesRef.current.map((p, i) => (
-            <circle
-              key={i}
-              cx={p.x}
-              cy={p.y}
-              r={p.size * Math.max(0, p.life)}
-              fill={p.color}
-              stroke={p.kind === "click" ? INK_HEX : "none"}
-              strokeWidth={p.kind === "click" ? 1 : 0}
-              opacity={Math.max(0, p.life)}
-            />
-          ))}
+          {particlesRef.current.map((p, i) => {
+            const side = Math.max(2, Math.round(p.size * 1.6 * Math.max(0, p.life)));
+            return (
+              <rect
+                key={i}
+                x={Math.round(p.x - side / 2)}
+                y={Math.round(p.y - side / 2)}
+                width={side}
+                height={side}
+                fill={p.color}
+                opacity={Math.max(0, p.life)}
+              />
+            );
+          })}
         </g>
       </svg>
-
-      {/* Top controls — only when card-styled. In fullBleed mode the page
-          owns the top zone and provides its own hero / controls. */}
-      {!fullBleed && (
-        <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-between gap-3 px-3 sm:px-5">
-          <p className="pointer-events-none rounded-full border-2 border-ink bg-cream/90 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
-            Drag a tool · click to open
-          </p>
-          <button
-            type="button"
-            onClick={explode}
-            className="pointer-events-auto rounded-full border-2 border-ink bg-cream px-3 py-1 text-xs font-bold transition-colors hover:bg-cream-deep"
-          >
-            ✸ Explode
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -1276,8 +1371,14 @@ function detonate(
   cx: number,
   cy: number,
 ): void {
+  const now = performance.now();
   for (const n of nodes) {
     if (n.pinned) continue;
+    if (n.cabinet) {
+      // Furniture does not fly. It jumps.
+      n.hopAt = now + Math.random() * 90;
+      continue;
+    }
     let dx = n.x - cx;
     let dy = n.y - cy;
     let d = Math.hypot(dx, dy);
@@ -1327,46 +1428,61 @@ function detonate(
   }
 }
 
+/** Push a body out of a box along the nearest edge — a nudge, not a wall. */
+function pushOut(n: Node, z: Zone, pad: number, strength: number): void {
+  const ax = z.x - pad;
+  const ay = z.y - pad;
+  const ax2 = z.x + z.w + pad;
+  const ay2 = z.y + z.h + pad;
+  if (n.x <= ax || n.x >= ax2 || n.y <= ay || n.y >= ay2) return;
+  // A side that is a wall of the room is no way out.
+  const o = z.open;
+  const dL = o && !o.left ? Infinity : n.x - ax;
+  const dR = o && !o.right ? Infinity : ax2 - n.x;
+  const dT = o && !o.top ? Infinity : n.y - ay;
+  const dB = o && !o.bottom ? Infinity : ay2 - n.y;
+  const m = Math.min(dL, dR, dT, dB);
+  const push = (0.05 + 0.1 * Math.min(1, m / 80)) * strength;
+  if (m === dL) n.vx -= push;
+  else if (m === dR) n.vx += push;
+  else if (m === dT) n.vy -= push;
+  else n.vy += push;
+}
+
 function step(
   nodes: Node[],
-  width: number,
-  height: number,
+  bounds: Bounds,
   wobbleAmp: number,
   vCap: number,
-  avoid: WordmarkRect | null,
+  avoid: Zone | null,
   pad: number,
+  zones: Zone[],
 ): number {
   if (nodes.length === 0) return 0;
   const now = performance.now();
+  const floaters = nodes.filter((n) => !n.cabinet);
 
-  // Scale physics by the smallest canvas dimension. At the baseline
-  // (~400px = mobile portrait) scale is 1 and behaviour matches what
-  // the existing constants were tuned for. On a 1280×800 desktop the
-  // canvas height (728 after nav) is the constraint → scale ≈ 1.82.
-  //
-  // Equilibrium pair distance for a centre-pull / repel system scales
-  // as cube-root(repel / centre_pull). To make the swarm equilibrium
-  // grow roughly *linearly* with canvas size we need repel/centre_pull
-  // to scale by scale³. We split it: repel grows by scale³, centre_pull
-  // shrinks by scale². End result on desktop: ~6× repel, ~1/3 centre
-  // pull — the swarm spreads to fill instead of puddling.
-  const scale = Math.max(1, Math.min(width, height) / PHYSICS_BASELINE);
-  const scale2 = scale * scale;
-  const scale3 = scale2 * scale;
-  const repelScaled = REPEL * scale3;
-  const centerPullScaled = CENTER_PULL / scale2;
+  // The swarm should fill the same share of the room at any size. Aim
+  // for an ellipse (the room is wider than the free band is tall): the
+  // repel is derived for a ring of radius ry, and pushes act `aspect`
+  // times further sideways, which stretches that ring to rx.
+  const ry = Math.max(90, FILL_Y * bounds.bottom);
+  const rx = Math.max(ry, FILL_X * bounds.width);
+  const aspect = rx / ry;
+  const repel = repelFor(floaters.length, ry);
+  const minD2 = REPEL_MIN_DIST * REPEL_MIN_DIST;
 
   // Mutual repulsion (O(n²)) — keeps labels from overlapping.
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i];
-      const b = nodes[j];
-      const dx = b.x - a.x;
+  for (let i = 0; i < floaters.length; i++) {
+    for (let j = i + 1; j < floaters.length; j++) {
+      const a = floaters[i];
+      const b = floaters[j];
+      const dx = (b.x - a.x) / aspect;
       const dy = b.y - a.y;
       const d2 = dx * dx + dy * dy + 0.01;
       const d = Math.sqrt(d2);
-      const f = -repelScaled / Math.max(d2, 100);
-      const fx = (dx / d) * f;
+      const f = -repel / Math.max(d2, minD2);
+      const fx = (dx / d) * f * aspect;
       const fy = (dy / d) * f;
       if (!a.pinned) {
         a.vx += fx;
@@ -1379,53 +1495,29 @@ function step(
     }
   }
 
-  const cx = width / 2;
-  const cy = height / 2;
   const wobbleT = now * WOBBLE_RATE;
+  const narrow = bounds.width < WORDMARK_NARROW_W;
 
-  for (const n of nodes) {
+  for (const n of floaters) {
     if (n.pinned) continue;
-    if (n.role) {
-      // Anchored nav dot — strong pull to its own top-edge anchor,
-      // no idle wobble. It still participates in mutual repel so
-      // tool dots give it room.
-      const a = anchorPos(n.role, width);
-      n.vx += (a.x - n.x) * ANCHOR_PULL;
-      n.vy += (a.y - n.y) * ANCHOR_PULL;
-    } else {
-      // Gravity — tool dots pull toward the canvas centre. The only
-      // attractor in the system; cursor doesn't influence it.
-      n.vx += (cx - n.x) * centerPullScaled;
-      n.vy += (cy - n.y) * centerPullScaled;
-      // Idle wobble — long-period drift so the swarm feels alive at rest.
-      if (wobbleAmp > 0) {
-        n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
-        n.vy += Math.cos(wobbleT * 1.3 + n.phase * 1.7) * wobbleAmp;
-      }
-      // Marquee avoidance — a soft push out of the wordmark's rect
-      // along the nearest edge, stronger the deeper the orb sits.
-      // Avoidance, not a wall: drags and explode bursts pass through.
-      if (avoid) {
-        const ax = avoid.x - pad;
-        const ay = avoid.y - pad;
-        const ax2 = avoid.x + avoid.w + pad;
-        const ay2 = avoid.y + avoid.h + pad;
-        if (n.x > ax && n.x < ax2 && n.y > ay && n.y < ay2) {
-          const dL = n.x - ax;
-          const dR = ax2 - n.x;
-          const dT = n.y - ay;
-          const dB = ay2 - n.y;
-          const m = Math.min(dL, dR, dT, dB);
-          // Narrow canvases get half the shove — porous, not a fence.
-          const porous = width < WORDMARK_NARROW_W ? 0.5 : 1;
-          const push = (0.05 + 0.1 * Math.min(1, m / 80)) * porous;
-          if (m === dL) n.vx -= push;
-          else if (m === dR) n.vx += push;
-          else if (m === dT) n.vy -= push;
-          else n.vy += push;
-        }
-      }
+    // Gravity — toward the middle of the free band. The only attractor
+    // in the system; the cursor doesn't influence it.
+    n.vx += (bounds.cx - n.x) * CENTER_PULL;
+    n.vy += (bounds.cy - n.y) * CENTER_PULL;
+    // Idle wobble — long-period drift so the swarm feels alive at rest.
+    if (wobbleAmp > 0) {
+      n.vx += Math.sin(wobbleT + n.phase) * wobbleAmp;
+      n.vy += Math.cos(wobbleT * 1.3 + n.phase * 1.7) * wobbleAmp;
     }
+    // Marquee avoidance — a soft push out of the wordmark's rect along
+    // the nearest edge, stronger the deeper the orb sits. Avoidance,
+    // not a wall: drags and explode bursts pass through. Narrow rooms
+    // get half the shove — porous, not a fence.
+    if (avoid) pushOut(n, avoid, pad, narrow ? 0.5 : 1);
+    // The corner mascot and the top-right keys get the same treatment,
+    // a little firmer: an orb parked on a button hides it.
+    for (const z of zones) pushOut(n, z, NODE_R + 6, 3);
+
     n.vx *= DAMPING;
     n.vy *= DAMPING;
     if (n.vx > vCap) n.vx = vCap;
@@ -1434,16 +1526,16 @@ function step(
     else if (n.vy < -vCap) n.vy = -vCap;
     n.x += n.vx;
     n.y += n.vy;
-    // Wall bounce — hit a side, velocity reflects with energy loss.
-    // The `vx < 0` checks make sure we only invert on impact, never
-    // re-bounce a node that gravity is already pulling away from
-    // the wall.
-    const r = nodeRadius(n);
-    const left = r + 4;
-    const right = width - r - 4;
-    const top = r + 4;
-    // Extra bottom room so labels aren't clipped.
-    const bottom = height - LABEL_OFFSET - 12;
+    // Walls — hit one, velocity reflects with energy loss. The sides
+    // are measured from the LABEL, which is wider than the orb, so a
+    // name never leaves the screen; the floor is the top of the arcade
+    // row's band, minus room for the label underneath. The `vx < 0`
+    // checks make sure we only invert on impact, never re-bounce a
+    // node that gravity is already pulling away from the wall.
+    const left = n.labelHalf + 6;
+    const right = bounds.width - n.labelHalf - 6;
+    const top = NODE_R + 6;
+    const bottom = bounds.bottom - LABEL_OFFSET - 8;
     if (n.x < left) {
       n.x = left;
       if (n.vx < 0) n.vx = -n.vx * BOUNCE_DAMPING;

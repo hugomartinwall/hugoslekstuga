@@ -215,7 +215,21 @@ async function sampleWordmark(): Promise<WordSample[]> {
   });
 }
 
-function buildLayout(words: WordSample[], w: number, h: number): Layout {
+/** How the block is placed in its container. In the homepage room it
+ *  is centred in the band above the arcade row (`bottomInset` is that
+ *  row's height); as a banner (the phone homepage) it is simply centred
+ *  in its own box. */
+type Placement = { bottomInset: number; banner: boolean };
+
+/** The title never rises into the top-edge chrome (corner mascot, keys). */
+const ROOM_TOP_CLAMP = 132;
+
+function buildLayout(
+  words: WordSample[],
+  w: number,
+  h: number,
+  place: Placement,
+): Layout {
   const [a, b] = words;
   const avail = w * 0.86;
   const spaceCols = 4;
@@ -254,9 +268,13 @@ function buildLayout(words: WordSample[], w: number, h: number): Layout {
   const blockW = blockCols * c;
   const blockH = blockRows * c;
   const blockX = Math.round((w - blockW) / 2);
-  // Centred vertically; the top clamp keeps short viewports from
-  // pushing the title into the door/anchor band along the ceiling.
-  const blockY = Math.round(Math.max(150, h / 2 - blockH / 2));
+  // Centred in the free band; in the room, a top clamp keeps short
+  // viewports from pushing the title into the chrome along the ceiling.
+  const blockY = place.banner
+    ? Math.round((h - blockH) / 2)
+    : Math.round(
+        Math.max(ROOM_TOP_CLAMP, (h - place.bottomInset) / 2 - blockH / 2),
+      );
 
   const cells: Cell[] = [];
   const letterBounds = new Map<
@@ -348,9 +366,30 @@ function buildGlow(layout: Layout, accent: string): HTMLCanvasElement {
   return cv;
 }
 
-export default function PixelWordmark({ powerOn }: { powerOn: boolean }) {
+export default function PixelWordmark({
+  powerOn,
+  bottomInset = 0,
+  banner = false,
+}: {
+  powerOn: boolean;
+  /** Height reserved at the bottom of the room (the arcade row): the
+   *  title centres in what is left above it. */
+  bottomInset?: number;
+  /** Phone homepage: the title is a banner at the top of a scrolling
+   *  page. It centres in its own box, converts pointer positions to its
+   *  own coordinates, and publishes nothing — there is no swarm and no
+   *  parkour there to read it. */
+  banner?: boolean;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const placeRef = useRef<Placement>({ bottomInset, banner });
+  const relayoutRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    placeRef.current = { bottomInset, banner };
+    relayoutRef.current?.();
+  }, [bottomInset, banner]);
   /** null = already lit (repeat visit / reduced motion); a timestamp
    *  = the moment the first letter ignites. */
   const igniteAtRef = useRef<number | null>(null);
@@ -549,17 +588,20 @@ export default function PixelWordmark({ powerOn }: { powerOn: boolean }) {
 
     const relayout = () => {
       if (!words || size.w === 0) return;
-      layout = buildLayout(words, size.w, size.h);
+      layout = buildLayout(words, size.w, size.h, placeRef.current);
       glow = buildGlow(layout, accent);
-      setWordmark(layout.block, layout.letterRects);
-      // HomeShell parks the attract hint just under the marquee.
-      window.dispatchEvent(
-        new CustomEvent("hugoslekstuga:wordmark-layout", {
-          detail: { bottom: layout.block.y + layout.block.h },
-        }),
-      );
+      if (!placeRef.current.banner) {
+        setWordmark(layout.block, layout.letterRects);
+        // HomeShell parks the attract hint just under the marquee.
+        window.dispatchEvent(
+          new CustomEvent("hugoslekstuga:wordmark-layout", {
+            detail: { bottom: layout.block.y + layout.block.h },
+          }),
+        );
+      }
       startOrRedrawStatic();
     };
+    relayoutRef.current = relayout;
 
     const measure = () => {
       // offsetWidth/Height, never gBCR — the CRT power-on scales an
@@ -595,20 +637,28 @@ export default function PixelWordmark({ powerOn }: { powerOn: boolean }) {
       if (reduced) draw(performance.now());
     });
 
+    // In the room the container is the viewport, so client coordinates
+    // are already local. A banner scrolls with the page: subtract its box.
+    const local = (e: PointerEvent) => {
+      if (!placeRef.current.banner) return { x: e.clientX, y: e.clientY };
+      const r = container.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
     const onPointerMove = (e: PointerEvent) => {
-      cursor = { x: e.clientX, y: e.clientY };
+      cursor = local(e);
     };
     const onPointerOut = (e: PointerEvent) => {
       if (!e.relatedTarget) cursor = null;
     };
     const onPointerDown = (e: PointerEvent) => {
       if (!layout) return;
+      const at = local(e);
       for (const l of layout.letterRects) {
         if (
-          e.clientX >= l.x - 6 &&
-          e.clientX <= l.x + l.w + 6 &&
-          e.clientY >= l.y - 6 &&
-          e.clientY <= l.y + l.h + 6
+          at.x >= l.x - 6 &&
+          at.x <= l.x + l.w + 6 &&
+          at.y >= l.y - 6 &&
+          at.y <= l.y + l.h + 6
         ) {
           if (reduced) return;
           blips.set(l.index, performance.now());
@@ -641,10 +691,13 @@ export default function PixelWordmark({ powerOn }: { powerOn: boolean }) {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerout", onPointerOut);
       window.removeEventListener("pointerdown", onPointerDown);
-      setWordmark(null);
-      window.dispatchEvent(
-        new CustomEvent("hugoslekstuga:wordmark-layout", { detail: null }),
-      );
+      relayoutRef.current = null;
+      if (!placeRef.current.banner) {
+        setWordmark(null);
+        window.dispatchEvent(
+          new CustomEvent("hugoslekstuga:wordmark-layout", { detail: null }),
+        );
+      }
     };
   }, []);
 

@@ -93,7 +93,17 @@ const TRANS_RM_END = 60;
 const DEATH_STEPS = 36;
 const DEATH_RM_STEPS = 8;
 
-type Platform = { x: number; y: number; r: number; slug: string };
+/** Something in the live homepage Hugo can stand on. An orb is a circle
+ *  of radius `r`; a cabinet also carries its box (`w` × `h`), and its
+ *  flat top is the platform. */
+type Platform = {
+  x: number;
+  y: number;
+  r: number;
+  slug: string;
+  w?: number;
+  h?: number;
+};
 
 function readPlatforms(): Platform[] {
   const out: Platform[] = [];
@@ -106,11 +116,14 @@ function readPlatforms(): Platform[] {
     const t = g.getAttribute("transform") || "";
     const m = t.match(/translate\(([-\d.]+)[,\s]+([-\d.]+)\)/);
     if (!m) continue;
+    const bw = Number(g.getAttribute("data-w"));
+    const bh = Number(g.getAttribute("data-h"));
     out.push({
       x: ox + Number(m[1]),
       y: oy + Number(m[2]),
       r: Number(g.getAttribute("data-r") || 26),
       slug: g.getAttribute("data-slug") || "",
+      ...(bw > 0 && bh > 0 ? { w: bw, h: bh } : null),
     });
   }
   return out;
@@ -126,7 +139,18 @@ function collectSurfaces(
 ): Surface[] {
   const out: Surface[] = [];
   for (const p of orbs) {
-    out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
+    if (p.w && p.h) {
+      // A cabinet in the arcade row: a flat top, as wide as the machine.
+      out.push({
+        kind: "rect",
+        id: p.slug,
+        x: p.x - p.w / 2,
+        y: p.y - p.h / 2,
+        w: p.w,
+      });
+    } else {
+      out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
+    }
   }
   if (LETTER_PLATFORMS && level.homeScreen) {
     for (const l of getWordmarkLetters()) {

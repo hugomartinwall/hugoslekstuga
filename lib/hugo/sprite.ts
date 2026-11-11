@@ -277,6 +277,106 @@ export function drawCabinet(
   ctx.fillRect(x + 7 * s, y + 13 * s + 1, s, s);
 }
 
+/** Paints a cabinet's screen: `put` takes cells of the 30×16 screen grid. */
+export type CabinetScreenPainter = (
+  put: (x: number, y: number, w: number, h: number, color: string) => void,
+) => void;
+
+/** The big cabinet's grid, in units: 38 wide, 42 tall; the glass is the
+ *  30×16 block at (4, 11). Mirrors CABINET_GRID_* in lib/home-layout.ts. */
+const BIG_W = 38;
+const BIG_H = 42;
+const GLASS_X = 4;
+const GLASS_Y = 11;
+const GLASS_W = 30;
+const GLASS_H = 16;
+
+/**
+ * The homepage's full-size arcade cabinet — the same machine as
+ * `drawCabinet`, drawn on a finer 38×42 grid so it can carry a marquee
+ * bevel, a bezel, a joystick and a coin door, and a screen that shows
+ * its own game (`screen` paints into a 30×16 grid; see
+ * lib/hugo/cabinet-screens.ts).
+ *
+ * Centred on (cx, cy); `unit` is canvas px per grid unit (3 → 114×126).
+ * `lit` brightens the marquee for hover/focus. Pure.
+ */
+export function drawArcadeCabinet(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  unit: number,
+  accent: string,
+  screen?: CabinetScreenPainter,
+  lit = false,
+) {
+  const u = unit;
+  const x0 = Math.round(cx - (BIG_W * u) / 2);
+  const y0 = Math.round(cy - (BIG_H * u) / 2);
+  const R = (gx: number, gy: number, gw: number, gh: number, color: string) => {
+    ctx.fillStyle = color;
+    // Edges are rounded to whole pixels so a fractional unit never
+    // leaves a seam between neighbouring blocks.
+    const x = Math.round(x0 + gx * u);
+    const y = Math.round(y0 + gy * u);
+    ctx.fillRect(
+      x,
+      y,
+      Math.round(x0 + (gx + gw) * u) - x,
+      Math.round(y0 + (gy + gh) * u) - y,
+    );
+  };
+  // Body, with a lit left edge and a shaded right side.
+  R(0, 0, BIG_W, BIG_H, "#1e2136");
+  R(0, 0, 1, BIG_H, "#2a2f4d");
+  R(BIG_W - 4, 0, 4, BIG_H, "#12141f");
+  R(0, 0, BIG_W, 1, "#2a2f4d");
+  // Marquee: the game family's colour, with a highlight along the top.
+  R(2, 2, BIG_W - 6, 6, accent);
+  R(2, 2, BIG_W - 6, 1, mixHex(accent, [255, 255, 255], lit ? 0.6 : 0.3));
+  R(2, 7, BIG_W - 6, 1, mixHex(accent, [0, 0, 0], 0.35));
+  // Bezel and glass.
+  R(3, 10, GLASS_W + 2, GLASS_H + 2, "#0d0f1a");
+  R(GLASS_X, GLASS_Y, GLASS_W, GLASS_H, "#07080f");
+  if (screen) {
+    screen((sx, sy, sw, sh, color) => {
+      // Clip to the glass.
+      const ax = Math.max(0, sx);
+      const ay = Math.max(0, sy);
+      const bx = Math.min(GLASS_W, sx + sw);
+      const by = Math.min(GLASS_H, sy + sh);
+      if (bx <= ax || by <= ay) return;
+      R(GLASS_X + ax, GLASS_Y + ay, bx - ax, by - ay, color);
+    });
+  } else {
+    R(GLASS_X + 1, GLASS_Y + 1, GLASS_W - 2, GLASS_H - 2, withAlpha(accent, 0.2));
+    R(GLASS_X + 6, GLASS_Y + 5, 4, 4, accent);
+    R(GLASS_X + 18, GLASS_Y + 7, 4, 4, accent);
+  }
+  // A sheen across the glass's top-left corner.
+  R(GLASS_X, GLASS_Y, 9, 1, "rgba(232,242,233,0.10)");
+  R(GLASS_X, GLASS_Y + 1, 5, 1, "rgba(232,242,233,0.07)");
+  // Control deck: joystick, two buttons.
+  R(1, 29, BIG_W - 5, 7, "#262b47");
+  R(1, 29, BIG_W - 5, 1, "#343a5c");
+  R(8, 31, 2, 3, "#e8f2e9");
+  R(7, 30, 4, 2, "#ff6e5e");
+  R(20, 32, 4, 2, "#ff4fd8");
+  R(26, 32, 4, 2, "#35e0ff");
+  // Coin door.
+  R(13, 37, 9, 4, "#12141f");
+  R(17, 38, 1, 2, "#d8ff3d");
+}
+
+export const ARCADE_CABINET_GLASS = {
+  x: GLASS_X,
+  y: GLASS_Y,
+  w: GLASS_W,
+  h: GLASS_H,
+  gridW: BIG_W,
+  gridH: BIG_H,
+} as const;
+
 export type MopedDrawOptions = {
   /** The player's centre (same anchor drawHugoSprite uses) — the
    *  moped hangs below it so the wheels meet the ground the physics
