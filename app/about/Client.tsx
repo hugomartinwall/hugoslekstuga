@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import PixelIcon from "@/components/PixelIcon";
+import { keycapClass } from "@/components/ui/Keycap";
 import { COLOR_HEX, INK_HEX } from "@/lib/colors";
 import { withAlpha } from "@/lib/hugo/sprite";
 import type { ToolColor } from "@/lib/tools";
@@ -386,19 +388,19 @@ function PotentiallyUseful() {
 
 export default function AboutPage() {
   return (
-    <div className="mx-auto w-full max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
-      <Link
-        href="/"
-        className="group mb-8 inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
-      >
-        <span
-          aria-hidden
-          className="inline-block transition-transform duration-200 group-hover:-translate-x-1"
+    <div className="page-col px-5 pt-4 pb-14 sm:px-8 sm:pb-20">
+      {/* The same back key the tool pages wear, on Hugo's own line.
+          Below `lg` the column reaches his corner, so it starts to his
+          right. The words are this page's own and stay as they were. */}
+      <div className="mb-10 flex min-h-11 items-center pl-14 sm:mb-14 lg:pl-0">
+        <Link
+          href="/"
+          className={keycapClass({ tone: "quiet", size: "sm", className: "min-h-11" })}
         >
-          ←
-        </span>
-        Back to playhouse
-      </Link>
+          <PixelIcon name="back" size={12} />
+          <span className="label-pixel text-ink-soft">Back to playhouse</span>
+        </Link>
+      </div>
 
       {/* The dictionary entry — defining the word is the about. */}
       <header className="flex flex-col gap-3">
