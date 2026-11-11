@@ -70,10 +70,13 @@ to a chunk; set `--ring-c` if a frame needs another colour.
 | `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled; plain keydowns stop at the dialog so page shortcuts and games do not hear what is typed in it) |
 | `page-col` | a centred column that lands on a whole pixel (`--col` sets its width) | — |
 
-Also: `components/ui/Dropzone` (drop / click / keyboard), and
+Also: `components/ui/Dropzone` (drop / click / keyboard; `size` roomy
+or slim; it tells `onFiles` whether the files were dropped or picked,
+because the picker filters by `accept` and a drop does not), and
 `components/PixelIcon` + `lib/pixel-icons.ts` — 12×12 bitmap icons, one
 per tool and one per game, plus a few for the chrome (search, about,
-back, forward, close, play). They replace the Unicode symbols (◴ ⊚ ▦),
+back, forward, close, plus, play, settings, locate). A new icon goes in
+that file, never in a page. They replace the Unicode symbols (◴ ⊚ ▦),
 which every OS drew with a different fallback font. The registry's
 `emoji` field stays for old call sites; new UI uses
 `<PixelIcon name={iconForSlug(...)} />`, or `components/ui/IconTile`
@@ -104,11 +107,18 @@ the guard). Do not give the two roles separate React keys: that replaces
 the element and throws keyboard focus away.
 
 **Page shortcuts.** A shortcut on `window` hears every key, including
-the ones meant for whatever has focus. Use `isTextEntry()` and
-`isPressable()` from `lib/keyboard.ts` and stand down for both, so Space
-on a focused button presses that button. Dialog already keeps plain
-keydowns from reaching the page (pass `passKeys` for a dialog with
-nothing to type into).
+the ones meant for whatever has focus. `lib/keyboard.ts` answers whose
+key it is. For a Space shortcut call `claimSpace(e)` and act when it
+says yes: it stands down for text fields and for a control the visitor
+*walked to with the keyboard* (Space presses that), and takes the key
+back from a button that only kept the focus from a mouse click (click
+"Worth keeping", press Space, the next line comes). It also ignores
+links: the footer's links stay focused across page changes. For any
+other key, and for paste listeners, `isTextEntry(e.target)` is the one
+test: it is true for text fields only, not for chips, sliders or the
+dropzone, which are inputs too. Dialog already keeps plain keydowns
+from reaching the page (pass `passKeys` for a dialog with nothing to
+type into), and its focus trap counts a radio group as one Tab stop.
 
 **Forced colours.** The frames, the lit state and the focus ring are
 drawn as backgrounds, which Windows High Contrast repaints. The kit has
