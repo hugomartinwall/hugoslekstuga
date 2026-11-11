@@ -1177,6 +1177,13 @@ g:focus-visible > .swarm-hit {
     outline: 2px solid var(--color-blue);
     outline-offset: 3px;
   }
+
+  /* A page's heading takes the focus after a trip through the footer, so
+     that the next Tab starts at the top of the new page. It is a place
+     to start from, not a control: no ring. */
+  h1[tabindex="-1"]:focus-visible {
+    outline: none;
+  }
 }
 
 /* Honour the OS-level "reduce motion" preference for the named keyframes

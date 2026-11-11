@@ -21,7 +21,8 @@ import type { Tool } from "@/lib/tools";
  * straight underneath would be noise.
  *
  * The column is the page column (48rem), so the footer's left edge is the
- * left edge of the tool or About page above it.
+ * left edge of the tool or About page above it. On the phone homepage it
+ * takes the list's column instead (`column="list"`).
  */
 
 const GAMES = tools.filter((t) => isGameSlug(t.slug));
@@ -31,9 +32,12 @@ const TOOLS = tools.filter((t) => !isGameSlug(t.slug));
    Its side padding is half the space between two links, so a row is one
    unbroken run of targets; a list pulls back by the same amount to keep
    its text on the column's edge. Keyboard focus is the site-wide cyan
-   outline (globals.css, base layer): nothing to add, nothing to remove. */
+   outline (globals.css, base layer): nothing to add, nothing to remove.
+   The link for the page you are on is brighter and underlined: brighter
+   alone is 2.56:1 against its neighbours, under what a colour-only mark
+   needs, and forced colours paint every link the same. */
 const LINK =
-  "inline-flex min-h-11 items-center px-2.5 text-ink-muted hover:text-ink aria-[current=page]:text-ink pointer-fine:min-h-7";
+  "inline-flex min-h-11 items-center px-2.5 text-ink-muted hover:text-ink aria-[current=page]:text-ink aria-[current=page]:underline aria-[current=page]:underline-offset-4 pointer-fine:min-h-7";
 
 /* The lead column: what a row starts with. */
 const LEAD = "w-16 shrink-0";
@@ -81,17 +85,28 @@ export default function Footer({
   pathname,
   className = "",
   index = true,
+  column = "page",
 }: {
   pathname?: string;
   className?: string;
   index?: boolean;
+  /** Whose column to stand in: the page column, or the phone homepage's
+   *  list (36rem, 16px gutters), so the small print lines up with the
+   *  list above it. */
+  column?: "page" | "list";
 }) {
   const year = new Date().getFullYear();
   return (
     <footer
       className={`mt-24 border-t border-line bg-cream-deep bg-(image:--dither) text-xs text-ink-muted ${className}`.trim()}
     >
-      <div className="page-col px-5 py-5 sm:px-8 sm:py-4">
+      <div
+        className={
+          column === "list"
+            ? "page-col px-4 py-5 [--col:36rem]"
+            : "page-col px-5 py-5 sm:px-8 sm:py-4"
+        }
+      >
         {index ? (
           <div className="mb-3 flex flex-col gap-3 sm:mb-0 sm:gap-0">
             <IndexRow
