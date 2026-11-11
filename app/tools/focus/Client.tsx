@@ -488,9 +488,11 @@ function Setup({
       />
 
       <div className="flex flex-col gap-1.5">
-        <p className="label-pixel">For how long?</p>
+        <p id="focus-duration-label" className="label-pixel">
+          For how long?
+        </p>
         <ChipGroup
-          label="For how long?"
+          labelledBy="focus-duration-label"
           options={DURATION_OPTIONS}
           value={durationSec}
           onChange={setDurationSec}
@@ -505,9 +507,11 @@ function Setup({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <p className="label-pixel">Ambient sound</p>
+        <p id="focus-ambient-label" className="label-pixel">
+          Ambient sound
+        </p>
         <ChipGroup
-          label="Ambient sound"
+          labelledBy="focus-ambient-label"
           options={AMBIENT_OPTIONS}
           value={ambient ? "noise" : "silent"}
           onChange={(v) => setAmbient(v === "noise")}
