@@ -299,6 +299,17 @@ body {
     filter: brightness(1.06);
   }
 
+  /* A key that is switched on (aria-pressed) stays down: sunk by the same
+     2px a press gives, with the bevel turned inside out. It does not lift
+     on hover, or it would look switched off under the pointer. */
+  .btn-chunk[aria-pressed="true"],
+  .btn-chunk[aria-pressed="true"]:hover:not(:disabled, [aria-disabled="true"]) {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 -1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 3px 0 rgba(0, 0, 0, 0.34);
+  }
+
   .btn-chunk:disabled,
   .btn-chunk[aria-disabled="true"] {
     cursor: not-allowed;
@@ -461,6 +472,13 @@ body {
   .chip-chunk:focus-visible,
   .chip-chunk:has(> input:focus-visible) {
     box-shadow: inset 0 0 0 4px var(--color-cream);
+  }
+
+  .card-chunk:focus-visible,
+  .card-chunk:has(> input:focus-visible) {
+    box-shadow:
+      inset 0 0 0 4px var(--color-cream),
+      inset 0 0 28px rgba(0, 0, 0, 0.35);
   }
 
   /* ── Range ────────────────────────────────────────────────────────── */

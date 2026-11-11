@@ -49,6 +49,7 @@ export type ChipOption<T extends string | number> = {
 
 export function ChipGroup<T extends string | number>({
   label,
+  labelledBy,
   options,
   value,
   onChange,
@@ -56,8 +57,14 @@ export function ChipGroup<T extends string | number>({
   chipClassName = "",
   trailing,
 }: {
-  /** The group's accessible name. Show a visible label next to it yourself. */
-  label: string;
+  /** The group's accessible name, when no visible label names it. */
+  label?: string;
+  /**
+   * The id of the visible label that names the group. Prefer this when
+   * there is one on screen: with `label` as well, a screen reader would
+   * say the name twice.
+   */
+  labelledBy?: string;
   options: readonly ChipOption<T>[];
   value: T | null;
   onChange: (value: T) => void;
@@ -70,7 +77,8 @@ export function ChipGroup<T extends string | number>({
   return (
     <div
       role="radiogroup"
-      aria-label={label}
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
       className={`flex flex-wrap items-center gap-2 ${className}`.trim()}
     >
       {options.map((o) => (
