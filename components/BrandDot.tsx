@@ -1031,29 +1031,62 @@ export default function BrandDot({
     dragRef.current = null;
   };
 
-  // When he goes into hiding he must not keep the focus: a hidden button
+  // Out of reach: a page-level mascot has the stage, he is out fetching a
+  // tool, or a full-screen game is drawn over him. (The games cover the
+  // corner, so he cannot be seen there, but he used to stay a Tab stop:
+  // one Tab in Adventure put the focus on him unseen, and then Space,
+  // the game's attack key, changed his colour, five quick presses set off
+  // his tantrum and shook the game screen, and Shift+Enter opened his
+  // room over the game.)
+  const covered = pathname.startsWith("/games/");
+  const away = traveling || stagePresent || covered;
+
+  // When he goes out of reach he must not keep the focus: a hidden button
   // that owns the keyboard swallows Space and Enter on the page (and it is
   // an aria-hidden element holding focus).
   useEffect(() => {
-    if (!(traveling || stagePresent)) return;
+    if (!away) return;
     const node = btnRef.current;
     if (node && document.activeElement === node) node.blur();
-  }, [traveling, stagePresent]);
+  }, [away]);
 
   // He is a button and the first Tab stop on every page, but everything
   // above is a pointer handler, so from the keyboard he did nothing at
   // all. Enter or Space is a tap (the colour cycles); with Shift it is a
   // shift-click (his room).
+  //
+  // The tap itself is taken from the button's own click (onClick below),
+  // not from the key: a screen reader's "activate", switch access and
+  // voice control send a click and no key, and browsers disagree about
+  // whether a cancelled Space still clicks on its way up. The key
+  // handler only decides what must NOT become a tap.
   const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    // Out of reach, playing dead, or a key held down (one press is one
+    // tap): nothing happens.
+    if (away || playingDead || e.repeat) {
+      e.preventDefault();
+      return;
+    }
     // After a mouse click he keeps the focus, with no ring showing. Space
     // then belongs to the page (its shortcut, or nothing), as it does for
     // every other clicked button: on Roll one Space used to change his
-    // colour AND spin the wheel. Only when the keyboard brought the
-    // focus here is Space his.
+    // colour AND spin the wheel. The page's shortcut cancels the key and
+    // takes the focus off him, so no click follows.
     if (e.key === " " && !isPressable(e.currentTarget)) return;
-    e.preventDefault();
-    if (e.repeat || playingDead || traveling || stagePresent) return;
+    // With Shift it is his room. Opened here and cancelled, so that the
+    // click that would follow cannot also count as a tap.
+    if (e.shiftKey) {
+      e.preventDefault();
+      setRoomOpen(true);
+    }
+  };
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // A click that came from a pointer has already been handled on
+    // pointer-up (a tap, a drag, a long press). detail is 0 for a click
+    // made by the keyboard or by assistive technology.
+    if (e.detail !== 0) return;
+    if (away || playingDead) return;
     if (e.shiftKey) setRoomOpen(true);
     else cycle();
   };
@@ -1192,13 +1225,14 @@ export default function BrandDot({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       onKeyDown={onKeyDown}
+      onClick={onClick}
       aria-label="Change accent colour"
-      // While a page-level mascot has the stage (or he is out fetching a
-      // tool) the corner one is invisible. Invisible must also mean out
-      // of the Tab order and not announced: he used to be a first Tab
-      // stop that showed no focus at all.
-      tabIndex={traveling || stagePresent ? -1 : undefined}
-      aria-hidden={traveling || stagePresent ? true : undefined}
+      // While a page-level mascot has the stage, he is out fetching a
+      // tool, or a game covers him, the corner one cannot be seen. Out of
+      // sight must also mean out of the Tab order and not announced: he
+      // used to be a first Tab stop that showed no focus at all.
+      tabIndex={away ? -1 : undefined}
+      aria-hidden={away ? true : undefined}
       data-brand-dot
       data-name="hugo"
       style={{
