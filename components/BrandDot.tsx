@@ -15,6 +15,7 @@ import {
   useHugoState,
 } from "@/lib/hugo-state";
 import { COLOR_HEX } from "@/lib/colors";
+import { isPressable } from "@/lib/keyboard";
 import {
   COLOR_ORDER,
   drawHugoSprite,
@@ -1045,6 +1046,12 @@ export default function BrandDot({
   // shift-click (his room).
   const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    // After a mouse click he keeps the focus, with no ring showing. Space
+    // then belongs to the page (its shortcut, or nothing), as it does for
+    // every other clicked button: on Roll one Space used to change his
+    // colour AND spin the wheel. Only when the keyboard brought the
+    // focus here is Space his.
+    if (e.key === " " && !isPressable(e.currentTarget)) return;
     e.preventDefault();
     if (e.repeat || playingDead || traveling || stagePresent) return;
     if (e.shiftKey) setRoomOpen(true);
@@ -1236,6 +1243,16 @@ export default function BrandDot({
         WebkitUserSelect: "none",
       }}
     >
+      {/* A finger needs 44px and he is drawn smaller than that. This
+          grows what can be pressed to 44px around him without moving or
+          resizing him: everything else on the site measures his box. */}
+      <span
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: "min(0px, calc((0.7em - 2.75rem) / 2))",
+        }}
+      />
       {/* Hugo's pixel body. The mood halo rides the sprite's alpha via
           drop-shadow, so it hugs the silhouette instead of a box. */}
       <canvas
