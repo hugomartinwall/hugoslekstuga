@@ -8,6 +8,8 @@ import { TextArea, TextField } from "@/components/ui/Field";
 import Switch from "@/components/ui/Switch";
 import Dialog from "@/components/ui/Dialog";
 import Dropzone from "@/components/ui/Dropzone";
+import Tag from "@/components/ui/Tag";
+import IconTile from "@/components/ui/IconTile";
 import Slider from "@/components/Slider";
 import PixelIcon from "@/components/PixelIcon";
 import { PIXEL_ICONS, type PixelIconName } from "@/lib/pixel-icons";
@@ -24,6 +26,7 @@ export default function Client() {
   const [vol, setVol] = useState(40);
   const [strict, setStrict] = useState(true);
   const [heading, setHeading] = useState(false);
+  const [notes, setNotes] = useState(true);
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<string>("nothing yet");
   return (
@@ -45,24 +48,40 @@ export default function Client() {
           <Keycap size="icon" aria-label="Close"><PixelIcon name="close" size={12} /></Keycap>
           <Keycap tone="accent" disabled>Disabled</Keycap>
           <Keycap href="/lab">A link</Keycap>
+          {/* A toggle key: aria-pressed keeps it down. */}
+          <Keycap tone={notes ? "accent" : "neutral"} aria-pressed={notes} onClick={() => setNotes((v) => !v)}>
+            Notes: {notes ? "on" : "off"}
+          </Keycap>
         </div>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="label-pixel">For how long?</h2>
+        <h2 className="label-pixel">Tags and tiles</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <Tag>neutral</Tag>
+          <Tag tone="accent">accent</Tag>
+          <Tag tone="danger">danger</Tag>
+          <Tag tone="solid">new</Tag>
+          <IconTile name="focus" />
+          <IconTile name="focus" size="lg" />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 id="bench-length" className="label-pixel">For how long?</h2>
         <ChipGroup
-          label="For how long?"
+          labelledBy="bench-length"
           value={len}
           onChange={setLen}
           options={[{ value: 15, label: "15 min" }, { value: 25, label: "25 min" }, { value: 45, label: "45 min" }, { value: 60, label: "60 min", disabled: true }]}
         />
-        <h2 className="label-pixel">Ambient sound</h2>
+        <h2 id="bench-sound" className="label-pixel">Ambient sound</h2>
         <ChipGroup
-          label="Ambient sound"
+          labelledBy="bench-sound"
           value={sound}
           onChange={setSound}
           options={[{ value: "silent", label: "Silent" }, { value: "noise", label: "Brown noise" }]}
-          trailing={<Chip>▸ hear it</Chip>}
+          trailing={<Chip><PixelIcon name="play" size={12} /> hear it</Chip>}
         />
         <div className="flex flex-wrap gap-2">
           <Chip pressed={heading} onClick={() => setHeading((v) => !v)}>{heading ? "✓ Heading" : "+ Heading"}</Chip>
