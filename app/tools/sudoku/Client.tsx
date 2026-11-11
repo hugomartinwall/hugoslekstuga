@@ -1817,6 +1817,7 @@ function WinPanel({
   mistakes,
   hintsUsed,
   bestTime,
+      id={RESULT_ID}
   isNewBest,
   daily,
   onNewGame,
@@ -1835,7 +1836,9 @@ function WinPanel({
 }) {
   // A centred card on a phone. From `md` it turns into a low bar under
   // the board and keypad (heading and key on one line, the details
-  // beneath) so the whole result stays on the first screen.
+  // beneath) so the whole result fits the first screen of a tall
+  // window; in a shorter one it is brought into view (useShowResult).
+  useShowResult();
   return (
     <Panel
       tone="soft"
@@ -1876,6 +1879,28 @@ function WinPanel({
           <Stat
             label="Best"
             value={formatDuration(bestTime)}
+/** The id both result panels carry (only one is ever on the page). */
+const RESULT_ID = "sudoku-result";
+
+/**
+ * Brings the result into view when it appears. From `md` it sits under
+ * the 512px board, so in a laptop window shorter than about 765px it
+ * landed below the fold: the pad went dim and nothing on screen said
+ * the game was won or lost. This is the least scroll that shows the
+ * panel, and none at all when it is already in view.
+ */
+function useShowResult() {
+  useEffect(() => {
+    const panel = document.getElementById(RESULT_ID);
+    if (!panel) return;
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    panel.scrollIntoView({
+      block: "nearest",
+      behavior: calm ? "auto" : "smooth",
+    });
+  }, []);
+}
+
             mono
             muted
             align="result"
@@ -1893,8 +1918,10 @@ function WinPanel({
         onClick={onNewGame}
         className="md:col-start-2 md:row-start-1"
       >
+  useShowResult();
         Another one
       </Keycap>
+      id={RESULT_ID}
     </Panel>
   );
 }
