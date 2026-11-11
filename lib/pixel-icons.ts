@@ -7,9 +7,9 @@
  * every platform showed a slightly different mark. A bitmap is the same
  * everywhere, and it is drawn the way Hugo is drawn — out of cells.
  *
- * Keyed by tool slug for tools; games do not need one here (on the
- * homepage they are cabinets, drawn by lib/hugo/sprite.ts), but they get
- * the shared `game` icon in lists.
+ * Keyed by slug. On the homepage a game is a cabinet (drawn by
+ * lib/hugo/sprite.ts), so a game's icon here is only for lists; one
+ * without its own falls back to the shared `game` cabinet.
  *
  * Plain data, no React — the homepage canvas and the OG image read the
  * same rows that <PixelIcon> renders as SVG.
@@ -152,7 +152,70 @@ export const PIXEL_ICONS = {
     "............",
     "##..####..##",
   ],
-  // An arcade cabinet, for games in lists.
+  // The games. On the homepage a game is a cabinet with its screen
+  // playing; in a list (the search palette) each wears its own mark, so
+  // four games are not four identical tiles.
+  // A banner on its pole: take the node, plant the flag.
+  overrun: [
+    "..#.........",
+    "..########..",
+    "..#########.",
+    "..########..",
+    "..#########.",
+    "..########..",
+    "..#.........",
+    "..#.........",
+    "..#.........",
+    "..#.........",
+    ".###........",
+    "#####.......",
+  ],
+  // One sword.
+  adventure: [
+    "..........##",
+    ".........###",
+    "........###.",
+    ".......###..",
+    "......###...",
+    "..#..###....",
+    "...####.....",
+    "...###......",
+    "..##.#......",
+    ".##...#.....",
+    "##..........",
+    "#...........",
+  ],
+  // A sporeling's cap.
+  greyrot: [
+    "....####....",
+    "..########..",
+    ".##########.",
+    "###.####.###",
+    "###.####.###",
+    "############",
+    "############",
+    "....####....",
+    "....####....",
+    "....####....",
+    "...######...",
+    "...######...",
+  ],
+  // What is left of whoever did not survive.
+  "survival-maxx": [
+    "..########..",
+    ".##########.",
+    "############",
+    "############",
+    "##..####..##",
+    "##..####..##",
+    "#####..#####",
+    "############",
+    ".##########.",
+    "..##.##.##..",
+    "..##.##.##..",
+    "............",
+  ],
+  // An arcade cabinet: a game that has no mark of its own yet.
   game: [
     "..########..",
     ".##########.",
@@ -222,6 +285,21 @@ export const PIXEL_ICONS = {
     ".###....###.",
     "###......###",
     "##........##",
+  ],
+  // Play: hear it, start it.
+  play: [
+    "............",
+    "..##........",
+    "..####......",
+    "..######....",
+    "..########..",
+    "..##########",
+    "..##########",
+    "..########..",
+    "..######....",
+    "..####......",
+    "..##........",
+    "............",
   ],
 } as const satisfies Record<string, readonly string[]>;
 
