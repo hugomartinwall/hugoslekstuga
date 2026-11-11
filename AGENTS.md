@@ -239,9 +239,13 @@ The split is so each page ships its own `<title>` and `<meta description>`
 - `components/ui/*` — the kit (see "The kit" above): Keycap, Chip /
   ChipGroup, Panel, TextField / TextArea, Switch, Dialog, Dropzone
 - `components/PixelIcon.tsx` — the 12×12 tool icons
-- `components/HomeShell.tsx` — the homepage room (CRT power-on, scanlines,
-  hints, retired-slug quip); renders ToolMap + HugoParkour
-- `components/ToolMap.tsx` — the attract-mode swarm on / (see below)
+- `components/HomeShell.tsx` — the homepage: the room from 768px up, the
+  list below (CRT power-on, scanlines, hints, the corner keys,
+  retired-slug quip)
+- `components/ToolMap.tsx` — the room's swarm and arcade row (see below)
+- `components/HomeList.tsx` — the phone homepage (cabinet cards, keycap pad)
+- `components/CabinetCanvas.tsx` — one arcade cabinet with its screen
+  playing, as a standalone canvas
 - `components/Slider.tsx` — labelled range (pixel label, big value,
   accent-filled track)
 - `components/CustomMinutes.tsx` — "Custom — N min" pill (focus)
@@ -308,10 +312,10 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 | `hugo-traveling` | `{ traveling: boolean }` | Fired by TravelingDot mid-trip; BrandDot + ToolMap listen so there's one Hugo on screen. |
 | `dot-arrived` | — | TravelingDot landed on a tool page; ToolFrame times its entrance off it. |
 | `dot-nudge-target` | `{ x, y } \| null` | ToolMap tells TravelingDot where the clicked orb's landing spot is. |
-| `tool-hover` | `{ x, y, slug, tagline } \| null` (rAF-rate) | ToolMap broadcasts the hovered orb; BrandDot's eyes track x/y, HomeShell whispers the tagline along the bottom edge. |
+| `tool-hover` | `{ x, y, slug, tagline } \| null` (rAF-rate) | ToolMap broadcasts the hovered orb or cabinet; BrandDot's eyes track x/y, HomeShell swaps the hint under the marquee for the tagline. |
 | `wordmark-layout` | `{ bottom } \| null` | PixelWordmark published a fresh layout; HomeShell parks the attract hint just under the marquee. |
 | `parkour-start` / `parkour-end` | — | A parkour run begins/ends. BrandDot dispatches start on long-press; ToolMap suppresses click-nav + idle fetch during a run; HomeShell swaps the bottom hint. |
-| `open-search` | — | Opens the ⌘K palette. |
+| `open-search` | — | Opens the ⌘K palette. The homepage's Search key dispatches it. |
 | `storage-write` | (internal) | Fired by `use-local-storage-state` for same-tab sync. Not a Hugo event — don't dispatch it yourself. |
 
 ## Hugo's Parkour
@@ -354,8 +358,10 @@ level 2 on a **moped** ("the ride home"). Five modules:
 Hugo rides via `drawMopedHugo` in `lib/hugo/sprite.ts` (the one
 sprite module — pitch is whole-cell offsets, never rotation).
 
-Screen 0 still reads the drifting swarm orbs per-step from the DOM
-(`data-slug` / `data-r` on ToolMap's `<g>`s) and the wordmark letters
+Screen 0 still reads the room per-step from the DOM — the drifting
+orbs (`data-slug` / `data-r` on ToolMap's `<g>`s, circles) and the
+arcade row's cabinets (the same `<g>`s with `data-w` / `data-h`: their
+flat top is a one-way platform) — and the wordmark letters
 from `lib/wordmark-bridge.ts` — the level IS the homepage until you
 leave it (camera latched, 220px crossfade handover to canvas
 replicas at identical coords, reversible). Touching NEXT LEVEL plays
@@ -375,7 +381,9 @@ then cuts. Esc quits from anywhere, including mid-transition.
 
 **Desktop-only, deliberately.** The trigger is gated to
 `(hover: hover) and (pointer: fine)` — the game has no touch controls
-and Esc is the only exit. Any future affordance that hints at it
+and Esc is the only exit. It also only exists in the homepage's room
+layout: below 768px HugoParkour is not mounted, so a long-press in a
+narrow desktop window starts nothing. Any future affordance that hints at it
 (e.g. a "hold me" whisper) must share that gate so touch users are
 never teased with a game they can't play.
 
@@ -395,45 +403,78 @@ All engine persistence is one key: `hugoslekstuga:advice:memory`.
 HugoStage performs the draw (thinking → delivering → …). Treat the
 engine as the only draw path — don't sample `adviceEntries` directly.
 
-## The homepage — attract mode
+## The homepage — a room and a list
 
-`components/ToolMap.tsx` is a free-floating swarm styled as an arcade
-attract screen. Two layers:
+The homepage is built twice from the same parts (`components/HomeShell.tsx`
+picks by width, in step with its `md:` classes; the breakpoint is
+`ROOM_MIN_WIDTH` in `lib/home-layout.ts`):
 
-- a **trail canvas** under the SVG: each orb leaves phosphor smears
-  (a `rgba(7,8,15,0.5)` decay wash per frame), drawn as radial glow +
-  `pixelDisc` cores — except the games, which render as magenta
-  arcade **cabinets** via `drawCabinet`.
-- the **SVG swarm** on top: transparent hit-circles, always-visible
-  names, hover bloom. Physics is centre pull + cursor pull + mutual
-  repel + drift wander. No clusters, no edges.
+**From 768px up: the room** — one screen, no scrolling, styled as an
+arcade attract screen. `components/ToolMap.tsx` draws two kinds of thing
+that behave differently on purpose:
 
-Clicking an orb dispatches `dot-travel` (Hugo fetches the tool).
-HomeShell adds the once-per-session CRT power-on (`sessionStorage`
-`hugoslekstuga:crt-on`), `.scanlines`, and the square DO-NOT-PRESS
-keycap (the explode button).
+- **Tools are orbs.** A swarm above the floor: a pull toward the middle
+  of the free band, a mutual repel, a slow wander, drag-to-fling,
+  click-to-open. The repel is *derived* from the room's size
+  (`repelFor`), so the swarm fills the same share of the room on a
+  tablet and on a 1080p monitor. Orbs are clamped by their **label**
+  width, not their radius, and are kept out of the title, the hint
+  under it, the corner mascot and the top-right keys (`Zone`s). Each
+  wears its 12×12 pixel icon.
+- **Games are furniture.** They stand in a row along the floor at about
+  twice the size and stay put (`cabinet: true` nodes: no physics, no
+  drag; the forbidden button makes them hop). `drawArcadeCabinet` in
+  `lib/hugo/sprite.ts` draws the machine on a 38×42 grid, and each
+  screen plays a small scene from its own game — painters in
+  `lib/hugo/cabinet-screens.ts`, pure `(put, t)` functions on a 30×16
+  grid. **A new game needs a painter there**, or it shows the idle
+  screen. Where the row stands comes from `cabinetRow()` in
+  `lib/home-layout.ts`; the title and the hints read the same numbers.
+
+Two layers, as before: a **trail canvas** under the SVG (each orb
+leaves phosphor smears: a `rgba(7,8,15,0.5)` decay wash per frame) and
+the **SVG** on top with transparent hit targets, names and the NEW tag.
+Clicking an orb or a cabinet dispatches `dot-travel` (Hugo fetches it).
+
+Search and About are **keys in the top-right corner**, next to the
+square DO-NOT-PRESS keycap. They used to be two more orbs in the swarm,
+which made doors look like toys. HomeShell also adds the
+once-per-session CRT power-on (`sessionStorage` `hugoslekstuga:crt-on`)
+and `.scanlines`.
+
+**Below 768px: the list** — `components/HomeList.tsx`, a short
+scrolling page: the title as a banner, games as cabinet cards
+(`components/CabinetCanvas.tsx`, the same machine with its screen
+playing), tools as a three-by-three pad of keycaps in their own
+colours, then the keys and the footer. It is real links in the
+server-rendered HTML. **No swarm and no parkour are mounted on the
+list**: ToolMap, the room's PixelWordmark and HugoParkour only exist
+when the room is on screen.
 
 **The marquee** — `components/PixelWordmark.tsx` draws HUGOS LEKSTUGA
-centred in the swarm as quantized phosphor pixels (Jersey 15 sampled
-once to an offscreen canvas — `ctx.font` can't read CSS vars, so the
-concrete family is resolved off a `font-display` probe span, gated on
-`document.fonts`). Letters ignite left→right after power-on, shimmer
-at rest, flicker like a tired neon sign, shove aside near the cursor
-(snapped to the grid), and blip when clicked. The canvas is
+as quantized phosphor pixels (Jersey 15 sampled once to an offscreen
+canvas — `ctx.font` can't read CSS vars, so the concrete family is
+resolved off a `font-display` probe span, gated on `document.fonts`).
+In the room it is centred in the band above the arcade row
+(`bottomInset`); in the list it is a `banner` that centres in its own
+box and publishes nothing. Letters ignite left→right after power-on,
+shimmer at rest, flicker like a tired neon sign, shove aside near the
+cursor (snapped to the grid), and blip when clicked. The canvas is
 pointer-transparent; it listens on `window` and hit-tests itself.
 Base cell rects never animate — they're published through
 `lib/wordmark-bridge.ts` (viewport coords, setter + read-only
-getters): ToolMap's `step()` reads the block rect to drift orbs out
-of the title, HugoParkour reads the per-letter rects as flat one-way
-platforms (behind its `LETTER_PLATFORMS` const). The blinking "press
-any tool" hint sits under the marquee (positioned via the
-`wordmark-layout` event); the hovered orb's tagline whispers along
-the bottom edge. Reduced motion = one static, fully-lit draw.
+getters): ToolMap reads the block rect to keep orbs off the title,
+HugoParkour reads the per-letter rects as flat one-way platforms
+(behind its `LETTER_PLATFORMS` const). The blinking "press any tool"
+hint sits under the marquee (positioned via the `wordmark-layout`
+event); hovering a tool or a cabinet swaps the hint for that thing's
+tagline. Reduced motion = one static, fully-lit draw, and every
+cabinet screen holds one still frame.
 
-**Measurement rule:** ToolMap must measure its box with
-`offsetWidth`/`offsetHeight`, **never** `getBoundingClientRect` — the
-`.crt-on` scaleY animation squashes gBCR mid-power-on and poisons the
-whole layout.
+**Measurement rule:** ToolMap, HomeShell and PixelWordmark measure
+with `offsetWidth`/`offsetHeight`, **never** `getBoundingClientRect` —
+the `.crt-on` scaleY animation squashes gBCR mid-power-on and poisons
+the whole layout.
 
 ## Greyrot — the 3D one
 
@@ -793,7 +834,9 @@ Mechanical steps once it's earned a slot:
 1. Add an entry to `lib/tools.ts` (slug, title, tagline, description,
    color, emoji — colour by category, see the colour rules). For games,
    also add the slug to `GAME_SLUGS` in `lib/clusters.ts` so `pathFor()`
-   routes it to `/games/<slug>`.
+   routes it to `/games/<slug>`, and give its cabinet a screen: a
+   painter in `lib/hugo/cabinet-screens.ts`. A tool gets a 12×12 icon in
+   `lib/pixel-icons.ts` under its slug.
 2. Create `app/tools/<slug>/Client.tsx` (`"use client"`) and the server
    wrapper `page.tsx` exporting `metadata` from the registry entry.
 3. Create `app/tools/<slug>/opengraph-image.tsx` — a one-line wrapper
