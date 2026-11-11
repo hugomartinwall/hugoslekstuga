@@ -6,6 +6,7 @@ import HugoStage, { type HugoPose } from "@/components/hugo/HugoStage";
 import Keycap from "@/components/ui/Keycap";
 import { Chip } from "@/components/ui/Chip";
 import PixelIcon from "@/components/PixelIcon";
+import { isPressable, isTextEntry } from "@/lib/keyboard";
 import { findTool } from "@/lib/tools";
 import { localISODate } from "@/lib/dates";
 import { getHugoState, useHugoState, type HugoMood } from "@/lib/hugo-state";
@@ -142,19 +143,13 @@ export default function AdvicePage() {
     saveAdviceMemory(next);
   };
 
-  // Spacebar draws (when not focused on an input).
+  // Spacebar draws, unless the key belongs to what has focus: text in a
+  // field, or a button that Space is about to press (Copy, Worth keeping,
+  // a forget key). It used to draw a new line instead of pressing them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space") return;
-      const t = e.target as HTMLElement | null;
-      if (
-        t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable)
-      ) {
-        return;
-      }
+      if (isTextEntry(e.target) || isPressable(e.target)) return;
       e.preventDefault();
       draw();
     };

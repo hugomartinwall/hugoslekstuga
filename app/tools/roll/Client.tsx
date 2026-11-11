@@ -16,6 +16,7 @@ import { Chip } from "@/components/ui/Chip";
 import { TextArea, TextField } from "@/components/ui/Field";
 import Keycap from "@/components/ui/Keycap";
 import Panel from "@/components/ui/Panel";
+import { isPressable, isTextEntry } from "@/lib/keyboard";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { fileToWheelThumbnail } from "@/lib/roll/image";
@@ -277,19 +278,13 @@ export default function RollPage() {
     }, 4100);
   }, [canSpin, spinning, validEntries, rotation, burstConfetti, setRecent]);
 
-  // Spacebar to spin (when not focused on an input/textarea/contentEditable).
+  // Spacebar to spin, unless the key belongs to what has focus: text in a
+  // field, or a button that Space is about to press ("+ Add option", a
+  // remove key). It used to spin the wheel instead of pressing them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space") return;
-      const t = e.target as HTMLElement | null;
-      if (
-        t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable)
-      ) {
-        return;
-      }
+      if (isTextEntry(e.target) || isPressable(e.target)) return;
       e.preventDefault();
       spin();
     };
