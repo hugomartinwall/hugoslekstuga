@@ -1029,7 +1029,19 @@ export default function SudokuClient() {
             />
           )}
 
-          <div className="flex flex-col gap-4 md:col-start-2 md:row-start-1">
+          {/* A result panel comes and goes between the board and this
+              column, and each time the keys below jump under the finger:
+              the second tap of a double tap on "Start over" used to land
+              on "New puzzle" and throw the retried puzzle away. So the
+              column ignores the pointer for a moment whenever a result
+              appears or leaves (the two guard classes swap, which
+              restarts the guard), and once when the game view mounts,
+              which covers a double tap on the picker's Start. */}
+          <div
+            className={`flex flex-col gap-4 md:col-start-2 md:row-start-1 ${
+              finished || lost ? "press-guard" : "press-guard-alt"
+            }`}
+          >
             <NumberPad
               notesMode={notesMode}
               onSetNotesMode={setNotesMode}
@@ -1218,7 +1230,7 @@ function DifficultyPicker({
         tone="accent"
         size="lg"
         onClick={() => onStart(chosen)}
-        className="sm:self-start"
+        className="press-guard sm:self-start"
       >
         Start
       </Keycap>
@@ -1705,7 +1717,11 @@ function NumberPad({
           onClick={() => onSetNotesMode((n) => !n)}
           disabled={disabled}
           aria-pressed={notesMode}
-          className="flex-auto md:basis-full"
+          // One key, two roles: a double tap used to pause and resume
+          // again. The guard restarts each time the role changes.
+          className={`flex-auto md:basis-full ${
+            paused ? "press-guard-alt" : "press-guard"
+          }`}
         >
           <span className="min-w-[10ch] text-center">
             {notesMode ? "Notes: on" : "Notes: off"}
