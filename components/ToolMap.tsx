@@ -1428,12 +1428,19 @@ function detonate(
   }
 }
 
-/** Push a body out of a box along the nearest edge — a nudge, not a wall. */
-function pushOut(n: Node, z: Zone, pad: number, strength: number): void {
+/** Push a body out of a box along the nearest edge — a nudge, not a wall.
+ *  `pad` widens the box sideways, `padY` (default: the same) up and down. */
+function pushOut(
+  n: Node,
+  z: Zone,
+  pad: number,
+  strength: number,
+  padY: number = pad,
+): void {
   const ax = z.x - pad;
-  const ay = z.y - pad;
+  const ay = z.y - padY;
   const ax2 = z.x + z.w + pad;
-  const ay2 = z.y + z.h + pad;
+  const ay2 = z.y + z.h + padY;
   if (n.x <= ax || n.x >= ax2 || n.y <= ay || n.y >= ay2) return;
   // A side that is a wall of the room is no way out.
   const o = z.open;
@@ -1515,8 +1522,13 @@ function step(
     // get half the shove — porous, not a fence.
     if (avoid) pushOut(n, avoid, pad, narrow ? 0.5 : 1);
     // The corner mascot and the top-right keys get the same treatment,
-    // a little firmer: an orb parked on a button hides it.
-    for (const z of zones) pushOut(n, z, NODE_R + 6, 3);
+    // a little firmer: an orb parked on a button hides it. The push is a
+    // spring, so an orb leaned on by its neighbours settles a dozen
+    // pixels inside the padded box; the pad is sized so that this still
+    // leaves its edge (and, sideways, its label) clear of the box itself.
+    for (const z of zones) {
+      pushOut(n, z, Math.max(NODE_R + 20, n.labelHalf + 8), 3, NODE_R + 20);
+    }
 
     n.vx *= DAMPING;
     n.vy *= DAMPING;
