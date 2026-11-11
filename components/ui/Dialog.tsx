@@ -24,6 +24,30 @@ import { createPortal } from "react-dom";
 /** Open dialogs, oldest first. The last one is on top. */
 const stack: object[] = [];
 
+/**
+ * A key held down keeps sending key-downs. The first Escape closes the
+ * dialog; the repeats that follow would land on the page behind it, and
+ * two of the games quit on Escape. Until that key comes back up, its
+ * repeats go nowhere.
+ */
+function swallowEscapeRepeats() {
+  const down = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || !e.repeat) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  const done = (e: Event) => {
+    if (e.type === "keyup" && (e as KeyboardEvent).key !== "Escape") return;
+    window.removeEventListener("keydown", down, true);
+    window.removeEventListener("keyup", done, true);
+    window.removeEventListener("blur", done);
+  };
+  window.addEventListener("keydown", down, true);
+  window.addEventListener("keyup", done, true);
+  // If the window loses focus the key-up may never arrive.
+  window.addEventListener("blur", done);
+}
+
 export default function Dialog({
   open,
   onClose,
@@ -34,6 +58,7 @@ export default function Dialog({
   surface = "bg-panel",
   style,
   passKeys = false,
+  returnFocus = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -53,6 +78,14 @@ export default function Dialog({
    * dialog with nothing to type into may want the page's keys to live on.
    */
   passKeys?: boolean;
+  /**
+   * Hand the focus back to where it was when the dialog closes. On by
+   * default. Turn it off (or pass a function that answers at closing
+   * time) when closing means leaving: the search palette closes because
+   * a row was chosen, and focus put back on the key that opened it would
+   * take the second Enter of a double press.
+   */
+  returnFocus?: boolean | (() => boolean);
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -61,6 +94,12 @@ export default function Dialog({
   useEffect(() => {
     closeRef.current = onClose;
   }, [onClose]);
+  // A layout effect: it has to be up to date before the closing cleanup
+  // below reads it, and cleanups run before ordinary effects.
+  const returnFocusRef = useRef(returnFocus);
+  useLayoutEffect(() => {
+    returnFocusRef.current = returnFocus;
+  }, [returnFocus]);
 
   useEffect(() => {
     if (!open) return;
@@ -108,6 +147,7 @@ export default function Dialog({
         // node (a dialog underneath) must not see it either.
         e.stopImmediatePropagation();
         closeRef.current();
+        swallowEscapeRepeats();
         return;
       }
       if (e.key !== "Tab" || !panel) return;
@@ -142,25 +182,39 @@ export default function Dialog({
     };
     if (!passKeys) document.addEventListener("keydown", keepKeysIn);
 
-    // Lock the page behind. Where scrollbars take up room, hiding one
-    // would widen the page and shift a centred column: pad by the same
-    // amount so nothing behind the scrim moves.
+    // Lock the page behind: a class on <html>, put there by the first
+    // dialog to open and taken away by the last to close. It used to save
+    // the inline `overflow` and write it back, which is also how the game
+    // routes lock their page; when the page under an open palette changed,
+    // each wrote back the other's stale value and an ordinary page was
+    // left unable to scroll. A class has nothing stale to restore.
+    //
+    // Where scrollbars take up room, hiding one would widen the page and
+    // shift a centred column: the class pads the body by the same amount
+    // (--dialog-pad), so nothing behind the scrim moves.
     const html = document.documentElement;
-    const body = document.body;
-    const prevOverflow = html.style.overflow;
-    const prevPad = body.style.paddingRight;
-    const scrollbar = window.innerWidth - html.clientWidth;
-    html.style.overflow = "hidden";
-    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
+    if (stack.length === 1) {
+      const scrollbar = window.innerWidth - html.clientWidth;
+      html.style.setProperty("--dialog-pad", `${Math.max(0, scrollbar)}px`);
+      html.classList.add("dialog-open");
+    }
 
     return () => {
       const at = stack.indexOf(me);
       if (at >= 0) stack.splice(at, 1);
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("keydown", keepKeysIn);
-      html.style.overflow = prevOverflow;
-      body.style.paddingRight = prevPad;
-      if (before && document.contains(before)) before.focus();
+      if (stack.length === 0) {
+        html.classList.remove("dialog-open");
+        html.style.removeProperty("--dialog-pad");
+      }
+      const back = returnFocusRef.current;
+      const wanted = typeof back === "function" ? back() : back;
+      // Without scrolling: the visitor may have scrolled on since they
+      // last touched that element, and the page must not jump back to it.
+      if (wanted && before && document.contains(before)) {
+        before.focus({ preventScroll: true });
+      }
     };
   }, [open, passKeys]);
 
