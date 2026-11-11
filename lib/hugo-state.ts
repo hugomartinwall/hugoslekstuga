@@ -224,6 +224,76 @@ function attachPersistOnLeave() {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) persistNow();
   });
+  window.addEventListener("storage", onOtherTabWrote);
+}
+
+/**
+ * Two tabs, one memory. Every tab writes the whole memory from its own
+ * copy every couple of seconds, so an older tab used to erase what a
+ * newer one had just recorded (open a second tab, do a somersault, close
+ * it: three seconds later the first tab had written the old counts back).
+ * When another tab writes, this one takes what that tab knows into its
+ * own copy before its next write: for every counter, the larger number.
+ */
+function onOtherTabWrote(e: StorageEvent) {
+  if (e.key !== STORAGE_KEY || !e.newValue || !state.hydrated) return;
+  let theirs: Partial<HugoMemory> | undefined;
+  try {
+    theirs = (JSON.parse(e.newValue) as { memory?: Partial<HugoMemory> })
+      .memory;
+  } catch {
+    return;
+  }
+  if (!theirs) return;
+  const mine = state.memory;
+  const most = (a: number, b: unknown) =>
+    typeof b === "number" && b > a ? b : a;
+
+  const toolCounts: Record<string, number> = { ...mine.toolCounts };
+  for (const [slug, n] of Object.entries(theirs.toolCounts ?? {})) {
+    toolCounts[slug] = most(toolCounts[slug] ?? 0, n);
+  }
+  let favoriteToolSlug = mine.favoriteToolSlug;
+  let best = favoriteToolSlug ? (toolCounts[favoriteToolSlug] ?? 0) : 0;
+  for (const [slug, n] of Object.entries(toolCounts)) {
+    if (n > best) {
+      best = n;
+      favoriteToolSlug = slug;
+    }
+  }
+  // The day and its streak travel together: whichever tab saw the later
+  // day has the streak that goes with it.
+  const theirDay =
+    typeof theirs.lastDateKey === "string" ? theirs.lastDateKey : "";
+  const later = theirDay > mine.lastDateKey;
+  const sameDay = theirDay === mine.lastDateKey;
+
+  const merged: HugoMemory = {
+    ...mine,
+    firstSeen:
+      typeof theirs.firstSeen === "number" && theirs.firstSeen > 0
+        ? Math.min(mine.firstSeen, theirs.firstSeen)
+        : mine.firstSeen,
+    lastSeen: most(mine.lastSeen, theirs.lastSeen),
+    visitCount: most(mine.visitCount, theirs.visitCount),
+    lastDateKey: later ? theirDay : mine.lastDateKey,
+    streakDays: later
+      ? most(1, theirs.streakDays)
+      : sameDay
+        ? most(mine.streakDays, theirs.streakDays)
+        : mine.streakDays,
+    toolCounts,
+    favoriteToolSlug,
+    naps: most(mine.naps, theirs.naps),
+    tantrums: most(mine.tantrums, theirs.tantrums),
+    flips: most(mine.flips, theirs.flips),
+  };
+  if (JSON.stringify(merged) === JSON.stringify(mine)) return;
+  // Not through set(): that would schedule a write, and two tabs would
+  // then answer each other's writes for ever. The next ordinary change
+  // (there is one every tick) carries it out.
+  state = { ...state, memory: merged };
+  emit();
 }
 
 /** One-shot load from localStorage. Called from the first BrandDot
