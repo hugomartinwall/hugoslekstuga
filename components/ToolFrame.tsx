@@ -8,6 +8,7 @@ import { accentVars } from "@/lib/colors";
 import { isGameSlug } from "@/lib/clusters";
 import { iconForSlug } from "@/lib/pixel-icons";
 import PixelIcon from "@/components/PixelIcon";
+import IconTile from "@/components/ui/IconTile";
 import { keycapClass } from "@/components/ui/Keycap";
 
 /**
@@ -117,15 +118,7 @@ export default function ToolFrame({
               playhouse
             </span>
           </Link>
-          <span
-            aria-hidden
-            className="notch-sm flex h-9 w-9 shrink-0 items-center justify-center bg-(--accent) text-cream"
-          >
-            <PixelIcon
-              name={iconForSlug(tool.slug, isGameSlug(tool.slug))}
-              size={24}
-            />
-          </span>
+          <IconTile name={iconForSlug(tool.slug, isGameSlug(tool.slug))} />
           <h1 className="font-display text-3xl leading-none text-ink sm:text-4xl">
             {tool.title}
           </h1>

@@ -612,6 +612,8 @@ body {
     line-height: 1;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    /* In a sentence the key sits on the text's centre line. */
+    vertical-align: middle;
     color: var(--color-ink-soft);
     background-color: var(--color-panel);
     box-shadow:

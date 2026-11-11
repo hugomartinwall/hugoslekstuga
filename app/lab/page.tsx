@@ -1,5 +1,6 @@
 import Link from "next/link";
 import PixelIcon from "@/components/PixelIcon";
+import IconTile from "@/components/ui/IconTile";
 import Panel from "@/components/ui/Panel";
 
 type Experiment = {
@@ -49,23 +50,17 @@ export default function LabIndex() {
               className="flex items-center gap-4 p-5"
             >
               {/* The spark is the kit's stand-in icon, on the lab's acid. */}
-              <span
-                aria-hidden
-                className="notch-sm flex h-12 w-12 shrink-0 items-center justify-center bg-yellow text-cream"
-              >
-                <PixelIcon name="advice" size={36} />
-              </span>
+              <IconTile name="advice" size="lg" className="bg-yellow" />
               <div className="min-w-0 flex-1">
                 <p className="font-display text-2xl leading-none">{e.title}</p>
                 <p className="mt-1 text-sm leading-snug text-ink-soft">
                   {e.blurb}
                 </p>
               </div>
-              {/* The kit has no forward arrow: its back arrow, mirrored. */}
               <PixelIcon
-                name="back"
+                name="forward"
                 size={12}
-                className="shrink-0 -scale-x-100 text-ink-muted"
+                className="shrink-0 text-ink-muted"
               />
             </Panel>
           </li>

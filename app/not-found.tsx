@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import PixelIcon from "@/components/PixelIcon";
+import IconTile from "@/components/ui/IconTile";
 import Keycap from "@/components/ui/Keycap";
 import Panel from "@/components/ui/Panel";
+import Tag from "@/components/ui/Tag";
 import { isGameSlug, pathFor } from "@/lib/clusters";
-import { accentVars, fillClasses } from "@/lib/colors";
+import { accentVars } from "@/lib/colors";
 import { iconForSlug } from "@/lib/pixel-icons";
 import { tools } from "@/lib/tools";
 
@@ -29,10 +31,10 @@ export default function NotFound() {
       className="page-col px-5 pt-20 pb-14 sm:px-8 sm:pb-20"
     >
       <header className="flex flex-col gap-5">
-        <span className="plate-chunk label-pixel inline-flex w-fit items-center gap-2 bg-(--accent-soft) px-2.5 py-1.5 text-ink [--ring-c:color-mix(in_srgb,var(--accent)_45%,transparent)]">
+        <Tag tone="accent" className="gap-2 px-2.5 py-1.5">
           <span className="h-1.5 w-1.5 bg-(--accent)" aria-hidden />
           404
-        </span>
+        </Tag>
         <h1 className="font-display text-5xl leading-[0.95] sm:text-6xl lg:text-7xl">
           That page got{" "}
           <span className="text-(--accent)">lost</span>
@@ -53,7 +55,7 @@ export default function NotFound() {
         {/* A keyboard shortcut is no use to a finger. */}
         <p className="text-sm text-ink-muted pointer-coarse:hidden">
           or, you know,{" "}
-          <kbd className="kbd-chunk align-middle">⌘K</kbd>{" "}
+          <kbd className="kbd-chunk">⌘K</kbd>{" "}
           from anywhere.
         </p>
       </section>
@@ -72,14 +74,9 @@ export default function NotFound() {
                   href={pathFor(t.slug)}
                   className="flex w-full min-w-0 items-center gap-3 p-4"
                 >
-                  <span
-                    className={`notch-sm flex h-10 w-10 shrink-0 items-center justify-center ${fillClasses(t.color)}`}
-                    aria-hidden
-                  >
-                    <PixelIcon
-                      name={iconForSlug(t.slug, isGameSlug(t.slug))}
-                      size={24}
-                    />
+                  {/* Each tile wears its own tool's colour, not the page's coral. */}
+                  <span style={accentVars(t.color)} className="flex shrink-0">
+                    <IconTile name={iconForSlug(t.slug, isGameSlug(t.slug))} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-display text-2xl leading-none">
@@ -89,11 +86,10 @@ export default function NotFound() {
                       {t.tagline}
                     </p>
                   </div>
-                  {/* The kit has no forward arrow: its back arrow, mirrored. */}
                   <PixelIcon
-                    name="back"
+                    name="forward"
                     size={12}
-                    className="shrink-0 -scale-x-100 text-ink-muted"
+                    className="shrink-0 text-ink-muted"
                   />
                 </Panel>
               </li>
