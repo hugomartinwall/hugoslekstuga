@@ -58,23 +58,29 @@ to a chunk; set `--ring-c` if a frame needs another colour.
 
 | Class | What it is | Component |
 |---|---|---|
-| `btn-chunk` | keycap: bevel, presses down | `components/ui/Keycap` (`tone` accent/neutral/quiet/danger, `size` sm/md/lg/icon, `href` makes it a link) |
-| `chip-chunk` | a choice: flat, fills with the accent when on (`aria-pressed`, `aria-checked`, or a checked radio inside) | `components/ui/Chip` — `Chip` (toggle/action) and `ChipGroup` (one of several, real radios underneath) |
-| `plate-chunk` | the bare small frame (stepped corners + hairline) for housings, tags and tiles: anything that is not a control | — |
+| `btn-chunk` | keycap: bevel, presses down; with `aria-pressed="true"` it stays down | `components/ui/Keycap` (`tone` accent/neutral/quiet/danger, `size` sm/md/lg/icon, `href` makes it a link) |
+| `chip-chunk` | a choice: flat, fills with the accent when on (`aria-pressed`, `aria-checked`, or a checked radio inside) | `components/ui/Chip` — `Chip` (toggle/action) and `ChipGroup` (one of several, real radios underneath; name it with `labelledBy` when a visible label sits beside it) |
+| `plate-chunk` | the bare small frame (stepped corners + hairline) for housings, tags and tiles: anything that is not a control | `components/ui/Tag` (a small label: `tone` neutral/accent/danger/solid) |
 | `field-chunk` | a well around an `<input>`/`<textarea>` — the wrapper carries the frame, pseudo-elements do not exist on inputs | `components/ui/Field` — `TextField`, `TextArea` |
 | `card-chunk` | cabinet panel, the big 8px steps. Lifts on hover only when it is an `<a>`, `<button>` or `<label>` | `components/ui/Panel` (`tone` well/raised/page/soft/danger) |
 | `range-chunk` | a native range re-dressed; set `--fill` to the value's percentage | `components/Slider` |
 | `switch-chunk` | the track of an on/off switch | `components/ui/Switch` |
 | `label-pixel` | the one micro-label (Silkscreen, tracked, muted) | — |
 | `kbd-chunk` | a key legend (⌘K, esc) | — |
-| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled) |
+| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled; plain keydowns stop at the dialog so page shortcuts and games do not hear what is typed in it) |
 | `page-col` | a centred column that lands on a whole pixel (`--col` sets its width) | — |
 
 Also: `components/ui/Dropzone` (drop / click / keyboard), and
 `components/PixelIcon` + `lib/pixel-icons.ts` — 12×12 bitmap icons, one
-per tool. They replace the Unicode symbols (◴ ⊚ ▦), which every OS
-drew with a different fallback font. The registry's `emoji` field stays
-for old call sites; new UI uses `<PixelIcon name={iconForSlug(...)} />`.
+per tool and one per game, plus a few for the chrome (search, about,
+back, forward, close, play). They replace the Unicode symbols (◴ ⊚ ▦),
+which every OS drew with a different fallback font. The registry's
+`emoji` field stays for old call sites; new UI uses
+`<PixelIcon name={iconForSlug(...)} />`, or `components/ui/IconTile`
+for the icon on its stepped accent tile (two sizes only: 36px and 48px).
+On the homepage a game is a cabinet, so a game's icon is for lists (the
+search palette, the 404 page); a game without one gets the shared
+`game` cabinet.
 
 **Accent.** Controls read `--accent` / `--accent-soft`. `ToolFrame` sets
 both from the tool's registry colour (`accentVars()` in `lib/colors.ts`),
@@ -238,8 +244,11 @@ The split is so each page ships its own `<title>` and `<meta description>`
 - `components/ToolFrame.tsx` — tool page chrome: one slim title row
   (back key, icon tile, name, tagline) and the page's `--accent`
 - `components/ui/*` — the kit (see "The kit" above): Keycap, Chip /
-  ChipGroup, Panel, TextField / TextArea, Switch, Dialog, Dropzone
-- `components/PixelIcon.tsx` — the 12×12 tool icons
+  ChipGroup, Panel, Tag, IconTile, TextField / TextArea, Switch, Dialog,
+  Dropzone
+- `components/PixelIcon.tsx` — the 12×12 icons
+- `components/Footer.tsx` / `ConditionalFooter.tsx` — the index footer
+  (see below)
 - `components/HomeShell.tsx` — the homepage: the room from 768px up, the
   list below (CRT power-on, scanlines, hints, the corner keys,
   retired-slug quip)
@@ -249,8 +258,13 @@ The split is so each page ships its own `<title>` and `<meta description>`
   playing, as a standalone canvas
 - `components/Slider.tsx` — labelled range (pixel label, big value,
   accent-filled track)
-- `components/CustomMinutes.tsx` — "Custom — N min" pill (focus)
-- `components/Search.tsx` — ⌘K palette (mounted in the root layout)
+- `components/CustomMinutes.tsx` — "Custom — N min" chip (focus)
+- `components/Search.tsx` — ⌘K palette (mounted in the root layout).
+  Built on Dialog. It matches a query against title, tagline,
+  description, the address (`/roll`) and the kind (`game`, `tool`),
+  ignoring diacritics, so "sjokort" finds Sjökort. Rows select on mouse
+  *move*, not enter: a pointer resting on the list must not steal the
+  selection from the arrow keys.
 - `components/BrandDot.tsx` / `BrandCorner.tsx` — corner Hugo (see below)
 - `components/TravelingDot.tsx` — flight-layer Hugo (root layout)
 - `components/HugoRoom.tsx` — Hugo's room overlay (shift+click him)
@@ -447,8 +461,8 @@ and `.scanlines`.
 scrolling page: the title as a banner, games as cabinet cards
 (`components/CabinetCanvas.tsx`, the same machine with its screen
 playing), tools as a three-by-three pad of keycaps in their own
-colours, then the keys and the footer. It is real links in the
-server-rendered HTML. **No swarm and no parkour are mounted on the
+colours, then the keys and the footer's small print. It is real links
+in the server-rendered HTML. **No swarm and no parkour are mounted on the
 list**: ToolMap, the room's PixelWordmark and HugoParkour only exist
 when the room is on screen.
 
@@ -476,6 +490,27 @@ cabinet screen holds one still frame.
 with `offsetWidth`/`offsetHeight`, **never** `getBoundingClientRect` —
 the `.crt-on` scaleY animation squashes gBCR mid-power-on and poisons
 the whole layout.
+
+## The footer — an index
+
+`components/Footer.tsx` is a compact index of the whole site: a Games
+row and a Tools row with a link to every registry entry (it reads
+`lib/tools.ts`, so a new entry shows up by itself), an About link, the
+line "No tracking, no accounts.", the year, and "potentially useful".
+That last phrase is brand voice (the About page's keycap echoes it):
+leave it exactly as it is.
+
+- It sits on the page column (`page-col`, 48rem), so its left edge is
+  the left edge of the tool or About page above it.
+- The link for the current page carries `aria-current="page"`. Links
+  are 44px tall under a finger and 28px under a mouse, and they do not
+  prefetch (with the whole index in view, every page would otherwise
+  pull every other route in the background).
+- `components/ConditionalFooter.tsx` decides where it shows. Never on a
+  full-screen route (sjökort and every game: the list comes from the
+  registry). On the homepage: nothing from 768px up (the room is one
+  screen), and only the small print below that, because the phone
+  homepage is itself the index.
 
 ## Greyrot — the 3D one
 
@@ -742,8 +777,11 @@ Legitimate hits:
 - `scripts/bake-sjokort-graph.ts` — fetches OSM water + seamark-hazard data,
   but at **author time** only (build tool, never shipped). Not a runtime fetch.
 
-Honest "no analytics" copy in Footer + About also matches the grep —
-those are documentation, not network calls. When auditing, exclude the
+Honest "no analytics" copy also matches the grep (the site description
+in `app/layout.tsx` and the homepage's screen-reader intro in
+`components/HomeShell.tsx`): words, not network calls. The footer's
+line is "No tracking, no accounts." and does not match. When auditing,
+exclude the
 sjökort tool and its lib: append `--glob '!app/tools/sjokort/**'
 --glob '!lib/sjokort/**' --glob '!scripts/**'` to scope the grep to the
 tools that are supposed to be fetchless.
@@ -836,8 +874,9 @@ Mechanical steps once it's earned a slot:
    color, emoji — colour by category, see the colour rules). For games,
    also add the slug to `GAME_SLUGS` in `lib/clusters.ts` so `pathFor()`
    routes it to `/games/<slug>`, and give its cabinet a screen: a
-   painter in `lib/hugo/cabinet-screens.ts`. A tool gets a 12×12 icon in
-   `lib/pixel-icons.ts` under its slug.
+   painter in `lib/hugo/cabinet-screens.ts`. Every entry, tool or game,
+   gets a 12×12 icon in `lib/pixel-icons.ts` under its slug. The footer
+   index and the search palette pick the new entry up from the registry.
 2. Create `app/tools/<slug>/Client.tsx` (`"use client"`) and the server
    wrapper `page.tsx` exporting `metadata` from the registry entry.
 3. Create `app/tools/<slug>/opengraph-image.tsx` — a one-line wrapper
