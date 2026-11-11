@@ -7,6 +7,7 @@ import { ChipGroup } from "@/components/ui/Chip";
 import Dropzone from "@/components/ui/Dropzone";
 import Keycap from "@/components/ui/Keycap";
 import Panel from "@/components/ui/Panel";
+import { isTextEntry } from "@/lib/keyboard";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
@@ -146,18 +147,6 @@ function extForType(type: string): "png" | "jpg" | "webp" {
   return "jpg";
 }
 
-/**
- * The format chips and the dropzone are native radio and file inputs
- * now. They used to be buttons and an input that could not take the
- * focus, and a paste with the focus on one of them loaded the image.
- * (The same test, by the same name, as Pixla's.)
- */
-function isChipOrPicker(t: HTMLElement): boolean {
-  if (t.tagName !== "INPUT") return false;
-  const type = (t as HTMLInputElement).type;
-  return type === "radio" || type === "file";
-}
-
 export default function StripPage() {
   const tool = findTool("strip")!;
   const [filename, setFilename] = useState<string>("");
@@ -218,7 +207,6 @@ export default function StripPage() {
     [clearStripped],
   );
 
-  // The kit's dropzone hands over files without saying how they arrived.
   // This page has always taken whatever the picker returns, but only an
   // image from a drop. So a drop is noted on its way down to the dropzone
   // (capture) and the note is cleared on its way back up.
@@ -235,15 +223,10 @@ export default function StripPage() {
   // a fresh screenshot still carries Software / HostComputer / timestamp.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (
-        t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable)
-      ) {
-        return;
-      }
+      // A paste into a text field is that field's. Anything else on the
+      // page (a format chip, the slider, the dropzone, nothing at all)
+      // has no use for a picture, so the paste loads it.
+      if (isTextEntry(e.target)) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const item of Array.from(items)) {
@@ -260,25 +243,6 @@ export default function StripPage() {
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, [handleFile]);
-
-  // The listener above steps aside for every <input>, and on the kit the
-  // format chips and the dropzone are inputs (see isChipOrPicker). This
-  // answers for those two only, so ⌘V with the focus on either still
-  // loads the image and the listener itself stays exactly as it was.
-  // (Pixla lets the same two through inside its listener instead.)
-  const onPasteInControl = (e: React.ClipboardEvent) => {
-    if (!isChipOrPicker(e.target as HTMLElement)) return;
-    for (const item of Array.from(e.clipboardData.items)) {
-      if (item.kind === "file" && item.type.startsWith("image/")) {
-        const f = item.getAsFile();
-        if (f) {
-          e.preventDefault();
-          handleFile(f);
-          return;
-        }
-      }
-    }
-  };
 
   const stripAndDownload = useCallback(async () => {
     if (!imageUrl || stripping) return;

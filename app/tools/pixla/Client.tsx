@@ -13,6 +13,7 @@ import { findTool } from "@/lib/tools";
 import { COLOR_HEX, CREAM_HEX, INK_HEX } from "@/lib/colors";
 import { hexRgb } from "@/lib/hugo/sprite";
 import { hugoMoodEvent, hugoSawTool } from "@/lib/hugo-state";
+import { isTextEntry } from "@/lib/keyboard";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
 /**
@@ -148,20 +149,6 @@ function previewStageHeight(w: number, h: number): string {
   return `calc(round(up, min(var(--fit-h), ${PREVIEW_ROOM_W} * ${h / w}), 1px) + 2px)`;
 }
 
-/**
- * The palette chips and the dropzone are native radio and file inputs
- * now. They used to be buttons and an input that could not take focus,
- * and a paste with the focus on one of them loaded the image, so the
- * paste listener still has to let them through. (A focused slider still
- * swallows the paste, as it always has: an old fault, left for its own
- * fix.)
- */
-function isChipOrPicker(t: HTMLElement): boolean {
-  if (t.tagName !== "INPUT") return false;
-  const type = (t as HTMLInputElement).type;
-  return type === "radio" || type === "file";
-}
-
 export default function PixlaPage() {
   const tool = findTool("pixla")!;
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -204,14 +191,10 @@ export default function PixlaPage() {
   // Paste-from-clipboard — same convenience strip ships.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (
-        t &&
-        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) &&
-        !isChipOrPicker(t)
-      ) {
-        return;
-      }
+      // A paste into a text field is that field's. Anything else on the
+      // page (a chip, the slider, the dropzone, nothing at all) has no
+      // use for a picture, so the paste loads it.
+      if (isTextEntry(e.target)) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const item of Array.from(items)) {
