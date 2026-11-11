@@ -95,6 +95,30 @@ Sjökort's on-map markers. Not for buttons, badges, avatars or dots.
 44px by themselves on `pointer: coarse`. Text inside an `<input>` is 16px
 (the `field-chunk` default) — iPhones zoom the page on anything smaller.
 
+**Keys that swap in.** When one key takes another's place (Start becomes
+Pause or Stop), the second tap of a double tap lands on the newcomer.
+Put `press-guard` on what swaps in: it ignores the pointer for its first
+400ms. If it is ONE element changing role in place, swap between
+`press-guard` and `press-guard-alt` (a change of animation name restarts
+the guard). Do not give the two roles separate React keys: that replaces
+the element and throws keyboard focus away.
+
+**Page shortcuts.** A shortcut on `window` hears every key, including
+the ones meant for whatever has focus. Use `isTextEntry()` and
+`isPressable()` from `lib/keyboard.ts` and stand down for both, so Space
+on a focused button presses that button. Dialog already keeps plain
+keydowns from reaching the page (pass `passKeys` for a dialog with
+nothing to type into).
+
+**Forced colours.** The frames, the lit state and the focus ring are
+drawn as backgrounds, which Windows High Contrast repaints. The kit has
+one `@media (forced-colors: active)` block that gives each back as a
+real outline in the system colours. A new chunk needs a line there.
+
+**Dev trap.** After editing `app/globals.css`, check the stylesheet the
+dev server actually serves (curl the css chunk and grep for the rule).
+Turbopack sometimes misses a write; a second write fixes it.
+
 **Gone, do not bring back**: `rounded-full` / `rounded-md` / `rounded-[12px]`
 on controls, `border-2 border-ink`, `border-dashed`, `shadow-chunk`,
 `bg-ink/50` scrims, `backdrop-blur`, and `rounded-[var(--radius-card)]` /
@@ -290,7 +314,11 @@ CSS circles or a second sprite sheet — extend the one module.
 
 **`lib/hugo-state.ts` is his brain**: mood (sleepy/calm/curious/
 excited/grumpy), energy, visit streaks, `firstSeen` — persisted at
-`hugoslekstuga:hugo`, read via the `useHugoState` hook. Tools feed it
+`hugoslekstuga:hugo:state:v1`, read via the `useHugoState` hook. The
+write is a 2s throttle plus one on `pagehide` and when the tab is
+hidden. Keep it a throttle: his tick changes the state four times a
+second, and as a debounce the write never fired, so nothing he
+remembered survived an ordinary visit (fixed 2026-11). Tools feed it
 moments (`hugoMoodEvent`, `hugoSawTool`); renderers read it.
 
 **Where he renders:**
@@ -301,7 +329,10 @@ moments (`hugoMoodEvent`, `hugoSawTool`); renderers read it.
   drag-and-spring with sparkle puff, spam-click play-dead with
   whole-page tantrum, Konami-code somersault, shift+click opens
   HugoRoom, tab-hidden sleep, and on `/` a **long-press starts
-  Hugo's Parkour**. (The old long-press leash is deleted.)
+  Hugo's Parkour**. (The old long-press leash is deleted.) From the
+  keyboard, Enter or Space is a tap and Shift+Enter is a shift+click.
+  While a page-level Hugo has the stage he is invisible and also out
+  of the Tab order.
 - `TravelingDot` (root layout) — canvas Hugo who flies out of the
   corner when you click a swarm tool, fetches it, returns. He flips
   horizontally to face travel direction — never rotates.
@@ -789,7 +820,7 @@ tools that are supposed to be fetchless.
 - Persist state with `useLocalStorageState(key, initial)`. `initial` must be
   referentially stable — define at module scope, not inline.
 - localStorage keys must be namespaced `hugoslekstuga:*`. Hugo's own
-  keys: `hugoslekstuga:hugo` (mood/memory), `hugoslekstuga:dot-color`
+  keys: `hugoslekstuga:hugo:state:v1` (mood/memory), `hugoslekstuga:dot-color`
   (his colour), `hugoslekstuga:advice:memory` (the Advice engine).
   Overrun's keys: `hugoslekstuga:overrun:{save,muted,music,sfx,motion}`.
   Adventure's keys: `hugoslekstuga:adventure:{save,muted,music,sfx,motion}`.
