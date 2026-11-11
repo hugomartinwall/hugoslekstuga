@@ -1030,6 +1030,18 @@ export default function BrandDot({
     dragRef.current = null;
   };
 
+  // He is a button and the first Tab stop on every page, but everything
+  // above is a pointer handler, so from the keyboard he did nothing at
+  // all. Enter or Space is a tap (the colour cycles); with Shift it is a
+  // shift-click (his room).
+  const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    if (e.repeat || playingDead || traveling || stagePresent) return;
+    if (e.shiftKey) setRoomOpen(true);
+    else cycle();
+  };
+
   const onPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
     const ds = dragRef.current;
     if (!ds || e.pointerId !== ds.pointerId) return;
@@ -1163,7 +1175,14 @@ export default function BrandDot({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onKeyDown={onKeyDown}
       aria-label="Change accent colour"
+      // While a page-level mascot has the stage (or he is out fetching a
+      // tool) the corner one is invisible. Invisible must also mean out
+      // of the Tab order and not announced: he used to be a first Tab
+      // stop that showed no focus at all.
+      tabIndex={traveling || stagePresent ? -1 : undefined}
+      aria-hidden={traveling || stagePresent ? true : undefined}
       data-brand-dot
       data-name="hugo"
       style={{
@@ -1181,6 +1200,7 @@ export default function BrandDot({
         // the wordmark. Em-based so it scales with font size.
         marginLeft: "0.16em",
         opacity: traveling || stagePresent ? 0 : 1,
+        pointerEvents: traveling || stagePresent ? "none" : undefined,
         transform,
         transition: `${transformTransition}, opacity 60ms linear`,
         // Idle breathing pauses during any active animation (drag,
@@ -1294,7 +1314,11 @@ export default function BrandDot({
           className="kbd-chunk hidden [@media(hover:hover)_and_(pointer:fine)]:inline-flex"
           style={{
             position: "absolute",
-            bottom: "100%",
+            // Under him, not over him: he sits 24px from the top of the
+            // screen and the drift rises 26px, so from above his head
+            // the hint was on screen for about a fifth of its life. From
+            // here it rises to rest just under his feet.
+            top: "calc(100% + 28px)",
             left: "50%",
             translate: "-50% 0",
             whiteSpace: "nowrap",
