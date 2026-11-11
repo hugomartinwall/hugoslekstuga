@@ -359,10 +359,18 @@ export default function BreathePage() {
               container: the label is set in cqw (7% of the stage, inside a
               disc that is 39% of it at half scale) so it fits the disc at
               its smallest at any stage size, which is what lets it stay
-              room-dark on the accent. Change the 78% and the 7cqw together. */}
+              room-dark on the accent. Change the 78% and the 7cqw together.
+
+              The floor is in rem, and from `sm` it is a generous one (24rem):
+              the label is sized from the stage, so a stage that only follows
+              the viewport would keep the label the same size at 200% browser
+              zoom, which must enlarge text. A landscape phone keeps the small
+              floor so Start stays on its one short screen. Where round()
+              exists the width is snapped to an even whole pixel: the stage
+              is centred, and on a fraction its hairline smears at 1x. */}
           <Panel
             tone="soft"
-            className="@container aspect-square w-[min(100%,max(56vh,13rem))] overflow-hidden sm:w-[min(100%,max(44vh,13rem))]"
+            className="@container aspect-square w-[min(100%,max(56vh,13rem))] overflow-hidden sm:w-[min(100%,max(44vh,24rem))] pointer-coarse:sm:w-[min(100%,max(44vh,13rem))] supports-[width:round(down,1px,2px)]:w-[min(100%,round(down,max(56vh,13rem),2px))] supports-[width:round(down,1px,2px)]:sm:w-[min(100%,round(down,max(44vh,24rem),2px))] supports-[width:round(down,1px,2px)]:pointer-coarse:sm:w-[min(100%,round(down,max(44vh,13rem),2px))]"
           >
             {!reduceMotion && (
               <div
@@ -401,31 +409,19 @@ export default function BreathePage() {
           {/* Stop is a plain dark key, not the coral danger one: nothing is
               lost by stopping, and while you breathe (above all with the
               page dimmed) the circle should be the only bright thing. */}
-          {running ? (
-            // Stop and Start take each other's place. Each is its own element
-            // (the keys) and ignores the pointer for a moment after it
-            // appears, so the second tap of a double tap does not undo the
-            // first.
-            <Keycap
-              key="stop"
-              tone="neutral"
-              size="lg"
-              onClick={stop}
-              className="press-guard min-w-40"
-            >
-              Stop
-            </Keycap>
-          ) : (
-            <Keycap
-              key="start"
-              tone="accent"
-              size="lg"
-              onClick={start}
-              className="press-guard min-w-40"
-            >
-              {done ? "Again" : "Start"}
-            </Keycap>
-          )}
+          {/* One button that changes role in place, so keyboard focus stays
+              on it and Enter or Space toggles start and stop. It ignores
+              the pointer for a moment after each change of role (the two
+              guard classes: swapping them restarts the guard), so the
+              second tap of a double tap does not undo the first. */}
+          <Keycap
+            tone={running ? "neutral" : "accent"}
+            size="lg"
+            onClick={running ? stop : start}
+            className={`min-w-40 ${running ? "press-guard-alt" : "press-guard"}`}
+          >
+            {running ? "Stop" : done ? "Again" : "Start"}
+          </Keycap>
 
           {/* Two lines are held open on a phone, where every description
               wraps, so choosing a pattern never moves the picker below.
@@ -554,9 +550,11 @@ function SettingsPanel({
         />
         {settings.endMode === "minutes" && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-muted">minutes:</span>
+            <span id="breathe-minutes-label" className="text-xs text-ink-muted">
+              minutes:
+            </span>
             <ChipGroup
-              label="minutes"
+              labelledBy="breathe-minutes-label"
               value={settings.endMinutes}
               onChange={(m) => onChange("endMinutes", m)}
               options={MINUTE_PRESETS.map((m) => ({ value: m, label: m }))}
@@ -566,9 +564,11 @@ function SettingsPanel({
         )}
         {settings.endMode === "cycles" && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-muted">cycles:</span>
+            <span id="breathe-cycles-label" className="text-xs text-ink-muted">
+              cycles:
+            </span>
             <ChipGroup
-              label="cycles"
+              labelledBy="breathe-cycles-label"
               value={settings.endCycles}
               onChange={(c) => onChange("endCycles", c)}
               options={CYCLE_PRESETS.map((c) => ({ value: c, label: c }))}

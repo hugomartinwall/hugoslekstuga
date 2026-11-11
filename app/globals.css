@@ -671,6 +671,16 @@ body {
     animation: press-guard 400ms step-end;
   }
 
+  /* The same guard under a second name, for ONE element that changes role
+     in place (Start becomes Stop on the same button). An element cannot
+     restart an animation it is already running, but a change of animation
+     name does restart it: swap between the two classes. Do not give the
+     two roles separate React keys instead: that replaces the element, and
+     keyboard focus on it is thrown away. */
+  .press-guard-alt {
+    animation: press-guard-alt 400ms step-end;
+  }
+
   /* ── Forced colours (Windows High Contrast) ───────────────────────── */
   /* The frames, the lit state and the focus ring are all drawn as
      backgrounds, and this mode repaints every background. Give each back
@@ -726,6 +736,15 @@ body {
 }
 
 @keyframes press-guard {
+  from {
+    pointer-events: none;
+  }
+  to {
+    pointer-events: auto;
+  }
+}
+
+@keyframes press-guard-alt {
   from {
     pointer-events: none;
   }
