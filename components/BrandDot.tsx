@@ -1222,7 +1222,7 @@ export default function BrandDot({
           pointerEvents: "none",
         }}
       />
-      {/* The "annoyed huff" puff — three overlapping ink circles
+      {/* The "annoyed huff" puff — three overlapping ink squares
           rising out of Hugo's head when he plays dead. Only mounted
           while `playingDead` is true; the CSS animation runs once and
           ends invisible (opacity 0). Keyed on playingDead so each new
@@ -1242,7 +1242,8 @@ export default function BrandDot({
             animation: "hugo-huff 1500ms ease-out forwards",
           }}
         >
-          {/* Three overlapping puffs forming a cartoon exhale silhouette */}
+          {/* Three overlapping puffs forming a cartoon exhale silhouette.
+              Square, like everything else he is drawn from. */}
           <span
             style={{
               position: "absolute",
@@ -1250,7 +1251,6 @@ export default function BrandDot({
               bottom: 0,
               width: "0.28em",
               height: "0.28em",
-              borderRadius: "9999px",
               background: "var(--color-ink)",
             }}
           />
@@ -1261,7 +1261,6 @@ export default function BrandDot({
               bottom: "0.12em",
               width: "0.36em",
               height: "0.36em",
-              borderRadius: "9999px",
               background: "var(--color-ink)",
             }}
           />
@@ -1272,40 +1271,36 @@ export default function BrandDot({
               bottom: 0,
               width: "0.28em",
               height: "0.28em",
-              borderRadius: "9999px",
               background: "var(--color-ink)",
             }}
           />
         </span>
       )}
-      {/* Hugo's ⌘K whisper — a tiny pill drifts up over his head the
-          way the sleep "z" does, but with the keyboard shortcut for
-          the search palette inside. Fires from the central idle
+      {/* Hugo's ⌘K whisper — a tiny key legend drifts up over his head
+          the way the sleep "z" does, with the keyboard shortcut for
+          the search palette on it. Fires from the central idle
           scheduler when the user is on a non-homepage route. Uses
           the same hugo-z-drift keyframe so the motion vocabulary
-          stays unified. */}
+          stays unified.
+
+          It wears the kit's `kbd-chunk` (the same key legend the
+          search palette shows), and it is a hint for a keyboard, so it
+          only shows behind the gate the parkour trigger uses: hover +
+          a fine pointer. `translate` (not `transform`, which the drift
+          animates) centres it over him whichever legend it carries. */}
       {idleAction === "cmd-k-hint" && (
         <span
           aria-hidden
+          className="kbd-chunk hidden [@media(hover:hover)_and_(pointer:fine)]:inline-flex"
           style={{
             position: "absolute",
             bottom: "100%",
             left: "50%",
-            marginLeft: "-1.2em",
-            fontSize: "0.32em",
-            lineHeight: 1,
-            fontWeight: 800,
-            fontFamily: "var(--font-display)",
-            color: "var(--color-cream)",
-            background: "var(--color-ink)",
-            border: "2px solid var(--color-ink)",
-            borderRadius: "9999px",
-            padding: "0.3em 0.7em",
+            translate: "-50% 0",
             whiteSpace: "nowrap",
             pointerEvents: "none",
             animation: "hugo-z-drift 1800ms ease-out forwards",
             opacity: 0,
-            letterSpacing: "0.04em",
           }}
         >
           {typeof navigator !== "undefined" &&
@@ -1342,9 +1337,9 @@ export default function BrandDot({
       )}
       {/* The "happy puff" — coloured sparkles that fan out above
           Hugo's head when a drag completes. Five small accent-coloured
-          dots fly outward along an upward arc, scale up at the apex,
-          then fade as they continue. Keyed on sparkSeq so each
-          completed drag re-mounts and re-plays the animation. */}
+          square pixels fly outward along an upward arc, scale up at
+          the apex, then fade as they continue. Keyed on sparkSeq so
+          each completed drag re-mounts and re-plays the animation. */}
       {happy && (
         <span
           key={`spark-${sparkSeq}`}
@@ -1379,7 +1374,6 @@ export default function BrandDot({
                     height: "0.2em",
                     marginLeft: "-0.1em",
                     marginTop: "-0.1em",
-                    borderRadius: "9999px",
                     background: sparkColor,
                     animation: "hugo-happy-spark 1200ms ease-out forwards",
                     "--dx": `${dx}em`,
