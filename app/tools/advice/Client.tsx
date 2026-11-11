@@ -191,12 +191,13 @@ export default function AdvicePage() {
           ariaLabel="Hugo. Tap him for one good advice."
         />
 
-        {/* Tall enough for the longest line plus its subline (three lines
-            of display type and the label, from a 360px phone up), so the
-            key below stays put when a line lands. */}
+        {/* Tall enough for the longest line plus its subline, so the key
+            below stays put when a line lands: three rows of display type
+            and the label from a 360px phone up, four rows on anything
+            narrower, where the four longest lines wrap once more. */}
         <div
           aria-live="polite"
-          className="flex min-h-[10rem] w-full flex-col items-center justify-center md:min-h-[13rem]"
+          className="flex min-h-[12.25rem] w-full flex-col items-center justify-center min-[360px]:min-h-[10rem] md:min-h-[13rem]"
         >
           {current === null ? (
             <p className="max-w-md font-display text-2xl leading-snug text-balance text-ink-soft sm:text-3xl">
@@ -217,15 +218,16 @@ export default function AdvicePage() {
         </div>
 
         <div className="flex w-full flex-col items-center gap-2">
-          {/* The one primary action. As wide as its longest label ("Give me
-              one good advice" plus the key's padding), so swapping the
-              words never changes its size. */}
+          {/* The one primary action. One fixed width (17rem, or the column
+              where that is narrower), so swapping the words never changes
+              its size. The longest label, "Give me one good advice", fits
+              that width down to a 320px screen. */}
           <Keycap
             tone="accent"
             size="lg"
             onClick={draw}
             disabled={declined || memory === null}
-            className="w-full max-w-[calc(23ch+3rem)] whitespace-nowrap disabled:cursor-wait"
+            className="w-full max-w-[17rem] whitespace-nowrap disabled:cursor-wait"
           >
             {buttonLabel}
           </Keycap>
@@ -245,13 +247,13 @@ export default function AdvicePage() {
             {/* Each chip is as wide as its longer label, so toggling
                 does not shift the pair. */}
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Chip onClick={copy} className="min-w-[calc(7ch+1.75rem)]">
+              <Chip onClick={copy} className="min-w-[5.5rem]">
                 {copied ? "Copied!" : "Copy"}
               </Chip>
               <Chip
                 pressed={currentKept}
                 onClick={keep}
-                className="min-w-[calc(13ch+1.75rem)]"
+                className="min-w-[8.75rem]"
               >
                 {currentKept ? "Kept ✶" : "Worth keeping"}
               </Chip>
@@ -265,7 +267,16 @@ export default function AdvicePage() {
         {kept.length > 0 && (
           <section className="mt-6 w-full max-w-xl text-left">
             <h2 className="label-pixel">Things he&rsquo;s told you</h2>
-            <ul className="mt-2 flex flex-col">
+            {/* When a line is forgotten the row below slides up under the
+                pointer, and the second press of a double press used to
+                forget that one too. The list ignores the pointer for a
+                moment each time its length changes (the two guard
+                classes swap, which restarts the guard). */}
+            <ul
+              className={`mt-2 flex flex-col ${
+                kept.length % 2 === 0 ? "press-guard" : "press-guard-alt"
+              }`}
+            >
               {kept.map((e) => (
                 <li
                   key={e.id}
