@@ -70,13 +70,28 @@ export default function Dialog({
     stack.push(me);
     const onTop = () => stack[stack.length - 1] === me;
     const before = document.activeElement as HTMLElement | null;
+    // The Tab stops inside the panel, in order. A group of radios is one
+    // stop, not one per radio: Tab lands on the checked one and the arrow
+    // keys move within the group. Counting every radio made the last
+    // radio the "last stop", so Tab from a checked chip that was not the
+    // last one slipped out of the dialog. (With nothing checked the
+    // browser enters the group at its first radio going forward and its
+    // last going back, so then they all stay in the list.)
     const focusables = () =>
       panel
         ? Array.from(
             panel.querySelectorAll<HTMLElement>(
               'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
             ),
-          ).filter((el) => el.offsetParent !== null || el === document.activeElement)
+          )
+            .filter((el) => el.offsetParent !== null || el === document.activeElement)
+            .filter((el) => {
+              if (!(el instanceof HTMLInputElement) || el.type !== "radio") return true;
+              if (el.checked || !el.name) return true;
+              return !Array.from(
+                panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+              ).some((r) => r.name === el.name && r.checked);
+            })
         : [];
 
     // Focus the element that asks for it, else the first control, else the panel.
