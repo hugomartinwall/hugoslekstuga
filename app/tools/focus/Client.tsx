@@ -539,7 +539,7 @@ function Setup({
         size="lg"
         onClick={onStart}
         disabled={durationSec < 60}
-        className="sm:self-start"
+        className="press-guard sm:self-start"
       >
         Start focus
       </Keycap>
@@ -694,9 +694,12 @@ function Running({
 
       {/* One key per row on a phone, the disc's width; side by side from
           `sm` up. Each cell is wide enough for "Tap again to stop", so
-          arming Stop changes its colour and words but never its place. */}
+          arming Stop changes its colour and words but never its place.
+          These keys appear where Start just was, so they ignore the
+          pointer for a moment (press-guard): the second tap of a double
+          tap on Start must not pause or stop what the first one began. */}
       <div
-        className={`grid grid-cols-1 gap-3 sm:w-[30rem] sm:grid-cols-2 ${DISC_WIDTH}`}
+        className={`press-guard grid grid-cols-1 gap-3 sm:w-[30rem] sm:grid-cols-2 ${DISC_WIDTH}`}
       >
         {paused ? (
           <Keycap tone="accent" size="lg" block onClick={onResume}>

@@ -32,7 +32,7 @@ export default function CustomMinutes({
   );
   const active = !isPreset && val;
   return (
-    <label className={`chip-chunk ${active ? "is-on" : ""}`.trim()}>
+    <label className="chip-chunk" aria-current={active ? "true" : undefined}>
       <span>Custom</span>
       {/* The well stays dark on a lit chip, so the number reads as a
           readout in both states. 16px text: iPhones zoom on less.

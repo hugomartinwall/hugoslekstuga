@@ -402,11 +402,27 @@ export default function BreathePage() {
               lost by stopping, and while you breathe (above all with the
               page dimmed) the circle should be the only bright thing. */}
           {running ? (
-            <Keycap tone="neutral" size="lg" onClick={stop} className="min-w-40">
+            // Stop and Start take each other's place. Each is its own element
+            // (the keys) and ignores the pointer for a moment after it
+            // appears, so the second tap of a double tap does not undo the
+            // first.
+            <Keycap
+              key="stop"
+              tone="neutral"
+              size="lg"
+              onClick={stop}
+              className="press-guard min-w-40"
+            >
               Stop
             </Keycap>
           ) : (
-            <Keycap tone="accent" size="lg" onClick={start} className="min-w-40">
+            <Keycap
+              key="start"
+              tone="accent"
+              size="lg"
+              onClick={start}
+              className="press-guard min-w-40"
+            >
               {done ? "Again" : "Start"}
             </Keycap>
           )}
