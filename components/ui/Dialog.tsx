@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { swallowPresses } from "@/lib/pointer";
 
 /**
  * A modal dialog: a flat dark scrim, a raised stepped panel, and the
@@ -182,6 +183,15 @@ export default function Dialog({
     };
     if (!passKeys) document.addEventListener("keydown", keepKeysIn);
 
+    // When the pointer last went down inside this dialog (its panel or
+    // its scrim), whatever then handled the press.
+    let pressedAt = -Infinity;
+    const notePress = () => {
+      pressedAt = performance.now();
+    };
+    const root = panel?.parentElement ?? null;
+    root?.addEventListener("pointerdown", notePress, true);
+
     // Lock the page behind: a class on <html>, put there by the first
     // dialog to open and taken away by the last to close. It used to save
     // the inline `overflow` and write it back, which is also how the game
@@ -204,6 +214,13 @@ export default function Dialog({
       if (at >= 0) stack.splice(at, 1);
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("keydown", keepKeysIn);
+      root?.removeEventListener("pointerdown", notePress, true);
+      // Closed by a press (the close key, the scrim, a chosen row): what
+      // lay under that press is bare now, and the second tap of a double
+      // tap would land on it. The screen takes no press for a moment.
+      // Not after a keyboard close: nothing is under a finger then, and a
+      // quick click after Escape must still count.
+      if (performance.now() - pressedAt < 700) swallowPresses();
       if (stack.length === 0) {
         html.classList.remove("dialog-open");
         html.style.removeProperty("--dialog-pad");
@@ -263,6 +280,10 @@ export default function Dialog({
         // here and not with pointer-events, which would let that moment's
         // clicks fall through to the page behind.)
         if (performance.now() - openedAt.current < 400) return;
+        // Without this the browser finishes handling the press after the
+        // dialog has closed and moves the focus to the page, undoing the
+        // hand-back to whatever opened the dialog.
+        e.preventDefault();
         onClose();
       }}
     >
