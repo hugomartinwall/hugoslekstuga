@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import PixelIcon from "@/components/PixelIcon";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
@@ -521,7 +522,8 @@ function Setup({
             // you're committing to. Always present so you can hear it
             // before deciding either way.
             <Chip onClick={onPreviewAmbient} aria-label="Preview brown noise">
-              ▸ hear it
+              <PixelIcon name="play" size={12} />
+              hear it
             </Chip>
           }
         />
