@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Slider from "@/components/Slider";
 import ToolFrame from "@/components/ToolFrame";
 import { Chip, ChipGroup } from "@/components/ui/Chip";
@@ -303,6 +309,21 @@ function toPlainText(out: Output): string {
   return blocks.join("\n\n");
 }
 
+const subscribeToNothing = () => () => {};
+
+/**
+ * False while the server's HTML is being hydrated, true from the next
+ * render on, and true at once on a visit that arrives from another
+ * page. Values saved on the device arrive on that same render.
+ */
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
+}
+
 export default function LoremPage() {
   const tool = findTool("lorem")!;
   const [flavourId, setFlavourId] = useLocalStorageState<FlavourId>(FLAVOUR_KEY, "pirate");
@@ -326,6 +347,7 @@ export default function LoremPage() {
   const [copied, setCopied] = useState(false);
   const flavourLabelId = useId();
   const lengthLabelId = useId();
+  const hydrated = useHydrated();
 
   const cfg = modeConfig(mode);
 
@@ -346,13 +368,24 @@ export default function LoremPage() {
     [safeFlavourId, mode, count, includeHeading],
   );
 
-  // Initial generation on mount, after hydration. Math.random in a lazy
-  // useState initialiser would cause SSR/client mismatch; running it from
-  // an effect keeps the server HTML deterministic.
+  // The first text, made once the saved settings are in. Math.random in
+  // a lazy useState initialiser would cause SSR/client mismatch; running
+  // it from an effect keeps the server HTML deterministic.
+  //
+  // On a full page load the first render has to match the server's
+  // HTML, so it runs on the defaults, and the saved flavour, length and
+  // heading arrive one render later. The first text used to be made
+  // from that first render: "Words" selected over three pirate
+  // paragraphs, the slider reading 3. It waits for the second render
+  // now, and the count starts at the saved length's own default, as it
+  // always has on a visit that arrives from another page.
   /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!output) generateOutput();
-  }, []);
+    if (!hydrated || output) return;
+    const def = modeConfig(mode).default;
+    setCount(def);
+    generateOutput({ count: def });
+  }, [hydrated]);
   /* eslint-enable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 
   const handleFlavour = (id: FlavourId) => {
