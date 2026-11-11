@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
 import HugoStage, { type HugoPose } from "@/components/hugo/HugoStage";
+import Keycap from "@/components/ui/Keycap";
+import { Chip } from "@/components/ui/Chip";
+import PixelIcon from "@/components/PixelIcon";
 import { findTool } from "@/lib/tools";
 import { localISODate } from "@/lib/dates";
 import { getHugoState, useHugoState, type HugoMood } from "@/lib/hugo-state";
@@ -184,7 +187,7 @@ export default function AdvicePage() {
 
   return (
     <ToolFrame tool={tool}>
-      <div className="flex flex-col items-center gap-8 py-4 text-center">
+      <div className="flex flex-col items-center gap-8 pb-4 text-center">
         {/* The character. Tap him — he's the other button. */}
         <HugoStage
           pose={declined ? "declining" : pose}
@@ -193,71 +196,72 @@ export default function AdvicePage() {
           ariaLabel="Hugo. Tap him for one good advice."
         />
 
+        {/* Tall enough for the longest line plus its subline (three lines
+            of display type and the label, from a 360px phone up), so the
+            key below stays put when a line lands. */}
         <div
           aria-live="polite"
-          className="flex min-h-[9rem] w-full flex-col items-center justify-center gap-3"
+          className="flex min-h-[10rem] w-full flex-col items-center justify-center md:min-h-[13rem]"
         >
           {current === null ? (
-            <p className="max-w-md font-display text-2xl leading-snug text-ink-soft sm:text-3xl">
+            <p className="max-w-md font-display text-2xl leading-snug text-balance text-ink-soft sm:text-3xl">
               Ask him.{" "}
-              <span className="text-yellow">One advice at a time.</span>
+              <span className="text-(--accent)">One advice at a time.</span>
             </p>
           ) : (
-            <div key={current.memory.draws} className="fade-rise contents">
-              <p className="max-w-2xl font-display text-3xl leading-tight text-ink sm:text-4xl md:text-5xl">
+            <div
+              key={current.memory.draws}
+              className="fade-rise flex w-full flex-col items-center gap-3"
+            >
+              <p className="max-w-2xl font-display text-3xl leading-tight text-balance text-ink sm:text-4xl md:text-5xl">
                 &ldquo;{current.entry.text}&rdquo;
               </p>
-              {subline && (
-                <p className="font-pixel text-[10px] uppercase tracking-[0.2em] text-ink-muted">
-                  {subline}
-                </p>
-              )}
+              {subline && <p className="label-pixel text-balance">{subline}</p>}
             </div>
           )}
         </div>
 
-        <div className="flex flex-col items-center gap-2">
-          <button
-            type="button"
+        <div className="flex w-full flex-col items-center gap-2">
+          {/* The one primary action. As wide as its longest label ("Give me
+              one good advice" plus the key's padding), so swapping the
+              words never changes its size. */}
+          <Keycap
+            tone="accent"
+            size="lg"
             onClick={draw}
             disabled={declined || memory === null}
-            className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-8 py-4 font-display text-lg text-cream disabled:cursor-wait disabled:opacity-60 sm:text-xl"
+            className="w-full max-w-[calc(23ch+3rem)] whitespace-nowrap disabled:cursor-wait"
           >
             {buttonLabel}
-          </button>
-          <span className="hidden items-center gap-1 text-xs text-ink-muted sm:inline-flex">
-            or press
-            <kbd className="rounded border border-line bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
-              Space
-            </kbd>
-            — or tap him
-          </span>
+          </Keycap>
+          {/* Tapping him is the only other way in on a touch screen, so
+              that half shows at every width; the key legend is for
+              keyboards. */}
+          <p className="text-xs text-ink-muted">
+            <span className="pointer-coarse:hidden">
+              or press <kbd className="kbd-chunk">Space</kbd> —{" "}
+            </span>
+            or tap him
+          </p>
         </div>
 
         {current !== null && !declined && (
           <div className="flex flex-col items-center gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={copy}
-                className="rounded-full border-2 border-ink bg-cream px-4 py-1.5 text-sm font-bold transition-colors hover:bg-yellow-soft"
-              >
+            {/* Each chip is as wide as its longer label, so toggling
+                does not shift the pair. */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Chip onClick={copy} className="min-w-[calc(7ch+1.75rem)]">
                 {copied ? "Copied!" : "Copy"}
-              </button>
-              <button
-                type="button"
+              </Chip>
+              <Chip
+                pressed={currentKept}
                 onClick={keep}
-                aria-pressed={currentKept}
-                className={`rounded-full border-2 px-4 py-1.5 text-sm font-bold transition-colors ${
-                  currentKept
-                    ? "border-yellow bg-yellow-soft text-ink"
-                    : "border-ink bg-cream hover:bg-yellow-soft"
-                }`}
+                className="min-w-[calc(13ch+1.75rem)]"
               >
                 {currentKept ? "Kept ✶" : "Worth keeping"}
-              </button>
+              </Chip>
             </div>
-            <p className="text-sm text-ink-muted">
+            <p className="text-sm text-balance text-ink-muted">
               Sometimes the smallest useful thing is enough.
             </p>
           </div>
@@ -265,18 +269,19 @@ export default function AdvicePage() {
 
         {kept.length > 0 && (
           <section className="mt-6 w-full max-w-xl text-left">
-            <h2 className="font-pixel text-[10px] uppercase tracking-[0.25em] text-ink-muted">
-              Things he&rsquo;s told you
-            </h2>
-            <ul className="mt-3 flex flex-col gap-2">
+            <h2 className="label-pixel">Things he&rsquo;s told you</h2>
+            <ul className="mt-2 flex flex-col">
               {kept.map((e) => (
                 <li
                   key={e.id}
-                  className="flex items-start justify-between gap-3 border-b border-line pb-2 text-sm leading-relaxed text-ink-soft"
+                  className="flex items-center justify-between gap-3 border-b border-line py-1.5 text-sm leading-relaxed text-ink-soft"
                 >
-                  <span>&ldquo;{e.text}&rdquo;</span>
-                  <button
-                    type="button"
+                  <span className="text-pretty">&ldquo;{e.text}&rdquo;</span>
+                  {/* One per row, so a neutral key with a coral mark, not
+                      a solid coral key: a column of red would outshout
+                      the lines it sits beside. */}
+                  <Keycap
+                    size="icon"
                     aria-label={`Forget "${e.text}"`}
                     onClick={() => {
                       if (!memory) return;
@@ -284,10 +289,10 @@ export default function AdvicePage() {
                       setMemory(next);
                       saveAdviceMemory(next);
                     }}
-                    className="text-ink-muted transition-colors hover:text-ink"
+                    className="shrink-0"
                   >
-                    ✕
-                  </button>
+                    <PixelIcon name="close" size={12} className="text-tomato" />
+                  </Keycap>
                 </li>
               ))}
             </ul>
