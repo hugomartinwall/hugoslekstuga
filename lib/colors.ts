@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { ToolColor } from "./tools";
 
 /**
@@ -146,6 +147,19 @@ export function ringClass(c: ToolColor): string {
     orange: "ring-orange",
     teal: "ring-teal",
   } satisfies Record<ToolColor, string>)[c];
+}
+
+/**
+ * The two custom properties the kit reads its accent from (see "The kit"
+ * in app/globals.css). Spread into a `style` on any wrapper and every
+ * chip, slider, switch and accent keycap inside wears that colour.
+ * ToolFrame does this for the whole tool page.
+ */
+export function accentVars(c: ToolColor): CSSProperties {
+  return {
+    "--accent": COLOR_HEX[c],
+    "--accent-soft": COLOR_HEX_SOFT[c],
+  } as CSSProperties;
 }
 
 /** Convenience: full-fill (bg + the readable text colour on top). */

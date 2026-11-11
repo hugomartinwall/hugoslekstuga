@@ -39,6 +39,63 @@ the existing tokens**, so the old names survive with new meanings:
 - `.crt-on` = the homepage power-on animation; `.scanlines` = the
   whisper overlay. Both respect `prefers-reduced-motion`.
 
+## The kit — one set of shapes (v2, 2026-11)
+
+The July re-skin changed the colours and kept the old shapes, so round
+white-ringed pills sat next to stepped panels and every card's hairline
+broke at its corners. v2 fixed the shapes. **Everything framed is
+stepped; nothing is rounded, ringed in white, or dashed.** The rules
+live in `app/globals.css` under "The kit" (in `@layer components`, so a
+Tailwind utility on the same element still wins) and in `components/ui/`.
+
+**How a frame works.** The element is clipped to the notch polygon and a
+`::after` overlay draws the hairline as a *ring that follows the steps*.
+A plain `border` cannot do this: the clip that makes the corners also
+cuts the border away there. The same ring is the keyboard-focus
+indicator (an outline would be clipped too): `--ring-w` goes 1px → 2px
+and `--ring-c` goes hairline → cyan. Never add `border-*` or `outline`
+to a chunk; set `--ring-c` if a frame needs another colour.
+
+| Class | What it is | Component |
+|---|---|---|
+| `btn-chunk` | keycap: bevel, presses down | `components/ui/Keycap` (`tone` accent/neutral/quiet/danger, `size` sm/md/lg/icon, `href` makes it a link) |
+| `chip-chunk` | a choice: flat, fills with the accent when on (`aria-pressed`, `aria-checked`, or a checked radio inside) | `components/ui/Chip` — `Chip` (toggle/action) and `ChipGroup` (one of several, real radios underneath) |
+| `field-chunk` | a well around an `<input>`/`<textarea>` — the wrapper carries the frame, pseudo-elements do not exist on inputs | `components/ui/Field` — `TextField`, `TextArea` |
+| `card-chunk` | cabinet panel, the big 8px steps. Lifts on hover only when it is an `<a>`, `<button>` or `<label>` | `components/ui/Panel` (`tone` well/raised/page/soft/danger) |
+| `range-chunk` | a native range re-dressed; set `--fill` to the value's percentage | `components/Slider` |
+| `switch-chunk` | the track of an on/off switch | `components/ui/Switch` |
+| `label-pixel` | the one micro-label (Silkscreen, tracked, muted) | — |
+| `kbd-chunk` | a key legend (⌘K, esc) | — |
+| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled) |
+| `page-col` | a centred column that lands on a whole pixel (`--col` sets its width) | — |
+
+Also: `components/ui/Dropzone` (drop / click / keyboard), and
+`components/PixelIcon` + `lib/pixel-icons.ts` — 12×12 bitmap icons, one
+per tool. They replace the Unicode symbols (◴ ⊚ ▦), which every OS
+drew with a different fallback font. The registry's `emoji` field stays
+for old call sites; new UI uses `<PixelIcon name={iconForSlug(...)} />`.
+
+**Accent.** Controls read `--accent` / `--accent-soft`. `ToolFrame` sets
+both from the tool's registry colour (`accentVars()` in `lib/colors.ts`),
+so a chip or slider inside a tool page wears the tool's colour without
+being told. Text on an accent fill is always room-dark (`text-cream`).
+
+**Round is allowed only where round is the function**: Breathe's
+breathing circle, Focus's timer ring, the Spin wheel and its slices,
+Sjökort's on-map markers. Not for buttons, badges, avatars or dots.
+
+**Sizes.** Anything a finger presses is 44px (`min-h-11`); chips grow to
+44px by themselves on `pointer: coarse`. Text inside an `<input>` is 16px
+(the `field-chunk` default) — iPhones zoom the page on anything smaller.
+
+**Gone, do not bring back**: `rounded-full` / `rounded-md` / `rounded-[12px]`
+on controls, `border-2 border-ink`, `border-dashed`, `shadow-chunk`,
+`bg-ink/50` scrims, `backdrop-blur`, and `rounded-[var(--radius-card)]` /
+`rounded-[var(--radius-button)]` (both tokens are 0px — the utilities
+were no-ops).
+
+A dev-only bench at `/lab/kit` shows every piece in every accent.
+
 **Fonts** (loaded in `app/layout.tsx`): Jersey 15 (`--font-display`,
 big display only — it ships weight 400 only, `globals.css` normalizes
 bold rendering), Chivo Mono (`--font-sans`, all body copy), Silkscreen
@@ -177,11 +234,16 @@ The split is so each page ships its own `<title>` and `<meta description>`
 
 ## Shared components (use, don't reinvent)
 
-- `components/ToolFrame.tsx` — page chrome (back link, header, panel card)
+- `components/ToolFrame.tsx` — tool page chrome: one slim title row
+  (back key, icon tile, name, tagline) and the page's `--accent`
+- `components/ui/*` — the kit (see "The kit" above): Keycap, Chip /
+  ChipGroup, Panel, TextField / TextArea, Switch, Dialog, Dropzone
+- `components/PixelIcon.tsx` — the 12×12 tool icons
 - `components/HomeShell.tsx` — the homepage room (CRT power-on, scanlines,
   hints, retired-slug quip); renders ToolMap + HugoParkour
 - `components/ToolMap.tsx` — the attract-mode swarm on / (see below)
-- `components/Slider.tsx` — labelled range input
+- `components/Slider.tsx` — labelled range (pixel label, big value,
+  accent-filled track)
 - `components/CustomMinutes.tsx` — "Custom — N min" pill (focus)
 - `components/Search.tsx` — ⌘K palette (mounted in the root layout)
 - `components/BrandDot.tsx` / `BrandCorner.tsx` — corner Hugo (see below)

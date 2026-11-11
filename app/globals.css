@@ -40,13 +40,14 @@
   --font-display: var(--font-display), ui-monospace, monospace;
   --font-sans: var(--font-sans), ui-monospace, monospace;
   --font-pixel: var(--font-pixel), ui-monospace, monospace;
+  /* The house mono IS the body face, so `font-mono` stays in the family
+     instead of falling to whatever the OS calls monospace. */
+  --font-mono: var(--font-sans), ui-monospace, monospace;
 
   /* Corners are stepped, not rounded — radius zeroed, notches below. */
   --radius-card: 0px;
   --radius-button: 0px;
 
-  --shadow-chunk: 0 4px 0 0 #05060c;
-  --shadow-chunk-sm: 0 2px 0 0 #05060c;
 }
 
 /* Non-theme plumbing: pixel-notched corners + the Bayer dither tile.
@@ -103,6 +104,12 @@
      canvas renderer can read them with getComputedStyle — env() is not
      otherwise reachable from script. 0px everywhere until a route opts into
      viewport-fit=cover (today: /games/overrun via its viewport export). */
+  /* The accent a control should wear. ToolFrame overrides both from the
+     tool's registry colour, so everything inside a tool page picks up its
+     colour without being told; out here it is plain phosphor. */
+  --accent: var(--color-ink);
+  --accent-soft: var(--color-cream-deep);
+
   --sat: env(safe-area-inset-top, 0px);
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
@@ -159,52 +166,442 @@ body {
   clip-path: var(--notch-sm);
 }
 
-/* Buttons are arcade keycaps: bevelled inset shadows, a hairline frame
-   for the dark-on-dark case, hard 2px press-down on :active. The accent
-   fill (bg-*) and readable text colour come from the markup, exactly as
-   before the re-skin. */
-.btn-chunk {
-  border: 0;
-  clip-path: var(--notch-sm);
-  box-shadow:
-    inset 0 0 0 1px rgba(232, 242, 233, 0.14),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.38),
-    inset 0 2px 0 rgba(255, 255, 255, 0.22);
-  transition:
-    transform 120ms steps(2, jump-end),
-    filter 120ms steps(2, jump-end);
-}
+/* ----------------------------------------------------------------------------
+   The kit — one set of shapes for the whole building.
 
-.btn-chunk:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.12);
-}
+   Everything framed is a stepped shape. The element is clipped to the notch
+   polygon, and a ::after overlay draws the hairline as a RING that follows
+   the steps — a plain border is cut away at the corners by the same clip
+   that makes them. The ring is also the keyboard-focus indicator, because
+   an outline would be clipped too. Two custom properties drive it:
 
-.btn-chunk:active {
-  transform: translateY(2px);
-  box-shadow:
-    inset 0 0 0 1px rgba(232, 242, 233, 0.14),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
-    inset 0 0 12px rgba(255, 255, 255, 0.28);
-  filter: brightness(1.06);
-}
+     --ring-w   1px at rest, 2px on focus
+     --ring-c   hairline at rest, cyan on focus
 
-/* Cards are raised cabinet panels: hairline phosphor frame, stepped
-   corners, a soft inward dusk. Hover lifts one notch and brightens the
-   frame — no gray shadows anywhere in the building. */
-.card-chunk {
-  border: 1px solid var(--color-line);
-  clip-path: var(--notch);
-  background-image: var(--dither);
-  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.35);
-  transition:
-    transform 160ms steps(2, jump-end),
-    border-color 160ms steps(2, jump-end);
-}
+   Four members, one family (the names extend the old shadow language):
 
-.card-chunk:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-ink-muted);
+     btn-chunk    arcade keycap — bevelled, presses down
+     chip-chunk   a choice — flat at rest, filled with the accent when on
+     field-chunk  a well for an <input>/<textarea> (the wrapper carries the
+                  frame; pseudo-elements do not exist on inputs)
+     card-chunk   cabinet panel — the big 8px steps
+
+   Accent comes from --accent / --accent-soft (see :root). Text on an accent
+   fill is always room-dark.
+
+   The whole kit sits in @layer components so a Tailwind utility on the same
+   element (absolute, bg-*, p-*, hidden) still wins.
+   ---------------------------------------------------------------------------- */
+@layer components {
+  .btn-chunk,
+  .chip-chunk,
+  .field-chunk,
+  .card-chunk {
+    position: relative;
+    --ring-w: 1px;
+    --ring-c: var(--color-line);
+  }
+
+  .btn-chunk::after,
+  .chip-chunk::after,
+  .field-chunk::after,
+  .card-chunk::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: var(--ring-c);
+  }
+
+  /* The ring for the 8px/4px steps (cards). Outer path = the notch; inner
+     path = the same shape, --ring-w further in; evenodd leaves the band. */
+  .card-chunk::after {
+    clip-path: polygon(
+      evenodd,
+      0 8px, 4px 8px, 4px 4px, 8px 4px, 8px 0,
+      calc(100% - 8px) 0, calc(100% - 8px) 4px, calc(100% - 4px) 4px, calc(100% - 4px) 8px, 100% 8px,
+      100% calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) 100%,
+      8px 100%, 8px calc(100% - 4px), 4px calc(100% - 4px), 4px calc(100% - 8px), 0 calc(100% - 8px),
+      0 8px, var(--ring-w) calc(8px + var(--ring-w)), calc(4px + var(--ring-w)) calc(8px + var(--ring-w)), calc(4px + var(--ring-w)) calc(4px + var(--ring-w)), calc(8px + var(--ring-w)) calc(4px + var(--ring-w)),
+      calc(8px + var(--ring-w)) var(--ring-w), calc(100% - 8px - var(--ring-w)) var(--ring-w), calc(100% - 8px - var(--ring-w)) calc(4px + var(--ring-w)), calc(100% - 4px - var(--ring-w)) calc(4px + var(--ring-w)), calc(100% - 4px - var(--ring-w)) calc(8px + var(--ring-w)),
+      calc(100% - var(--ring-w)) calc(8px + var(--ring-w)), calc(100% - var(--ring-w)) calc(100% - 8px - var(--ring-w)), calc(100% - 4px - var(--ring-w)) calc(100% - 8px - var(--ring-w)), calc(100% - 4px - var(--ring-w)) calc(100% - 4px - var(--ring-w)), calc(100% - 8px - var(--ring-w)) calc(100% - 4px - var(--ring-w)),
+      calc(100% - 8px - var(--ring-w)) calc(100% - var(--ring-w)), calc(8px + var(--ring-w)) calc(100% - var(--ring-w)), calc(8px + var(--ring-w)) calc(100% - 4px - var(--ring-w)), calc(4px + var(--ring-w)) calc(100% - 4px - var(--ring-w)), calc(4px + var(--ring-w)) calc(100% - 8px - var(--ring-w)),
+      var(--ring-w) calc(100% - 8px - var(--ring-w)), var(--ring-w) calc(8px + var(--ring-w))
+    );
+  }
+
+  /* The ring for the 4px/2px steps (keycaps, chips, fields). */
+  .btn-chunk::after,
+  .chip-chunk::after,
+  .field-chunk::after {
+    clip-path: polygon(
+      evenodd,
+      0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0,
+      calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px,
+      100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%,
+      4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px),
+      0 4px, var(--ring-w) calc(4px + var(--ring-w)), calc(2px + var(--ring-w)) calc(4px + var(--ring-w)), calc(2px + var(--ring-w)) calc(2px + var(--ring-w)), calc(4px + var(--ring-w)) calc(2px + var(--ring-w)),
+      calc(4px + var(--ring-w)) var(--ring-w), calc(100% - 4px - var(--ring-w)) var(--ring-w), calc(100% - 4px - var(--ring-w)) calc(2px + var(--ring-w)), calc(100% - 2px - var(--ring-w)) calc(2px + var(--ring-w)), calc(100% - 2px - var(--ring-w)) calc(4px + var(--ring-w)),
+      calc(100% - var(--ring-w)) calc(4px + var(--ring-w)), calc(100% - var(--ring-w)) calc(100% - 4px - var(--ring-w)), calc(100% - 2px - var(--ring-w)) calc(100% - 4px - var(--ring-w)), calc(100% - 2px - var(--ring-w)) calc(100% - 2px - var(--ring-w)), calc(100% - 4px - var(--ring-w)) calc(100% - 2px - var(--ring-w)),
+      calc(100% - 4px - var(--ring-w)) calc(100% - var(--ring-w)), calc(4px + var(--ring-w)) calc(100% - var(--ring-w)), calc(4px + var(--ring-w)) calc(100% - 2px - var(--ring-w)), calc(2px + var(--ring-w)) calc(100% - 2px - var(--ring-w)), calc(2px + var(--ring-w)) calc(100% - 4px - var(--ring-w)),
+      var(--ring-w) calc(100% - 4px - var(--ring-w)), var(--ring-w) calc(4px + var(--ring-w))
+    );
+  }
+
+  /* ── Keycap ───────────────────────────────────────────────────────── */
+  .btn-chunk {
+    border: 0;
+    clip-path: var(--notch-sm);
+    --ring-c: rgba(232, 242, 233, 0.14);
+    box-shadow:
+      inset 0 -4px 0 rgba(0, 0, 0, 0.38),
+      inset 0 2px 0 rgba(255, 255, 255, 0.22);
+    transition:
+      transform 120ms steps(2, jump-end),
+      filter 120ms steps(2, jump-end);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  @media (hover: hover) {
+    .btn-chunk:hover:not(:disabled, [aria-disabled="true"]) {
+      transform: translateY(-2px);
+      filter: brightness(1.12);
+    }
+  }
+
+  .btn-chunk:active:not(:disabled, [aria-disabled="true"]) {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+      inset 0 0 12px rgba(255, 255, 255, 0.28);
+    filter: brightness(1.06);
+  }
+
+  .btn-chunk:disabled,
+  .btn-chunk[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* ── Chip ─────────────────────────────────────────────────────────── */
+  .chip-chunk {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    padding: 0 0.875rem;
+    clip-path: var(--notch-sm);
+    background-color: var(--color-cream-deep);
+    color: var(--color-ink);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    transition:
+      background-color 120ms steps(2, jump-end),
+      color 120ms steps(2, jump-end);
+  }
+
+  @media (hover: hover) {
+    .chip-chunk:hover {
+      background-color: var(--color-panel);
+    }
+  }
+
+  .chip-chunk[aria-pressed="true"],
+  .chip-chunk[aria-checked="true"],
+  .chip-chunk[aria-current="true"],
+  .chip-chunk:has(> input:checked),
+  .chip-chunk.is-on {
+    background-color: var(--accent);
+    color: var(--color-cream);
+    --ring-c: rgba(5, 6, 12, 0.3);
+    box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.28);
+  }
+
+  /* A chip that wraps a native radio/checkbox: the control covers the
+     chip invisibly, so click, arrow keys and form semantics come free. */
+  .chip-chunk > input[type="radio"],
+  .chip-chunk > input[type="checkbox"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .chip-chunk:disabled,
+  .chip-chunk[aria-disabled="true"],
+  .chip-chunk:has(> input:disabled) {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* Fingers get the full 44px. */
+  @media (pointer: coarse) {
+    .chip-chunk {
+      min-height: 2.75rem;
+    }
+  }
+
+  /* ── Field ────────────────────────────────────────────────────────── */
+  .field-chunk {
+    display: flex;
+    align-items: center;
+    min-height: 2.75rem;
+    clip-path: var(--notch-sm);
+    background-color: var(--color-cream-deep);
+  }
+
+  .field-chunk > input,
+  .field-chunk > textarea,
+  .field-chunk > select {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    padding: 0.625rem 0.875rem;
+    color: var(--color-ink);
+    /* 16px, or iPhones zoom the page on focus. */
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+
+  .field-chunk > input::placeholder,
+  .field-chunk > textarea::placeholder {
+    color: var(--color-ink-muted);
+    opacity: 1;
+  }
+
+  .field-chunk:focus-within {
+    --ring-w: 2px;
+    --ring-c: var(--color-blue);
+  }
+
+  /* ── Card ─────────────────────────────────────────────────────────── */
+  .card-chunk {
+    clip-path: var(--notch);
+    background-image: var(--dither);
+    box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Only cards you can press lift. A panel that just holds things stays put. */
+  a.card-chunk,
+  button.card-chunk,
+  label.card-chunk {
+    cursor: pointer;
+    transition: transform 160ms steps(2, jump-end);
+  }
+
+  @media (hover: hover) {
+    a.card-chunk:hover,
+    button.card-chunk:hover:not(:disabled),
+    label.card-chunk:hover {
+      transform: translateY(-2px);
+      --ring-c: var(--color-ink-muted);
+    }
+  }
+
+  .card-chunk[aria-pressed="true"],
+  .card-chunk[aria-checked="true"],
+  .card-chunk:has(> input:checked),
+  .card-chunk.is-on {
+    --ring-w: 2px;
+    --ring-c: var(--accent);
+  }
+
+  /* ── Focus, drawn inside the clip ─────────────────────────────────── */
+  .btn-chunk:focus-visible,
+  .chip-chunk:focus-visible,
+  .chip-chunk:has(> input:focus-visible),
+  .card-chunk:focus-visible,
+  .card-chunk:has(> input:focus-visible) {
+    outline: none;
+    --ring-w: 2px;
+    --ring-c: var(--color-blue);
+  }
+
+  /* On a bright fill a cyan ring can vanish (cyan on cyan), so a dark band
+     sits just inside it. On a dark control the band is simply not seen. */
+  .btn-chunk:focus-visible {
+    box-shadow:
+      inset 0 0 0 4px var(--color-cream),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.38),
+      inset 0 2px 0 rgba(255, 255, 255, 0.22);
+  }
+
+  .chip-chunk:focus-visible,
+  .chip-chunk:has(> input:focus-visible) {
+    box-shadow: inset 0 0 0 4px var(--color-cream);
+  }
+
+  /* ── Range ────────────────────────────────────────────────────────── */
+  /* A native range, re-dressed: an 8px track that fills with the accent
+     (set --fill inline to the value's percentage) and a tall keycap thumb.
+     44px of height is the touch target, not the visible track. */
+  .range-chunk {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    height: 2.75rem;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    touch-action: pan-y;
+    --fill: 50%;
+  }
+
+  .range-chunk::-webkit-slider-runnable-track {
+    height: 8px;
+    background: linear-gradient(
+      to right,
+      var(--accent) 0 var(--fill),
+      var(--color-panel) var(--fill) 100%
+    );
+    box-shadow: inset 0 0 0 1px var(--color-line);
+  }
+
+  .range-chunk::-moz-range-track {
+    height: 8px;
+    background: var(--color-panel);
+    box-shadow: inset 0 0 0 1px var(--color-line);
+  }
+
+  .range-chunk::-moz-range-progress {
+    height: 8px;
+    background: var(--accent);
+  }
+
+  .range-chunk::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 26px;
+    margin-top: -9px;
+    border: 0;
+    border-radius: 0;
+    background: var(--color-ink);
+    box-shadow:
+      inset 0 0 0 1px rgba(5, 6, 12, 0.4),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  .range-chunk::-moz-range-thumb {
+    width: 18px;
+    height: 26px;
+    border: 0;
+    border-radius: 0;
+    background: var(--color-ink);
+    box-shadow:
+      inset 0 0 0 1px rgba(5, 6, 12, 0.4),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  .range-chunk:focus-visible {
+    outline: none;
+  }
+
+  .range-chunk:focus-visible::-webkit-slider-thumb {
+    background: var(--color-blue);
+  }
+
+  .range-chunk:focus-visible::-moz-range-thumb {
+    background: var(--color-blue);
+  }
+
+  /* ── Switch ───────────────────────────────────────────────────────── */
+  /* The visual only: put it inside a <button role="switch" aria-checked>. */
+  .switch-chunk {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: 2.75rem;
+    height: 1.5rem;
+    clip-path: var(--notch-sm);
+    background-color: var(--color-panel);
+    box-shadow: inset 0 0 0 1px var(--color-line);
+  }
+
+  .switch-chunk::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 16px;
+    height: 16px;
+    background: var(--color-ink-muted);
+    box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.3);
+    transition: transform 120ms steps(2, jump-end);
+  }
+
+  [aria-checked="true"] > .switch-chunk {
+    background-color: var(--accent-soft);
+  }
+
+  [aria-checked="true"] > .switch-chunk::before {
+    transform: translateX(20px);
+    background: var(--accent);
+  }
+
+  /* ── Small parts ──────────────────────────────────────────────────── */
+  /* The one micro-label: Silkscreen, tracked, muted. */
+  .label-pixel {
+    font-family: var(--font-pixel);
+    font-size: 0.625rem;
+    line-height: 1rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+  }
+
+  /* A key legend (⌘K, esc): a tiny keycap, in the pixel face. */
+  .kbd-chunk {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.25rem;
+    padding: 0 0.375rem;
+    font-family: var(--font-pixel);
+    font-size: 0.5625rem;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
+    background-color: var(--color-panel);
+    box-shadow:
+      inset 0 0 0 1px var(--color-line),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  /* What sits behind a dialog: dark and flat — no fog, no blur. */
+  .scrim-chunk {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 6, 12, 0.74);
+  }
+
+  /* Centre a column on a whole pixel. `margin: auto` lands on a half pixel
+     whenever the leftover width is odd, and at 1x that smears every 1px
+     ring inside. Falls back to plain auto margins where round() is missing. */
+  .page-col {
+    width: 100%;
+    max-width: var(--col, 48rem);
+    margin-inline: auto;
+  }
+
+  @supports (margin-left: round(down, 1.5px, 1px)) {
+    .page-col {
+      margin-inline: 0;
+      margin-left: max(0px, round(down, calc((100% - var(--col, 48rem)) / 2), 1px));
+    }
+  }
 }
 
 /* The attract-mode invitation on the homepage — a hard arcade blink,
@@ -287,16 +684,6 @@ g:focus-visible > .swarm-hit {
   animation: fade-rise 320ms ease both;
 }
 
-/* A gentle pulse for status dots and hero accents. */
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.55; transform: scale(0.72); }
-}
-
-.pulse-dot {
-  animation: pulse-dot 2.2s ease-in-out infinite;
-}
-
 /* Subtle "breathing" for the interactive brand period. Slower and
    gentler than .pulse-dot — meant to read as ambient life, not a
    call-to-action. Used by components/BrandDot.tsx. Period is set via
@@ -307,16 +694,6 @@ g:focus-visible > .swarm-hit {
   50% { transform: scale(1.14); }
 }
 
-
-/* Cross-fade for the cycling featured tool. */
-@keyframes featured-in {
-  from { opacity: 0; transform: translateY(6px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.featured-in {
-  animation: featured-in 360ms ease both;
-}
 
 /* Easter-egg "annoyed huff" that drifts up out of Hugo's head when
  * he's been click-spammed enough to play dead. Three small ink puffs
@@ -370,24 +747,6 @@ g:focus-visible > .swarm-hit {
   18%  { opacity: 0.7; transform: translateY(-2px) scale(1); }
   60%  { opacity: 0.55; transform: translateY(-14px) scale(1.05); }
   100% { opacity: 0; transform: translateY(-26px) scale(1.1); }
-}
-
-/* Leashed Hugo spawn-pop — when the long-press activates the leash,
- * the portal'd dot pops from 0 → 1.25 → 1 with a springy curve so
- * the activation is obviously visible. Plays once on mount.
- * Used by components/BrandDot.tsx. */
-@keyframes hugo-leash-pop {
-  0%   { transform: scale(0); opacity: 0; }
-  60%  { transform: scale(1.4); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-/* Leashed Hugo place-marker pulse — an expanding ring around the
- * placed dot for the LEASH_PLACE_MS window. Soft, brand-coloured,
- * fades. Used by components/BrandDot.tsx. */
-@keyframes hugo-place-pulse {
-  0%   { transform: scale(0.8); opacity: 0.55; }
-  100% { transform: scale(1.8); opacity: 0; }
 }
 
 /* Konami code somersault — one 360° tumble. Drives the `rotate`
@@ -525,17 +884,23 @@ g:focus-visible > .swarm-hit {
   to   { opacity: 1; transform: scale(1); }
 }
 
+/* `backwards`, not `both`: once the entrance has played, the page keeps
+ * no transform at all. A lingering transform (or will-change) would make
+ * this element the containing block for every position:fixed child, and
+ * a tool's full-screen layer would be trapped inside the column. */
 .card-arrive {
   transform-origin: var(--enter-origin-x, 50%) var(--enter-origin-y, 0);
-  animation: card-arrive 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  will-change: transform, opacity;
+  animation: card-arrive 220ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
 
-/* Visible focus that reads in the dark — a crisp cyan line, no radius. */
-:where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-blue);
-  outline-offset: 3px;
-  border-radius: 0;
+/* Visible focus that reads in the dark — a crisp cyan line. In the base
+   layer so the kit (components layer) can draw its own ring inside a
+   clipped shape instead, where an outline would be cut off. */
+@layer base {
+  :where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: 3px;
+  }
 }
 
 /* Honour the OS-level "reduce motion" preference for the named keyframes
@@ -543,8 +908,6 @@ g:focus-visible > .swarm-hit {
    (ToolMap.tsx, reduceMotionRef); this rule completes the coverage. */
 @media (prefers-reduced-motion: reduce) {
   .fade-rise,
-  .featured-in,
-  .pulse-dot,
   .press-blink,
   .crt-on,
   .screen-flicker,
@@ -575,7 +938,9 @@ g:focus-visible > .swarm-hit {
     animation: none !important;
   }
   .btn-chunk,
-  .card-chunk {
+  .chip-chunk,
+  .card-chunk,
+  .switch-chunk::before {
     transition: none !important;
   }
 }
