@@ -64,7 +64,10 @@ export default function HomeList({
   }, [jolt]);
 
   return (
-    <div className="mx-auto w-full max-w-xl px-4 pb-2">
+    // The list ignores the pointer for its first moment. A key on another
+    // page that leads here ("Back home" on the 404) sits where the game
+    // cards open, and the second tap of a double tap used to open a game.
+    <div className="press-guard mx-auto w-full max-w-xl px-4 pb-2">
       {/* The title, as a banner. The corner mascot sits over its top-left
           margin, so the banner starts a little way down. */}
       <div className="relative mt-12 h-44">
