@@ -9,6 +9,7 @@ import { iconForSlug } from "@/lib/pixel-icons";
 import PixelIcon from "@/components/PixelIcon";
 import PixelWordmark from "@/components/PixelWordmark";
 import CabinetCanvas from "@/components/CabinetCanvas";
+import Tag from "@/components/ui/Tag";
 
 /**
  * The homepage on a phone.
@@ -99,9 +100,9 @@ export default function HomeList({
                       {t.title}
                     </span>
                     {t.isNew ? (
-                      <span className="bg-ink px-1.5 font-pixel text-[9px] leading-[14px] tracking-[0.08em] text-cream uppercase">
+                      <Tag tone="solid" className="px-1.5 py-0.5">
                         new
-                      </span>
+                      </Tag>
                     ) : null}
                   </span>
                   <span className="text-sm leading-snug text-ink-soft">
