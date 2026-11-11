@@ -410,8 +410,13 @@ function RoutePanel({
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {/* This key lands under the left of "Plan a route" when the panel
+            takes that key's place, where the second tap of a double tap
+            would press it. The guard is on the key and not on the panel:
+            it works by ignoring the pointer, and a tap the panel ignored
+            would fall through to the chart and drop a pin. */}
         {!route && !routing && (
-          <Keycap size="sm" onClick={onUseMyPosition}>
+          <Keycap size="sm" onClick={onUseMyPosition} className="press-guard">
             {hasGps ? "Use my position" : "Find me first"}
           </Keycap>
         )}
@@ -502,10 +507,14 @@ function SettingsDrawer({
         </div>
 
         <Panel tone="danger" className="p-4 text-xs leading-5 text-ink">
-          <strong className="font-bold">Grund are incomplete.</strong> The hazard
-          marks come from OpenStreetMap — nowhere near every grund is in there
-          (it can&apos;t legally include the official depth survey). This is not
-          a depth chart. Never navigate by it; use the official sjökort.
+          {/* The space is written out: the build drops a text node's
+              leading space when the node spans lines and holds an entity,
+              and this sentence ran into the bold one. */}
+          <strong className="font-bold">Grund are incomplete.</strong>{" "}
+          The hazard marks come from OpenStreetMap — nowhere near every grund
+          is in there (it can&apos;t legally include the official depth
+          survey). This is not a depth chart. Never navigate by it; use the
+          official sjökort.
         </Panel>
 
         <p className="text-xs leading-5 text-ink-muted">

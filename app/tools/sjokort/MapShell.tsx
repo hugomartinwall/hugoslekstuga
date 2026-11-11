@@ -97,7 +97,7 @@ export function MapShell({
   onMapClick,
 }: {
   gps: GeolocationPosition | null;
-  /** The position watch is running and has not failed: the locate key stays down. */
+  /** The position watch is running and has not failed: the locate key is lit. */
   tracking: boolean;
   boatKind: BoatKind;
   /** Planned route polyline [lng, lat][], or null. */
@@ -346,12 +346,14 @@ export function MapShell({
       </Keycap>
 
       {/* Locate / centre-on-me — bottom-left, lifted above the iOS safe
-          area. While the watch runs the key stays down, in the accent. */}
+          area. While the watch runs the key is lit in the accent. It is
+          not announced as pressed: pressing it again does not switch the
+          watch off, so it is not a toggle, and its name already changes
+          once there is a position to centre on. */}
       <Keycap
         tone={tracking ? "accent" : "neutral"}
         size="icon"
         onClick={handleLocate}
-        aria-pressed={tracking}
         aria-label={gps ? "Centre on my position" : "Find my position"}
         className={`absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 z-10 ${
           tracking ? ON_CHART_ACCENT : ""
