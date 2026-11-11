@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import PixelIcon from "@/components/PixelIcon";
 import Dialog from "@/components/ui/Dialog";
 import Keycap from "@/components/ui/Keycap";
+import ScrollRegion from "@/components/ui/ScrollRegion";
 import { clamp } from "@/lib/math";
 import { findTool } from "@/lib/tools";
 import {
@@ -116,6 +117,7 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
   // Capture "now" once at open via useState's lazy initializer
   // (the React 19 purity rule blocks Date.now() during render).
   const [openedAt] = useState(() => Date.now());
+  const titleId = useId();
   const ageDays = memory.firstSeen
     ? Math.max(1, Math.floor((openedAt - memory.firstSeen) / 86_400_000))
     : 0;
@@ -137,7 +139,7 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
     >
       <header className="flex items-start justify-between gap-3 px-5 pt-5 pb-5 sm:px-8 sm:pt-7">
         <div className="min-w-0">
-          <h2 className="font-display text-3xl leading-none">
+          <h2 id={titleId} className="font-display text-3xl leading-none">
             Hugo&rsquo;s room
           </h2>
           <p className="mt-1 text-xs text-ink-soft">
@@ -156,8 +158,9 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
       </header>
 
       {/* The title stays put; on a screen too short for the room, this
-          part scrolls under it. */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 sm:px-8 sm:pb-7">
+          part scrolls under it, and then the keyboard can stop on it and
+          scroll it too. */}
+      <ScrollRegion labelledBy={titleId} className="px-5 pb-5 sm:px-8 sm:pb-7">
         {/* Live readouts */}
         <section className={READOUTS}>
           <Stat label="Heart" value={`${Math.round(bpm)}`} unit="BPM" />
@@ -208,7 +211,7 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
           Hugo since {formatDate(memory.firstSeen)} (
           {ageDays} day{ageDays === 1 ? "" : "s"})
         </footer>
-      </div>
+      </ScrollRegion>
     </Dialog>
   );
 }
