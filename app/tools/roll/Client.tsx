@@ -601,11 +601,11 @@ export default function RollPage() {
                 <p className="label-pixel">Recent</p>
                 <ol className="flex max-w-full flex-wrap justify-center gap-1.5">
                   {recent.slice(1).map((w, i) => (
-                    // A record, not a control: the chip shape without the
-                    // pointer, the hover or the 44px a pressable chip gets.
+                    // A record, not a control: the bare stepped frame,
+                    // with none of what makes a chip pressable.
                     <li
                       key={`${w}-${i}`}
-                      className="chip-chunk min-h-8 max-w-full cursor-default px-2.5 py-1 text-xs wrap-anywhere select-text hover:bg-cream-deep"
+                      className="plate-chunk inline-flex max-w-full items-center bg-cream-deep px-2.5 py-1.5 text-xs font-bold wrap-anywhere select-text"
                     >
                       {w}
                     </li>
@@ -639,24 +639,6 @@ export default function RollPage() {
  * clear key would take, so a list that mixes rows with and without
  * pictures still lines up in columns.
  * -----------------------------------------------------------------------*/
-
-/** The "add" mark, drawn on the kit's 12×12 icon grid (PixelIcon has no plus). */
-function PixelPlus() {
-  return (
-    <svg
-      width={12}
-      height={12}
-      viewBox="0 0 12 12"
-      shapeRendering="crispEdges"
-      fill="currentColor"
-      aria-hidden
-      focusable="false"
-    >
-      <rect x="5" y="1" width="2" height="10" />
-      <rect x="1" y="5" width="10" height="2" />
-    </svg>
-  );
-}
 
 function EntryRow({
   entry,
@@ -759,7 +741,7 @@ function EntryRow({
                 className="h-full w-full object-cover"
               />
             ) : (
-              <PixelPlus />
+              <PixelIcon name="plus" size={12} />
             )}
           </Chip>
           {hasImage && (
