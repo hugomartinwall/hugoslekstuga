@@ -15,12 +15,14 @@ import type { ComponentPropsWithoutRef, ElementType, ReactNode } from "react";
  */
 export type PanelTone = "well" | "raised" | "page" | "soft" | "danger";
 
+// `tinted` marks a coloured surface for the kit: the pixel micro-label's
+// muted grey falls under 4.5:1 on a tint, so it takes the softer ink there.
 const TONE: Record<PanelTone, string> = {
   well: "bg-cream-deep",
   raised: "bg-panel",
   page: "bg-cream",
-  soft: "bg-(--accent-soft)",
-  danger: "bg-tomato-soft",
+  soft: "tinted bg-(--accent-soft)",
+  danger: "tinted bg-tomato-soft",
 };
 
 type PanelProps<T extends ElementType> = {

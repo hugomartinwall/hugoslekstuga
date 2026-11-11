@@ -624,6 +624,13 @@ body {
     color: var(--color-ink-muted);
   }
 
+  /* On a tinted surface (a soft or danger panel) the muted grey is about
+     4.4:1, under the 4.5:1 that 10px text needs. There the label takes
+     the softer ink, about 7:1. */
+  .tinted .label-pixel {
+    color: var(--color-ink-soft);
+  }
+
   /* A key legend (⌘K, esc): a tiny keycap, in the pixel face. */
   .kbd-chunk {
     display: inline-flex;
