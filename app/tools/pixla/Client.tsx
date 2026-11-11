@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import ToolFrame from "@/components/ToolFrame";
 import PixelIcon from "@/components/PixelIcon";
 import Slider from "@/components/Slider";
@@ -105,60 +111,93 @@ function nearest(
   return best;
 }
 
+/** The slider's stops: every cell count a picture can be shown at. */
+const CELLS_MIN = 8;
+const CELLS_MAX = 128;
+const CELLS_STEP = 4;
+
+type Grid = { w: number; h: number };
+
+/** The grid a picture of this size becomes at a cell count. The pixel
+ *  pass and the layout both ask here, so they cannot disagree. */
+function gridFor(cells: number, width: number, height: number): Grid {
+  const w = Math.max(2, Math.min(cells, width));
+  return { w, h: Math.max(2, Math.round((w * height) / width)) };
+}
+
 /**
  * How big the preview is shown. Layout only: the pass below decides the
- * picture's pixels, these two decide how large they appear, and they do
- * it in CSS so the answer follows the panel and the window by itself.
+ * picture's pixels, these functions decide how large they appear, and
+ * they do it in CSS so the answer follows the panel and the window by
+ * itself.
  *
  * A cell is always a whole number of CSS pixels (so of device pixels
  * too, on a 1x, 2x or 3x screen), the most that fit:
  *
- *   - across, the panel (100cqw, less the 2px of hairline), and never
+ *   - across, the panel (100cqw, less the 2px of hairline; written as
+ *     1.99px, because 100cqw can come out a hair under a whole pixel
+ *     and round() would then lose a whole step), and never
  *     more than the canvas's own size, which the pass keeps to 560px;
- *   - down, `--fit-h`, the height the page can spare (set on the panel).
+ *   - down, the stage: the height kept free for this picture.
  *
- * Two exceptions keep a tall picture at a high cell count from turning
- * into a stamp: 2px cells are used while they stay under PREVIEW_MAX_H
- * even if that is taller than `--fit-h`, and a strip so tall that not
- * even 1px cells fit is simply shrunk to PREVIEW_MAX_H.
+ * The stage is one height for all of the slider's stops, so nothing
+ * below the picture (the slider included) moves while it is dragged. It
+ * is as tall as the picture gets at its tallest stop when every stop
+ * takes the most whole pixels that fit `--fit-h`, the height the page
+ * can spare (set on the panel). A picture too tall for that even at 1px
+ * a cell keeps its 1px cells and gets a stage that holds them, as long
+ * as PREVIEW_CRISP_H is enough; a taller one (a strip) is simply shrunk
+ * to the stage, the one case of a cell that is not a whole pixel.
  */
 const PREVIEW_MAX_W = 560;
-/** The canvas's `max-h-[480px]` class says the same thing for browsers
- *  without round() or cqw, where the two functions below are ignored and
- *  the canvas is shrunk to fit instead, as it used to be. */
-const PREVIEW_MAX_H = 480;
-const PREVIEW_ROOM_W = `min(100cqw - 2px, ${PREVIEW_MAX_W}px)`;
+/** Whole pixels come before `--fit-h` up to this height. A short desktop
+ *  window spares 256px, and a phone screenshot at the slider's top stop
+ *  is some 280 to 310 rows: it still gets them. On a phone `--fit-h` is
+ *  never less than this, so there the stage never outgrows `--fit-h`. */
+const PREVIEW_CRISP_H = 320;
+const PREVIEW_ROOM_W = `min(100cqw - 1.99px, ${PREVIEW_MAX_W}px)`;
 
-function previewWidth(w: number, h: number): string {
-  const perRow = w / h;
-  // The 0.01px keeps a height limit that lands exactly on a step from
-  // losing that step to float rounding.
-  const fits = `round(down, min(${PREVIEW_ROOM_W}, var(--fit-h) * ${perRow} + 0.01px), ${w}px)`;
-  const twoPx = `min(${2 * w}px, round(down, min(${PREVIEW_ROOM_W}, ${PREVIEW_MAX_H * perRow + 0.01}px), ${w}px))`;
-  const shrunk = `min(${w}px, 100cqw - 2px, ${PREVIEW_MAX_H * perRow}px)`;
-  return `max(${fits}, ${twoPx}, ${shrunk})`;
+/** The widest a grid can be shown with whole-pixel cells, in the panel
+ *  and under a height. 0px if not even 1px cells fit. The stage and the
+ *  canvas both come from this one rule, which is why they agree. */
+function widthUnder(height: string, g: Grid): string {
+  // The 0.01px keeps a height that lands exactly on a step from losing
+  // that step to float rounding.
+  return `round(down, min(${PREVIEW_ROOM_W}, (${height} + 0.01px) * ${g.w} / ${g.h}), ${g.w}px)`;
 }
 
-/**
- * The height kept free for the picture: all it could take at this shape,
- * whatever the cell count. The picture changes size in steps as the
- * slider moves; with the space held open, nothing below it (the slider
- * included) moves while it is being dragged.
- */
-function previewStageHeight(w: number, h: number): string {
-  return `calc(round(up, min(var(--fit-h), ${PREVIEW_ROOM_W} * ${h / w}), 1px) + 2px)`;
+/** The stage's height for a picture, less the hairline: `--stage-h`. */
+function previewStage(width: number, height: number): string {
+  const tall = new Set<string>();
+  let rows = 0;
+  for (let cells = CELLS_MIN; cells <= CELLS_MAX; cells += CELLS_STEP) {
+    const g = gridFor(cells, width, height);
+    tall.add(`${widthUnder("var(--fit-h)", g)} * ${g.h} / ${g.w}`);
+    rows = Math.max(rows, g.h);
+  }
+  // And 1px cells at the top stop, if their rows fit under the taller of
+  // `--fit-h` and PREVIEW_CRISP_H; if not, that much for the strip.
+  return `max(min(${rows}px, round(down, max(var(--fit-h), ${PREVIEW_CRISP_H}px), 1px)), ${[...tall].join(", ")})`;
+}
+
+/** The canvas's width at one grid: whole-pixel cells under the stage, or
+ *  (the strip) whatever width the stage's height leaves it. */
+function previewWidth(g: Grid): string {
+  return `max(${widthUnder("var(--stage-h)", g)}, min(${g.w}px, var(--stage-h) * ${g.w} / ${g.h}))`;
 }
 
 export default function PixlaPage() {
   const tool = findTool("pixla")!;
   const previewRef = useRef<HTMLCanvasElement>(null);
   /** The decoded source image — a ref because ImageBitmap isn't
-   *  render state; `version` bumps to re-run the pixel pass. */
+   *  render state. What render needs of it is its size: `source`, a new
+   *  object for every picture, which also re-runs the pixel pass. */
   const bitmapRef = useRef<ImageBitmap | null>(null);
-  const [version, setVersion] = useState(0);
+  const [source, setSource] = useState<{ w: number; h: number } | null>(
+    null,
+  );
   const [filename, setFilename] = useState("");
   const [error, setError] = useState("");
-  const [grid, setGrid] = useState<{ w: number; h: number } | null>(null);
 
   const [settings, setSettings] = useLocalStorageState<PixlaSettings>(
     SETTINGS_KEY,
@@ -182,7 +221,7 @@ export default function PixlaPage() {
       bitmapRef.current?.close();
       bitmapRef.current = bitmap;
       setFilename(file.name);
-      setVersion((v) => v + 1);
+      setSource({ w: bitmap.width, h: bitmap.height });
     } catch {
       setError("Couldn't read that file as an image.");
     }
@@ -216,8 +255,7 @@ export default function PixlaPage() {
   const renderSmall = (): HTMLCanvasElement | null => {
     const bitmap = bitmapRef.current;
     if (!bitmap) return null;
-    const gw = Math.max(2, Math.min(cells, bitmap.width));
-    const gh = Math.max(2, Math.round((gw * bitmap.height) / bitmap.width));
+    const { w: gw, h: gh } = gridFor(cells, bitmap.width, bitmap.height);
     const small = document.createElement("canvas");
     small.width = gw;
     small.height = gh;
@@ -255,12 +293,14 @@ export default function PixlaPage() {
     return small;
   };
 
-  // Re-run the pass whenever the image or a knob changes.
-  useEffect(() => {
+  // Re-run the pass whenever the image or a knob changes. A layout
+  // effect: the canvas gets the new grid's pixels before the browser
+  // paints the box that render has just sized for that grid, so no frame
+  // shows one grid's pixels in another grid's box.
+  useLayoutEffect(() => {
     const preview = previewRef.current;
     const small = renderSmall();
     if (!preview || !small) return;
-    setGrid({ w: small.width, h: small.height });
     // Integer upscale so preview cells are whole pixels.
     const scale = Math.max(1, Math.floor(560 / small.width));
     preview.width = small.width * scale;
@@ -270,7 +310,7 @@ export default function PixlaPage() {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(small, 0, 0, preview.width, preview.height);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, cells, palette, dither]);
+  }, [source, cells, palette, dither]);
 
   const download = async () => {
     const small = renderSmall();
@@ -301,99 +341,118 @@ export default function PixlaPage() {
     hugoMoodEvent("happy");
   };
 
-  const hasImage = version > 0;
+  // The grid is worked out here, from the picture's size and the slider,
+  // and not kept in state: the caption, the canvas's box and (through
+  // the layout effect above) its pixels are one grid's in every frame.
+  const grid = source && gridFor(cells, source.w, source.h);
+  const hasImage = source !== null;
+
+  // Roomy while it is the whole page; a slim bar once there is a
+  // picture: smaller hint, and the key legend runs on after it instead
+  // of taking a line of its own. The legend is a keyboard shortcut, so
+  // it is not shown where there is no keyboard. Its 20px of height is
+  // spelled out so the bar is a whole number of pixels tall and every
+  // hairline under it stays sharp.
+  const dropzone = (className?: string) => (
+    <Dropzone
+      title={hasImage ? "Drop another image" : "Drop or paste an image"}
+      hint={
+        <span className={hasImage ? "block text-xs leading-5" : "block"}>
+          JPEG, PNG, anything the browser can decode · stays in your tab{" "}
+          <span
+            className={`h-5 items-center gap-1.5 text-xs text-ink-muted pointer-coarse:hidden ${
+              hasImage
+                ? "mx-1.5 inline-flex align-top whitespace-nowrap"
+                : "mt-2 flex justify-center"
+            }`}
+          >
+            <kbd className="kbd-chunk">⌘V</kbd> also works
+          </span>
+        </span>
+      }
+      accept="image/*"
+      onFiles={(files) => {
+        const f = files[0];
+        if (f) handleFile(f);
+      }}
+      size={hasImage ? "slim" : "roomy"}
+      className={className}
+    />
+  );
+  const errorNote = (className = "") =>
+    error && (
+      <Panel as="p" tone="danger" className={`px-4 py-3 text-sm ${className}`}>
+        {error}
+      </Panel>
+    );
 
   return (
     <ToolFrame tool={tool}>
       <div className="flex flex-col gap-4 sm:gap-5">
-        {/* Roomy while it is the whole page; a slim bar once there is a
-            picture: smaller hint, and the key legend runs on after it
-            instead of taking a line of its own. The legend is a keyboard
-            shortcut, so it is not shown where there is no keyboard. Its
-            20px of height is spelled out so the bar is a whole number of
-            pixels tall and every hairline under it stays sharp. */}
-        <Dropzone
-          title={hasImage ? "Drop another image" : "Drop or paste an image"}
-          hint={
-            <span className={hasImage ? "block text-xs leading-5" : "block"}>
-              JPEG, PNG, anything the browser can decode · stays in your tab{" "}
-              <span
-                className={`h-5 items-center gap-1.5 text-xs text-ink-muted pointer-coarse:hidden ${
-                  hasImage
-                    ? "mx-1.5 inline-flex align-top whitespace-nowrap"
-                    : "mt-2 flex justify-center"
-                }`}
-              >
-                <kbd className="kbd-chunk">⌘V</kbd> also works
-              </span>
-            </span>
-          }
-          accept="image/*"
-          onFiles={(files) => {
-            const f = files[0];
-            if (f) handleFile(f);
-          }}
-          size={hasImage ? "slim" : "roomy"}
-        />
-
-        {error && (
-          <Panel
-            as="p"
-            tone="danger"
-            className={`px-4 py-3 text-sm ${hasImage ? "max-sm:-order-1" : ""}`}
-          >
-            {error}
-          </Panel>
-        )}
-
         {/* On a phone the picture, its knobs and the download key come
-            first once there is a picture, and "Drop another image" moves
+            first once there is a picture, and "Drop another image" sits
             under them: a phone's first screen has room for one or the
-            other. An error then sits between the two, next to whichever
-            key caused it. From `sm` up the dropzone stays on top, where a
-            dragged file can always find it. */}
-        {hasImage && (
-          <div className="flex flex-col gap-4 max-sm:-order-2 sm:gap-5">
-            {/* The panel is a size container: the canvas reads its width
-                (100cqw) to pick a whole-pixel scale, see previewWidth().
-                --fit-h is the height the picture may take: what the first
-                screen has left once everything else on it is counted
-                (about 32rem on a phone, 33.5rem with the dropzone above),
-                so the download key stays in view. Never over 420px, and
-                never under 320px on a phone, where a portrait photo would
-                shrink to a thumbnail, or 252px from `sm` up. */}
-            <Panel className="@container flex flex-col items-center gap-2 p-3 [--fit-h:clamp(320px,100svh_-_32rem,420px)] sm:p-4 sm:[--fit-h:clamp(252px,100svh_-_33.5rem,420px)]">
+            other. That is a second dropzone, at the end, and the two
+            swap at `sm`. (One dropzone moved down with CSS `order` kept
+            its old place in the Tab order: from the back key down to the
+            dropzone, then up to the slider.) An error sits right before
+            whichever dropzone is shown: on a phone that is between the
+            download key and the dropzone, next to whichever caused it.
+            From `sm` up the dropzone stays on top, where a dragged file
+            can always find it. */}
+        {dropzone(hasImage ? "max-sm:hidden" : undefined)}
+        {errorNote(hasImage ? "max-sm:hidden" : undefined)}
+
+        {source && grid && (
+          <div className="flex flex-col gap-4 sm:gap-5">
+            {/* The panel is a size container: the stage and the canvas
+                read its width (100cqw) to pick a whole-pixel scale, see
+                previewStage() and previewWidth(). --fit-h is the height
+                the picture may take: what the first screen has left once
+                everything else on it is counted (about 32rem on a phone,
+                33.5rem with the dropzone above), so the download key
+                stays in view. Never over 420px, and never under 320px on
+                a phone, where a portrait photo would shrink to a
+                thumbnail, or 256px from `sm` up: 128 cells at 2px each,
+                so a square picture keeps 2px cells at the top stop.
+                Below `sm` the sides are 8px and not 12: the same 256px
+                then fit across from a 314px layout up, which covers a
+                320px phone and a 1280px window zoomed to 400% with a
+                scrollbar that takes room. */}
+            <Panel className="@container flex flex-col items-center gap-2 p-3 [--fit-h:clamp(320px,100svh_-_32rem,420px)] max-sm:px-2 sm:p-4 sm:[--fit-h:clamp(256px,100svh_-_33.5rem,420px)]">
               <div
                 className="flex items-center justify-center"
-                style={{
-                  minHeight: grid
-                    ? previewStageHeight(grid.w, grid.h)
-                    : undefined,
-                }}
+                style={
+                  {
+                    "--stage-h": previewStage(source.w, source.h),
+                    height: "calc(var(--stage-h) + 2px)",
+                  } as CSSProperties
+                }
               >
+                {/* max-h and max-w are for browsers without round() or
+                    cqw: the width below is ignored there and the canvas
+                    is shrunk to fit instead, as it used to be. */}
                 <canvas
                   ref={previewRef}
                   className="box-content max-h-[480px] max-w-[calc(100%-2px)] border border-line"
                   style={{
                     imageRendering: "pixelated",
-                    width: grid ? previewWidth(grid.w, grid.h) : undefined,
+                    width: previewWidth(grid),
                   }}
                 />
               </div>
-              {grid && (
-                <p className="label-pixel">
-                  {grid.w} × {grid.h} cells
-                </p>
-              )}
+              <p className="label-pixel">
+                {grid.w} × {grid.h} cells
+              </p>
             </Panel>
 
             <Panel className="flex flex-col gap-3 p-3 sm:p-4">
               <Slider
                 label="Pixels across"
                 value={cells}
-                min={8}
-                max={128}
-                step={4}
+                min={CELLS_MIN}
+                max={CELLS_MAX}
+                step={CELLS_STEP}
                 onChange={(v) => setSettings((s) => ({ ...s, cells: v }))}
                 hint="Fewer = chunkier. 32–64 is the sprite sweet spot."
               />
@@ -437,6 +496,9 @@ export default function PixlaPage() {
             </div>
           </div>
         )}
+
+        {hasImage && errorNote("sm:hidden")}
+        {hasImage && dropzone("sm:hidden")}
 
         <p className="text-xs text-ink-muted">
           The pixelation is a canvas downscale, the palette a
