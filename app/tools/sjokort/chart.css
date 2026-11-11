@@ -1,0 +1,72 @@
+/* The chart's third-party parts, dressed for the kit.
+ *
+ * MapLibre ships its own stylesheet (white, rounded). It is unlayered, so
+ * it outranks the kit, which lives in @layer components, on every property
+ * both of them set. Everything here is scoped to .sjokort-chart, the class
+ * MapShell puts on the map container.
+ *
+ * The attribution control is left exactly as the library draws it.
+ */
+
+/* The zoom keys stand in a column under the settings key (top-right), so
+   nothing docked at the bottom of a phone screen can land on them. */
+.sjokort-chart .maplibregl-ctrl-top-right {
+  top: 4.25rem; /* the settings key (1rem + 2.75rem), then a 0.5rem gap */
+  right: 0.75rem;
+}
+
+.sjokort-chart .maplibregl-ctrl-top-right .maplibregl-ctrl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  float: none;
+  margin: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* MapShell gives the two buttons the kit's keycap classes. On the
+   properties below the library has an opinion as well (29px, transparent,
+   a blue glow on focus, no shadow after a click); revert-layer drops every
+   unlayered value, the library's and this rule's, and lets the kit's
+   through, in every state. */
+.sjokort-chart .maplibregl-ctrl-group .btn-chunk.btn-chunk {
+  display: revert-layer;
+  width: revert-layer;
+  height: revert-layer;
+  border-top: revert-layer;
+  border-radius: revert-layer;
+  background-color: revert-layer;
+  box-shadow: revert-layer;
+}
+
+/* The glyphs: the kit's pixel plus and minus (a 10x2 bar, a 2x10 upright)
+   in the key's own text colour, in place of the library's dark SVGs. */
+.sjokort-chart .maplibregl-ctrl .btn-chunk .maplibregl-ctrl-icon {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 10px 2px;
+}
+
+.sjokort-chart .maplibregl-ctrl .btn-chunk.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon {
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-size:
+    10px 2px,
+    2px 10px;
+}
+
+/* At either end of the zoom range the kit dims the whole key. The library
+   dims the glyph too, and the two would multiply. */
+.sjokort-chart .maplibregl-ctrl .btn-chunk:disabled .maplibregl-ctrl-icon {
+  opacity: 1;
+}
+
+/* Keyboard focus on the chart itself (arrow keys pan it, + and - zoom).
+   The site's focus line sits 3px outside an element; the chart fills the
+   screen, so that lands off the edge. Draw it just inside instead. */
+.sjokort-chart .maplibregl-canvas:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: -2px;
+}

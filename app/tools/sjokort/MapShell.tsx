@@ -2,17 +2,104 @@
 
 import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
+// After the library's sheet: the zoom keys and the chart's focus line.
+import "./chart.css";
 import type {
   Map as MlMap,
   Marker as MlMarker,
   GeoJSONSource,
 } from "maplibre-gl";
+import Keycap, { keycapClass } from "@/components/ui/Keycap";
 import { STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "@/lib/sjokort/style";
 import { boatIconSvg, type BoatKind } from "@/lib/sjokort/boat-icon";
 import { SPEED_ZONES } from "@/lib/sjokort/speed-zones";
 
 type MaplibreNs = typeof import("maplibre-gl");
 type LngLat = [number, number];
+
+/**
+ * The keys that float on the chart (settings, zoom, locate) are raised
+ * dark keycaps: they have to read on pale tiles and, when the tiles do
+ * not load, on the room-dark page behind them.
+ *
+ * MapLibre builds the two zoom buttons itself, so they get the same
+ * classes by hand once the control is added (chart.css does the rest).
+ */
+const ZOOM_KEY = keycapClass({ tone: "neutral", size: "icon" })
+  .split(/\s+/)
+  .filter(Boolean);
+
+/**
+ * An accent key on the chart (Plan a route, the locate key while it is
+ * on) wears a room-dark frame: ice teal alone washes out on pale water
+ * tiles. The frame is the kit's own ring, a little wider and recoloured;
+ * `not-focus-visible` leaves the cyan focus ring in charge.
+ */
+export const ON_CHART_ACCENT =
+  "not-focus-visible:[--ring-w:2px] not-focus-visible:[--ring-c:var(--color-cream)]";
+
+/**
+ * Two icons the kit's set (lib/pixel-icons.ts) does not have, drawn the
+ * way it draws its own: 12×12 bitmaps, `#` is a lit cell.
+ */
+const ICON_COG = [
+  ".....##.....",
+  ".##..##..##.",
+  ".##########.",
+  "..########..",
+  "..###..###..",
+  "####....####",
+  "####....####",
+  "..###..###..",
+  "..########..",
+  ".##########.",
+  ".##..##..##.",
+  ".....##.....",
+] as const;
+
+const ICON_LOCATE = [
+  ".....##.....",
+  ".....##.....",
+  "...######...",
+  "..##....##..",
+  "..#......#..",
+  "###..##..###",
+  "###..##..###",
+  "..#......#..",
+  "..##....##..",
+  "...######...",
+  ".....##.....",
+  ".....##.....",
+] as const;
+
+/** A bitmap as crisp SVG rects in the current text colour, one per run of lit cells. */
+function Bitmap({ rows, size = 12 }: { rows: readonly string[]; size?: number }) {
+  const rects: { x: number; y: number; w: number }[] = [];
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] !== "#") continue;
+      let w = 1;
+      while (row[x + w] === "#") w++;
+      rects.push({ x, y, w });
+      x += w;
+    }
+  });
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 12 12"
+      shapeRendering="crispEdges"
+      fill="currentColor"
+      aria-hidden
+      focusable="false"
+    >
+      {rects.map((r) => (
+        <rect key={`${r.y}-${r.x}`} x={r.x} y={r.y} width={r.w} height={1} />
+      ))}
+    </svg>
+  );
+}
 
 /**
  * Map-anchored palette. Everything below draws ON the third-party
@@ -62,6 +149,7 @@ function updatePin(
  */
 export function MapShell({
   gps,
+  tracking,
   boatKind,
   route,
   start,
@@ -71,6 +159,8 @@ export function MapShell({
   onMapClick,
 }: {
   gps: GeolocationPosition | null;
+  /** The position watch is running and has not failed: the locate key stays down. */
+  tracking: boolean;
   boatKind: BoatKind;
   /** Planned route polyline [lng, lat][], or null. */
   route: LngLat[] | null;
@@ -121,10 +211,17 @@ export function MapShell({
           [20.2, 60.2],
         ],
       });
+      // Top-right, under the settings key: at the bottom of a phone
+      // screen the route panel used to sit on the zoom-in button.
       map.addControl(
         new ml.NavigationControl({ showCompass: false }),
-        "bottom-right",
+        "top-right",
       );
+      for (const key of container.querySelectorAll(
+        ".maplibregl-ctrl-zoom-in, .maplibregl-ctrl-zoom-out",
+      )) {
+        key.classList.add(...ZOOM_KEY);
+      }
       map.on("click", (e) => {
         onMapClickRef.current([e.lngLat.lng, e.lngLat.lat]);
       });
@@ -297,37 +394,33 @@ export function MapShell({
 
   return (
     <>
-      <div ref={containerRef} className="h-full w-full" />
+      <div ref={containerRef} className="sjokort-chart h-full w-full" />
 
-      {/* Settings cog — top-right (top-left is Hugo + the back button). */}
-      <button
-        type="button"
+      {/* Settings — top-right (top-left is Hugo + the back key). The zoom
+          keys hang under it; chart.css places them. */}
+      <Keycap
+        size="icon"
         onClick={onOpenSettings}
         aria-label="Settings"
-        className="btn-chunk absolute right-3 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-cream text-ink"
+        className="absolute right-3 top-4 z-10"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
+        <Bitmap rows={ICON_COG} />
+      </Keycap>
 
-      {/* Locate / centre-on-me — bottom-left, lifted above the iOS safe area. */}
-      <button
-        type="button"
+      {/* Locate / centre-on-me — bottom-left, lifted above the iOS safe
+          area. While the watch runs the key stays down, in the accent. */}
+      <Keycap
+        tone={tracking ? "accent" : "neutral"}
+        size="icon"
         onClick={handleLocate}
+        aria-pressed={tracking}
         aria-label={gps ? "Centre on my position" : "Find my position"}
-        className="btn-chunk absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-teal text-cream"
+        className={`absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 z-10 ${
+          tracking ? ON_CHART_ACCENT : ""
+        }`}
       >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <circle cx="12" cy="12" r="7" />
-          <line x1="12" y1="1" x2="12" y2="4" />
-          <line x1="12" y1="20" x2="12" y2="23" />
-          <line x1="1" y1="12" x2="4" y2="12" />
-          <line x1="20" y1="12" x2="23" y2="12" />
-          <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
-        </svg>
-      </button>
+        <Bitmap rows={ICON_LOCATE} />
+      </Keycap>
     </>
   );
 }
