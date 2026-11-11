@@ -9,6 +9,7 @@ import type {
   Marker as MlMarker,
   GeoJSONSource,
 } from "maplibre-gl";
+import PixelIcon from "@/components/PixelIcon";
 import Keycap, { keycapClass } from "@/components/ui/Keycap";
 import { STYLE, INITIAL_CENTER, INITIAL_ZOOM } from "@/lib/sjokort/style";
 import { boatIconSvg, type BoatKind } from "@/lib/sjokort/boat-icon";
@@ -37,69 +38,6 @@ const ZOOM_KEY = keycapClass({ tone: "neutral", size: "icon" })
  */
 export const ON_CHART_ACCENT =
   "not-focus-visible:[--ring-w:2px] not-focus-visible:[--ring-c:var(--color-cream)]";
-
-/**
- * Two icons the kit's set (lib/pixel-icons.ts) does not have, drawn the
- * way it draws its own: 12×12 bitmaps, `#` is a lit cell.
- */
-const ICON_COG = [
-  ".....##.....",
-  ".##..##..##.",
-  ".##########.",
-  "..########..",
-  "..###..###..",
-  "####....####",
-  "####....####",
-  "..###..###..",
-  "..########..",
-  ".##########.",
-  ".##..##..##.",
-  ".....##.....",
-] as const;
-
-const ICON_LOCATE = [
-  ".....##.....",
-  ".....##.....",
-  "...######...",
-  "..##....##..",
-  "..#......#..",
-  "###..##..###",
-  "###..##..###",
-  "..#......#..",
-  "..##....##..",
-  "...######...",
-  ".....##.....",
-  ".....##.....",
-] as const;
-
-/** A bitmap as crisp SVG rects in the current text colour, one per run of lit cells. */
-function Bitmap({ rows, size = 12 }: { rows: readonly string[]; size?: number }) {
-  const rects: { x: number; y: number; w: number }[] = [];
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] !== "#") continue;
-      let w = 1;
-      while (row[x + w] === "#") w++;
-      rects.push({ x, y, w });
-      x += w;
-    }
-  });
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 12 12"
-      shapeRendering="crispEdges"
-      fill="currentColor"
-      aria-hidden
-      focusable="false"
-    >
-      {rects.map((r) => (
-        <rect key={`${r.y}-${r.x}`} x={r.x} y={r.y} width={r.w} height={1} />
-      ))}
-    </svg>
-  );
-}
 
 /**
  * Map-anchored palette. Everything below draws ON the third-party
@@ -404,7 +342,7 @@ export function MapShell({
         aria-label="Settings"
         className="absolute right-3 top-4 z-10"
       >
-        <Bitmap rows={ICON_COG} />
+        <PixelIcon name="settings" size={12} />
       </Keycap>
 
       {/* Locate / centre-on-me — bottom-left, lifted above the iOS safe
@@ -419,7 +357,7 @@ export function MapShell({
           tracking ? ON_CHART_ACCENT : ""
         }`}
       >
-        <Bitmap rows={ICON_LOCATE} />
+        <PixelIcon name="locate" size={12} />
       </Keycap>
     </>
   );
