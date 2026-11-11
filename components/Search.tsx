@@ -86,6 +86,12 @@ const PANEL_SIZE = [
 export function SearchPalette() {
   const { open, setOpen } = useSearch();
   const close = () => setOpen(false);
+  // True from the moment a row is chosen. The palette then closes because
+  // the visitor is leaving, and the focus must not go back to the key
+  // that opened it: the page it sits on is still mounted for a moment,
+  // and the second Enter of a double press used to land on that key and
+  // open the palette again over the new page.
+  const leaving = useRef(false);
   return (
     <Dialog
       open={open}
@@ -93,31 +99,61 @@ export function SearchPalette() {
       label="Search"
       placement="top"
       className={PANEL_SIZE}
+      returnFocus={() => !leaving.current}
     >
       {/* Mounted per opening, so every opening starts from an empty
           query with the first row active. */}
-      {open ? <Palette onClose={close} /> : null}
+      {open ? (
+        <Palette
+          onClose={close}
+          onLeaving={(v) => {
+            leaving.current = v;
+          }}
+        />
+      ) : null}
     </Dialog>
   );
 }
 
-function Palette({ onClose }: { onClose: () => void }) {
+function Palette({
+  onClose,
+  onLeaving,
+}: {
+  onClose: () => void;
+  /** Says whether this closing is a row being chosen. */
+  onLeaving: (leaving: boolean) => void;
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
+  // Whether the pointer may pick the row under it. A row that merely
+  // arrives under a resting pointer must not take the selection: that
+  // happens when the palette opens, when the list changes as you type,
+  // and when arrowing scrolls it. So the pointer has a say only once it
+  // has done something itself (moved, or turned the wheel) since the
+  // keyboard was last used.
+  const pointerHasSay = useRef(false);
 
   const tokens = tokenize(query);
   const results = filterTools(tokens);
 
+  // A fresh opening is not a leaving one.
+  useEffect(() => {
+    onLeaving(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const select = (idx: number) => {
     const t = results[idx];
     if (!t) return;
+    onLeaving(true);
     onClose();
     router.push(pathFor(t.slug));
   };
 
   const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    pointerHasSay.current = false;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIdx((i) => Math.max(0, Math.min(i + 1, results.length - 1)));
@@ -173,9 +209,17 @@ function Palette({ onClose }: { onClose: () => void }) {
         </span>
       </div>
 
+      {/* The rows appear under the finger that tapped the Search key, so
+          the list ignores the pointer for its first moment: the second
+          tap of a double tap used to open whichever tool had landed
+          there. Where scrollbars take room, the list's is a thin square
+          one in the hairline colour, not the system's round one. */}
       <ul
         ref={listRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2.5"
+        onWheel={() => {
+          pointerHasSay.current = true;
+        }}
+        className="press-guard min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2.5 [scrollbar-color:var(--color-line)_transparent] [scrollbar-width:thin]"
       >
         {results.length === 0 ? (
           <li className="px-4 py-8 text-center text-sm text-ink-muted">
@@ -194,18 +238,29 @@ function Palette({ onClose }: { onClose: () => void }) {
                   chip's own stepped ring stays in charge of keyboard focus. */}
               <button
                 type="button"
-                // Move, not enter: a pointer that is merely resting over
-                // the list gets "entered" by every row that scrolls under
-                // it, which used to drag the selection back while arrowing
-                // and made the end of the list unreachable by keyboard.
+                // Move picks the row. Enter picks it only when the pointer
+                // already has a say (see pointerHasSay): a pointer that is
+                // merely resting over the list gets "entered" by every row
+                // that scrolls under it, which used to drag the selection
+                // back while arrowing and made the end of the list
+                // unreachable by keyboard. But after the visitor's own
+                // wheel scroll the row now under the pointer should light,
+                // and the browser sends an enter for that, not a move.
                 onMouseMove={() => {
+                  pointerHasSay.current = true;
                   if (activeIdx !== i) setActiveIdx(i);
+                }}
+                onMouseEnter={() => {
+                  if (pointerHasSay.current && activeIdx !== i) setActiveIdx(i);
                 }}
                 onClick={() => select(i)}
                 style={accentVars(t.color)}
+                // In forced colours the fill and the ring colour are both
+                // repainted, so the active row gets a system outline there:
+                // otherwise nothing shows which row Enter will open.
                 className={`chip-chunk w-full justify-start gap-3 px-2 py-2 text-left font-normal ${
                   activeIdx === i
-                    ? "bg-(--accent-soft) not-focus-visible:[--ring-c:var(--accent)]"
+                    ? "bg-(--accent-soft) not-focus-visible:[--ring-c:var(--accent)] forced-colors:outline-3 forced-colors:-outline-offset-3 forced-colors:outline-[Highlight]"
                     : "bg-transparent not-focus-visible:[--ring-c:transparent]"
                 }`}
               >
@@ -226,7 +281,13 @@ function Palette({ onClose }: { onClose: () => void }) {
                     <Highlight text={t.tagline} tokens={tokens} />
                   </span>
                 </span>
-                <span className="hidden text-xs text-ink-muted sm:inline">
+                {/* The muted grey drops under 4.5:1 on some of the soft
+                    fills, so on the active row the address steps up. */}
+                <span
+                  className={`hidden text-xs sm:inline ${
+                    activeIdx === i ? "text-ink-soft" : "text-ink-muted"
+                  }`}
+                >
                   <Highlight text={`/${t.slug}`} tokens={tokens} />
                 </span>
               </button>
