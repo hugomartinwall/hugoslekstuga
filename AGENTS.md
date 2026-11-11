@@ -67,7 +67,7 @@ to a chunk; set `--ring-c` if a frame needs another colour.
 | `switch-chunk` | the track of an on/off switch | `components/ui/Switch` |
 | `label-pixel` | the one micro-label (Silkscreen, tracked, muted) | — |
 | `kbd-chunk` | a key legend (⌘K, esc) | — |
-| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled; plain keydowns stop at the dialog so page shortcuts and games do not hear what is typed in it) |
+| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled; plain keydowns stop at the dialog so page shortcuts and games do not hear what is typed in it; focus goes back to the opener without scrolling, unless `returnFocus` says this closing is a leaving) |
 | `page-col` | a centred column that lands on a whole pixel (`--col` sets its width) | — |
 
 Also: `components/ui/Dropzone` (drop / click / keyboard; `size` roomy
@@ -104,7 +104,19 @@ Put `press-guard` on what swaps in: it ignores the pointer for its first
 400ms. If it is ONE element changing role in place, swap between
 `press-guard` and `press-guard-alt` (a change of animation name restarts
 the guard). Do not give the two roles separate React keys: that replaces
-the element and throws keyboard focus away.
+the element and throws keyboard focus away. The same goes for anything
+that lands under the finger: a panel that appears or leaves and moves
+the keys below it (Sudoku guards its keypad column), a list that opens
+where the key was (the search palette's rows), a row that slides up when
+the one above is removed (Advice's kept lines). The guard works by
+ignoring the pointer, so the tap falls through to whatever is behind:
+put it on a thing with a harmless background, never on a panel floating
+over a map.
+
+**Page scroll.** A dialog locks the page with a class on `<html>`
+(`dialog-open`), counted across open dialogs. Do not save and restore
+`html.style.overflow` in new code: the game routes still do, and two
+owners of one inline value write each other's stale copy back.
 
 **Page shortcuts.** A shortcut on `window` hears every key, including
 the ones meant for whatever has focus. `lib/keyboard.ts` answers whose
