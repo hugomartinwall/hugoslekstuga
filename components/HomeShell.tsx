@@ -175,7 +175,7 @@ export default function HomeShell() {
 
   const press = () => setExplodeTrigger((t) => t + 1);
   const retiredNotice = retiredName ? (
-    <p className="notch-sm bg-cream-deep px-4 py-2 text-center text-sm text-ink-soft">
+    <p className="plate-chunk bg-cream-deep px-4 py-2 text-center text-sm text-ink-soft">
       Hugo put {retiredName} away. The toys he still plays with are all here.
     </p>
   ) : null;
@@ -375,7 +375,7 @@ function ExplodeButton({ onClick }: { onClick: () => void }) {
       onClick={handle}
       aria-label="Do not press (explodes the map)"
       title="DO NOT PRESS"
-      className="notch-sm flex flex-col items-center gap-1.5 border border-line bg-cream-deep px-3 pb-2 pt-3"
+      className="plate-chunk flex flex-col items-center gap-1.5 bg-cream-deep px-3 pb-2 pt-3"
       style={{
         transform: pulsing ? "scale(1.12)" : undefined,
         transition: pulsing

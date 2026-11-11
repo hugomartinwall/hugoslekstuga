@@ -178,9 +178,10 @@ body {
      --ring-w   1px at rest, 2px on focus
      --ring-c   hairline at rest, cyan on focus
 
-   Four members, one family (the names extend the old shadow language):
+   Five members, one family (the names extend the old shadow language):
 
      btn-chunk    arcade keycap — bevelled, presses down
+     plate-chunk  the bare small frame — housings, tags, tiles
      chip-chunk   a choice — flat at rest, filled with the accent when on
      field-chunk  a well for an <input>/<textarea> (the wrapper carries the
                   frame; pseudo-elements do not exist on inputs)
@@ -196,6 +197,7 @@ body {
   .btn-chunk,
   .chip-chunk,
   .field-chunk,
+  .plate-chunk,
   .card-chunk {
     position: relative;
     --ring-w: 1px;
@@ -205,6 +207,7 @@ body {
   .btn-chunk::after,
   .chip-chunk::after,
   .field-chunk::after,
+  .plate-chunk::after,
   .card-chunk::after {
     content: "";
     position: absolute;
@@ -230,10 +233,11 @@ body {
     );
   }
 
-  /* The ring for the 4px/2px steps (keycaps, chips, fields). */
+  /* The ring for the 4px/2px steps (keycaps, chips, fields, plates). */
   .btn-chunk::after,
   .chip-chunk::after,
-  .field-chunk::after {
+  .field-chunk::after,
+  .plate-chunk::after {
     clip-path: polygon(
       evenodd,
       0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0,
@@ -246,6 +250,13 @@ body {
       calc(100% - 4px - var(--ring-w)) calc(100% - var(--ring-w)), calc(4px + var(--ring-w)) calc(100% - var(--ring-w)), calc(4px + var(--ring-w)) calc(100% - 2px - var(--ring-w)), calc(2px + var(--ring-w)) calc(100% - 2px - var(--ring-w)), calc(2px + var(--ring-w)) calc(100% - 4px - var(--ring-w)),
       var(--ring-w) calc(100% - 4px - var(--ring-w)), var(--ring-w) calc(4px + var(--ring-w))
     );
+  }
+
+  /* ── Plate ────────────────────────────────────────────────────────── */
+  /* The bare small frame: stepped corners and the hairline, nothing
+     else. For a housing, a tag, a tile — anything that is not a control. */
+  .plate-chunk {
+    clip-path: var(--notch-sm);
   }
 
   /* ── Keycap ───────────────────────────────────────────────────────── */
@@ -654,8 +665,12 @@ body {
   100% { opacity: 0; }
 }
 
+/* Invisible at rest: the keyframes are the only thing that shows it.
+   Under reduced motion the animation is switched off, and without this
+   the overlay would sit there at full opacity, whiting out the room. */
 .screen-flicker {
   background: var(--color-ink);
+  opacity: 0;
   animation: screen-flicker 180ms steps(2, jump-none) forwards;
 }
 

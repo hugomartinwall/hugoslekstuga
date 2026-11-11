@@ -60,6 +60,7 @@ to a chunk; set `--ring-c` if a frame needs another colour.
 |---|---|---|
 | `btn-chunk` | keycap: bevel, presses down | `components/ui/Keycap` (`tone` accent/neutral/quiet/danger, `size` sm/md/lg/icon, `href` makes it a link) |
 | `chip-chunk` | a choice: flat, fills with the accent when on (`aria-pressed`, `aria-checked`, or a checked radio inside) | `components/ui/Chip` — `Chip` (toggle/action) and `ChipGroup` (one of several, real radios underneath) |
+| `plate-chunk` | the bare small frame (stepped corners + hairline) for housings, tags and tiles: anything that is not a control | — |
 | `field-chunk` | a well around an `<input>`/`<textarea>` — the wrapper carries the frame, pseudo-elements do not exist on inputs | `components/ui/Field` — `TextField`, `TextArea` |
 | `card-chunk` | cabinet panel, the big 8px steps. Lifts on hover only when it is an `<a>`, `<button>` or `<label>` | `components/ui/Panel` (`tone` well/raised/page/soft/danger) |
 | `range-chunk` | a native range re-dressed; set `--fill` to the value's percentage | `components/Slider` |
