@@ -46,7 +46,8 @@ const CATEGORY_TINT: Record<Finding["category"], string> = {
  * A picture on the page: fitted whole inside a square-cornered hairline
  * frame of a set size, on a 4px page-dark mount. The mount is what keeps
  * a picture that almost fills its frame from looking like a frame with
- * two thick sides. Each use adds the frame's size.
+ * two thick sides. Each use adds the frame's size and how the picture
+ * sits in it.
  *
  * The text classes only show when the browser cannot draw the file (a
  * HEIC in Chrome, say). The frame then holds the file's name, and they
@@ -54,7 +55,7 @@ const CATEGORY_TINT: Record<Finding["category"], string> = {
  * cut off where the frame ends.
  */
 const THUMB =
-  "border border-line bg-cream object-contain p-1 text-xs text-ink-muted wrap-anywhere";
+  "border border-line bg-cream p-1 text-xs text-ink-muted wrap-anywhere";
 
 const CATEGORY_LABEL: Record<Finding["category"], string> = {
   gps: "Location",
@@ -318,15 +319,19 @@ export default function StripPage() {
             in the roomy dropzone, runs on after it. The legend is a
             keyboard shortcut, so it is not shown where there is no
             keyboard; there the hint, if it has to wrap, breaks in the
-            middle (balanced) instead of leaving one word behind. */}
+            middle (balanced) instead of leaving one word behind. On a
+            phone the roomy hint drops a size and the dropzone gives up
+            some side padding, so the line fits whole from 345px up: at
+            the usual size it broke right after its dot. */}
         <Dropzone
           title="Drop or paste an image"
+          className="max-sm:px-3"
           hint={
             <span
               className={
                 imageUrl
                   ? "block text-xs leading-5 pointer-coarse:text-balance"
-                  : "block text-balance"
+                  : "block text-balance max-sm:text-xs"
               }
             >
               JPEG, PNG, HEIC · stays in your browser{" "}
@@ -355,7 +360,10 @@ export default function StripPage() {
             <img
               src={imageUrl}
               alt={filename}
-              className={`h-25 w-25 shrink-0 sm:h-40 sm:w-56 ${THUMB}`}
+              // Fitted whole when it is bigger than the frame, left at its
+              // own size when it is smaller: a 24px icon blown up to fill
+              // the frame came out as a blur.
+              className={`h-25 w-25 shrink-0 object-scale-down sm:h-40 sm:w-56 ${THUMB}`}
             />
             <div className="min-w-0 flex-1 text-sm">
               <p className="wrap-anywhere text-xs text-ink-muted">{filename}</p>
@@ -434,12 +442,16 @@ export default function StripPage() {
                 pointer says "working". The width is held from `sm` up so
                 the key does not shrink around "…stripping…" and jolt the
                 one beside it. */}
+            {/* aria-disabled, not disabled: a disabled button gives up the
+                keyboard focus, and after Enter on this key no control on
+                the page showed a ring. The handler already ignores a
+                press while it is busy. */}
             <Keycap
               tone="accent"
               size="lg"
               onClick={stripAndDownload}
-              disabled={stripping}
-              className="disabled:cursor-progress disabled:opacity-80 sm:min-w-60"
+              aria-disabled={stripping}
+              className="aria-disabled:cursor-progress aria-disabled:opacity-80 sm:min-w-60"
             >
               {stripping ? "…stripping…" : "Strip and prepare ↯"}
             </Keycap>
@@ -471,7 +483,7 @@ export default function StripPage() {
                 <img
                   src={imageUrl}
                   alt="before"
-                  className={`h-28 w-full sm:h-40 ${THUMB}`}
+                  className={`h-28 w-full object-contain sm:h-40 ${THUMB}`}
                 />
                 <span className="text-xs text-ink-muted">
                   {Math.ceil(originalSize / 1024).toLocaleString()} KB ·{" "}
@@ -484,7 +496,7 @@ export default function StripPage() {
                 <img
                   src={stripped.url}
                   alt="after"
-                  className={`h-28 w-full sm:h-40 ${THUMB}`}
+                  className={`h-28 w-full object-contain sm:h-40 ${THUMB}`}
                 />
                 <span className="text-xs text-ink-muted">
                   {Math.ceil(stripped.size / 1024).toLocaleString()} KB ·{" "}
