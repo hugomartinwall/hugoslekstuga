@@ -560,6 +560,27 @@ body {
     outline: none;
   }
 
+  /* Under a finger a native range jumps to wherever it is touched, and
+     this one is a 44px strip as wide as its panel: a page scroll that
+     began on it changed the value. Where the main pointer is a finger
+     the input lets the pointer through to the strip around it
+     (components/Slider), which moves the thumb only for a drag that
+     starts on it or a tap on the track. Up-and-down swipes stay the
+     page's. The keyboard and screen readers still use the input. */
+  .range-touch {
+    touch-action: pan-y;
+  }
+
+  @media (pointer: coarse) {
+    .range-touch {
+      cursor: pointer;
+    }
+
+    .range-touch > .range-chunk {
+      pointer-events: none;
+    }
+  }
+
   .range-chunk:focus-visible::-webkit-slider-thumb {
     background: var(--color-blue);
   }
