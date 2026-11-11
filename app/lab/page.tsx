@@ -10,7 +10,13 @@ type Experiment = {
  * The lab index. New prototypes get listed here so the directory is
  * scannable. Each entry is just a card-chunk link to /lab/<slug>.
  */
-const EXPERIMENTS: Experiment[] = [];
+const EXPERIMENTS: Experiment[] = [
+  {
+    slug: "kit",
+    title: "The v2 kit",
+    blurb: "Keycaps, chips, fields, sliders, panels and icons on one bench.",
+  },
+];
 
 export default function LabIndex() {
   return (
