@@ -406,6 +406,20 @@ body {
     line-height: 1.5rem;
   }
 
+  /* A number field's stepper arrows take width even while hidden, which
+     pushes centred digits off centre. Lay them over the right edge. */
+  .field-chunk > input[type="number"] {
+    position: relative;
+  }
+
+  .field-chunk > input[type="number"]::-webkit-inner-spin-button {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    bottom: 2px;
+    height: auto;
+  }
+
   .field-chunk > input::placeholder,
   .field-chunk > textarea::placeholder {
     color: var(--color-ink-muted);
@@ -642,6 +656,78 @@ body {
       margin-inline: 0;
       margin-left: max(0px, round(down, calc((100% - var(--col, 48rem)) / 2), 1px));
     }
+  }
+
+  /* ── Press guard ──────────────────────────────────────────────────── */
+  /* When one key takes another's place (Start becomes Pause, Start
+     becomes Stop), the second tap of a double tap lands on the newcomer.
+     Put this on what swaps in: it ignores the pointer for its first 400ms.
+     The keyboard is not affected. A browser that cannot animate
+     pointer-events just behaves as before. */
+  .press-guard {
+    animation: press-guard 400ms step-end;
+  }
+
+  /* ── Forced colours (Windows High Contrast) ───────────────────────── */
+  /* The frames, the lit state and the focus ring are all drawn as
+     backgrounds, and this mode repaints every background. Give each back
+     with the things it does keep: real outlines and the system colours. */
+  @media (forced-colors: active) {
+    .btn-chunk,
+    .chip-chunk,
+    .field-chunk,
+    .plate-chunk,
+    .card-chunk {
+      clip-path: none;
+      outline: 1px solid CanvasText;
+      outline-offset: -1px;
+    }
+
+    .btn-chunk::after,
+    .chip-chunk::after,
+    .field-chunk::after,
+    .plate-chunk::after,
+    .card-chunk::after {
+      display: none;
+    }
+
+    .chip-chunk[aria-pressed="true"],
+    .chip-chunk[aria-checked="true"],
+    .chip-chunk[aria-current="true"],
+    .chip-chunk:has(> input:checked),
+    .chip-chunk.is-on,
+    .btn-chunk[aria-pressed="true"] {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .card-chunk[aria-pressed="true"],
+    .card-chunk[aria-checked="true"],
+    .card-chunk:has(> input:checked),
+    .card-chunk.is-on {
+      outline: 3px solid Highlight;
+      outline-offset: -3px;
+    }
+
+    .btn-chunk:focus-visible,
+    .chip-chunk:focus-visible,
+    .chip-chunk:has(> input:focus-visible),
+    .card-chunk:focus-visible,
+    .card-chunk:has(> input:focus-visible),
+    .field-chunk:focus-within {
+      outline: 3px solid Highlight;
+      outline-offset: 2px;
+    }
+  }
+}
+
+@keyframes press-guard {
+  from {
+    pointer-events: none;
+  }
+  to {
+    pointer-events: auto;
   }
 }
 
