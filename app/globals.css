@@ -585,22 +585,24 @@ body {
     }
   }
 
+  /* Focus: the thumb turns cyan AND wears a ring. The colour alone is a
+     change of hue only (1.38:1 against the resting thumb). */
   .range-chunk:focus-visible::-webkit-slider-thumb {
     background: var(--color-blue);
-  }
-
     box-shadow:
       0 0 0 2px var(--color-cream),
       0 0 0 4px var(--color-blue),
       inset 0 -4px 0 rgba(0, 0, 0, 0.35);
+  }
+
   .range-chunk:focus-visible::-moz-range-thumb {
     background: var(--color-blue);
-  }
-
     box-shadow:
       0 0 0 2px var(--color-cream),
       0 0 0 4px var(--color-blue),
       inset 0 -4px 0 rgba(0, 0, 0, 0.35);
+  }
+
   /* ── Switch ───────────────────────────────────────────────────────── */
   /* The visual only: put it inside a <button role="switch" aria-checked>. */
   .switch-chunk {
@@ -613,12 +615,12 @@ body {
     background-color: var(--color-panel);
   }
 
-  .switch-chunk::before {
-    content: "";
   /* The track's frame is the kit's stepped ring (::after), like every
      other chunk. It used to be an inset shadow, which the clip that makes
      the corners cut away: a frame with four gaps, and a focus mark of
      four separate bars. The thumb is ::before, so ::after was free. */
+  .switch-chunk::before {
+    content: "";
     position: absolute;
     top: 4px;
     left: 4px;
@@ -783,9 +785,9 @@ body {
     .chip-chunk,
     .field-chunk,
     .plate-chunk,
+    .switch-chunk,
     .card-chunk {
       clip-path: none;
-    .switch-chunk,
       outline: 1px solid CanvasText;
       outline-offset: -1px;
     }
@@ -794,9 +796,9 @@ body {
     .chip-chunk::after,
     .field-chunk::after,
     .plate-chunk::after,
+    .switch-chunk::after,
     .card-chunk::after {
       display: none;
-    .switch-chunk::after,
     }
 
     .chip-chunk[aria-pressed="true"],

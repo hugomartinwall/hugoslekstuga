@@ -23,9 +23,9 @@ import { accentVars } from "@/lib/colors";
  * as wide as its panel: a page scroll that happened to begin on it
  * changed the value (on Strip that threw away the prepared file). So
  * where the main pointer is a finger the input ignores the pointer
- * (kit CSS) and the strip around it does the work: drag the thumb, or
- * tap the track, and a swipe that turns out to be a scroll changes
- * nothing.
+ * (kit CSS) and the strip around it does the work: a sideways drag
+ * moves the thumb, a tap goes to where it landed, and a swipe that
+ * turns out to be a scroll changes nothing.
  *
  * `color` is optional: inside a tool page the accent is already set by
  * ToolFrame. `display` replaces the value readout when the number alone
@@ -78,9 +78,7 @@ export default function Slider({
     id: number;
     x: number;
     y: number;
-    /** It began on the thumb: a drag. Otherwise it may be a tap. */
-    onThumb: boolean;
-    /** Where on the thumb it landed, so a grab does not make it jump. */
+    /** Where on the thumb it landed (0 when it began on the bare track). */
     grip: number;
     dragging: boolean;
     moved: boolean;
@@ -117,12 +115,14 @@ export default function Slider({
       id: e.pointerId,
       x: e.clientX,
       y: e.clientY,
-      onThumb,
-      grip: e.clientX - thumbX,
+      // A grab on the thumb keeps the finger's offset on it, so the
+      // thumb does not jump under the finger. From the bare track the
+      // thumb comes to the finger, as a native range's does.
+      grip: onThumb ? e.clientX - thumbX : 0,
       dragging: false,
       moved: false,
     };
-    if (onThumb) e.currentTarget.setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLSpanElement>) => {
     const t = touch.current;
@@ -130,7 +130,6 @@ export default function Slider({
     const dx = e.clientX - t.x;
     const dy = e.clientY - t.y;
     if (Math.hypot(dx, dy) > TAP_SLOP) t.moved = true;
-    if (!t.onThumb) return;
     // A drag starts once the finger has gone sideways more than up or
     // down. A swipe that goes up or down is the page's (touch-action
     // lets it scroll, and the browser then takes the touch away).
@@ -145,8 +144,8 @@ export default function Slider({
     const t = touch.current;
     if (!t || t.id !== e.pointerId) return;
     touch.current = null;
-    // A touch on the track that lifted where it landed is a tap: go there.
-    if (!t.onThumb && !t.moved) {
+    // A touch that lifted where it landed is a tap: go there.
+    if (!t.dragging && !t.moved) {
       const next = valueAt(e.clientX);
       if (next !== value) onChange(next);
     }
