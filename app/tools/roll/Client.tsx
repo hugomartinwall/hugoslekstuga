@@ -381,13 +381,14 @@ export default function RollPage() {
   // while a result shows, so whatever sits below (the recent list; on a
   // phone the whole editor) is pushed down once, at the press, instead of
   // jumping up and down on every spin. It is as tall as the panel will be:
-  // 82px for a name, 214px when every option carries a picture. (A wheel
-  // that mixes the two keeps the short room; a picture then pushes past it.)
+  // 82px for a name, 214px as soon as any option carries a picture: a
+  // name that wins on such a wheel has empty room under it, which is
+  // better than everything below jumping 132px each time a picture wins.
   const shownWinner =
     winner !== null && !spinning ? validEntries[winner] : undefined;
   const winnerRoomOpen = spinning || shownWinner !== undefined;
   const winnerRoom =
-    validEntries.length > 0 && validEntries.every((e) => e.image !== null)
+    validEntries.some((e) => e.image !== null)
       ? "min-h-53.5"
       : "min-h-20.5";
 
@@ -488,7 +489,13 @@ export default function RollPage() {
                 ref={wheelRef}
                 style={{
                   transformOrigin: "200px 200px",
-                  transform: `rotate(${rotation}deg)`,
+                  // One option cannot be spun, so its wheel is drawn
+                  // at rest: its name (the only thing on the disc) would
+                  // otherwise sit wherever the last spin stopped, upside
+                  // down as often as not. The stored angle is untouched.
+                  transform: `rotate(${
+                    validEntries.length === 1 ? 0 : rotation
+                  }deg)`,
                   transition: spinning
                     ? "transform 4s cubic-bezier(0.18, 0.65, 0.18, 1)"
                     : "none",
@@ -685,7 +692,14 @@ function EntryRow({
       setDragOver(true);
     }
   };
-  const handleDragLeave = () => setDragOver(false);
+  // Leaving for one of the row's own controls is not leaving: without
+  // this the lit frame blinks as a dragged file crosses from the picture
+  // slot to the field. (The kit's Dropzone has the same test.)
+  const handleDragLeave = (e: DragEvent<HTMLLIElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setDragOver(false);
+    }
+  };
   const handleDrop = (e: DragEvent<HTMLLIElement>) => {
     e.preventDefault();
     setDragOver(false);
