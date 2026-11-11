@@ -55,31 +55,11 @@ const MOOD_SKIN: Record<HugoMood, string> = {
 
 /**
  * The panel. 440px wide at most, and never taller than the screen: on a
- * phone held sideways the readouts scroll under the title.
- *
- * The fill is marked important because Dialog's panel already carries
- * `bg-panel`, and between two background utilities on one element it is
- * the stylesheet's order that decides, not the order they are written in.
- *
- * The next two lines keep the panel on whole pixels. Centred in an odd
- * leftover it would start on a half pixel, and at 1x that smears every
- * hairline inside. So where mod() exists, one pixel of margin evens out
- * an odd leftover width; and since everything inside adds up to an even
- * height, one pixel of padding on an odd-height screen does the same
- * top to bottom.
- *
- * The last line is for forced colours, where the kit redraws every
- * frame as a real outline: Dialog's `outline-none` switches the panel's
- * off, and a white room on a white page has no edge. This turns it
- * back on.
+ * phone held sideways the readouts scroll under the title. Its fill is
+ * the mood's soft colour (Dialog's `surface`); Dialog itself keeps the
+ * panel on whole pixels and gives it its frame in forced colours.
  */
-const PANEL = [
-  "flex w-full max-w-[440px] flex-col max-h-[calc(100dvh-3rem)]",
-  "bg-(--accent-soft)!",
-  "supports-[width:mod(1px,2px)]:ml-[mod(max(0px,100%-440px),2px)]",
-  "supports-[width:mod(1px,2px)]:pb-[mod(100dvh,2px)]",
-  "forced-colors:outline-solid",
-].join(" ");
+const PANEL = "flex w-full max-w-[440px] flex-col max-h-[calc(100dvh-3rem)]";
 
 /**
  * Three readouts across. A third of the panel is rarely a whole number
@@ -142,14 +122,17 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
 
   // This component is only mounted while the room is open (BrandDot
   // decides that), so the dialog is simply open. Escape and a click on
-  // the scrim are the Dialog's. So are all other keys: the Dialog keeps
-  // what is typed here from the page behind it, which means the konami
-  // code waits until the room is closed.
+  // the scrim are the Dialog's. Every other key passes through to the
+  // page (`passKeys`): there is nothing to type into here, and the
+  // konami code is meant to work with the room open, where its
+  // somersault shows up in the count.
   return (
     <Dialog
       open
       onClose={onClose}
       label="Hugo's room"
+      surface="bg-(--accent-soft)"
+      passKeys
       className={`${PANEL} ${MOOD_SKIN[mood]}`}
     >
       <header className="flex items-start justify-between gap-3 px-5 pt-5 pb-5 sm:px-8 sm:pt-7">

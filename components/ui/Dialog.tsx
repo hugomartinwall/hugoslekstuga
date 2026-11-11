@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
@@ -16,7 +16,14 @@ import { createPortal } from "react-dom";
  *   center   the default
  *   top      hangs from the top of the screen (the search palette)
  *   bottom   a sheet on phones, centred from `sm` up
+ *
+ * Two dialogs can be open at once (search over the mascot's room). They
+ * keep a stack: Escape and the focus trap belong to the top one only.
  */
+
+/** Open dialogs, oldest first. The last one is on top. */
+const stack: object[] = [];
+
 export default function Dialog({
   open,
   onClose,
@@ -24,6 +31,9 @@ export default function Dialog({
   children,
   placement = "center",
   className = "",
+  surface = "bg-panel",
+  style,
+  passKeys = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -33,9 +43,21 @@ export default function Dialog({
   placement?: "center" | "top" | "bottom";
   /** Classes for the panel (width, padding, max-height). */
   className?: string;
+  /** The panel's fill, as a class. The raised panel colour by default. */
+  surface?: string;
+  /** Inline style for the panel: for custom properties such as --accent. */
+  style?: CSSProperties;
+  /**
+   * Let plain key presses through to the page's own listeners. Off by
+   * default: keys typed in a dialog must not drive what is behind it. A
+   * dialog with nothing to type into may want the page's keys to live on.
+   */
+  passKeys?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
+  /** When this opening began, for the scrim's first-moment guard. */
+  const openedAt = useRef(0);
   useEffect(() => {
     closeRef.current = onClose;
   }, [onClose]);
@@ -43,6 +65,10 @@ export default function Dialog({
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
+    openedAt.current = performance.now();
+    const me = {};
+    stack.push(me);
+    const onTop = () => stack[stack.length - 1] === me;
     const before = document.activeElement as HTMLElement | null;
     const focusables = () =>
       panel
@@ -58,9 +84,14 @@ export default function Dialog({
     (wanted ?? focusables()[0] ?? panel)?.focus();
 
     const onKey = (e: KeyboardEvent) => {
+      // With another dialog open over this one, the keys are its.
+      if (!onTop()) return;
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
+        // One press closes one dialog: the other listeners on this same
+        // node (a dialog underneath) must not see it either.
+        e.stopImmediatePropagation();
         closeRef.current();
         return;
       }
@@ -94,7 +125,7 @@ export default function Dialog({
     const keepKeysIn = (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
     };
-    document.addEventListener("keydown", keepKeysIn);
+    if (!passKeys) document.addEventListener("keydown", keepKeysIn);
 
     // Lock the page behind. Where scrollbars take up room, hiding one
     // would widen the page and shift a centred column: pad by the same
@@ -108,11 +139,38 @@ export default function Dialog({
     if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
 
     return () => {
+      const at = stack.indexOf(me);
+      if (at >= 0) stack.splice(at, 1);
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("keydown", keepKeysIn);
       html.style.overflow = prevOverflow;
       body.style.paddingRight = prevPad;
       if (before && document.contains(before)) before.focus();
+    };
+  }, [open, passKeys]);
+
+  // The panel is centred, and a centre can fall on half a pixel (an odd
+  // window width, an odd panel height). At 1x that smears every 1px ring
+  // inside it. Measure where it landed and nudge it back onto the grid,
+  // again whenever the window or the panel changes size.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const snap = () => {
+      panel.style.translate = "";
+      const r = panel.getBoundingClientRect();
+      const fx = r.left - Math.floor(r.left);
+      const fy = r.top - Math.floor(r.top);
+      if (fx > 0.01 || fy > 0.01) panel.style.translate = `${-fx}px ${-fy}px`;
+    };
+    snap();
+    const ro = new ResizeObserver(snap);
+    ro.observe(panel);
+    window.addEventListener("resize", snap);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", snap);
     };
   }, [open]);
 
@@ -129,16 +187,26 @@ export default function Dialog({
     <div
       className={`scrim-chunk z-[60] flex px-4 pb-[max(1rem,env(safe-area-inset-bottom))] ${place}`}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target !== e.currentTarget) return;
+        // A dialog opened by a tap would be closed by that same tap: its
+        // follow-up mouse-down lands on the scrim that has just appeared.
+        // So the scrim does not close anything in its first moment. (Done
+        // here and not with pointer-events, which would let that moment's
+        // clicks fall through to the page behind.)
+        if (performance.now() - openedAt.current < 400) return;
+        onClose();
       }}
     >
+      {/* No outline on the panel when it takes focus itself, except in
+          forced colours, where that outline is the only frame it has. */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
-        className={`card-chunk bg-panel outline-none ${className}`.trim()}
+        style={style}
+        className={`card-chunk not-forced-colors:outline-none ${surface} ${className}`.trim()}
       >
         {children}
       </div>
