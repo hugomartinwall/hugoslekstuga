@@ -171,26 +171,59 @@ function set(patch: Partial<HugoState>) {
   schedulePersist();
 }
 
+/** How long a change may wait before it is written. */
+const PERSIST_EVERY_MS = 2000;
+
+/** Write what is worth keeping, now. */
+function persistNow() {
+  if (typeof window === "undefined") return;
+  // Never before the stored copy has been read: that would write the
+  // defaults over it.
+  if (!state.hydrated) return;
+  try {
+    // Don't persist transient state — `hydrated`, `idleAction`,
+    // `attention`, `moodSince` and `lastInteraction` are recomputed
+    // on load. Persist only what's meaningful across sessions.
+    const toPersist = {
+      memory: state.memory,
+      personality: state.personality,
+      // Energy on close so morning Hugo isn't always at 80.
+      energy: state.energy,
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
+  } catch {
+    // localStorage disabled, quota exceeded, etc — fail silent
+  }
+}
+
+/**
+ * A throttle, not a debounce. This used to push its timer back on every
+ * change, and the tick changes his energy four times a second, so while
+ * a tab was visible the timer never fired: in an ordinary visit (open a
+ * tool, use it, close the tab) nothing he remembered was ever saved.
+ * Now the first change starts the wait and later ones ride along; and
+ * `attachPersistOnLeave` writes once more on the way out.
+ */
 function schedulePersist() {
   if (typeof window === "undefined") return;
-  if (persistHandle) clearTimeout(persistHandle);
+  if (persistHandle) return;
   persistHandle = setTimeout(() => {
-    try {
-      // Don't persist transient state — `hydrated`, `idleAction`,
-      // `attention`, `moodSince` and `lastInteraction` are recomputed
-      // on load. Persist only what's meaningful across sessions.
-      const toPersist = {
-        memory: state.memory,
-        personality: state.personality,
-        // Energy on close so morning Hugo isn't always at 80.
-        energy: state.energy,
-      };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
-    } catch {
-      // localStorage disabled, quota exceeded, etc — fail silent
-    }
     persistHandle = null;
-  }, 600);
+    persistNow();
+  }, PERSIST_EVERY_MS);
+}
+
+let persistOnLeaveAttached = false;
+
+/** Leaving is the last chance to save: closing the tab stops every timer. */
+function attachPersistOnLeave() {
+  if (persistOnLeaveAttached) return;
+  if (typeof window === "undefined") return;
+  persistOnLeaveAttached = true;
+  window.addEventListener("pagehide", persistNow);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) persistNow();
+  });
 }
 
 /** One-shot load from localStorage. Called from the first BrandDot
@@ -635,6 +668,7 @@ function subscribe(listener: () => void): () => void {
   startMutationObserver();
   startIdleScheduler();
   attachToolHoverListener();
+  attachPersistOnLeave();
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
