@@ -1,7 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+} from "react";
 import ToolFrame from "@/components/ToolFrame";
+import PixelIcon from "@/components/PixelIcon";
+import Keycap from "@/components/ui/Keycap";
+import Panel from "@/components/ui/Panel";
+import Switch from "@/components/ui/Switch";
+import { accentVars } from "@/lib/colors";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { localISODate } from "@/lib/dates";
@@ -76,6 +90,10 @@ const PICKER_DEFAULT: Difficulty = "medium";
  *  Tunable; 3 lines up with classic Minesweeper / Lights Out style
  *  "you've used your lives" pacing. */
 const STRICT_MISTAKE_CAP = 3;
+/** The strict switch on the picker wears coral instead of the page's
+ *  violet: it is the switch that makes mistakes count. Presentation
+ *  only — the kit's switch reads these two custom properties. */
+const STRICT_ACCENT = accentVars("tomato");
 /** Difficulty of the daily puzzle. Pinned to medium so the daily is
  *  approachable but not trivial — beating it should feel like an
  *  accomplishment without being a chore. */
@@ -910,7 +928,12 @@ export default function SudokuClient() {
 
   return (
     <ToolFrame tool={tool}>
-      <div className="flex flex-col items-stretch gap-5">
+      {/* One column on a phone, as wide as the board (the kit's `page-col`
+          centres it on a whole pixel). From `md` the board sits on the
+          left with the keypad beside it, so the whole game is on the
+          first screen. The result panel comes straight after the board
+          in the source, which is where a phone shows it. */}
+      <div className="page-col flex flex-col gap-5 [--col:32rem] md:[--col:100%]">
         <StatusBar
           elapsed={elapsed}
           difficulty={game.difficulty}
@@ -927,122 +950,130 @@ export default function SudokuClient() {
           emptyUserCells={emptyUserCells}
         />
 
-        <div className="relative">
-          <Board
-            cells={game.cells}
-            selectedIdx={selectedIdx}
-            conflictMask={conflictMask}
-            selectedValue={selectedValue}
-            wrongPlacedIdx={wrongPlacedIdx}
-            completedFlashIndices={completedFlashIndices}
-            hintRevealedIdx={hintRevealedIdx}
-            boardWideFlash={boardWideFlash}
-            onSelect={(i) => setSelectedIdx(i)}
-            finished={finished || paused || lost}
-            hidden={paused}
-          />
-          {paused && (
-            <button
-              type="button"
-              onClick={togglePause}
-              className="card-chunk absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] bg-purple-soft text-center"
-              aria-label="Resume"
-            >
-              <p className="font-display text-3xl font-extrabold tracking-tight">
-                Paused
-              </p>
-              <p className="text-sm text-ink-soft">
-                Tap to resume
-              </p>
-            </button>
+        <div className="grid gap-5 md:grid-cols-[minmax(0,32rem)_minmax(0,1fr)] md:gap-x-6">
+          <div className="relative md:col-start-1 md:row-start-1">
+            <Board
+              cells={game.cells}
+              selectedIdx={selectedIdx}
+              conflictMask={conflictMask}
+              selectedValue={selectedValue}
+              wrongPlacedIdx={wrongPlacedIdx}
+              completedFlashIndices={completedFlashIndices}
+              hintRevealedIdx={hintRevealedIdx}
+              boardWideFlash={boardWideFlash}
+              onSelect={(i) => setSelectedIdx(i)}
+              finished={finished || paused || lost}
+              hidden={paused}
+            />
+            {paused && (
+              <Panel
+                as="button"
+                type="button"
+                tone="soft"
+                onClick={togglePause}
+                className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center"
+                aria-label="Resume"
+              >
+                <span className="font-display text-4xl leading-none">
+                  Paused
+                </span>
+                <span className="text-sm text-ink-soft">
+                  Tap to resume
+                </span>
+              </Panel>
+            )}
+          </div>
+
+          {finished && (
+            <WinPanel
+              elapsed={elapsed}
+              difficulty={game.difficulty}
+              mistakes={game.mistakes}
+              hintsUsed={game.hintsUsed}
+              bestTime={bestTimes[game.difficulty]}
+              isNewBest={lastNewBest}
+              daily={game.daily}
+              onNewGame={() => {
+                setSelectedIdx(null);
+                setGame(null);
+              }}
+            />
           )}
+
+          {lost && (
+            <LossPanel
+              mistakes={game.mistakes}
+              cap={STRICT_MISTAKE_CAP}
+              onRestart={() => {
+                if (!game) return;
+                const cells = game.cells.map((c) =>
+                  c.given ? c : { ...c, v: 0, notes: 0 },
+                );
+                setGame({
+                  ...game,
+                  cells,
+                  mistakes: 0,
+                  hintsUsed: 0,
+                  startedAt: Date.now(),
+                  pausedAt: null,
+                  finishedAt: null,
+                  lostAt: null,
+                });
+                historyRef.current = [];
+                setSelectedIdx(null);
+              }}
+              onNewGame={() => {
+                setSelectedIdx(null);
+                setGame(null);
+              }}
+            />
+          )}
+
+          <div className="flex flex-col gap-4 md:col-start-2 md:row-start-1">
+            <NumberPad
+              notesMode={notesMode}
+              onSetNotesMode={setNotesMode}
+              remainingByValue={remainingByValue}
+              onDigit={applyEntry}
+              onErase={clearSelected}
+              onUndo={undo}
+              onHint={hint}
+              onPause={togglePause}
+              canUndo={canUndo}
+              canHint={hasEmptyCell}
+              paused={paused}
+              disabled={finished || paused || lost}
+            />
+
+            <Controls
+              onNewGame={() => {
+                setSelectedIdx(null);
+                setGame(null);
+              }}
+              onRestart={() => {
+                if (!game) return;
+                // Restart = clear all user fills, keep the same puzzle.
+                const cells = game.cells.map((c) =>
+                  c.given ? c : { ...c, v: 0, notes: 0 },
+                );
+                setGame({
+                  ...game,
+                  cells,
+                  mistakes: 0,
+                  hintsUsed: 0,
+                  startedAt: Date.now(),
+                  pausedAt: null,
+                  finishedAt: null,
+                  lostAt: null,
+                });
+                historyRef.current = [];
+                setSelectedIdx(null);
+              }}
+            />
+          </div>
         </div>
 
-        <NumberPad
-          notesMode={notesMode}
-          onSetNotesMode={setNotesMode}
-          remainingByValue={remainingByValue}
-          onDigit={applyEntry}
-          onErase={clearSelected}
-          onUndo={undo}
-          onHint={hint}
-          onPause={togglePause}
-          canUndo={canUndo}
-          canHint={hasEmptyCell}
-          paused={paused}
-          disabled={finished || paused || lost}
-        />
-
-        <Controls
-          onNewGame={() => {
-            setSelectedIdx(null);
-            setGame(null);
-          }}
-          onRestart={() => {
-            if (!game) return;
-            // Restart = clear all user fills, keep the same puzzle.
-            const cells = game.cells.map((c) =>
-              c.given ? c : { ...c, v: 0, notes: 0 },
-            );
-            setGame({
-              ...game,
-              cells,
-              mistakes: 0,
-              hintsUsed: 0,
-              startedAt: Date.now(),
-              pausedAt: null,
-              finishedAt: null,
-              lostAt: null,
-            });
-            historyRef.current = [];
-            setSelectedIdx(null);
-          }}
-        />
-
-        {finished && (
-          <WinPanel
-            elapsed={elapsed}
-            difficulty={game.difficulty}
-            mistakes={game.mistakes}
-            hintsUsed={game.hintsUsed}
-            bestTime={bestTimes[game.difficulty]}
-            isNewBest={lastNewBest}
-            daily={game.daily}
-            onNewGame={() => {
-              setSelectedIdx(null);
-              setGame(null);
-            }}
-          />
-        )}
-
-        {lost && (
-          <LossPanel
-            mistakes={game.mistakes}
-            cap={STRICT_MISTAKE_CAP}
-            onRestart={() => {
-              if (!game) return;
-              const cells = game.cells.map((c) =>
-                c.given ? c : { ...c, v: 0, notes: 0 },
-              );
-              setGame({
-                ...game,
-                cells,
-                mistakes: 0,
-                hintsUsed: 0,
-                startedAt: Date.now(),
-                pausedAt: null,
-                finishedAt: null,
-                lostAt: null,
-              });
-              historyRef.current = [];
-              setSelectedIdx(null);
-            }}
-            onNewGame={() => {
-              setSelectedIdx(null);
-              setGame(null);
-            }}
-          />
-        )}
+        <KeyLegend />
       </div>
     </ToolFrame>
   );
@@ -1080,120 +1111,145 @@ function DifficultyPicker({
       sub: "ish 26 clues — bring your pencil marks",
     },
   ];
+  // The three options are one radio group: native radios under the
+  // cards, so arrow keys and screen readers work without any wiring.
+  // The heading on the page is the group's name.
+  const radioName = useId();
+  const headingId = useId();
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <p className="font-display text-2xl font-extrabold tracking-tight">
+        <p id={headingId} className="font-display text-2xl leading-none">
           Pick a difficulty.
         </p>
-        <p className="mt-1 text-sm text-ink-soft">
+        <p className="mt-2 text-sm text-ink-soft">
           Each puzzle is generated fresh and has exactly one solution.
         </p>
       </div>
 
       {/* Today's puzzle — same board for everyone on this date,
           generated locally from a seed (no server round-trip). The
-          solved-state mark persists in localStorage. */}
+          solved-state mark persists in localStorage. The card is a bright
+          fill, where the kit's cyan focus ring would be lost, so on focus
+          it gets the same dark band a keycap has. */}
       <button
         type="button"
         onClick={onStartDaily}
-        className="card-chunk flex items-center justify-between gap-4 rounded-[var(--radius-card)] bg-yellow px-5 py-4 text-left text-cream"
+        className="card-chunk flex items-center justify-between gap-4 bg-yellow px-5 py-4 text-left text-cream focus-visible:shadow-[inset_0_0_0_4px_var(--color-cream)]"
       >
-        <div className="flex flex-col">
-          <span className="flex items-center gap-2 font-display text-lg font-extrabold tracking-tight text-cream">
+        <span className="flex min-w-0 flex-col gap-1.5">
+          <span className="flex flex-wrap items-center gap-2 font-display text-xl leading-none">
             Today&rsquo;s puzzle
             {todaySolved && (
-              <span
+              <Tag
                 aria-label="Solved today"
                 title="You already solved today's puzzle"
-                className="rounded-full border-2 border-ink bg-cream px-2 py-0.5 font-pixel text-[10px] uppercase tracking-wide text-ink"
               >
                 Solved ✓
-              </span>
+              </Tag>
             )}
           </span>
           <span className="text-xs text-cream/80">
             Same medium puzzle for everyone today · {todayKey}
           </span>
-        </div>
-        <span aria-hidden className="font-display text-2xl font-extrabold text-cream">
-          →
         </span>
+        <PixelIcon name="back" size={24} className="shrink-0 -scale-x-100" />
       </button>
 
-      <div className="flex flex-col gap-2">
+      <div
+        role="radiogroup"
+        aria-labelledby={headingId}
+        className="flex flex-col gap-2"
+      >
         {opts.map((o) => {
           const active = chosen === o.d;
           return (
-            <button
+            <label
               key={o.d}
-              type="button"
-              onClick={() => onChoose(o.d)}
-              className={`card-chunk flex items-center justify-between gap-4 rounded-[var(--radius-card)] px-5 py-4 text-left transition-colors ${
-                active
-                  ? "bg-purple text-cream"
-                  : "bg-cream-deep text-ink hover:bg-purple-soft"
+              className={`card-chunk flex items-center justify-between gap-4 px-5 py-3.5 ${
+                active ? "bg-(--accent-soft)" : "bg-cream-deep"
               }`}
             >
-              <div className="flex flex-col">
-                <span className="font-display text-lg font-extrabold tracking-tight">
+              <input
+                type="radio"
+                name={radioName}
+                checked={active}
+                onChange={() => onChoose(o.d)}
+                className="absolute inset-0 m-0 h-full w-full cursor-pointer opacity-0"
+              />
+              <span className="flex min-w-0 flex-col gap-1.5">
+                <span className="font-display text-xl leading-none">
                   {o.label}
                 </span>
-                <span
-                  className={`text-xs ${active ? "text-cream/80" : "text-ink-soft"}`}
-                >
-                  {o.sub}
-                </span>
-              </div>
+                <span className="text-xs text-ink-soft">{o.sub}</span>
+              </span>
+              {/* The pip: a hollow square, filled when chosen. */}
               <span
                 aria-hidden
-                className={`h-4 w-4 rounded-full border-2 ${
+                className={`h-4 w-4 shrink-0 ${
                   active
-                    ? "border-cream bg-cream"
-                    : "border-ink bg-transparent"
+                    ? "bg-(--accent) shadow-[inset_0_-3px_0_rgba(0,0,0,0.3)]"
+                    : "shadow-[inset_0_0_0_2px_var(--color-ink-muted)]"
                 }`}
               />
-            </button>
+            </label>
           );
         })}
       </div>
 
       {/* Strict-mode toggle. Applies to both today's puzzle and the
-          standard-difficulty options. Sticky across sessions. */}
-      <button
-        type="button"
-        onClick={() => onChangeStrict(!strict)}
-        aria-pressed={strict}
-        className={`flex items-center justify-between gap-3 rounded-full border-2 border-dashed border-ink-muted px-4 py-2.5 text-left transition-colors ${
-          strict ? "bg-tomato-soft" : "bg-cream-deep hover:bg-panel"
-        }`}
-      >
-        <div className="flex flex-col">
-          <span className="text-sm font-display font-extrabold tracking-tight">
-            Strict mode
-          </span>
-          <span className="text-[11px] text-ink-soft">
-            {strict
+          standard-difficulty options. Sticky across sessions. Coral when
+          on, as it always was: this is the switch that makes mistakes
+          count. */}
+      <div style={STRICT_ACCENT}>
+        <Switch
+          checked={strict}
+          onChange={onChangeStrict}
+          label="Strict mode"
+          hint={
+            strict
               ? `Three mistakes and the run ends. Wrong moves matter.`
-              : `Off — mistakes are just a counter. Toggle for stakes.`}
-          </span>
-        </div>
-        <span
-          aria-hidden
-          className={`flex h-6 w-12 items-center rounded-full border-2 border-ink p-0.5 ${strict ? "justify-end bg-tomato" : "justify-start bg-cream"}`}
-        >
-          <span className="h-4 w-4 rounded-full bg-cream-deep border border-ink" />
-        </span>
-      </button>
+              : `Off — mistakes are just a counter. Toggle for stakes.`
+          }
+        />
+      </div>
 
-      <button
-        type="button"
+      <Keycap
+        tone="accent"
+        size="lg"
         onClick={() => onStart(chosen)}
-        className="btn-chunk self-start rounded-[var(--radius-button)] bg-purple px-6 py-3 font-display text-base font-extrabold text-cream"
+        className="sm:self-start"
       >
         Start
-      </button>
+      </Keycap>
     </div>
+  );
+}
+
+/**
+ * A small stepped tag: a status word, not a control. The kit has no
+ * static badge, so this is two nested notches. The outer one shows as
+ * a 1px ring that follows the steps, the inner one is the fill.
+ */
+function Tag({
+  ring = "bg-line",
+  fill = "bg-cream",
+  text = "label-pixel text-ink",
+  className = "",
+  children,
+  ...rest
+}: {
+  /** Background class for the 1px ring. */
+  ring?: string;
+  /** Background class for the fill. */
+  fill?: string;
+  /** Classes for the words. */
+  text?: string;
+} & ComponentPropsWithoutRef<"span">) {
+  return (
+    <span className={`notch-sm inline-flex p-px ${ring} ${className}`} {...rest}>
+      <span className={`notch-sm px-2 py-0.5 ${fill} ${text}`}>{children}</span>
+    </span>
   );
 }
 
@@ -1221,15 +1277,19 @@ function StatusBar({
   strictCap: number;
   /** True when the player is in the home stretch (few empty cells left). */
   almostThere: boolean;
-  /** Empty user cells remaining; surfaced inside the almost-there pill. */
+  /** Empty user cells remaining; surfaced inside the almost-there tag. */
   emptyUserCells: number;
 }) {
+  // The bar keeps a 16px band under the stats. The "almost there" tag
+  // hangs in it (and in the gap below) instead of taking a row of its
+  // own, so the board does not jump when the tag comes and goes.
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-3 text-xs">
+    <div className="relative pb-4">
+      <div className="flex items-center justify-between gap-3">
         <Stat
           label="Difficulty"
           value={daily ? "Today" : titleCase(difficulty)}
+          align="start"
         />
         <Stat
           label={paused ? "Paused" : "Time"}
@@ -1242,58 +1302,58 @@ function StatusBar({
           value={strict ? `${mistakes}/${strictCap}` : String(mistakes)}
           mono
           muted={mistakes === 0}
+          align={hintsUsed > 0 ? "center" : "end"}
         />
         {hintsUsed > 0 && (
-          <Stat label="Hints" value={String(hintsUsed)} mono />
+          <Stat label="Hints" value={String(hintsUsed)} mono align="end" />
         )}
       </div>
       {almostThere && (
-        <p className="self-end rounded-full border-2 border-dashed border-yellow bg-yellow-soft px-3 py-0.5 text-[11px] font-bold tracking-wide text-ink">
+        <Tag
+          ring="bg-yellow"
+          fill="bg-yellow-soft"
+          text="whitespace-nowrap text-[11px] font-bold leading-4 tracking-wide text-ink"
+          className="absolute right-0 top-full -mt-2.5"
+        >
           almost there — {emptyUserCells}{" "}
           {emptyUserCells === 1 ? "cell" : "cells"} to go
-        </p>
+        </Tag>
       )}
     </div>
   );
 }
+
+/** How a stat lines its label up with its value. The status bar pins
+ *  its first and last stat to the edges of the board; `result` is
+ *  centred in the phone's result card and left-aligned in the bar the
+ *  card becomes from `md`. */
+const STAT_ALIGN = {
+  start: "items-start",
+  center: "items-center",
+  end: "items-end",
+  result: "items-center md:items-start",
+} as const;
 
 function Stat({
   label,
   value,
   mono,
   muted,
-  onAccent,
+  align = "center",
 }: {
   label: string;
   value: string;
   mono?: boolean;
   muted?: boolean;
-  /** True when the stat sits on a bright accent surface (the win
-   *  panel's magenta card) — every accent wants room-dark text, so
-   *  the ink/phosphor palette flips to cream. */
-  onAccent?: boolean;
+  align?: keyof typeof STAT_ALIGN;
 }) {
   return (
-    <div className="flex flex-col items-center gap-0.5">
+    <div className={`flex flex-col gap-1 ${STAT_ALIGN[align]}`}>
+      <span className="label-pixel">{label}</span>
       <span
-        className={`font-pixel text-[10px] uppercase tracking-wider ${
-          onAccent ? "text-cream/70" : "text-ink-muted"
-        }`}
-      >
-        {label}
-      </span>
-      <span
-        className={`font-display text-lg font-extrabold tracking-tight ${
+        className={`font-display text-xl leading-none ${
           mono ? "tabular-nums" : ""
-        } ${
-          muted
-            ? onAccent
-              ? "text-cream/70"
-              : "text-ink-muted"
-            : onAccent
-              ? "text-cream"
-              : "text-ink"
-        }`}
+        } ${muted ? "text-ink-muted" : "text-ink"}`}
       >
         {value}
       </span>
@@ -1347,7 +1407,7 @@ function Board({
     <div
       role="grid"
       aria-label="Sudoku board"
-      className="card-chunk mx-auto grid w-full max-w-[min(100%,32rem)] grid-cols-9 overflow-hidden rounded-[var(--radius-card)] border-2 border-ink bg-cream"
+      className="card-chunk mx-auto grid w-full max-w-[min(100%,32rem)] grid-cols-9 overflow-hidden bg-cream"
       style={{
         aspectRatio: "1 / 1",
         // Equal-1fr rows are non-negotiable. Without an explicit row
@@ -1407,7 +1467,7 @@ function Board({
         // exactly equal. Colour-only contrast distinguishes the heavy
         // 3×3 box dividers (full ink) from the thin cell dividers
         // (faint ink). Cells in col 8 / row 8 get no right/bottom
-        // border — the outer container's border handles those edges.
+        // border — the board's own frame (the kit's ring) has those edges.
         const heavyRight = c === 2 || c === 5;
         const heavyBottom = r === 2 || r === 5;
         const showRight = c < 8;
@@ -1473,7 +1533,7 @@ function Board({
             aria-selected={isSelected}
             onClick={() => onSelect(i)}
             disabled={finished}
-            className={`flex items-center justify-center font-display font-extrabold leading-none transition-colors ${bg} ${textCol} ${borderRight} ${borderBottom} ${selectedRing} ${flashClass} ${shakeClass} ${hintClass}`}
+            className={`flex items-center justify-center font-display leading-none transition-colors focus-visible:-outline-offset-2 ${bg} ${textCol} ${borderRight} ${borderBottom} ${selectedRing} ${flashClass} ${shakeClass} ${hintClass}`}
             style={{
               fontSize: "clamp(1.1rem, 4vw, 1.7rem)",
               cursor: finished ? "default" : "pointer",
@@ -1539,7 +1599,7 @@ function NotesGrid({
         return (
           <span
             key={v}
-            className={`flex items-center justify-center font-display font-bold ${
+            className={`flex items-center justify-center font-display ${
               isHighlight ? (onAccent ? "text-cream" : "text-purple") : ""
             }`}
           >
@@ -1580,7 +1640,10 @@ function NumberPad({
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-9 gap-1.5">
+      {/* Five across on a phone (two rows, Erase as the tenth key), a
+          3×3 keypad beside the board from `md`. Either way each digit
+          key is 52px tall. */}
+      <div className="grid grid-cols-5 gap-1.5 md:grid-cols-3">
         {Array.from({ length: 9 }, (_, i) => {
           const v = i + 1;
           const remaining = remainingByValue[v];
@@ -1591,12 +1654,12 @@ function NumberPad({
               type="button"
               onClick={() => onDigit(v)}
               disabled={disabled || done}
-              className={`btn-chunk relative flex aspect-square items-center justify-center rounded-[var(--radius-button)] font-display text-xl font-extrabold transition-opacity ${
+              className={`btn-chunk flex min-h-13 items-center justify-center font-display text-2xl leading-none ${
                 done
-                  ? "bg-cream-deep text-ink-muted opacity-50"
+                  ? "bg-cream-deep text-ink-muted"
                   : notesMode
-                    ? "bg-purple-soft text-ink"
-                    : "bg-purple text-cream"
+                    ? "bg-(--accent-soft) text-ink"
+                    : "bg-(--accent) text-cream"
               }`}
               aria-label={
                 done
@@ -1608,13 +1671,13 @@ function NumberPad({
               {/* Remaining-count badge. Tiny pip in the top-right of
                   the button — meta-info that doesn't compete with the
                   digit itself. Follows the key's text colour: dark
-                  cream on the bright magenta key, light ink on the
-                  dark purple-soft notes-mode key. Hidden when done (the
+                  cream on the bright accent key, light ink on the
+                  dark soft notes-mode key. Hidden when done (the
                   greyed-out button already says "all placed"). */}
               {!done && (
                 <span
                   aria-hidden
-                  className={`pointer-events-none absolute right-1 top-1 text-[10px] font-bold leading-none tabular-nums ${
+                  className={`pointer-events-none absolute right-1.5 top-1.5 font-sans text-[10px] font-bold leading-none tabular-nums ${
                     notesMode ? "text-ink/60" : "text-cream/60"
                   }`}
                 >
@@ -1624,58 +1687,90 @@ function NumberPad({
             </button>
           );
         })}
+        <Keycap
+          size="sm"
+          onClick={onErase}
+          disabled={disabled}
+          className="md:col-span-3"
+        >
+          Erase
+        </Keycap>
       </div>
+      {/* The labels that change (Notes: on/off, Pause/Resume) sit in a
+          fixed-width slot so the row does not shuffle when they flip. */}
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
+        <Keycap
+          size="sm"
+          tone={notesMode ? "accent" : "neutral"}
           onClick={() => onSetNotesMode((n) => !n)}
           disabled={disabled}
           aria-pressed={notesMode}
-          className={`btn-chunk rounded-[var(--radius-button)] px-4 py-2 text-sm font-display font-extrabold ${
-            notesMode ? "bg-ink text-cream" : "bg-cream-deep text-ink"
-          }`}
+          className="flex-auto md:basis-full"
         >
-          {notesMode ? "Notes: on" : "Notes: off"}
-        </button>
-        <button
-          type="button"
-          onClick={onErase}
-          disabled={disabled}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-50"
-        >
-          Erase
-        </button>
-        <button
-          type="button"
+          <span className="min-w-[10ch] text-center">
+            {notesMode ? "Notes: on" : "Notes: off"}
+          </span>
+        </Keycap>
+        <Keycap
+          size="sm"
           onClick={onUndo}
           disabled={disabled || !canUndo}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
+          className="flex-auto"
         >
           Undo
-        </button>
-        <button
-          type="button"
+        </Keycap>
+        <Keycap
+          size="sm"
           onClick={onHint}
           disabled={disabled || !canHint}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:opacity-40"
+          className="flex-auto"
         >
           Hint
-        </button>
-        <button
-          type="button"
+        </Keycap>
+        {/* The pad is disabled while paused, finished or lost; Pause is
+            the way back out of the first, and has nothing to do in the
+            other two (togglePause returns early), so it dims with the
+            rest there instead of sitting bright and dead. */}
+        <Keycap
+          size="sm"
+          tone={paused ? "accent" : "neutral"}
           onClick={onPause}
+          disabled={disabled && !paused}
           aria-pressed={paused}
-          className={`btn-chunk rounded-[var(--radius-button)] px-4 py-2 text-sm font-display font-extrabold ${
-            paused ? "bg-ink text-cream" : "bg-cream-deep text-ink"
-          }`}
+          className="flex-auto md:basis-full"
         >
-          {paused ? "Resume" : "Pause"}
-        </button>
+          <span className="min-w-[6ch] text-center">
+            {paused ? "Resume" : "Pause"}
+          </span>
+        </Keycap>
       </div>
-      <p className="text-[11px] text-ink-muted">
-        1–9 place · arrow keys move · N notes · H hint · P pause · ⌘Z undo · backspace erase
-      </p>
     </div>
+  );
+}
+
+/** The keyboard legend: each key as a small cap, then what it does. */
+const KEY_LEGEND: readonly (readonly [string, string])[] = [
+  ["1–9", "place"],
+  ["arrow keys", "move"],
+  ["N", "notes"],
+  ["H", "hint"],
+  ["P", "pause"],
+  ["⌘Z", "undo"],
+  ["backspace", "erase"],
+];
+
+function KeyLegend() {
+  return (
+    <p className="text-[11px] leading-6 text-ink-muted">
+      {KEY_LEGEND.map(([key, does], i) => (
+        <Fragment key={key}>
+          {i > 0 ? " · " : null}
+          <span className="whitespace-nowrap">
+            <kbd className="kbd-chunk">{key}</kbd> {does}
+          </span>
+        </Fragment>
+      ))}
+    </p>
   );
 }
 
@@ -1686,22 +1781,16 @@ function Controls({
   onNewGame: () => void;
   onRestart: () => void;
 }) {
+  // `md:mt-auto` drops the pair to the foot of the keypad column, level
+  // with the bottom of the board.
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t-2 border-dashed border-ink/15 pt-4">
-      <button
-        type="button"
-        onClick={onNewGame}
-        className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink"
-      >
+    <div className="flex flex-wrap gap-2 border-t border-line pt-4 md:mt-auto">
+      <Keycap size="sm" onClick={onNewGame} className="flex-auto md:basis-full">
         New puzzle
-      </button>
-      <button
-        type="button"
-        onClick={onRestart}
-        className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink"
-      >
+      </Keycap>
+      <Keycap size="sm" onClick={onRestart} className="flex-auto md:basis-full">
         Restart this one
-      </button>
+      </Keycap>
     </div>
   );
 }
@@ -1728,37 +1817,44 @@ function WinPanel({
   daily?: string;
   onNewGame: () => void;
 }) {
+  // A centred card on a phone. From `md` it turns into a low bar under
+  // the board and keypad (heading and key on one line, the details
+  // beneath) so the whole result stays on the first screen.
   return (
-    <div className="card-chunk fade-rise relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-purple p-6 text-center">
-      <p className="font-display text-3xl font-extrabold tracking-tight text-cream">
+    <Panel
+      tone="soft"
+      className={`fade-rise [--ring-c:var(--accent)] ${RESULT_PANEL}`}
+    >
+      <p className="font-display text-4xl leading-none text-(--accent) text-glow">
         {daily ? "Today, done." : "Solved."}
       </p>
-      {daily && (
-        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 font-pixel text-xs uppercase tracking-wider text-ink">
-          Today&rsquo;s puzzle · {daily}
-        </p>
+      {(daily || isNewBest) && (
+        <div className="flex flex-wrap justify-center gap-2 md:col-span-2 md:justify-start">
+          {daily && <Tag>Today&rsquo;s puzzle · {daily}</Tag>}
+          {isNewBest && <Tag>New personal best</Tag>}
+        </div>
       )}
-      {isNewBest && (
-        <p className="rounded-full border-2 border-ink bg-cream px-3 py-1 font-pixel text-xs uppercase tracking-wider text-ink">
-          New personal best
-        </p>
-      )}
-      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 md:col-span-2 md:justify-start">
         <Stat
           label="Difficulty"
           value={daily ? "Today" : titleCase(difficulty)}
-          onAccent
+          align="result"
         />
-        <Stat label="Time" value={formatDuration(elapsed)} mono onAccent />
+        <Stat
+          label="Time"
+          value={formatDuration(elapsed)}
+          mono
+          align="result"
+        />
         <Stat
           label="Mistakes"
           value={String(mistakes)}
           mono
           muted={mistakes === 0}
-          onAccent
+          align="result"
         />
         {hintsUsed > 0 && (
-          <Stat label="Hints" value={String(hintsUsed)} mono onAccent />
+          <Stat label="Hints" value={String(hintsUsed)} mono align="result" />
         )}
         {bestTime !== undefined && !isNewBest && !daily && (
           <Stat
@@ -1766,26 +1862,32 @@ function WinPanel({
             value={formatDuration(bestTime)}
             mono
             muted
-            onAccent
+            align="result"
           />
         )}
       </div>
       {hintsUsed > 0 && (
-        <p className="max-w-xs text-[11px] text-cream/70">
+        <p className="max-w-xs text-[11px] text-ink-soft md:col-span-2 md:max-w-none">
           Best-time records are reserved for runs with no hints — keep
           trying.
         </p>
       )}
-      <button
-        type="button"
+      <Keycap
+        tone="accent"
         onClick={onNewGame}
-        className="btn-chunk rounded-[var(--radius-button)] bg-ink px-5 py-2 text-sm font-display font-extrabold text-cream"
+        className="md:col-start-2 md:row-start-1"
       >
         Another one
-      </button>
-    </div>
+      </Keycap>
+    </Panel>
   );
 }
+
+/** Layout shared by the two result panels (see WinPanel). They sit in
+ *  the game grid straight after the board: under it on a phone, across
+ *  both columns from `md`. */
+const RESULT_PANEL =
+  "flex flex-col items-center gap-4 p-6 text-center md:col-span-2 md:row-start-2 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:justify-items-start md:gap-x-6 md:gap-y-3 md:py-5 md:text-left";
 
 function LossPanel({
   mistakes,
@@ -1799,31 +1901,24 @@ function LossPanel({
   onNewGame: () => void;
 }) {
   return (
-    <div className="card-chunk relative flex flex-col items-center gap-4 rounded-[var(--radius-card)] bg-tomato-soft p-6 text-center">
-      <p className="font-display text-3xl font-extrabold tracking-tight text-ink">
+    <Panel
+      tone="danger"
+      className={`[--ring-c:var(--color-tomato)] ${RESULT_PANEL}`}
+    >
+      <p className="font-display text-4xl leading-none text-tomato">
         Out of mistakes.
       </p>
-      <p className="max-w-xs text-sm text-ink-soft">
+      <p className="max-w-xs text-sm text-ink-soft md:col-span-2 md:max-w-none">
         Strict mode caps you at {cap} wrong moves. You used {mistakes}.
         The board is paused — start over or pick a fresh puzzle.
       </p>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <button
-          type="button"
-          onClick={onRestart}
-          className="btn-chunk rounded-[var(--radius-button)] bg-ink px-5 py-2 text-sm font-display font-extrabold text-cream"
-        >
+      <div className="flex flex-wrap items-center justify-center gap-2 md:col-start-2 md:row-start-1">
+        <Keycap tone="accent" onClick={onRestart}>
           Start over
-        </button>
-        <button
-          type="button"
-          onClick={onNewGame}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream-deep px-5 py-2 text-sm font-display font-extrabold text-ink"
-        >
-          New puzzle
-        </button>
+        </Keycap>
+        <Keycap onClick={onNewGame}>New puzzle</Keycap>
       </div>
-    </div>
+    </Panel>
   );
 }
 
