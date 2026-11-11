@@ -9,7 +9,7 @@ import PixelIcon from "@/components/PixelIcon";
 import Keycap from "@/components/ui/Keycap";
 import { tools } from "@/lib/tools";
 import { isGameSlug } from "@/lib/clusters";
-import { cabinetRow, ROOM_MIN_WIDTH } from "@/lib/home-layout";
+import { cabinetRow, ROOM_MEDIA } from "@/lib/home-layout";
 
 const ToolMap = dynamic(() => import("@/components/ToolMap"), { ssr: false });
 
@@ -71,7 +71,7 @@ export default function HomeShell() {
 
   // Room or list: decided by width, in step with the `md:` classes below.
   useEffect(() => {
-    const mq = window.matchMedia(`(min-width: ${ROOM_MIN_WIDTH}px)`);
+    const mq = window.matchMedia(ROOM_MEDIA);
     const apply = () => setLayout(mq.matches ? "room" : "list");
     apply();
     mq.addEventListener("change", apply);

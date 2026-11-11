@@ -17,8 +17,15 @@ export const CABINET_GRID_H = 42;
 const ROW_BASE = 40;
 /** Breathing room between the swarm and the top of the row. */
 const ROW_HEADROOM = 30;
-/** Below this width the homepage is a scrolling list, not a room. */
-export const ROOM_MIN_WIDTH = 768;
+/**
+ * The homepage is a room where this matches and a scrolling list where
+ * it does not. It is the media query behind Tailwind's `md:`, in rem and
+ * not in pixels, so the script's choice and the `md:` classes cannot
+ * disagree: 48rem is 768px at the usual text size, and 960px for a
+ * visitor whose browser is set to 20px text. Written as 768px it used to
+ * mount the room in a window the stylesheet was laying out as the list.
+ */
+export const ROOM_MEDIA = "(min-width: 48rem)";
 
 export type CabinetRow = {
   /** Canvas px per cabinet grid unit (3 = 114×126). */

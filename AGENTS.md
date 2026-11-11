@@ -473,7 +473,8 @@ engine as the only draw path — don't sample `adviceEntries` directly.
 
 The homepage is built twice from the same parts (`components/HomeShell.tsx`
 picks by width, in step with its `md:` classes; the breakpoint is
-`ROOM_MIN_WIDTH` in `lib/home-layout.ts`):
+`ROOM_MEDIA` in `lib/home-layout.ts`: the same 48rem query, so a larger
+browser text size moves both together):
 
 **From 768px up: the room** — one screen, no scrolling, styled as an
 arcade attract screen. `components/ToolMap.tsx` draws two kinds of thing
