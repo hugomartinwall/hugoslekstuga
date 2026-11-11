@@ -271,8 +271,6 @@ The split is so each page ships its own `<title>` and `<meta description>`
 - `components/hugo/HugoStage.tsx` — Advice-page Hugo with poses
 - `components/hugo/HugoParkour.tsx` — the homepage platformer
 
-`ToolCard.tsx` and `DropZone.tsx` are orphaned since the cull — nothing
-imports them. Don't build on them without checking they still fit.
 
 ## Hugo — the character
 
