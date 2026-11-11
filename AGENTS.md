@@ -60,14 +60,14 @@ to a chunk; set `--ring-c` if a frame needs another colour.
 |---|---|---|
 | `btn-chunk` | keycap: bevel, presses down; with `aria-pressed="true"` it stays down | `components/ui/Keycap` (`tone` accent/neutral/quiet/danger, `size` sm/md/lg/icon, `href` makes it a link) |
 | `chip-chunk` | a choice: flat, fills with the accent when on (`aria-pressed`, `aria-checked`, or a checked radio inside) | `components/ui/Chip` — `Chip` (toggle/action) and `ChipGroup` (one of several, real radios underneath; name it with `labelledBy` when a visible label sits beside it) |
-| `plate-chunk` | the bare small frame (stepped corners + hairline) for housings, tags and tiles: anything that is not a control | `components/ui/Tag` (a small label: `tone` neutral/accent/danger/solid) |
+| `plate-chunk` | the bare small frame (stepped corners + hairline) for housings, tags and tiles: anything that is not a control | `components/ui/Tag` (a small label: `tone` neutral/accent/danger/solid; its spacing and surfaces are the kit rules `.tag-chunk` / `.tag-*`, so a utility in `className` always wins) |
 | `field-chunk` | a well around an `<input>`/`<textarea>` — the wrapper carries the frame, pseudo-elements do not exist on inputs | `components/ui/Field` — `TextField`, `TextArea` |
 | `card-chunk` | cabinet panel, the big 8px steps. Lifts on hover only when it is an `<a>`, `<button>` or `<label>` | `components/ui/Panel` (`tone` well/raised/page/soft/danger) |
-| `range-chunk` | a native range re-dressed; set `--fill` to the value's percentage | `components/Slider` |
-| `switch-chunk` | the track of an on/off switch | `components/ui/Switch` |
+| `range-chunk` | a native range re-dressed; set `--fill` to the value's percentage | `components/Slider` (under a finger the strip around the input handles the touch: a sideways drag or a tap moves it, a scroll that starts on it changes nothing) |
+| `switch-chunk` | the track of an on/off switch, framed by the stepped ring like the other chunks | `components/ui/Switch` |
 | `label-pixel` | the one micro-label (Silkscreen, tracked, muted) | — |
 | `kbd-chunk` | a key legend (⌘K, esc) | — |
-| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled; plain keydowns stop at the dialog so page shortcuts and games do not hear what is typed in it; focus goes back to the opener without scrolling, unless `returnFocus` says this closing is a leaving) |
+| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled; plain keydowns stop at the dialog so page shortcuts and games do not hear what is typed in it; focus goes back to the opener without scrolling, unless `returnFocus` says this closing is a leaving; closed by a press, it swallows presses for a moment). `components/ui/ScrollRegion` is a dialog body that scrolls: a Tab stop while it overflows, so the keyboard can scroll it |
 | `page-col` | a centred column that lands on a whole pixel (`--col` sets its width) | — |
 
 Also: `components/ui/Dropzone` (drop / click / keyboard; `size` roomy
@@ -112,6 +112,14 @@ the one above is removed (Advice's kept lines). The guard works by
 ignoring the pointer, so the tap falls through to whatever is behind:
 put it on a thing with a harmless background, never on a panel floating
 over a map.
+
+**Keys that close.** The opposite case: a key closes its panel and what
+lay underneath is now under the finger (Sjökort's chart under the
+planner's close key). The press guard is no use there, because the thing
+to protect is the thing behind. Call `swallowPresses()` from
+`lib/pointer.ts` in the handler that closes: an invisible sheet takes
+every press for 0.4 s. Dialog does this itself when it is closed by a
+press.
 
 **Page scroll.** A dialog locks the page with a class on `<html>`
 (`dialog-open`), counted across open dialogs. Do not save and restore
@@ -352,9 +360,14 @@ moments (`hugoMoodEvent`, `hugoSawTool`); renderers read it.
   whole-page tantrum, Konami-code somersault, shift+click opens
   HugoRoom, tab-hidden sleep, and on `/` a **long-press starts
   Hugo's Parkour**. (The old long-press leash is deleted.) From the
-  keyboard, Enter or Space is a tap and Shift+Enter is a shift+click.
-  While a page-level Hugo has the stage he is invisible and also out
-  of the Tab order.
+  keyboard, Enter or Space is a tap and Shift+Enter is a shift+click;
+  a click that did not come from a pointer (a screen reader's
+  "activate", voice control) is a tap too.
+  While a page-level Hugo has the stage, or a full-screen game is
+  drawn over him (any `/games/` route), he is out of the Tab order,
+  aria-hidden and deaf to keys. His memory is shared between open
+  tabs (a tab folds another tab's counters into its own before it
+  writes).
 - `TravelingDot` (root layout) — canvas Hugo who flies out of the
   corner when you click a swarm tool, fetches it, returns. He flips
   horizontally to face travel direction — never rotates.
