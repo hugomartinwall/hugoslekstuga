@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
+import PixelIcon from "@/components/PixelIcon";
 import Slider from "@/components/Slider";
+import { ChipGroup } from "@/components/ui/Chip";
+import Dropzone from "@/components/ui/Dropzone";
+import Keycap from "@/components/ui/Keycap";
+import Panel from "@/components/ui/Panel";
+import Switch from "@/components/ui/Switch";
 import { findTool } from "@/lib/tools";
 import { COLOR_HEX, CREAM_HEX, INK_HEX } from "@/lib/colors";
 import { hexRgb } from "@/lib/hugo/sprite";
@@ -53,6 +59,13 @@ const PALETTE_OPTIONS: { value: PaletteId; label: string; hint: string }[] = [
   { value: "gray", label: "Phosphor gray", hint: "4-step monochrome" },
 ];
 
+/** The same three as chips: each hint rides along as the chip's tooltip. */
+const PALETTE_CHIPS = PALETTE_OPTIONS.map((opt) => ({
+  value: opt.value,
+  label: opt.label,
+  title: opt.hint,
+}));
+
 /** Ordered 4×4 Bayer matrix, the classic. */
 const BAYER_4 = [
   [0, 8, 2, 10],
@@ -89,6 +102,64 @@ function nearest(
     }
   }
   return best;
+}
+
+/**
+ * How big the preview is shown. Layout only: the pass below decides the
+ * picture's pixels, these two decide how large they appear, and they do
+ * it in CSS so the answer follows the panel and the window by itself.
+ *
+ * A cell is always a whole number of CSS pixels (so of device pixels
+ * too, on a 1x, 2x or 3x screen), the most that fit:
+ *
+ *   - across, the panel (100cqw, less the 2px of hairline), and never
+ *     more than the canvas's own size, which the pass keeps to 560px;
+ *   - down, `--fit-h`, the height the page can spare (set on the panel).
+ *
+ * Two exceptions keep a tall picture at a high cell count from turning
+ * into a stamp: 2px cells are used while they stay under PREVIEW_MAX_H
+ * even if that is taller than `--fit-h`, and a strip so tall that not
+ * even 1px cells fit is simply shrunk to PREVIEW_MAX_H.
+ */
+const PREVIEW_MAX_W = 560;
+/** The canvas's `max-h-[480px]` class says the same thing for browsers
+ *  without round() or cqw, where the two functions below are ignored and
+ *  the canvas is shrunk to fit instead, as it used to be. */
+const PREVIEW_MAX_H = 480;
+const PREVIEW_ROOM_W = `min(100cqw - 2px, ${PREVIEW_MAX_W}px)`;
+
+function previewWidth(w: number, h: number): string {
+  const perRow = w / h;
+  // The 0.01px keeps a height limit that lands exactly on a step from
+  // losing that step to float rounding.
+  const fits = `round(down, min(${PREVIEW_ROOM_W}, var(--fit-h) * ${perRow} + 0.01px), ${w}px)`;
+  const twoPx = `min(${2 * w}px, round(down, min(${PREVIEW_ROOM_W}, ${PREVIEW_MAX_H * perRow + 0.01}px), ${w}px))`;
+  const shrunk = `min(${w}px, 100cqw - 2px, ${PREVIEW_MAX_H * perRow}px)`;
+  return `max(${fits}, ${twoPx}, ${shrunk})`;
+}
+
+/**
+ * The height kept free for the picture: all it could take at this shape,
+ * whatever the cell count. The picture changes size in steps as the
+ * slider moves; with the space held open, nothing below it (the slider
+ * included) moves while it is being dragged.
+ */
+function previewStageHeight(w: number, h: number): string {
+  return `calc(round(up, min(var(--fit-h), ${PREVIEW_ROOM_W} * ${h / w}), 1px) + 2px)`;
+}
+
+/**
+ * The palette chips and the dropzone are native radio and file inputs
+ * now. They used to be buttons and an input that could not take focus,
+ * and a paste with the focus on one of them loaded the image, so the
+ * paste listener still has to let them through. (A focused slider still
+ * swallows the paste, as it always has: an old fault, left for its own
+ * fix.)
+ */
+function isChipOrPicker(t: HTMLElement): boolean {
+  if (t.tagName !== "INPUT") return false;
+  const type = (t as HTMLInputElement).type;
+  return type === "radio" || type === "file";
 }
 
 export default function PixlaPage() {
@@ -136,7 +207,8 @@ export default function PixlaPage() {
       const t = e.target as HTMLElement | null;
       if (
         t &&
-        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
+        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) &&
+        !isChipOrPicker(t)
       ) {
         return;
       }
@@ -155,7 +227,6 @@ export default function PixlaPage() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** The pixel pass — downscale, remap, publish the small canvas. */
@@ -251,62 +322,89 @@ export default function PixlaPage() {
 
   return (
     <ToolFrame tool={tool}>
-      <div className="flex flex-col gap-5">
-        <label
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const f = e.dataTransfer.files?.[0];
+      <div className="flex flex-col gap-4 sm:gap-5">
+        {/* Roomy while it is the whole page; a slim bar once there is a
+            picture: smaller hint, and the key legend runs on after it
+            instead of taking a line of its own. The legend is a keyboard
+            shortcut, so it is not shown where there is no keyboard. Its
+            20px of height is spelled out so the bar is a whole number of
+            pixels tall and every hairline under it stays sharp. */}
+        <Dropzone
+          title={hasImage ? "Drop another image" : "Drop or paste an image"}
+          hint={
+            <span className={hasImage ? "block text-xs leading-5" : "block"}>
+              JPEG, PNG, anything the browser can decode · stays in your tab{" "}
+              <span
+                className={`h-5 items-center gap-1.5 text-xs text-ink-muted pointer-coarse:hidden ${
+                  hasImage
+                    ? "mx-1.5 inline-flex align-top whitespace-nowrap"
+                    : "mt-2 flex justify-center"
+                }`}
+              >
+                <kbd className="kbd-chunk">⌘V</kbd> also works
+              </span>
+            </span>
+          }
+          accept="image/*"
+          onFiles={(files) => {
+            const f = files[0];
             if (f) handleFile(f);
           }}
-          className="card-chunk flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border-dashed bg-cream-deep p-6 text-center transition-colors hover:bg-tomato-soft"
-        >
-          <span className="font-display text-base font-extrabold">
-            {hasImage ? "Drop another image" : "Drop or paste an image"}
-          </span>
-          <span className="text-xs text-ink-muted">
-            JPEG, PNG, anything the browser can decode · stays in your tab
-          </span>
-          <span className="text-[10px] text-ink-muted">
-            <kbd className="rounded border border-ink-soft bg-cream-deep px-1.5 py-0.5 font-mono">
-              ⌘V
-            </kbd>{" "}
-            also works
-          </span>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-              e.target.value = "";
-            }}
-            className="hidden"
-          />
-        </label>
+          className={hasImage ? "py-3!" : undefined}
+        />
 
         {error && (
-          <p className="rounded-[var(--radius-card)] border-2 border-tomato bg-tomato-soft p-2 text-sm">
+          <Panel
+            as="p"
+            tone="danger"
+            className={`px-4 py-3 text-sm ${hasImage ? "max-sm:-order-1" : ""}`}
+          >
             {error}
-          </p>
+          </Panel>
         )}
 
+        {/* On a phone the picture, its knobs and the download key come
+            first once there is a picture, and "Drop another image" moves
+            under them: a phone's first screen has room for one or the
+            other. An error then sits between the two, next to whichever
+            key caused it. From `sm` up the dropzone stays on top, where a
+            dragged file can always find it. */}
         {hasImage && (
-          <>
-            <div className="card-chunk flex flex-col items-center gap-2 rounded-[var(--radius-card)] bg-cream-deep p-4">
-              <canvas
-                ref={previewRef}
-                className="max-h-[420px] max-w-full border border-line"
-                style={{ imageRendering: "pixelated" }}
-              />
+          <div className="flex flex-col gap-4 max-sm:-order-2 sm:gap-5">
+            {/* The panel is a size container: the canvas reads its width
+                (100cqw) to pick a whole-pixel scale, see previewWidth().
+                --fit-h is the height the picture may take: what the first
+                screen has left once everything else on it is counted
+                (about 32rem on a phone, 33.5rem with the dropzone above),
+                so the download key stays in view. Never over 420px, and
+                never under 320px on a phone, where a portrait photo would
+                shrink to a thumbnail, or 252px from `sm` up. */}
+            <Panel className="@container flex flex-col items-center gap-2 p-3 [--fit-h:clamp(320px,100svh_-_32rem,420px)] sm:p-4 sm:[--fit-h:clamp(252px,100svh_-_33.5rem,420px)]">
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  minHeight: grid
+                    ? previewStageHeight(grid.w, grid.h)
+                    : undefined,
+                }}
+              >
+                <canvas
+                  ref={previewRef}
+                  className="box-content max-h-[480px] max-w-[calc(100%-2px)] border border-line"
+                  style={{
+                    imageRendering: "pixelated",
+                    width: grid ? previewWidth(grid.w, grid.h) : undefined,
+                  }}
+                />
+              </div>
               {grid && (
-                <p className="font-pixel text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+                <p className="label-pixel">
                   {grid.w} × {grid.h} cells
                 </p>
               )}
-            </div>
+            </Panel>
 
-            <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-dashed border-ink-muted bg-cream-deep p-3">
+            <Panel className="flex flex-col gap-3 p-3 sm:p-4">
               <Slider
                 label="Pixels across"
                 value={cells}
@@ -314,67 +412,47 @@ export default function PixlaPage() {
                 max={128}
                 step={4}
                 onChange={(v) => setSettings((s) => ({ ...s, cells: v }))}
-                color="tomato"
                 hint="Fewer = chunkier. 32–64 is the sprite sweet spot."
               />
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              {/* One row from `sm` up; on a phone the label, the chips and
+                  the switch each take a row, in that order. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span
+                  id="pixla-palette-label"
+                  className="label-pixel w-full sm:w-auto"
+                >
                   Palette
                 </span>
-                {PALETTE_OPTIONS.map((opt) => {
-                  const active = palette === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      title={opt.hint}
-                      onClick={() =>
-                        setSettings((s) => ({ ...s, palette: opt.value }))
-                      }
-                      className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
-                        active
-                          ? "bg-tomato text-cream"
-                          : "bg-cream-deep hover:bg-tomato-soft"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-                <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={dither}
-                    disabled={palette === "original"}
-                    onChange={(e) =>
-                      setSettings((s) => ({ ...s, dither: e.target.checked }))
-                    }
-                    className="accent-tomato"
-                  />
-                  <span
-                    className={
-                      palette === "original" ? "text-ink-muted" : undefined
-                    }
-                  >
-                    Bayer dither
-                  </span>
-                </label>
+                <ChipGroup
+                  labelledBy="pixla-palette-label"
+                  options={PALETTE_CHIPS}
+                  value={palette}
+                  onChange={(v) => setSettings((s) => ({ ...s, palette: v }))}
+                  className="w-full sm:w-auto"
+                  chipClassName="max-sm:flex-auto max-sm:px-2"
+                />
+                <Switch
+                  checked={dither}
+                  onChange={(next) =>
+                    setSettings((s) => ({ ...s, dither: next }))
+                  }
+                  label="Bayer dither"
+                  disabled={palette === "original"}
+                  className="md:ml-auto"
+                />
               </div>
-            </div>
+            </Panel>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={download}
-                className="btn-chunk rounded-[var(--radius-button)] bg-tomato px-6 py-2 font-display text-base font-extrabold text-cream"
-              >
-                Download PNG ▦
-              </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <Keycap tone="accent" size="lg" onClick={download}>
+                Download PNG
+                <PixelIcon name="pixla" size={12} />
+              </Keycap>
               <span className="text-xs text-ink-muted">
                 Exported crisp, at a clean integer scale.
               </span>
             </div>
-          </>
+          </div>
         )}
 
         <p className="text-xs text-ink-muted">
