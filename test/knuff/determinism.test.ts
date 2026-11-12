@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { KINDS } from "../../lib/knuff/content/kinds";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
-import { aimLine } from "../../lib/knuff/sim/aim";
 import { rngSeed, seedStreams } from "../../lib/knuff/sim/rng";
 import { cloneState, createState, hashState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
@@ -13,7 +13,7 @@ import type { Input, SimEvent, State } from "../../lib/knuff/sim/types";
  * itself.
  */
 
-/** A scripted player: no Math.random in the tests either. A launch every 25 to 90 ticks, any direction, any power. */
+/** A scripted player: no Math.random in the tests either. A launch every 25 to 90 ticks, any direction, any power, a pull held before each. */
 function scriptedInputs(scriptSeed: number): (tick: number) => Input {
   let state = scriptSeed >>> 0;
   const next = () => {
@@ -33,13 +33,21 @@ function scriptedInputs(scriptSeed: number): (tick: number) => Input {
   };
 }
 
+/**
+ * Play `ticks` ticks. The player is given hearts enough to see every hour:
+ * a night that ended in its second hour would leave most of the rules
+ * unrun. (A night is over by 25,200 ticks whatever happens: the last stretch
+ * of the longest run is a State that no longer moves.)
+ */
+const TUNE = { ...DEFAULT_TUNE, hearts: 60 };
+
 function run(seed: number, ticks: number, onTick?: (s: State, events: SimEvent[]) => void): State {
-  const s = createState(seed, DEFAULT_TUNE);
+  const s = createState(seed, TUNE);
   const input = scriptedInputs(99);
   const events: SimEvent[] = [];
   for (let t = 0; t < ticks; t++) {
     events.length = 0;
-    step(s, input(t), DEFAULT_TUNE, events);
+    step(s, input(t), TUNE, events);
     onTick?.(s, events);
   }
   return s;
@@ -51,9 +59,19 @@ describe("determinism", () => {
       const a = run(1234, ticks);
       const b = run(1234, ticks);
       expect(hashState(a)).toBe(hashState(b));
-      expect(a.tick).toBe(ticks);
       expect(a).toEqual(b);
+      if (ticks < 25200) expect(a.tick).toBe(ticks);
     }
+    // The longest run plays a whole night: eleven hours, and it is over.
+    const whole = run(1234, 25200);
+    expect(whole.phase).toBe("over");
+    expect(whole.night.hour).toBe(11);
+    expect(whole.tick).toBeGreaterThan(10836);
+    expect(whole.tick).toBeLessThanOrEqual(11 * 1800 + 1);
+    expect(whole.normalTicks + whole.slowedTicks).toBe(whole.tick);
+    expect(whole.slowedTicks).toBeGreaterThan(100);
+    expect(whole.hearts).toBeLessThan(60);
+    expect(whole.score).toBeGreaterThan(1000);
   });
 
   it("the whole sequence of fingerprints is the same, not just its end", () => {
@@ -72,22 +90,25 @@ describe("determinism", () => {
     run(77, 1200, (_, events) => first.push(...events.map((e) => ({ ...e }))));
     run(77, 1200, (_, events) => second.push(...events.map((e) => ({ ...e }))));
     expect(second).toEqual(first);
+    // Everything the first two minutes can report came up but the two ends: a clear hour and the night's end.
     const kinds = new Set(first.map((e) => e.type));
-    expect([...kinds].sort()).toEqual(["arrive", "cushion", "launch", "pop"]);
+    expect([...kinds].sort()).toEqual(["announce", "arrive", "cushion", "daze", "hour", "hurt", "land", "launch", "launchEnd", "pip", "pop", "refused", "row"]);
+    // Every event carries the tick it happened in, and they come in order.
+    for (let i = 1; i < first.length; i++) expect(first[i].tick).toBeGreaterThanOrEqual(first[i - 1].tick);
   });
 
   it("a copy taken in the middle plays on exactly as the original does", () => {
     for (const at of [1, 137, 600, 2000]) {
-      const original = createState(4242, DEFAULT_TUNE);
+      const original = createState(4242, TUNE);
       const inputs = scriptedInputs(5);
       const script: Input[] = Array.from({ length: at + 900 }, (_, t) => inputs(t));
       const events: SimEvent[] = [];
-      for (let t = 0; t < at; t++) step(original, script[t], DEFAULT_TUNE, events);
+      for (let t = 0; t < at; t++) step(original, script[t], TUNE, events);
       const copy = cloneState(original);
       expect(hashState(copy)).toBe(hashState(original));
       for (let t = at; t < at + 900; t++) {
-        step(original, script[t], DEFAULT_TUNE, events);
-        step(copy, script[t], DEFAULT_TUNE, events);
+        step(original, script[t], TUNE, events);
+        step(copy, script[t], TUNE, events);
         if (hashState(copy) !== hashState(original)) {
           expect.fail(`a copy taken at tick ${at} parted from the original at tick ${t}`);
         }
@@ -101,7 +122,7 @@ describe("determinism", () => {
     const copy = cloneState(original);
     const before = hashState(copy);
     const events: SimEvent[] = [];
-    for (let t = 0; t < 200; t++) step(original, { launch: t === 0 ? { dx: 1, dy: -1, power: 1 } : null, pullHeld: false }, DEFAULT_TUNE, events);
+    for (let t = 0; t < 200; t++) step(original, { launch: t === 0 ? { dx: 1, dy: -1, power: 1 } : null, pullHeld: false }, TUNE, events);
     expect(hashState(copy)).toBe(before);
     expect(hashState(original)).not.toBe(before);
   });
@@ -110,21 +131,28 @@ describe("determinism", () => {
     const a = run(1, 600);
     const b = run(2, 600);
     expect(hashState(a)).not.toBe(hashState(b));
-    // Not only because the seed itself is in the State: the dummies came back in other places.
+    // Not only because the seed itself is in the State: the bunches came down in other places.
     expect(a.things.map((d) => [d.x, d.y])).not.toEqual(b.things.map((d) => [d.x, d.y]));
-    // His own flight is the same until something he touches is somewhere else.
-    expect(a.launch.id).toBe(b.launch.id);
+    // And from the first tick on: the rack stands where it always stands, but its dust bunnies wobble out of step.
+    const one = createState(1, TUNE);
+    const two = createState(2, TUNE);
+    expect(one.things.map((d) => [d.x, d.y])).toEqual(two.things.map((d) => [d.x, d.y]));
+    expect(one.things.map((d) => d.phase)).not.toEqual(two.things.map((d) => d.phase));
   });
 
-  it("the three streams are seeded apart, and step 0 draws from arrivals only", () => {
+  it("the three streams are seeded apart, and each is drawn from by its own system only", () => {
     const fresh = seedStreams(31337);
     expect(new Set([fresh.arrivals, fresh.offers, fresh.behaviour]).size).toBe(3);
     expect(fresh.arrivals).toBe(rngSeed(31337, 1));
+    // Making the State draws a wobble phase for each dust bunny of the rack, and no place: the rack's is written down.
+    const made = createState(31337, TUNE);
+    expect(made.rng.arrivals).toBe(fresh.arrivals);
+    expect(made.rng.behaviour).not.toBe(fresh.behaviour);
     const s = run(31337, 3600);
     expect(s.rng.arrivals).not.toBe(fresh.arrivals);
-    // Nothing reshuffles these two until the systems they belong to exist.
+    expect(s.rng.behaviour).not.toBe(made.rng.behaviour);
+    // Nothing reshuffles this one until the system it belongs to exists.
     expect(s.rng.offers).toBe(fresh.offers);
-    expect(s.rng.behaviour).toBe(fresh.behaviour);
   });
 
   it("he and everything else stay on the floor, their radius inside its edges", () => {
@@ -136,20 +164,35 @@ describe("determinism", () => {
       const h = s.him;
       if (h.x < left + r || h.x > right - r || h.y < top + r || h.y > bottom - r) outside.push(`him at tick ${s.tick}`);
       for (const d of s.things) {
-        if (!d.alive) continue;
-        if (d.x < left + d.r || d.x > right - d.r || d.y < top + d.r || d.y > bottom - d.r) outside.push(`thing ${d.id} at tick ${s.tick}`);
+        const dr = KINDS[d.kind].radius;
+        if (d.x < left + dr || d.x > right - dr || d.y < top + dr || d.y > bottom - dr) outside.push(`thing ${d.id} at tick ${s.tick}`);
         checked++;
       }
     });
     expect(outside).toEqual([]);
-    expect(checked).toBeGreaterThan(6000);
+    expect(checked).toBeGreaterThan(20000);
+  });
+
+  it("everything in the room is alive, each under its own id, in the order it came", () => {
+    const seen = new Set<number>();
+    run(2026, 6000, (s) => {
+      let last = 0;
+      for (const d of s.things) {
+        if (d.hp <= 0) expect.fail(`thing ${d.id} is still in the room at tick ${s.tick} with no hit left`);
+        if (d.id <= last) expect.fail(`thing ${d.id} is out of order at tick ${s.tick}`);
+        last = d.id;
+        seen.add(d.id);
+      }
+      if (last >= s.nextId) expect.fail(`nextId ${s.nextId} is behind thing ${last}`);
+    });
+    expect(seen.size).toBeGreaterThan(50);
   });
 
   it("the default floor is the room less its 8 u cushions, and he starts at (180, 374)", () => {
     const s = createState(1, DEFAULT_TUNE);
     expect(s.room).toEqual({ left: 8, top: 8, right: 352, bottom: 472 });
     expect([s.him.x, s.him.y]).toEqual([180, 374]);
-    expect(s.things).toHaveLength(6);
+    expect(s.things).toHaveLength(4);
     expect(s.tick).toBe(0);
   });
 
@@ -159,10 +202,41 @@ describe("determinism", () => {
     expect(s.room).toEqual(toyRoom);
     expect(s.room).not.toBe(toyRoom);
     expect(s.things).toEqual([]);
-    // Straight left at full power: he stops 13 u from the toy's wall, not from a cushion 8 u in.
+    expect(s.night.kinds).toEqual([]);
+    // Straight left at full power: he bounces 13 u from the toy's wall, not from a cushion 8 u in.
     const events: SimEvent[] = [];
     for (let t = 0; t < 30; t++) step(s, { launch: t === 0 ? { dx: -1, dy: 0, power: 1 } : null, pullHeld: false }, DEFAULT_TUNE, events);
     expect(events.some((e) => e.type === "cushion" && e.side === "left" && e.x === 13)).toBe(true);
+    // An empty room stays empty: nothing arrives, all night, and morning comes all the same.
+    for (let t = 0; t < 12000; t++) step(s, { launch: null, pullHeld: false }, DEFAULT_TUNE, events);
+    expect(events.some((e) => e.type === "announce" || e.type === "row")).toBe(false);
+    expect(s.things).toEqual([]);
+    expect(s.ended).toBe("morning");
+  });
+
+  it("the start options: an hour to begin in, and the kinds the rows may bring", () => {
+    // From 23:00: no rack, and the first launch starts that hour at its tick 0.
+    const late = createState(1, DEFAULT_TUNE, { hour: 4 });
+    expect(late.night.hour).toBe(4);
+    expect(late.things).toEqual([]);
+    const events: SimEvent[] = [];
+    step(late, { launch: { dx: 0, dy: -1, power: 1 }, pullHeld: false }, DEFAULT_TUNE, events);
+    expect(events.filter((e) => e.type === "hour")).toEqual([{ type: "hour", tick: 0, hour: 4 }]);
+    expect(events.some((e) => e.type === "row" && e.hour === 4)).toBe(true);
+    expect(late.night.hourStart).toBe(0);
+    // An hour outside the night is brought inside it.
+    expect(createState(1, DEFAULT_TUNE, { hour: 99 }).night.hour).toBe(10);
+    expect(createState(1, DEFAULT_TUNE, { hour: -3 }).night.hour).toBe(0);
+    // The kinds: every kind built so far by default; a list is kept in the order the kinds were built;
+    // a kind with no rules yet cannot be asked for.
+    expect(createState(1, DEFAULT_TUNE).night.kinds).toEqual(["bunny", "token"]);
+    expect(createState(1, DEFAULT_TUNE, { kinds: ["token", "bunny", "token"] }).night.kinds).toEqual(["bunny", "token"]);
+    expect(createState(1, DEFAULT_TUNE, { kinds: ["bunny", "gum", "battery", "polisher", "nonsense"] }).night.kinds).toEqual(["bunny"]);
+    // A night of tokens only has no rack; one that is empty but for its kinds has none either, and its rows still come.
+    expect(createState(1, DEFAULT_TUNE, { kinds: ["token"] }).things).toEqual([]);
+    const noRack = createState(1, DEFAULT_TUNE, { empty: true, kinds: ["bunny", "token"] });
+    expect(noRack.things).toEqual([]);
+    expect(noRack.night.kinds).toEqual(["bunny", "token"]);
   });
 
   it("a launch that is not made of numbers is no launch", () => {
@@ -176,70 +250,34 @@ describe("determinism", () => {
       { dx: 0, dy: -1, power: 0 },
       { dx: 0, dy: -1, power: -1 },
     ];
+    const first = { dx: 0.3, dy: -1, power: 1 };
     for (const launch of odd) {
+      // On the start screen it does not start the night.
+      const waiting = createState(8, DEFAULT_TUNE);
+      const untouched = hashState(waiting);
+      const events: SimEvent[] = [];
+      step(waiting, { launch, pullHeld: false }, DEFAULT_TUNE, events);
+      expect(hashState(waiting), JSON.stringify(launch)).toBe(untouched);
+      expect(events).toEqual([]);
+      // In the middle of a flight it changes nothing, costs nothing and is not even refused.
       const s = createState(8, DEFAULT_TUNE);
       const quiet = createState(8, DEFAULT_TUNE);
-      const events: SimEvent[] = [];
       for (let t = 0; t < 30; t++) {
-        step(s, { launch: t === 0 ? launch : null, pullHeld: false }, DEFAULT_TUNE, events);
-        step(quiet, { launch: null, pullHeld: false }, DEFAULT_TUNE, []);
+        step(s, { launch: t === 0 ? first : t === 5 ? launch : null, pullHeld: false }, DEFAULT_TUNE, events);
+        step(quiet, { launch: t === 0 ? first : null, pullHeld: false }, DEFAULT_TUNE, []);
       }
-      expect(events.filter((e) => e.type === "launch"), JSON.stringify(launch)).toEqual([]);
-      expect(s.launch.id).toBe(0);
+      expect(events.filter((e) => e.type === "launch"), JSON.stringify(launch)).toHaveLength(1);
+      expect(events.filter((e) => e.type === "refused")).toEqual([]);
       expect(s).toEqual(quiet);
     }
-    // A power over 1 is a full launch, not more.
-    const over = createState(8, DEFAULT_TUNE, { empty: true });
-    const full = createState(8, DEFAULT_TUNE, { empty: true });
-    step(over, { launch: { dx: 1, dy: 0, power: 7 }, pullHeld: false }, DEFAULT_TUNE, []);
-    step(full, { launch: { dx: 1, dy: 0, power: 1 }, pullHeld: false }, DEFAULT_TUNE, []);
-    expect(over).toEqual(full);
-  });
-
-  it("the aim line is worked out on a copy: it leaves the State as it was", () => {
-    const s = run(55, 400);
-    const before = hashState(s);
-    const line = aimLine(s, { dx: 0.3, dy: -1, power: 1 }, DEFAULT_TUNE);
-    expect(hashState(s)).toBe(before);
-    expect(line.pts.length).toBeGreaterThan(4);
-  });
-
-  it("the aim line shows what the next ticks do, while nothing else moves", () => {
-    // An empty room: his real flight passes through every point of the line.
-    const s = createState(3, DEFAULT_TUNE, { empty: true });
-    const launch = { dx: 0.62, dy: -1, power: 1 };
-    const line = aimLine(s, launch, { ...DEFAULT_TUNE, aimCushions: 3 });
-    const events: SimEvent[] = [];
-    const ticks = line.end === "cushion" ? line.pts.length / 2 - 2 : line.pts.length / 2 - 1;
-    expect(ticks).toBeGreaterThan(20);
-    for (let t = 1; t <= ticks; t++) {
-      step(s, { launch: t === 1 ? launch : null, pullHeld: false }, DEFAULT_TUNE, events);
-      expect(s.him.x).toBe(line.pts[t * 2]);
-      expect(s.him.y).toBe(line.pts[t * 2 + 1]);
-    }
-  });
-
-  it("the aim line runs through one cushion and stops at the next", () => {
-    expect(DEFAULT_TUNE.aimCushions).toBe(1);
-    const s = createState(3, DEFAULT_TUNE, { empty: true });
-    // Down and to the right at full power: off the bottom cushion, and it stops on the right one.
-    const one = aimLine(s, { dx: 1, dy: 1, power: 1 }, DEFAULT_TUNE);
-    expect(one.end).toBe("cushion");
-    expect(one.cushions).toHaveLength(2);
-    const [endX, endY] = one.pts.slice(-2);
-    expect(endX).toBe(s.room.right - DEFAULT_TUNE.himRadius);
-    expect(endY).toBeLessThan(s.room.bottom - DEFAULT_TUNE.himRadius);
-    // The knob: with two, the same launch is drawn on past the right cushion.
-    const two = aimLine(s, { dx: 1, dy: 1, power: 1 }, { ...DEFAULT_TUNE, aimCushions: 2 });
-    expect(two.cushions.length).toBeGreaterThanOrEqual(2);
-    expect(two.pts.length).toBeGreaterThan(one.pts.length);
-    expect(two.pts.slice(0, one.pts.length - 2)).toEqual(one.pts.slice(0, -2));
-    // Straight at the rack: it ends on the first dummy, and he is hot when he gets there.
-    const rack = createState(3, DEFAULT_TUNE);
-    const hit = aimLine(rack, { dx: 0, dy: -1, power: 1 }, DEFAULT_TUNE);
-    expect(hit.end).toBe("thing");
-    expect(hit.hitId).toBe(rack.things[0].id);
-    expect(hit.hitHot).toBe(true);
-    expect(hit.cushions).toEqual([]);
+    // A power over 1 is a full launch, not more; one under the minimum is the minimum.
+    const fire = (power: number): State => {
+      const s = createState(8, DEFAULT_TUNE, { empty: true });
+      step(s, { launch: { dx: 1, dy: 0, power }, pullHeld: false }, DEFAULT_TUNE, []);
+      return s;
+    };
+    expect(fire(7)).toEqual(fire(1));
+    expect(fire(0.2)).toEqual(fire(DEFAULT_TUNE.minPower));
+    expect(fire(0.5)).not.toEqual(fire(0.51));
   });
 });

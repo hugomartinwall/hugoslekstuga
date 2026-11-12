@@ -4,18 +4,19 @@
  * Two halves. TOY is copied from the feel toy, whose motion the owner set
  * by hand; do not retype those numbers from memory, and do not round them.
  * test/knuff/feel-lock.test.ts runs the toy's own simulation beside the
- * game's and fails if they part. GAME is what the game adds, and grows a
- * row at a time as the steps are built.
+ * game's and fails if they part. GAME is what the game adds (the spec's
+ * table, §2.2), and grows a row at a time as the steps are built.
  *
- * A caller may override any knob when a game starts: `createKnuff` takes a
- * partial table and lays it over DEFAULT_TUNE with `mergeTune`.
+ * One knob, `pace`, gives six others their values (PACE below). A caller
+ * may override any knob when a game starts: `createKnuff` takes a partial
+ * table and lays it over DEFAULT_TUNE with `mergeTune`.
  */
 import type { Tune } from "../sim/types";
 
 /**
  * The toy's tuning sheet as the owner left it after he played: every
- * slider at its default. One thing was decided after that: the aim line
- * runs through ONE cushion, not the sheet's two (with two he never missed).
+ * slider at its default. (Its sixth slider, the cushions the aim line runs
+ * through, is not copied: that is the game's own knob now, `aimCushions`.)
  */
 export const TOY_SETTINGS = {
   /** Launch speed at a full pull, u/s. */
@@ -27,7 +28,6 @@ export const TOY_SETTINGS = {
   /** 0 stops quickly, 100 glides far. */
   glide: 50,
   dir: "back",
-  bounces: 1,
 } as const;
 
 /** The toy's glide slider as drag per second, the way its shell works it out. */
@@ -61,22 +61,80 @@ export const TOY = {
   pullFullPx: TOY_SETTINGS.pull,
   slowShare: TOY_SETTINGS.slow / 100,
   pullDir: TOY_SETTINGS.dir,
-  aimCushions: TOY_SETTINGS.bounces,
-
-  // The toy's shortest shot: 35% power from a 12 px pull. The game's is
-  // 50% from 24 px; step 1 ("the minimum launch") moves these two to GAME
-  // with those values.
-  noShotPx: 12,
-  minPower: 0.35,
-
-  // Step 0 only: the toy's dummies. They go when the night arrives.
-  dummyCount: 6,
-  dummyRespawnTicks: 80,
 } as const satisfies Partial<Tune>;
 
-/** What the game adds. */
+/** The knobs that take their values from `pace`. */
+export type PaceGiven = Pick<Tune, "pipRefillTicks" | "paceRoom" | "paceEvery" | "paceLastCall" | "paceLastCallFirst" | "paceTokens">;
+
+/**
+ * What each pace gives (§3.4). 1: the timetable as written; the five pace
+ * numbers are not used there. 2: the full room. 3: the full room with one
+ * more loose token on every extra bunch. A `pace` that is none of the
+ * three is read as 1.
+ */
+export const PACE: Readonly<Record<1 | 2 | 3, PaceGiven>> = {
+  1: { pipRefillTicks: 120, paceRoom: 6, paceEvery: 228, paceLastCall: 840, paceLastCallFirst: 456, paceTokens: 2 },
+  2: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 840, paceLastCallFirst: 456, paceTokens: 2 },
+  3: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 840, paceLastCallFirst: 456, paceTokens: 3 },
+};
+
+/** The values `pace` gives. */
+export function paceGives(pace: number): PaceGiven {
+  return pace === 2 || pace === 3 ? PACE[pace] : PACE[1];
+}
+
+/** The pace the night starts at. */
+const START_PACE = 2;
+
+/** What the game adds: the spec's table of knobs, as far as the build has reached. */
 export const GAME = {
+  // Launch and pips.
   lineShowsPx: 12,
+  noShotPx: 24,
+  minPower: 0.5,
+  aimCushions: 1,
+  pipMax: 3,
+  pipRefundPop: 2,
+
+  // Hot and landing.
+  popHotTicks: 0,
+  thumpRadius: 40,
+  dazeTicks: 36,
+  arriveDazedWithin: 60,
+  thumpTurnsTokens: false,
+
+  // Hearts.
+  hearts: 3,
+  invulnTicks: 72,
+  hitWaveRadius: 90,
+  hitWaveSpeed: 260,
+
+  // Slow motion.
+  slowMeterMax: 16,
+  slowRefillTicks: 9,
+  slowLandingFloor: 8,
+
+  // The night.
+  hourMaxTicks: 1800,
+  offerLatestTick: 1320,
+  hourPauseTicks: 180,
+  telegraphTicks: 36,
+  arriveMinDist: 150,
+  roomCap: 24,
+  pace: START_PACE,
+  ...PACE[START_PACE],
+
+  // Intruders.
+  bunnySpeed: 22,
+  bunnyWobble: 0.6,
+  bunnyWobbleRate: 0.07,
+  tokenSpeed: 150,
+
+  // Score.
+  chainCap: 8,
+  carryMax: 3,
+  cushionCap: 3,
+  cushionMergeTicks: 9,
 } as const satisfies Partial<Tune>;
 
 export const DEFAULT_TUNE: Tune = { ...TOY, ...GAME };
@@ -86,12 +144,22 @@ export const DEFAULT_TUNE: Tune = { ...TOY, ...GAME };
  * or one of the wrong kind (a word where a number belongs), is left out:
  * the override may have been typed by hand into a link. A value of the
  * right kind is taken as it is, sensible or not.
+ *
+ * `pace` is the one knob that sets others. An override that names it deals
+ * that pace's six values again; any of the six that the same override
+ * names keeps the value it was given there, so each can be turned alone.
+ * An override that does not name `pace` leaves the six as they stand. So
+ * whoever keeps a table over several changes (a link, then a key on the
+ * screen) lays ALL the named knobs over DEFAULT_TUNE each time, not the
+ * newest change over the table in use: a pip timer named in the link then
+ * outlives a change of pace, as the spec asks.
  */
 export function mergeTune(base: Tune, over: Partial<Tune> | null | undefined): Tune {
   const out: Tune = { ...base };
   if (!over) return out;
   const target = out as Record<string, unknown>;
   const known = base as Record<string, unknown>;
+  const named = new Set<string>();
   for (const [key, value] of Object.entries(over)) {
     // The table's own knobs only: `in` would also answer yes for what
     // every object inherits, and a table typed by hand could then swap
@@ -101,6 +169,12 @@ export function mergeTune(base: Tune, over: Partial<Tune> | null | undefined): T
     if (typeof value === "number" && !Number.isFinite(value)) continue;
     if (key === "pullDir" && value !== "back" && value !== "push") continue;
     target[key] = value;
+    named.add(key);
+  }
+  if (named.has("pace")) {
+    for (const [key, value] of Object.entries(paceGives(out.pace))) {
+      if (!named.has(key)) target[key] = value;
+    }
   }
   return out;
 }

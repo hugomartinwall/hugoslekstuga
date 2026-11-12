@@ -6,147 +6,173 @@
  * same inputs give the same State, bit for bit. That is what lets a bot
  * stand in for a hand, and the aim line be this very motion run on a copy.
  *
- * Step 0 is the feel toy's tick, laid out in the order the game's tick
- * will have (the numbers are the spec's): the launch (2), arrivals (4),
- * the move in substeps (7), slowing down (9), closing up (10). He still
- * slides on after he cools, as in the toy; the landing is step 1's.
+ * The order of a tick is the spec's (§12.4); the numbers in the comments
+ * below are its steps. His own motion is the feel toy's, piece for piece:
+ * test/knuff/feel-lock.test.ts holds every tick he is hot against the toy.
  */
-import { respawnDummies } from "./dummies";
-import {
-  BOTTOM,
-  DT,
-  LEFT,
-  RIGHT,
-  TOP,
-  applyLaunch,
-  bumpHim,
-  collideWalls,
-  contain,
-  hotSpeed,
-  popImpulse,
-  pushApart,
-  slow,
-  substepsFor,
-} from "./physics";
-import type { Input, SimEvent, State, Tune } from "./types";
+import { countTick, endLaunch, givePip, isHot, isLaunch, land } from "./hot";
+import { choose, contacts, moveThings, overlapped, slowThings, spreadBunnies, unblock } from "./intruders";
+import { nightStep } from "./night";
+import { BOTTOM, DT, LEFT, RIGHT, TOP, applyLaunch, collideWalls, slow, substepsFor } from "./physics";
+import { carryFor, countCushion } from "./score";
+import type { Input, Side, SimEvent, State, Tune } from "./types";
+
+export { wouldSlow } from "./hot";
 
 export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): void {
   const h = s.him;
-  const room = s.room;
-  const r = tune.himRadius;
-  const hotAt = hotSpeed(tune);
+  // A launch that is not made of numbers is no launch: one NaN here would
+  // spread to every number in the State.
+  const asked = isLaunch(input.launch) ? input.launch : null;
+
+  // 1. Phase. Nothing in the room moves until the first launch: without
+  // one the tick does not advance. A night that is over stays as it is.
+  if (s.phase === "over") return;
+  if (s.phase === "waiting") {
+    if (asked === null) return;
+    if (s.pips <= 0) {
+      events.push({ type: "refused", tick: s.tick });
+      return;
+    }
+    s.phase = "night";
+    s.night.hourStart = s.tick;
+    events.push({ type: "hour", tick: s.tick, hour: s.night.hour });
+  }
 
   // Every mover remembers where it was, so the picture can be drawn between two ticks.
   h.px = h.x;
   h.py = h.y;
-  for (const d of s.things) {
+  for (let i = 0; i < s.things.length; i++) {
+    const d = s.things[i];
     d.px = d.x;
     d.py = d.y;
   }
 
-  // 2. The launch. A new one closes the one before it. A launch that is
-  // not made of numbers is no launch: one NaN here would spread to every
-  // number in the State.
-  const l = input.launch;
-  if (l && Number.isFinite(l.dx) && Number.isFinite(l.dy) && l.power > 0 && (l.dx !== 0 || l.dy !== 0)) {
-    const power = applyLaunch(h, l, tune);
-    s.launch = { id: s.launch.id + 1, startTick: s.tick, pops: 0, cushions: 0 };
-    events.push({ type: "launch", tick: s.tick, x: h.x, y: h.y, power });
+  // 2. The launch. With a pip in hand: spend it, close the launch before
+  // this one and open a new one, and set his velocity. With none: refused.
+  if (asked !== null) {
+    if (s.pips > 0) {
+      const carry = carryFor(h.hot, s.launch, tune);
+      endLaunch(s, events);
+      // The pip timer runs only while he is below the maximum, and starts
+      // again when a launch takes him from full.
+      if (s.pips >= tune.pipMax) s.pipTimer = tune.pipRefillTicks;
+      s.pips--;
+      // No launch is softer than the minimum.
+      const power = applyLaunch(h, { dx: asked.dx, dy: asked.dy, power: Math.max(tune.minPower, asked.power) }, tune);
+      s.launch = {
+        id: s.launch.id + 1,
+        startTick: s.tick,
+        active: true,
+        carry,
+        pops: 0,
+        bodyPops: 0,
+        refunded: false,
+        cushions: 0,
+        lastCushionTick: -1,
+        points: 0,
+        blocked: overlapped(s, tune),
+        popped: false,
+      };
+      h.hot = isHot(s, tune, Math.hypot(h.vx, h.vy));
+      events.push({ type: "launch", tick: s.tick, x: h.x, y: h.y, power, carry });
+    } else {
+      events.push({ type: "refused", tick: s.tick });
+    }
   }
 
-  // 4. Arrivals: the dummies that are due come back.
-  respawnDummies(s, events);
+  // 3. Slow motion: is this a slowed tick or a normal one.
+  countTick(s, input, tune);
 
-  // 7. Move everything, in substeps small enough that nothing tunnels.
-  let fastest = Math.hypot(h.vx, h.vy);
-  for (const d of s.things) {
-    if (!d.alive) continue;
-    const sp = Math.hypot(d.vx, d.vy);
-    if (sp > fastest) fastest = sp;
-  }
-  const n = substepsFor(fastest, tune);
-  const sub = DT / n;
-  for (let i = 0; i < n; i++) {
-    h.x += h.vx * sub;
-    h.y += h.vy * sub;
-    const speedIn = Math.hypot(h.vx, h.vy);
-    const walls = collideWalls(h, r, room, tune.wallRestitution);
-    if (walls !== 0) {
-      // Two cushions in one substep: the side cushion counts as touched first.
-      if (walls & LEFT) cushion(s, events, "left", speedIn);
-      if (walls & RIGHT) cushion(s, events, "right", speedIn);
-      if (walls & TOP) cushion(s, events, "top", speedIn);
-      if (walls & BOTTOM) cushion(s, events, "bottom", speedIn);
-    }
-    for (const d of s.things) {
-      if (!d.alive) continue;
-      d.x += d.vx * sub;
-      d.y += d.vy * sub;
-      collideWalls(d, d.r, room, tune.lightWallRestitution);
-    }
-
-    // His body against each thing, in the order of `things`.
-    for (const d of s.things) {
-      if (!d.alive) continue;
-      const dx = d.x - h.x;
-      const dy = d.y - h.y;
-      const dist = Math.hypot(dx, dy);
-      const reach = r + d.r;
-      if (dist >= reach) continue;
-      const nx = dist > 1e-6 ? dx / dist : 0;
-      const ny = dist > 1e-6 ? dy / dist : -1;
-      const speedNow = Math.hypot(h.vx, h.vy);
-      const closing = (h.vx - d.vx) * nx + (h.vy - d.vy) * ny;
-      if (speedNow >= hotAt) {
-        // Fast: the thing pops, and he feels only part of the knock.
-        popImpulse(h, nx, ny, closing, tune.lightMass, tune);
-        d.alive = false;
-        d.respawnIn = tune.dummyRespawnTicks;
-        s.launch.pops++;
-        events.push({ type: "pop", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, n: s.launch.pops, speed: speedNow });
-        continue;
-      }
-      // Slow (or a thing drifting into him): an ordinary bump.
-      bumpHim(h, d, nx, ny, reach - dist, closing, tune.lightMass, tune);
-    }
-
-    // Light things pushed apart.
-    for (let a = 0; a < s.things.length; a++) {
-      const A = s.things[a];
-      if (!A.alive) continue;
-      for (let b = a + 1; b < s.things.length; b++) {
-        const B = s.things[b];
-        if (!B.alive) continue;
-        pushApart(A, A.r, B, B.r, tune.lightMass, tune);
+  // 4. The night: the hour, the rows due, landings, the clear test.
+  let running = nightStep(s, tune, events);
+  if (!running) {
+    // 05:00 has ended and there is no 06:00 yet: morning.
+    s.ended = "morning";
+  } else {
+    // 5. Timers. One pip comes back every `pipRefillTicks` while he is below the maximum.
+    if (s.pips < tune.pipMax) {
+      s.pipTimer--;
+      if (s.pipTimer <= 0) {
+        s.pipTimer = tune.pipRefillTicks;
+        givePip(s, tune, "timer", events);
       }
     }
 
-    // Contacts may have pushed something through a cushion: put it back.
-    contain(h, r, room);
-    for (const d of s.things) if (d.alive) contain(d, d.r, room);
+    // 6. Choose: each intruder sets its velocity for this tick.
+    const fastestThing = choose(s, tune);
+
+    // 7. Move, in substeps small enough that nothing tunnels: the toy's
+    // rule, on the fastest mover.
+    const speedNow = Math.hypot(h.vx, h.vy);
+    const n = substepsFor(speedNow > fastestThing ? speedNow : fastestThing, tune);
+    const sub = DT / n;
+    const r = tune.himRadius;
+    for (let i = 0; i < n && running; i++) {
+      // He moves and bounces off cushions. He never moves while he is not hot.
+      if (h.hot) {
+        h.x += h.vx * sub;
+        h.y += h.vy * sub;
+        const speedIn = Math.hypot(h.vx, h.vy);
+        const walls = collideWalls(h, r, s.room, tune.wallRestitution);
+        if (walls !== 0) {
+          // Two cushions in one substep: the side cushion counts as touched first.
+          if (walls & LEFT) cushion(s, tune, events, "left", speedIn);
+          if (walls & RIGHT) cushion(s, tune, events, "right", speedIn);
+          if (walls & TOP) cushion(s, tune, events, "top", speedIn);
+          if (walls & BOTTOM) cushion(s, tune, events, "bottom", speedIn);
+          // The landing test, after a cushion bounce.
+          h.hot = isHot(s, tune, Math.hypot(h.vx, h.vy));
+          if (!h.hot) land(s, tune, events);
+        }
+      }
+      moveThings(s, tune, sub);
+      // Contacts in the order of `things`, with the landing test after each.
+      running = contacts(s, tune, events);
+      if (!running) {
+        s.ended = "hearts";
+        break;
+      }
+      if (s.launch.blocked.length > 0) unblock(s, tune);
+      spreadBunnies(s);
+    }
+
+    if (running) {
+      // 9. Slow down: drag on him, then the hot test, then the landing. He
+      // may be standing still by then: inside the `popHotTicks` window the
+      // toy's slowing can stop him, and that tick is his landing too.
+      if (h.hot) h.hot = isHot(s, tune, slow(h, tune.dragK, tune.friction, tune.restSpeed));
+      // (A launch too soft to be hot at all never flew: it lands here.)
+      if (!h.hot && s.launch.active) land(s, tune, events);
+      slowThings(s, tune);
+    }
   }
 
-  // 9. Slow down: drag on him, then the hot test. Knocked things slow.
-  const speed = slow(h, tune.dragK, tune.friction, tune.restSpeed);
-  for (const d of s.things) {
-    if (!d.alive) continue;
-    slow(d, tune.lightDragK, tune.lightFriction, tune.lightRestSpeed);
+  // 10. Close up. A popped thing is gone.
+  let kept = 0;
+  for (let i = 0; i < s.things.length; i++) {
+    const d = s.things[i];
+    if (d.hp > 0) s.things[kept++] = d;
   }
-  h.hot = speed >= hotAt;
-
-  // 10. Close up. A speed that reached zero from below is a negative zero
-  // in floating point. Adding zero makes it a plain one and changes no
-  // other number, so the State can go through JSON and come back the same.
+  s.things.length = kept;
+  // A speed that reached zero from below is a negative zero in floating
+  // point. Adding zero makes it a plain one and changes no other number,
+  // so the State can go through JSON and come back the same.
   h.vx += 0;
   h.vy += 0;
-  for (const d of s.things) {
-    d.vx += 0;
-    d.vy += 0;
+  if (s.ended !== "") {
+    // The night ends where it stands. A launch in flight ends with it.
+    endLaunch(s, events);
+    h.vx = 0;
+    h.vy = 0;
+    h.hot = false;
+    s.phase = "over";
+    events.push({ type: "over", tick: s.tick, how: s.ended, score: s.score });
   }
   s.tick++;
 }
 
-function cushion(s: State, events: SimEvent[], side: "left" | "right" | "top" | "bottom", speed: number): void {
-  s.launch.cushions++;
+function cushion(s: State, tune: Tune, events: SimEvent[], side: Side, speed: number): void {
+  countCushion(s, tune);
   events.push({ type: "cushion", tick: s.tick, x: s.him.x, y: s.him.y, side, speed });
 }

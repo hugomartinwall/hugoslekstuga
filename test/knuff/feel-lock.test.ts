@@ -1,30 +1,37 @@
 import { describe, expect, it } from "vitest";
 import * as toy from "../fixtures/knuff/toy-sim";
+import { KINDS } from "../../lib/knuff/content/kinds";
 import { DEFAULT_TUNE, TOY, TOY_SETTINGS } from "../../lib/knuff/content/tune";
 import { hotSpeed } from "../../lib/knuff/sim/physics";
 import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
-import type { Launch, SimEvent, Tune } from "../../lib/knuff/sim/types";
+import type { Launch, SimEvent, State, Tune } from "../../lib/knuff/sim/types";
 
 /**
  * The feel lock. The owner set how the mascot moves by hand, in a toy.
  * `test/fixtures/knuff/toy-sim.ts` is that toy's simulation, copied
  * untouched. This suite runs it beside the game's and asks for the same
- * positions and speeds on every tick: not close, the same numbers to the
- * last bit.
+ * positions and speeds: not close, the same numbers to the last bit.
  *
- * Step 0: the game's simulation IS the toy's, so the two agree for whole
- * flights, dummies and all, until something respawns. (The toy picks its
- * respawn spots and its ringed dummy from one generator. The game has no
- * ring, so the spots cannot be the same, and respawns are pushed out of
- * the window on both sides.) From step 1 he lands where the toy slides on,
- * and the lock holds only while he is hot.
+ * The game departs from the toy in one way on purpose: there is no cool
+ * slide. The moment he is not hot he lands, where the toy slides on. So
+ * the lock holds for every tick he is hot in the game, and on the tick he
+ * lands the two must agree that he has just stopped being a weapon. After
+ * that they part: before a launch from rest the toy's mascot is set down
+ * where the game's stands, and the next flight is held to the toy again.
  *
- * How the two are set side by side, as the spec has it: the room's edges
- * are set to the toy's (`start.room`: 0, 0, 360, 480; the toy has no
- * cushion thickness), the toy runs with the tune its shell hands it (pips
- * off), and the toy's mascot is moved to the game's start, (180, 374),
- * before the first launch (the toy's own is (180, 374.4)).
+ * How the two are set side by side, as the spec has it: an empty room
+ * (`start.empty`: nothing arrives), the room's edges set to the toy's
+ * (`start.room`: 0, 0, 360, 480; the toy has no cushion thickness), the toy
+ * run with the tune its shell hands it (pips off), and the toy's mascot
+ * moved to the game's start, (180, 374), before the first launch (the
+ * toy's own is (180, 374.4)).
+ *
+ * Some scripts put things in the room by hand. They are dust bunnies that
+ * do not walk (`bunnySpeed` 0) and have a speed of their own, as the wave
+ * of a lost heart gives them: such a thing slows and bounces exactly as
+ * one of the toy's dummies does, and popping it costs him what popping a
+ * dummy costs. The toy's dummies are given the dust bunny's radius.
  */
 
 // ── The toy, set up as its shell sets it up ──────────────────────────
@@ -39,6 +46,7 @@ const NEVER = 1_000_000_000;
 const TOY_TUNE: toy.Tune = { ...toyShellTune({ power: 900, glide: 50 }), respawnTicks: NEVER };
 /** The toy has no cushion thickness: its floor is the whole 360 × 480. */
 const TOY_ROOM = { left: 0, top: 0, right: toy.FIELD_W, bottom: toy.FIELD_H };
+const HOT_AT = toy.hotSpeed(TOY_TUNE);
 
 // ── Scripts ───────────────────────────────────────────────────────────
 
@@ -53,216 +61,226 @@ function speedThatSlowsTo(target: number, dragK: number, friction: number): numb
   return (target + friction * toy.DT) / Math.exp(-dragK * toy.DT);
 }
 
-/** How close to a rest speed the "only just" scripts go, u/s. */
-const REST_MARGIN = 5e-4;
+/** How close to a line the "only just" scripts go, u/s. */
+const MARGIN = 5e-4;
 
-/** The toy's four cushions: a point on each, and the way into the room from it. */
-const CUSHIONS: { name: string; at: [number, number]; inward: [number, number] }[] = [
-  { name: "left", at: [0, 240], inward: [1, 0] },
-  { name: "right", at: [360, 240], inward: [-1, 0] },
-  { name: "top", at: [180, 0], inward: [0, 1] },
-  { name: "bottom", at: [180, 480], inward: [0, -1] },
-];
+type Put = { at: [number, number]; v?: [number, number] };
 
 type Scenario = {
   name: string;
-  /** Launches by tick. */
+  /** Launches by tick. Every script launches on tick 0: nothing in the game moves until the first launch. */
   script: Record<number, Launch>;
   ticks: number;
   /** Where he is put before the first tick. Without it both start at the game's start. */
   him?: [number, number];
-  /** Where the dummies are put. Without it, the toy's opening rack. */
-  things?: [number, number][];
-  /** A speed each dummy starts with, in the order of `things`. (In play only he sets them moving.) */
-  moving?: [number, number][];
-  empty?: boolean;
+  /** Things put in the room by hand, with a speed of their own. Without it the room is empty. */
+  things?: Put[];
   /** A launch speed for both sides, where a script needs one the game never reaches. */
   maxSpeed?: number;
+  /** Knobs of the game's own half that the script needs. The toy has no such knob. */
+  game?: Partial<Tune>;
+  /** His last pop is said to have come on this tick, so that `popHotTicks` holds him hot from the start. */
+  contactAt?: number;
+  /** The script is over when he lands: after that the things in the room go their own two ways. */
+  untilLanding?: boolean;
 };
+
+/** Things scattered beside a launch's line, each off to one side of it and moving its own way. */
+function beside(from: [number, number], degrees: number, n: number): Put[] {
+  const a = (degrees * Math.PI) / 180;
+  const ux = Math.cos(a);
+  const uy = -Math.sin(a);
+  const out: Put[] = [];
+  for (let k = 1; k <= n; k++) {
+    // Off the line by 7 to 16 u, on alternate sides: he clips each one, and the knock has a share along both axes.
+    const off = (k % 2 === 0 ? 1 : -1) * (4 + 3 * k);
+    const along = 46 * k;
+    out.push({
+      at: [from[0] + ux * along - uy * off, from[1] + uy * along + ux * off],
+      v: [(k % 2 === 0 ? -1 : 1) * (18 + 7 * k), (k % 3 === 0 ? -1 : 1) * (11 + 5 * k)],
+    });
+  }
+  return out;
+}
 
 const SCENARIOS: Scenario[] = [
   {
-    // The five launches the spec names, in an empty room.
+    // The launches the spec names, in an empty room. The last two are one
+    // flight: a full-power launch, and a relaunch 20 ticks into it.
     name: "five launches in an empty room",
-    empty: true,
-    ticks: 900,
+    ticks: 1000,
     script: {
       0: at(90, 1), // full power straight up
       200: at(37, 1), // full power at 37 degrees
       400: at(135, 0.7), // 70% into a corner
-      600: at(250, 0.5), // 50%
-      620: at(20, 1), // a relaunch 20 ticks into a flight
+      600: at(250, 0.5), // 50%: the shortest shot the game fires
+      800: at(300, 1),
+      820: at(20, 1), // a relaunch 20 ticks into a flight
     },
   },
   {
-    // A break shot into the toy's rack, then mopping up: pops, cushions,
-    // relaunches while hot, slow bumps, dummies knocking dummies.
-    name: "the rack",
-    ticks: 1500,
-    script: {
-      0: at(90, 1),
-      150: at(70, 0.8),
-      300: at(200, 0.6),
-      450: at(120, 1),
-      470: at(300, 0.9),
-      650: at(45, 0.5),
-      800: at(160, 0.75),
-      1000: at(100, 0.4),
-      1200: at(270, 1),
-    },
+    // The two flights the spec gives figures for, with no cushion in the
+    // way: a full-power launch is hot for 51 ticks and 474 u.
+    name: "a full launch in the open",
+    him: [30, 450],
+    ticks: 60,
+    script: { 0: { dx: 300, dy: -420, power: 1 } },
   },
   {
-    // Never hot (30% is under the hot line): he shoves one dummy into the
-    // top cushion and into another dummy.
-    name: "a soft push into a cushion",
-    him: [180, 120],
-    things: [
-      [180, 40],
-      [160, 22],
-    ],
-    ticks: 400,
-    script: { 0: at(90, 0.3), 200: at(80, 0.2) },
+    // And the shortest shot the game fires, 50%, for 18 ticks and 112 u.
+    name: "the shortest shot in the open",
+    ticks: 30,
+    script: { 0: at(90, 0.5) },
   },
   {
     // Dead into the top-left corner: two cushions in one substep.
     name: "into a corner",
-    empty: true,
     ticks: 300,
     script: { 0: { dx: 13 - 180, dy: 13 - 374, power: 1 }, 150: at(315, 0.8) },
-  },
-  {
-    // The shortest shot the toy fires (35%) is hot for a tick or two; then
-    // a long glide to rest, the part of a flight the others cut short.
-    name: "minimum power, and a glide to rest",
-    empty: true,
-    ticks: 500,
-    script: { 0: { dx: 0.4, dy: -1, power: 0.35 }, 250: at(182, 0.35) },
-  },
-  {
-    // A launch at exactly the hot share of the launch speed, with a dummy
-    // 2 u ahead: he reaches it in his first tick, at exactly the hot
-    // speed, and it pops. One hair slower and it would be a bump.
-    name: "a pop exactly at the hot line",
-    him: [180, 374],
-    things: [[180, 374 - 13 - 12 - 2]],
-    ticks: 120,
-    script: { 0: { dx: 0, dy: -1, power: 0.33 } },
-  },
-  {
-    // Two centres closer than a millionth of a unit give a push no
-    // direction, and it takes a fixed one. On the far side of that line:
-    // a dummy 3e-6 u from his centre, and two dummies 3e-6 u apart.
-    name: "closer than a hair",
-    him: [180, 374],
-    things: [
-      [180 + 3e-6, 374],
-      [100, 100],
-      [100, 100 + 3e-6],
-    ],
-    ticks: 90,
-    script: { 40: at(45, 0.5) },
-  },
-  {
-    // And on the near side of it: 5e-7 u.
-    name: "closer than a hair, the near side",
-    him: [180, 374],
-    things: [
-      [180 + 5e-7, 374],
-      [260, 100],
-      [260, 100 + 5e-7],
-    ],
-    ticks: 90,
-    script: { 40: at(45, 0.5) },
   },
   {
     // Faster than the game ever goes. Above 3,600 u/s a tick would take
     // more than ten substeps, and the cap binds: this is the only place
     // that number can be seen.
     name: "faster than the game ever goes",
-    empty: true,
     maxSpeed: 6000,
     ticks: 300,
     script: { 0: at(63, 1), 70: at(200, 0.9), 140: at(301, 1) },
   },
-  {
-    // One hair under the hot line: the same shot a billionth softer is a
-    // bump, not a pop.
-    name: "a hair under the hot line",
-    him: [180, 374],
-    things: [[180, 374 - 13 - 12 - 2]],
-    ticks: 120,
-    script: { 0: { dx: 0, dy: -1, power: 0.33 - 1e-9 } },
-  },
-  {
-    // The substeps of a tick are sized for the fastest mover, and that is
-    // not always him: a dummy crossing the room at 800 u/s while he stands.
-    name: "a dummy faster than he is",
-    him: [60, 440],
-    things: [[100, 100]],
-    moving: [[700, 390]],
-    ticks: 200,
-    script: { 120: at(60, 0.5) },
-  },
-  // Coming to rest. A body stops when a tick's slowing leaves it under its
-  // rest speed: each of these is slowed, in its first tick, to a twentieth
-  // of a percent over that speed or under it.
+  // The hot line. He is hot while his speed is at or above a third of the
+  // launch speed: each of these is slowed, in its first tick, to a
+  // twentieth of a percent over that speed or under it. Over, he flies on
+  // for a tick more; under, he lands at once. (No launch in the game is
+  // this soft: the script lowers the game's minimum power to fire it.)
   ...[1, -1].map((side): Scenario => {
-    const speed = speedThatSlowsTo(TOY_TUNE.restSpeed + side * REST_MARGIN, TOY_TUNE.dragK, TOY_TUNE.friction);
+    const speed = speedThatSlowsTo(HOT_AT + side * MARGIN, TOY_TUNE.dragK, TOY_TUNE.friction);
     return {
-      name: `he is slowed to just ${side > 0 ? "over" : "under"} his rest speed`,
-      empty: true,
-      ticks: 12,
+      name: `he is slowed to just ${side > 0 ? "over" : "under"} the hot line`,
+      ticks: 6,
+      game: { minPower: 0.01 },
       script: { 0: { dx: 3, dy: -4, power: speed / TOY_TUNE.maxSpeed } },
     };
   }),
+  {
+    // A launch at exactly the hot share of the launch speed, with a thing
+    // 2 u ahead: he reaches it in his first tick at exactly the hot speed,
+    // and it pops. The knock takes him under the line, and he lands there.
+    name: "a pop exactly at the hot line",
+    things: [{ at: [180, 374 - 13 - 8 - 2] }],
+    ticks: 6,
+    game: { minPower: 0.01 },
+    untilLanding: true,
+    script: { 0: { dx: 0, dy: -1, power: 0.33 } },
+  },
+  {
+    // One hair under the line he is no weapon: nothing pops, in the toy or
+    // in the game. (In the toy he bumps it. In the game he never flew.)
+    name: "a hair under the hot line",
+    things: [{ at: [180, 374 - 13 - 8 - 2] }],
+    ticks: 6,
+    game: { minPower: 0.01 },
+    untilLanding: true,
+    script: { 0: { dx: 0, dy: -1, power: 0.33 - 1e-9 } },
+  },
+  // Oblique pops. He clips things that stand to one side of his line and
+  // move their own way, so every knock has a share along x and a share
+  // along y, and a closing speed that is not his own speed.
+  ...[30, 45, 60].map(
+    (degrees): Scenario => ({
+      name: `oblique pops at ${degrees} degrees`,
+      him: [40, 440],
+      things: beside([40, 440], degrees, 5),
+      ticks: 120,
+      game: { bunnySpeed: 0 },
+      untilLanding: true,
+      script: { 0: at(degrees, 1) },
+    }),
+  ),
+  {
+    // A relaunch while hot, into more of them: the chain goes on.
+    name: "oblique pops, and a relaunch into more",
+    him: [40, 440],
+    things: [...beside([40, 440], 52, 3), { at: [150, 262], v: [-20, 30] }, { at: [158, 186], v: [15, -25] }],
+    ticks: 120,
+    game: { bunnySpeed: 0 },
+    untilLanding: true,
+    script: { 0: at(52, 1), 9: at(71, 1) },
+  },
+  // A thing with a speed of its own slows as the toy's dummies do, and
+  // comes to rest when a tick's slowing leaves it under 6 u/s: each of
+  // these is slowed, in its first tick, to just over that speed or under.
   ...[1, -1].map((side): Scenario => {
-    // 2.4 a second, 50 u/s² and 6 u/s: how a knocked dummy slows in the toy.
-    const speed = speedThatSlowsTo(6 + side * REST_MARGIN, 2.4, 50);
+    const speed = speedThatSlowsTo(6 + side * MARGIN, 2.4, 50);
     return {
-      name: `a dummy is slowed to just ${side > 0 ? "over" : "under"} its rest speed`,
+      name: `a thing is slowed to just ${side > 0 ? "over" : "under"} its rest speed`,
       him: [60, 440],
-      things: [[180, 200]],
-      moving: [[speed * 0.6, speed * 0.8]],
+      things: [{ at: [180, 200], v: [speed * 0.6, speed * 0.8] }],
       ticks: 12,
-      script: {},
+      game: { bunnySpeed: 0 },
+      script: { 0: at(180, 0.5) },
     };
   }),
-  // Pressed against a cushion. A contact can push a body through a
-  // cushion; it is put back, and stopped if it was heading in. Once for
-  // each cushion, for a dummy (he leans on it, slowly) and for him (a
-  // dummy is thrown at him where he stands).
-  ...CUSHIONS.flatMap(({ name, at: [wx, wy], inward: [nx, ny] }): Scenario[] => [
-    {
-      name: `a dummy pressed into the ${name} cushion`,
-      him: [wx + nx * 60, wy + ny * 60],
-      things: [[wx + nx * 12, wy + ny * 12]],
-      ticks: 90,
-      script: { 0: { dx: -nx, dy: -ny, power: 0.3 } },
-    },
-    {
-      name: `he is shoved into the ${name} cushion`,
-      him: [wx + nx * 13, wy + ny * 13],
-      things: [[wx + nx * 73, wy + ny * 73]],
-      moving: [[-nx * 500, -ny * 500]],
-      ticks: 90,
-      script: {},
-    },
-  ]),
+  {
+    // The substeps of a tick are sized for the fastest mover, and that is
+    // not always him: a thing crossing the room at 800 u/s and off a
+    // cushion, while he flies at half that and then stands.
+    name: "a thing faster than he is",
+    him: [60, 440],
+    things: [{ at: [100, 100], v: [700, 390] }],
+    ticks: 200,
+    game: { bunnySpeed: 0 },
+    script: { 0: at(180, 0.5) },
+  },
+  // `popHotTicks` above 0: after a pop he stays hot whatever his speed, and
+  // slides as the toy slides. There the toy's rest speed still acts: the
+  // tick its slowing stops him is his landing. Each of these says his last
+  // pop came on tick 0 and is slowed, in its first tick, to just over the
+  // rest speed or under it.
+  ...[1, -1].map((side): Scenario => {
+    const speed = speedThatSlowsTo(TOY_TUNE.restSpeed + side * MARGIN, TOY_TUNE.dragK, TOY_TUNE.friction);
+    return {
+      name: `kept hot by a pop, he is slowed to just ${side > 0 ? "over" : "under"} his rest speed`,
+      ticks: 5,
+      game: { popHotTicks: 15, minPower: 0.001 },
+      contactAt: 0,
+      script: { 0: { dx: 3, dy: -4, power: speed / TOY_TUNE.maxSpeed } },
+    };
+  }),
+  {
+    // The same from a real pop: a thing thrown at him takes nearly all his
+    // speed, and he crawls on inside the window until the slowing stops him.
+    name: "kept hot by a pop, he crawls to rest",
+    things: [{ at: [180, 374 - 13 - 8 - 2], v: [0, 800] }],
+    ticks: 40,
+    game: { popHotTicks: 15, minPower: 0.01, bunnySpeed: 0 },
+    untilLanding: true,
+    script: { 0: { dx: 0, dy: -1, power: 0.34 } },
+  },
 ];
 
 // ── The comparison ────────────────────────────────────────────────────
 
 type Tally = {
   pops: number;
+  /** Pops whose knock changed his speed along both axes. */
+  obliquePops: number;
   /** His speed at the slowest pop; -1 with none. */
   slowestPop: number;
   cushions: number;
   corners: number;
-  bumps: number;
-  rests: number;
-  dummyOffCushion: number;
+  /** Landings, and how each came: after the tick's slowing, at a cushion, or on a pop. */
+  landings: number;
+  landedAtCushion: number;
+  landedOnPop: number;
+  /** Landings where the toy's slowing had stopped him dead: he lands standing still. */
+  landedAtRest: number;
+  /** Launches too soft to be hot at all: he never left the spot. */
+  neverFlew: number;
+  thingOffCushion: number;
   hotTicks: number;
-  coolMovingTicks: number;
+  /** Ticks he was hot in the game while slower than the hot line (only inside the `popHotTicks` window). */
+  hotUnderTheLine: number;
+  hotRelaunches: number;
   /** The most substeps the toy's rule asks for in a tick, before the cap. */
   mostSubstepsAsked: number;
 };
@@ -270,112 +288,111 @@ type Tally = {
 type Outcome = {
   mismatch: string | null;
   tally: Tally;
-  /** Where he was after the first tick. */
-  first: { x: number; y: number };
-  /** After the first tick: his speed, and the first dummy's (-1 with none). */
+  /** The tick of each landing. */
+  landedAt: number[];
+  /** How far from where the script began he stood at his first landing, u. */
+  firstFlight: number;
+  /** After the first tick: his speed in the toy, and the first thing's (-1 with none). */
   firstSpeed: { him: number; thing: number };
-  /** Was a body ever put back from beyond a cushion and stopped: him, a dummy. */
-  stoppedAtCushion: { him: boolean; thing: boolean };
 };
+
+function putThing(e: State, x: number, y: number, vx: number, vy: number): void {
+  e.things.push({ id: e.nextId++, kind: "bunny", x, y, px: x, py: y, vx, vy, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil: 0, phase: 0 });
+}
 
 /** Run one scenario on both simulations. Stops at the first value that differs. */
 function follow(sc: Scenario, engineTune: Tune): Outcome {
-  const count = sc.things ? sc.things.length : sc.empty ? 0 : 6;
+  const count = sc.things ? sc.things.length : 0;
   const speed = sc.maxSpeed === undefined ? {} : { maxSpeed: sc.maxSpeed };
   const toyTune: toy.Tune = { ...TOY_TUNE, dummyCount: count, ...speed };
-  const tune: Tune = { ...engineTune, dummyCount: count, dummyRespawnTicks: NEVER, ...speed };
+  const tune: Tune = { ...engineTune, ...sc.game, ...speed };
 
   const t = toy.createState(20261111, toyTune);
-  const e = createState(20261111, tune, { room: TOY_ROOM, empty: count === 0 });
+  const e = createState(20261111, tune, { room: TOY_ROOM, empty: true });
   // The toy's mascot is moved to the game's start (or both to the script's).
   if (sc.him) [e.him.x, e.him.y] = sc.him;
   t.hugo.x = e.him.x;
   t.hugo.y = e.him.y;
-  sc.things?.forEach(([x, y], i) => {
-    t.dummies[i].x = x;
-    t.dummies[i].y = y;
-    e.things[i].x = x;
-    e.things[i].y = y;
-  });
-  sc.moving?.forEach(([vx, vy], i) => {
-    t.dummies[i].vx = vx;
-    t.dummies[i].vy = vy;
-    e.things[i].vx = vx;
-    e.things[i].vy = vy;
+  if (sc.contactAt !== undefined) e.him.lastContactTick = sc.contactAt;
+  sc.things?.forEach(({ at: [x, y], v }, i) => {
+    const [vx, vy] = v ?? [0, 0];
+    putThing(e, x, y, vx, vy);
+    const d = t.dummies[i];
+    d.x = x;
+    d.y = y;
+    d.vx = vx;
+    d.vy = vy;
+    d.r = KINDS.bunny.radius;
   });
 
   const tally: Tally = {
     pops: 0,
+    obliquePops: 0,
     slowestPop: -1,
     cushions: 0,
     corners: 0,
-    bumps: 0,
-    rests: 0,
-    dummyOffCushion: 0,
+    landings: 0,
+    landedAtCushion: 0,
+    landedOnPop: 0,
+    landedAtRest: 0,
+    neverFlew: 0,
+    thingOffCushion: 0,
     hotTicks: 0,
-    coolMovingTicks: 0,
+    hotUnderTheLine: 0,
+    hotRelaunches: 0,
     mostSubstepsAsked: 0,
   };
-  const first = { x: e.him.x, y: e.him.y };
+  const landedAt: number[] = [];
+  const from = { x: e.him.x, y: e.him.y };
+  const out = { firstFlight: -1 };
   const firstSpeed = { him: 0, thing: -1 };
-  const stoppedAtCushion = { him: false, thing: false };
   const events: SimEvent[] = [];
   const differs = (tick: number, what: string, engine: unknown, toyValue: unknown): Outcome => ({
     mismatch: `${sc.name}, tick ${tick}: ${what} is ${String(engine)} in the game and ${String(toyValue)} in the toy`,
     tally,
-    first,
+    landedAt,
+    firstFlight: out.firstFlight,
     firstSpeed,
-    stoppedAtCushion,
   });
-  /** On a cushion's line with no speed into or out of it: put back and stopped, not bounced. */
-  const stopped = (b: { x: number; y: number; vx: number; vy: number; r: number }) =>
-    ((b.x === b.r || b.x === toy.FIELD_W - b.r) && b.vx === 0 && b.vy === 0) ||
-    ((b.y === b.r || b.y === toy.FIELD_H - b.r) && b.vy === 0 && b.vx === 0);
+  /** Cushions the game has counted since the last launch, one per cushion touched. */
+  let cushionsThisLaunch = 0;
+  /** Does anything in the room still follow the toy? Once he has landed among things, they go two ways. */
+  let thingsFollow = true;
 
   for (let k = 0; k < sc.ticks; k++) {
     const launch = sc.script[k] ?? null;
+    if (launch) {
+      if (e.him.hot) tally.hotRelaunches++;
+      else {
+        // A launch from rest. The toy has slid on since he landed: its
+        // mascot is set down where the game's stands.
+        t.hugo.x = e.him.x;
+        t.hugo.y = e.him.y;
+        t.hugo.vx = 0;
+        t.hugo.vy = 0;
+      }
+    }
+    const before = { x: e.him.x, y: e.him.y, vx: e.him.vx, vy: e.him.vy };
     const vBefore = t.dummies.map((d) => [d.vx, d.vy]);
     toy.step(t, { launch }, toyTune);
     events.length = 0;
     step(e, { launch, pullHeld: false }, tune, events);
     if (k === 0) {
-      first.x = e.him.x;
-      first.y = e.him.y;
       firstSpeed.him = Math.hypot(t.hugo.vx, t.hugo.vy);
       if (t.dummies.length > 0) firstSpeed.thing = Math.hypot(t.dummies[0].vx, t.dummies[0].vy);
     }
-    if (k < 30 && stopped(t.hugo)) stoppedAtCushion.him = true;
-    if (k < 30 && t.dummies.some((d) => d.alive && stopped(d))) stoppedAtCushion.thing = true;
 
-    // Him. Equal as numbers: the game does not keep the sign of a zero
-    // speed (step.ts, "close up"), the toy does, and no rule can tell.
-    if (e.him.x !== t.hugo.x) return differs(k, "his x", e.him.x, t.hugo.x);
-    if (e.him.y !== t.hugo.y) return differs(k, "his y", e.him.y, t.hugo.y);
-    if (e.him.vx !== t.hugo.vx) return differs(k, "his vx", e.him.vx, t.hugo.vx);
-    if (e.him.vy !== t.hugo.vy) return differs(k, "his vy", e.him.vy, t.hugo.vy);
-    if (e.him.hot !== t.hugo.hot) return differs(k, "hot", e.him.hot, t.hugo.hot);
     if (e.tick !== t.tick) return differs(k, "the tick", e.tick, t.tick);
     if (e.launch.id !== t.flight.id) return differs(k, "the launch count", e.launch.id, t.flight.id);
-    if (e.launch.cushions !== t.flight.walls) return differs(k, "cushions this launch", e.launch.cushions, t.flight.walls);
+    if (events.some((ev) => ev.type === "launch")) cushionsThisLaunch = 0;
+    const cushions = events.filter((ev) => ev.type === "cushion").length;
+    cushionsThisLaunch += cushions;
+    tally.cushions += cushions;
+    if (cushions >= 2) tally.corners++;
+    const landing = events.find((ev) => ev.type === "land");
 
-    // Every dummy, slot by slot.
-    if (e.things.length !== t.dummies.length) return differs(k, "the number of things", e.things.length, t.dummies.length);
-    for (let i = 0; i < t.dummies.length; i++) {
-      const a = e.things[i];
-      const b = t.dummies[i];
-      if (a.alive !== b.alive) return differs(k, `thing ${i} alive`, a.alive, b.alive);
-      if (!b.alive) continue;
-      if (a.x !== b.x) return differs(k, `thing ${i} x`, a.x, b.x);
-      if (a.y !== b.y) return differs(k, `thing ${i} y`, a.y, b.y);
-      if (a.vx !== b.vx) return differs(k, `thing ${i} vx`, a.vx, b.vx);
-      if (a.vy !== b.vy) return differs(k, `thing ${i} vy`, a.vy, b.vy);
-      // A dummy that turned round at a cushion (for the tally only).
-      const [vx0, vy0] = vBefore[i];
-      const atCushion = b.x <= b.r + 1 || b.x >= toy.FIELD_W - b.r - 1 || b.y <= b.r + 1 || b.y >= toy.FIELD_H - b.r - 1;
-      if (atCushion && (vx0 * b.vx < 0 || vy0 * b.vy < 0)) tally.dummyOffCushion++;
-    }
-
-    // What happened: the same pops, in the same order, at the same speed.
+    // The same pops, in the same order, at the same speed: up to the
+    // landing. (After a pop that lands him the toy flies on, slow.)
     const toyPops = t.events.filter((ev) => ev.t === "pop");
     const pops = events.filter((ev) => ev.type === "pop");
     if (pops.length !== toyPops.length) return differs(k, "pops this tick", pops.length, toyPops.length);
@@ -387,29 +404,88 @@ function follow(sc: Scenario, engineTune: Tune): Outcome {
       if (a.speed !== b.speed) return differs(k, "his speed at the pop", a.speed, b.speed);
       if (tally.slowestPop < 0 || b.speed < tally.slowestPop) tally.slowestPop = b.speed;
     }
+    tally.pops += pops.length;
 
-    tally.pops += toyPops.length;
-    for (const ev of events) {
-      if (ev.type === "cushion") tally.cushions++;
+    if (e.him.hot) {
+      // He is hot in the game: the same place and the same speed as in the
+      // toy. Equal as numbers: the game does not keep the sign of a zero
+      // speed (step.ts, "close up"), the toy does, and no rule can tell.
+      if (e.him.x !== t.hugo.x) return differs(k, "his x", e.him.x, t.hugo.x);
+      if (e.him.y !== t.hugo.y) return differs(k, "his y", e.him.y, t.hugo.y);
+      if (e.him.vx !== t.hugo.vx) return differs(k, "his vx", e.him.vx, t.hugo.vx);
+      if (e.him.vy !== t.hugo.vy) return differs(k, "his vy", e.him.vy, t.hugo.vy);
+      if (cushionsThisLaunch !== t.flight.walls) return differs(k, "cushions this launch", cushionsThisLaunch, t.flight.walls);
+      tally.hotTicks++;
+      if (Math.hypot(e.him.vx, e.him.vy) < hotSpeed(tune)) tally.hotUnderTheLine++;
+      if (pops.length > 0 && e.him.vx !== before.vx && e.him.vy !== before.vy && !launch) tally.obliquePops += pops.length;
+    } else if (landing) {
+      // The tick he lands. His speed is gone, and he is where he stopped.
+      if (e.him.vx !== 0 || e.him.vy !== 0) return differs(k, "his speed after he landed", `${e.him.vx}, ${e.him.vy}`, "0, 0");
+      tally.landings++;
+      landedAt.push(k);
+      if (out.firstFlight < 0) out.firstFlight = Math.hypot(e.him.x - from.x, e.him.y - from.y);
+      const atCushion = cushions > 0 && events.indexOf(landing) > events.findIndex((ev) => ev.type === "cushion");
+      const onPop = pops.length > 0;
+      // A launch under the hot line is no flight: he lands where he stood.
+      const neverFlew = launch !== null && e.him.x === before.x && e.him.y === before.y;
+      if (neverFlew) tally.neverFlew++;
+      else if (onPop) tally.landedOnPop++;
+      else if (atCushion) tally.landedAtCushion++;
+      else {
+        // He landed after the tick's slowing: the whole tick's flight was
+        // the toy's, so he stands exactly where the toy's mascot is.
+        if (e.him.x !== t.hugo.x) return differs(k, "his x as he lands", e.him.x, t.hugo.x);
+        if (e.him.y !== t.hugo.y) return differs(k, "his y as he lands", e.him.y, t.hugo.y);
+        if (t.hugo.vx === 0 && t.hugo.vy === 0) tally.landedAtRest++;
+      }
     }
-    if (events.filter((ev) => ev.type === "cushion").length >= 2) tally.corners++;
-    for (const ev of t.events) {
-      if (ev.t === "bump") tally.bumps++;
-      if (ev.t === "rest") tally.rests++;
+    // The line itself. While only speed keeps him hot, the two agree on
+    // every tick about whether he is a weapon: the tick the game lands is
+    // the tick the toy calls him cool.
+    if (tune.popHotTicks === 0 && e.him.hot !== t.hugo.hot) return differs(k, "hot", e.him.hot, t.hugo.hot);
+    // Inside the `popHotTicks` window the game holds him hot under the
+    // line. He lands when the toy's slowing stops him, and not a tick
+    // sooner: a game that says he has landed while the toy's mascot still
+    // moves has stopped him early.
+    if (tune.popHotTicks > 0 && landing && !pops.length && cushions === 0 && sc.contactAt !== undefined) {
+      if (t.hugo.vx !== 0 || t.hugo.vy !== 0) return differs(k, "his speed as he lands inside the window", "0, 0", `${t.hugo.vx}, ${t.hugo.vy}`);
     }
-    if (t.hugo.hot) tally.hotTicks++;
-    else if (t.hugo.vx !== 0 || t.hugo.vy !== 0) tally.coolMovingTicks++;
+
+    // Every thing, slot by slot, for as long as the room follows the toy.
+    // On the tick he lands among things it no longer does: the toy's mascot
+    // slides on and shoves what the game's, standing still, leaves alone.
+    if (landing && sc.untilLanding) thingsFollow = false;
+    if (thingsFollow) {
+      let slot = 0;
+      for (let i = 0; i < t.dummies.length; i++) {
+        const b = t.dummies[i];
+        if (!b.alive) continue;
+        const a = e.things[slot++];
+        if (!a || a.id !== b.id) return differs(k, `thing ${i}`, a ? a.id : "gone", b.id);
+        if (a.x !== b.x) return differs(k, `thing ${i} x`, a.x, b.x);
+        if (a.y !== b.y) return differs(k, `thing ${i} y`, a.y, b.y);
+        if (a.vx !== b.vx) return differs(k, `thing ${i} vx`, a.vx, b.vx);
+        if (a.vy !== b.vy) return differs(k, `thing ${i} vy`, a.vy, b.vy);
+        // A thing that turned round at a cushion (for the tally only).
+        const [vx0, vy0] = vBefore[i];
+        const atEdge = b.x <= b.r + 1 || b.x >= toy.FIELD_W - b.r - 1 || b.y <= b.r + 1 || b.y >= toy.FIELD_H - b.r - 1;
+        if (atEdge && (vx0 * b.vx < 0 || vy0 * b.vy < 0)) tally.thingOffCushion++;
+      }
+      if (slot !== e.things.length) return differs(k, "the number of things", e.things.length, slot);
+    }
     const asked = Math.ceil((Math.hypot(t.hugo.vx, t.hugo.vy) * toy.DT) / 6);
     if (asked > tally.mostSubstepsAsked) tally.mostSubstepsAsked = asked;
+
+    if (landing && sc.untilLanding) break;
   }
-  return { mismatch: null, tally, first, firstSpeed, stoppedAtCushion };
+  return { mismatch: null, tally, landedAt, firstFlight: out.firstFlight, firstSpeed };
 }
 
-describe("feel lock: the game moves as the toy moves", () => {
+describe("feel lock: while he is hot the game moves as the toy moves", () => {
   const results = SCENARIOS.map((sc) => ({ sc, out: follow(sc, DEFAULT_TUNE) }));
 
   for (const { sc, out } of results) {
-    it(`${sc.name}: every tick equals the toy's`, () => {
+    it(`${sc.name}: every hot tick equals the toy's`, () => {
       expect(out.mismatch).toBeNull();
     });
   }
@@ -417,6 +493,7 @@ describe("feel lock: the game moves as the toy moves", () => {
   it("both start where the game starts: (180, 374), not the toy's (180, 374.4)", () => {
     const e = createState(1, DEFAULT_TUNE, { room: TOY_ROOM, empty: true });
     expect([e.him.x, e.him.y]).toEqual([180, 374]);
+    expect(e.things).toEqual([]);
     const t = toy.createState(1, TOY_TUNE);
     expect(t.hugo.x).toBe(180);
     expect(t.hugo.y).toBeCloseTo(374.4, 9);
@@ -425,45 +502,29 @@ describe("feel lock: the game moves as the toy moves", () => {
   it("the scripts hold what they are there to lock", () => {
     // Without this a script that never touched a cushion would lock nothing.
     const by = (name: string) => results.find((r) => r.sc.name === name)!.out;
-    const five = by("five launches in an empty room").tally;
-    expect(five.cushions).toBeGreaterThanOrEqual(4);
-    expect(five.rests).toBeGreaterThanOrEqual(3);
-    expect(five.hotTicks).toBeGreaterThan(100);
-    // The toy slides on after he cools, and step 0 slides with it.
-    expect(five.coolMovingTicks).toBeGreaterThan(100);
+    const five = by("five launches in an empty room");
+    expect(five.tally.cushions).toBeGreaterThanOrEqual(5);
+    expect(five.tally.hotTicks).toBeGreaterThan(150);
+    // Five flights, five landings: the relaunch is the same flight going on.
+    expect(five.tally.landings).toBe(5);
+    expect(five.tally.hotRelaunches).toBe(1);
+    // Where the toy slid on for a second and more, the game stands still.
+    expect(five.tally.landedAtRest).toBe(0);
+    expect(five.tally.landedAtCushion + five.tally.landedOnPop).toBeLessThan(5);
 
-    const rack = by("the rack").tally;
-    expect(rack.pops).toBeGreaterThanOrEqual(5);
-    expect(rack.cushions).toBeGreaterThanOrEqual(5);
-    expect(rack.bumps).toBeGreaterThanOrEqual(1);
-
-    const push = by("a soft push into a cushion").tally;
-    expect(push.pops).toBe(0);
-    expect(push.bumps).toBeGreaterThanOrEqual(2);
-    expect(push.dummyOffCushion).toBeGreaterThanOrEqual(1);
+    // The spec's two figures: a full-power launch in the open is hot for
+    // 51 ticks and 474 u, a 50% launch for 18 ticks and 112 u. (He lands at
+    // the end of the last of them: ticks are counted from 0.)
+    const full = by("a full launch in the open");
+    expect(full.tally.cushions).toBe(0);
+    expect(full.landedAt).toEqual([50]);
+    expect(full.firstFlight).toBeCloseTo(474.29, 2);
+    const short = by("the shortest shot in the open");
+    expect(short.tally.cushions).toBe(0);
+    expect(short.landedAt).toEqual([17]);
+    expect(short.firstFlight).toBeCloseTo(111.55, 2);
 
     expect(by("into a corner").tally.corners).toBeGreaterThanOrEqual(1);
-
-    const soft = by("minimum power, and a glide to rest").tally;
-    expect(soft.hotTicks).toBeGreaterThanOrEqual(1);
-    expect(soft.hotTicks).toBeLessThan(10);
-    expect(soft.rests).toBe(2);
-
-    // The pop at the line: one pop, and his speed at it is the hot speed to the last bit.
-    const line = by("a pop exactly at the hot line").tally;
-    expect(line.pops).toBe(1);
-    expect(line.slowestPop).toBe(hotSpeed(DEFAULT_TUNE));
-    expect(line.slowestPop).toBe(toy.hotSpeed(TOY_TUNE));
-
-    // Closer than a hair, far side: the push follows the line between the
-    // two centres (he is shoved left). Near side: it has no line to follow
-    // and takes the fixed one (he is shoved down).
-    const far = by("closer than a hair").first;
-    expect(far.x).toBeLessThan(180);
-    expect(far.y).toBe(374);
-    const near = by("closer than a hair, the near side").first;
-    expect(near.x).toBe(180);
-    expect(near.y).toBeGreaterThan(374);
 
     // The cap on substeps is ten, and only this script asks for more.
     expect(by("faster than the game ever goes").tally.mostSubstepsAsked).toBeGreaterThan(10);
@@ -471,29 +532,76 @@ describe("feel lock: the game moves as the toy moves", () => {
       if (r.sc.maxSpeed === undefined) expect(r.out.tally.mostSubstepsAsked, r.sc.name).toBeLessThanOrEqual(3);
     }
 
-    // A hair under the line it is a bump: nothing pops, and the dummy is knocked on.
-    const under = by("a hair under the hot line");
-    expect(under.tally.pops).toBe(0);
-    expect(under.firstSpeed.thing).toBeGreaterThan(100);
+    // The hot line after the tick's slowing. Only just over it he is still
+    // hot when the tick ends, and lands a tick later; only just under, he
+    // lands in his first tick.
+    const over = by("he is slowed to just over the hot line");
+    expect(over.firstSpeed.him).toBeGreaterThan(HOT_AT);
+    expect(over.firstSpeed.him).toBeLessThan(HOT_AT + 2 * MARGIN);
+    expect(over.landedAt).toEqual([1]);
+    const under = by("he is slowed to just under the hot line");
+    expect(under.firstSpeed.him).toBeLessThan(HOT_AT);
+    expect(under.firstSpeed.him).toBeGreaterThan(HOT_AT - 2 * MARGIN);
+    expect(under.landedAt).toEqual([0]);
 
-    // The fast dummy needs three substeps a tick where he, standing, needs one.
-    expect(Math.ceil((Math.hypot(700, 390) * toy.DT) / 6)).toBe(3);
-    expect(by("a dummy faster than he is").tally.dummyOffCushion).toBeGreaterThanOrEqual(1);
+    // The hot line at a contact: one pop, at the hot speed to the last
+    // bit, and the knock lands him. A hair under it nothing pops.
+    const line = by("a pop exactly at the hot line");
+    expect(line.tally.pops).toBe(1);
+    expect(line.tally.slowestPop).toBe(hotSpeed(DEFAULT_TUNE));
+    expect(line.tally.slowestPop).toBe(HOT_AT);
+    expect(line.tally.landedOnPop).toBe(1);
+    expect(line.landedAt).toEqual([0]);
+    const hair = by("a hair under the hot line");
+    expect(hair.tally.pops).toBe(0);
+    expect(hair.tally.hotTicks).toBe(0);
+    expect(hair.tally.neverFlew).toBe(1);
+    expect(hair.firstFlight).toBe(0);
+    // In the toy the same shot is a bump: the dummy is knocked on.
+    expect(hair.firstSpeed.thing).toBeGreaterThan(100);
 
-    // Only just over the rest speed he is still moving after the tick; only just under, he has stopped.
-    expect(by("he is slowed to just over his rest speed").firstSpeed.him).toBeGreaterThan(TOY_TUNE.restSpeed);
-    expect(by("he is slowed to just over his rest speed").firstSpeed.him).toBeLessThan(TOY_TUNE.restSpeed + 2 * REST_MARGIN);
-    expect(by("he is slowed to just under his rest speed").firstSpeed.him).toBe(0);
-    expect(by("a dummy is slowed to just over its rest speed").firstSpeed.thing).toBeGreaterThan(6);
-    expect(by("a dummy is slowed to just over its rest speed").firstSpeed.thing).toBeLessThan(6 + 2 * REST_MARGIN);
-    expect(by("a dummy is slowed to just under its rest speed").firstSpeed.thing).toBe(0);
-
-    // At every cushion a dummy was put back and stopped, and so was he.
-    for (const { name } of CUSHIONS) {
-      expect(by(`a dummy pressed into the ${name} cushion`).stoppedAtCushion.thing, name).toBe(true);
-      expect(by(`a dummy pressed into the ${name} cushion`).tally.pops, name).toBe(0);
-      expect(by(`he is shoved into the ${name} cushion`).stoppedAtCushion.him, name).toBe(true);
+    // Oblique pops: several a script, each changing his speed along both
+    // axes, and he is still hot after them.
+    for (const degrees of [30, 45, 60]) {
+      const oblique = by(`oblique pops at ${degrees} degrees`).tally;
+      expect(oblique.pops, `${degrees}`).toBeGreaterThanOrEqual(3);
+      expect(oblique.obliquePops, `${degrees}`).toBeGreaterThanOrEqual(3);
+      expect(oblique.hotTicks, `${degrees}`).toBeGreaterThan(10);
     }
+    const chain = by("oblique pops, and a relaunch into more").tally;
+    expect(chain.hotRelaunches).toBe(1);
+    expect(chain.pops).toBeGreaterThanOrEqual(4);
+
+    // Only just over its rest speed a thing is still moving after the tick; only just under, it has stopped.
+    expect(by("a thing is slowed to just over its rest speed").firstSpeed.thing).toBeGreaterThan(6);
+    expect(by("a thing is slowed to just over its rest speed").firstSpeed.thing).toBeLessThan(6 + 2 * MARGIN);
+    expect(by("a thing is slowed to just under its rest speed").firstSpeed.thing).toBe(0);
+
+    // The fast thing needs three substeps a tick where he, at half the launch speed, needs two.
+    expect(Math.ceil((Math.hypot(700, 390) * toy.DT) / 6)).toBe(3);
+    expect(Math.ceil((450 * toy.DT) / 6)).toBe(2);
+    expect(by("a thing faster than he is").tally.thingOffCushion).toBeGreaterThanOrEqual(1);
+
+    // Kept hot by a pop: only just over the rest speed he is still moving
+    // after the tick, under the line and hot; only just under, he has
+    // landed, standing still.
+    const restOver = by("kept hot by a pop, he is slowed to just over his rest speed");
+    expect(restOver.firstSpeed.him).toBeGreaterThan(TOY_TUNE.restSpeed);
+    expect(restOver.firstSpeed.him).toBeLessThan(TOY_TUNE.restSpeed + 2 * MARGIN);
+    expect(restOver.tally.hotUnderTheLine).toBe(1);
+    expect(restOver.landedAt).toEqual([1]);
+    expect(restOver.tally.landedAtRest).toBe(1);
+    const restUnder = by("kept hot by a pop, he is slowed to just under his rest speed");
+    expect(restUnder.firstSpeed.him).toBe(0);
+    expect(restUnder.landedAt).toEqual([0]);
+    expect(restUnder.tally.landedAtRest).toBe(1);
+
+    // And from a real pop: he crawls on for some ticks, hot and far under the line, and lands at rest inside the window.
+    const crawl = by("kept hot by a pop, he crawls to rest");
+    expect(crawl.tally.pops).toBe(1);
+    expect(crawl.tally.hotUnderTheLine).toBeGreaterThanOrEqual(8);
+    expect(crawl.tally.landedAtRest).toBe(1);
+    expect(crawl.landedAt[0]).toBeLessThan(15);
   });
 });
 
@@ -568,11 +676,6 @@ describe("the lock bites: one changed motion number and the two part", () => {
       "pullFullPx",
       "slowShare",
       "pullDir",
-      "aimCushions",
-      "noShotPx",
-      "minPower",
-      "dummyCount",
-      "dummyRespawnTicks",
     ];
     for (const knob of MOTION) {
       const tried = NUDGES.filter(([k]) => k === knob).map(([, v]) => v);
@@ -607,11 +710,6 @@ describe("the copied half of the table holds the toy's numbers", () => {
     const t = toy.createState(1, TOY_TUNE);
     expect(TOY.himRadius).toBe(t.hugo.r);
     expect(TOY.lightMass).toBe(t.dummies[0].m);
-  });
-
-  it("the toy's dummies", () => {
-    expect(TOY.dummyCount).toBe(toy.DEFAULT_TUNE.dummyCount);
-    expect(TOY.dummyRespawnTicks).toBe(toy.DEFAULT_TUNE.respawnTicks);
   });
 
   it("the tick is the toy's: 60 a second", () => {

@@ -21,8 +21,42 @@ export const HINT = {
   mouse: { back: "DRAG BACK AND LET GO", push: "PUSH AND LET GO" },
 } as const;
 
+/**
+ * The second hint, two lines: from his first landing until his sixth
+ * launch it takes the place of the first. The first seconds must teach it.
+ */
+export const HINT_AGAIN = ["FLING AGAIN", "BEFORE THE RING CLOSES"] as const;
+
 /** The one line a page too small to play shows. */
 export const TOO_SMALL = {
   phone: "turn the phone upright",
   laptop: "make the window taller",
 } as const;
+
+/** The keys of the panels. */
+export const KEYS = {
+  resume: "RESUME",
+  again: "AGAIN",
+  back: "BACK TO PLAYHOUSE",
+} as const;
+
+/** What a screen reader calls each panel. */
+export const PANEL_LABEL = {
+  pause: "Paused",
+  end: "Night over",
+} as const;
+
+/** The end panel's labels. */
+export const END = {
+  bestShot: "BEST SHOT",
+  /** What the panel calls a night that reached morning; any other night is called by the hour he fell in. */
+  morning: "MORNING",
+  /** The start of the line that says what took the last heart: "lost to a runaway token". */
+  lostTo: "lost to",
+} as const;
+
+/** What the end panel's line calls the kind that took the last heart. */
+export const KIND_NAME: Readonly<Record<string, string>> = {
+  bunny: "a dust bunny",
+  token: "a runaway token",
+};

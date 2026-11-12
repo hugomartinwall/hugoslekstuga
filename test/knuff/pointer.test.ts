@@ -501,29 +501,40 @@ describe("the pull: leaving", () => {
   });
 });
 
-describe("the pull is the toy's pull", () => {
+describe("the pull's power, and the toy's lift-off filter", () => {
   /**
-   * Step 0 keeps the toy's shortest shot: 35% from a 12 px pull, rising in
-   * a straight line to 100% at 100 px. Step 1 moves it to the game's 50%
-   * from 24 px on purpose, and this block changes with it.
+   * The shortest shot is the game's own: 50% from a 24 px pull, rising in
+   * a straight line to 100% at the toy's full pull, 100 px (§4.1). The toy's
+   * was 35% from 12 px. The line still shows at 12 px: between 12 and 24
+   * it is drawn grey, to show that letting go there does nothing.
    */
-  const DEAD_ZONE = 12;
-  const toyTune: toy.Tune = { ...toy.DEFAULT_TUNE, maxSpeed: TOY_SETTINGS.power };
-  const toyPower = (lengthPx: number) => {
-    const pull01 = Math.min(1, Math.max(0, (lengthPx - DEAD_ZONE) / Math.max(1, TOY_SETTINGS.pull - DEAD_ZONE)));
-    return toy.powerFromPull(pull01, toyTune);
-  };
-
-  it("gives the toy's power for every pull length", () => {
-    expect(DEFAULT_TUNE.noShotPx).toBe(DEAD_ZONE);
-    expect(DEFAULT_TUNE.lineShowsPx).toBe(DEAD_ZONE);
-    expect(DEFAULT_TUNE.minPower).toBe(toy.DEFAULT_TUNE.minPowerFrac);
-    for (let px = DEAD_ZONE; px <= 220; px += 0.5) {
-      expect(powerForPull(px, DEFAULT_TUNE)).toBe(toyPower(px));
-    }
-    expect(powerForPull(DEAD_ZONE, DEFAULT_TUNE)).toBe(0.35);
+  it("is 50% at 24 px and 100% at the full pull, in a straight line between", () => {
+    expect(DEFAULT_TUNE.lineShowsPx).toBe(12);
+    expect(DEFAULT_TUNE.noShotPx).toBe(24);
+    expect(DEFAULT_TUNE.minPower).toBe(0.5);
+    expect(DEFAULT_TUNE.pullFullPx).toBe(TOY_SETTINGS.pull);
+    expect(powerForPull(24, DEFAULT_TUNE)).toBe(0.5);
     expect(powerForPull(100, DEFAULT_TUNE)).toBe(1);
     expect(powerForPull(400, DEFAULT_TUNE)).toBe(1);
+    // Under a shot's length it is the minimum: what the grey line is drawn at.
+    expect(powerForPull(12, DEFAULT_TUNE)).toBe(0.5);
+    expect(powerForPull(0, DEFAULT_TUNE)).toBe(0.5);
+    // Half way between 24 and 100 px is half way between 50% and 100%.
+    expect(powerForPull(62, DEFAULT_TUNE)).toBe(0.75);
+    for (let px = 24; px <= 100; px += 0.5) {
+      expect(powerForPull(px, DEFAULT_TUNE)).toBeCloseTo(0.5 + (0.5 * (px - 24)) / 76, 12);
+    }
+  });
+
+  it("with the toy's two numbers put back it is the toy's curve, for every pull length", () => {
+    const DEAD_ZONE = 12;
+    const toyTune: toy.Tune = { ...toy.DEFAULT_TUNE, maxSpeed: TOY_SETTINGS.power };
+    const asToy = { ...DEFAULT_TUNE, noShotPx: DEAD_ZONE, minPower: toy.DEFAULT_TUNE.minPowerFrac };
+    for (let px = DEAD_ZONE; px <= 220; px += 0.5) {
+      const pull01 = Math.min(1, Math.max(0, (px - DEAD_ZONE) / Math.max(1, TOY_SETTINGS.pull - DEAD_ZONE)));
+      expect(powerForPull(px, asToy)).toBe(toy.powerFromPull(pull01, toyTune));
+    }
+    expect(powerForPull(DEAD_ZONE, asToy)).toBe(0.35);
   });
 
   /**

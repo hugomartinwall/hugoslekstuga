@@ -2,9 +2,12 @@
  * The canvas: where things are (layout.ts works that out; this file
  * measures and sizes the canvas) and the order they are drawn in.
  *
- * Step 0 draws what the feel toy drew, with the room where the spec puts
- * it (§9.1) and the cushions as thick as the floor's edges say they are.
- * He is drawn by the site's own painter, in the visitor's colour.
+ * The room is where the spec puts it (§9.1), with the cushions as thick as
+ * the floor's edges say they are. He is drawn by the site's own painter,
+ * in the visitor's colour. The things in the room are plain shapes so far
+ * (a disc for a dust bunny, a ring for a token, a broken ring for a thing
+ * that is announced): their art, the top bar, the hot ring and the thump
+ * ring are drawn by the step that builds the screen.
  *
  * Bottom to top: the page; the cushions; the floor and its dither; the
  * start hint where it is drawn on the floor; the aim band and line; his
@@ -18,6 +21,7 @@ import { drawHugoSprite, type EyeState } from "@/lib/hugo/sprite";
 import type { KnuffFonts } from "../fonts";
 import type { PullView } from "../input/pointer";
 import type { AimLine } from "../sim/aim";
+import { KINDS } from "../content/kinds";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Tune } from "../sim/types";
 import type { Effects } from "./effects";
@@ -53,8 +57,8 @@ export type Frame = {
   pull: PullView | null;
   /** The aim line of that pull, once it has become one. */
   line: AimLine | null;
-  /** The toy's slow-motion meter, 0..1; -1 while it is not shown. */
-  focus: number;
+  /** The slow-motion meter, 0..1; -1 while it is not shown. */
+  meter: number;
   /** The mascot's colour: the visitor's. */
   accent: string;
   reduced: boolean;
@@ -314,7 +318,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
         if (f.line.end === "thing") {
           const arm = Math.round(r * S * 0.9);
           const tw = Math.max(2, Math.round(dpr * 2.6));
-          ctx.fillStyle = f.line.hitHot ? col : C.inkMuted;
+          ctx.fillStyle = col;
           ctx.fillRect(Math.round(X(ex) - arm), Math.round(Y(ey) - tw / 2), arm * 2, tw);
           ctx.fillRect(Math.round(X(ex) - tw / 2), Math.round(Y(ey) - arm), tw, arm * 2);
         } else {
@@ -335,20 +339,37 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       }
     }
 
-    // The toy's dummies: ashen, two eye pixels.
+    // The things in the room, as plain shapes.
     for (const d of state.things) {
-      if (!d.alive) continue;
       const dx = d.px + (d.x - d.px) * alpha;
       const dy = d.py + (d.y - d.py) * alpha;
-      const grow = d.bornTick < 0 ? 1 : Math.min(1, Math.max(0.2, (state.tick - d.bornTick) / 12));
+      const dr = KINDS[d.kind].radius;
+      if (state.tick < d.landTick) {
+        // Announced: a broken outline where it will land.
+        paint.ring(X(dx), Y(dy), dr * S, d.kind === "token" ? C.acid : C.ink, Math.max(2, Math.round(S * 2)));
+        continue;
+      }
+      const isDazed = state.tick < d.dazedUntil;
       const willHit = f.line !== null && f.line.hitId === d.id;
-      paint.disc(X(dx), Y(dy), d.r * S * grow, cellFx, willHit ? mix(C.ash, C.ink, 0.35) : C.ash);
-      ctx.fillStyle = rgba(C.ink, 0.35);
-      ctx.fillRect(Math.round(X(dx) - d.r * S * grow * 0.5), Math.round(Y(dy) - d.r * S * grow * 0.62), cellFx * 2, cellFx);
-      const eyeS = Math.max(2, Math.round(S * 1.7));
-      ctx.fillStyle = C.page;
-      ctx.fillRect(Math.round(X(dx) - d.r * S * 0.38), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
-      ctx.fillRect(Math.round(X(dx) + d.r * S * 0.38 - eyeS), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
+      if (d.kind === "token") {
+        // A ring with a hole.
+        paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.acid, C.ink, 0.35) : C.acid);
+        paint.disc(X(dx), Y(dy), dr * S * 0.45, cellFx, C.floor);
+      } else {
+        // A small round body with two eyes.
+        paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.ash, C.ink, 0.35) : C.ash);
+        const eyeS = Math.max(2, Math.round(S * 1.7));
+        ctx.fillStyle = C.page;
+        ctx.fillRect(Math.round(X(dx) - dr * S * 0.45), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
+        ctx.fillRect(Math.round(X(dx) + dr * S * 0.45 - eyeS), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
+      }
+      if (isDazed) {
+        // Dazed: two phosphor squares over the head, for as long as it is harmless.
+        const q = Math.max(2, Math.round(S * 3));
+        ctx.fillStyle = C.ink;
+        ctx.fillRect(Math.round(X(dx - 4.5)), Math.round(Y(dy - dr - 5)), q, q);
+        ctx.fillRect(Math.round(X(dx + 1.5)), Math.round(Y(dy - dr - 5)), q, q);
+      }
     }
 
     // Him, by the site's painter. A sprite cell is 2 u.
@@ -390,16 +411,16 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     else if (fx.squashSide === "bottom") py += Math.round((1 - sy) * 6 * cell);
     drawHugoSprite(ctx, { x: px, y: py, px: cell, accent: f.accent, eye, scaleX: sx * face, scaleY: sy });
 
-    // The toy's slow-motion meter: how much of it this aim has left.
-    if (f.focus >= 0) {
+    // The slow-motion meter: how much of it is left.
+    if (f.meter >= 0) {
       const w = Math.round(34 * S);
       const hgt = Math.max(2, Math.round(S * 1.6));
       const bx = Math.round(X(hx) - w / 2);
       const by = Math.round(Y(hy - r - 12));
       ctx.fillStyle = rgba(C.ink, 0.14);
       ctx.fillRect(bx, by, w, hgt);
-      ctx.fillStyle = f.focus > 0.1 ? C.ink : C.coral;
-      ctx.fillRect(bx, by, Math.round(w * f.focus), hgt);
+      ctx.fillStyle = f.meter > 0.1 ? C.ink : C.coral;
+      ctx.fillRect(bx, by, Math.round(w * f.meter), hgt);
     }
 
     // Sparks on top.

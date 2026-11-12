@@ -9,10 +9,9 @@
  * through one `disposers` list, and `destroy()` leaves nothing behind: no
  * frame loop, no listener, no observer.
  *
- * STEP 0: the room plays as the feel toy plays. Slow motion is still the
- * toy's shell rule (free at rest, a meter in flight); it moves into the
- * State with the night. Pause, the panels, saving and sound join in the
- * steps that build them, and the handle grows with them.
+ * Slow motion lives in the State: the loop only asks `wouldSlow` how fast
+ * to feed ticks. Pause, the panels, saving and sound join in the steps
+ * that build them, and the handle grows with them.
  */
 import { readAccent, subscribeAccent } from "@/lib/hugo/sprite";
 import { DEFAULT_TUNE, mergeTune } from "./content/tune";
@@ -25,14 +24,15 @@ import type { Layout } from "./render/layout";
 import { effectiveReduced, type MotionPref } from "./render/motion";
 import { createRenderer } from "./render/renderer";
 import { aimLine, type AimLine } from "./sim/aim";
+import { threat } from "./sim/hot";
 import { createState, type StartOptions } from "./sim/state";
-import { step } from "./sim/step";
+import { step, wouldSlow } from "./sim/step";
 import type { Launch, SimEvent, State, Tune } from "./sim/types";
 
 /**
- * What the page needs to know, and nothing more. Step 0 knows which
- * screen is up; `paused` and `over` join with the night, and the score
- * and the settings with the panels that show them.
+ * What the page needs to know, and nothing more. So far: which screen is
+ * up. `paused` and `over` join with the panels that show them, and the
+ * score and the settings with them.
  */
 export type KnuffView = {
   screen: "start" | "play" | "tooSmall";
@@ -78,10 +78,6 @@ export type KnuffDev = {
   running(): boolean;
 };
 
-/** STEP 0 ONLY, the toy's slow-motion meter: seconds one held aim may spend in flight, and how fast it comes back. */
-const FOCUS_MAX_S = 2.5;
-const FOCUS_REFILL_PER_S = 0.55;
-
 /** The player's choice of motion arrives with the settings; until then the system's setting decides. */
 const MOTION: MotionPref = "auto";
 
@@ -112,7 +108,6 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   let state = createState(newSeed(), tune);
   /** A release waiting for the next tick. */
   let queued: Launch | null = null;
-  let focus = FOCUS_MAX_S;
   let autopause = true;
   // His colour is the visitor's, and another tab can change it.
   let accent = readAccent();
@@ -125,7 +120,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   // ── What the page is told ───────────────────────────────────────────
 
   const view = (): KnuffView => ({
-    screen: renderer.layout.tooSmall ? "tooSmall" : state.launch.id === 0 ? "start" : "play",
+    screen: renderer.layout.tooSmall ? "tooSmall" : state.phase === "waiting" ? "start" : "play",
   });
   let told = "";
   const tell = () => {
@@ -218,16 +213,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   };
 
   const loop = createLoop({
-    // The toy's rule. While a real pull is held the room runs slowed: free
-    // while he is at rest, on the meter while he flies.
-    slowed(realDt) {
-      const aiming = aimNow() !== null;
-      const flying = state.him.vx !== 0 || state.him.vy !== 0;
-      const slow = aiming && tune.slowShare < 1 && (!flying || focus > 0);
-      if (slow && flying) focus = Math.max(0, focus - realDt);
-      else if (!aiming) focus = Math.min(FOCUS_MAX_S, focus + realDt * FOCUS_REFILL_PER_S);
-      return slow;
-    },
+    // The State says which ticks are slowed, and counts them: a pull is
+    // held, something in the room can hurt him, and the meter is not empty.
+    slowed: () => wouldSlow(state, { launch: queued, pullHeld: aimNow() !== null }),
     slowShare: () => tune.slowShare,
     launchQueued: () => queued !== null,
     held: () => renderer.layout.tooSmall,
@@ -238,7 +226,6 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       fx.update(frame.realDt, frame.scaledDt, frame.now);
       const pull = pointer.pull();
       const aim = pull?.aim ?? null;
-      const flying = state.him.vx !== 0 || state.him.vy !== 0;
       renderer.draw({
         state,
         tune,
@@ -246,7 +233,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
         now: frame.now,
         pull,
         line: aim ? lineFor(aim) : null,
-        focus: aim && tune.slowShare < 1 && flying ? focus / FOCUS_MAX_S : -1,
+        // The meter is shown only while a pull is held and there is a threat.
+        meter: aim && threat(state) ? state.slow.meter / Math.max(1, tune.slowMeterMax) : -1,
         accent,
         reduced,
         effects: fx,
@@ -295,7 +283,6 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
         const { seed, ...options } = start;
         state = createState(seed ?? newSeed(), tune, options);
         queued = null;
-        focus = FOCUS_MAX_S;
         line = null;
         pointer.cancel();
         fx.reset();

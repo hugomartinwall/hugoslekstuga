@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
 import { cloneState, createState, hashState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
-import type { SimEvent, State } from "../../lib/knuff/sim/types";
+import type { Input, SimEvent, State } from "../../lib/knuff/sim/types";
 
 /**
  * The State is plain data, copied and fingerprinted by one generic walk.
@@ -10,20 +10,65 @@ import type { SimEvent, State } from "../../lib/knuff/sim/types";
  * is covered without anyone adding it here.
  */
 
-/** A State with history in it: he is in flight and hot, dummies have popped, some are back, one is still gone, one is sliding. */
-function midRun(): State {
-  const s = createState(20261111, DEFAULT_TUNE);
-  const events: SimEvent[] = [];
-  const launches: Record<number, [number, number, number]> = {
-    0: [0, -1, 1],
-    60: [1, -0.4, 0.9],
-    130: [-1, 0.2, 1],
+/** A scripted player: a launch every 20 to 70 ticks, any direction, holding a pull for a while before each. */
+function scripted(scriptSeed: number): (s: State) => Input {
+  let state = scriptSeed >>> 0;
+  const next = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
   };
-  for (let t = 0; t < 150; t++) {
-    const l = launches[t];
-    step(s, { launch: l ? { dx: l[0], dy: l[1], power: l[2] } : null, pullHeld: false }, DEFAULT_TUNE, events);
+  let wait = 0;
+  return () => {
+    const pullHeld = wait < 10;
+    if (wait > 0) {
+      wait--;
+      return { launch: null, pullHeld };
+    }
+    wait = 20 + Math.floor(next() * 51);
+    const a = next() * Math.PI * 2;
+    return { launch: { dx: Math.cos(a), dy: Math.sin(a), power: 0.5 + 0.5 * next() }, pullHeld };
+  };
+}
+
+/** A State a night passes through by itself: he is flying, one heart down, with pips and meter spent, tokens about and something announced. */
+function busy(s: State): boolean {
+  return (
+    s.phase === "night" &&
+    s.him.hot &&
+    s.hearts < DEFAULT_TUNE.hearts &&
+    s.pips < DEFAULT_TUNE.pipMax &&
+    s.slow.meter < DEFAULT_TUNE.slowMeterMax &&
+    s.launch.pops > 0 &&
+    s.night.hour >= 1 &&
+    s.things.some((d) => s.tick < d.landTick) &&
+    s.things.some((d) => d.kind === "token" && s.tick >= d.landTick) &&
+    s.things.filter((d) => d.kind === "bunny" && s.tick >= d.landTick && (d.wx !== 0 || d.wy !== 0)).length >= 3
+  );
+}
+
+/**
+ * A State from the middle of a night, with something of everything in it.
+ * Scripted nights are played until one passes through a busy tick; what a
+ * night seldom holds all at once is then set by hand: a dazed dust bunny,
+ * one sliding from a shove, and a thing he overlapped at the release.
+ */
+function midNight(): State {
+  for (let script = 1; script <= 40; script++) {
+    const s = createState(20261111, DEFAULT_TUNE);
+    const input = scripted(script);
+    const events: SimEvent[] = [];
+    for (let t = 0; t < 6000 && s.phase !== "over"; t++) {
+      step(s, input(s), DEFAULT_TUNE, events);
+      if (!busy(s)) continue;
+      const bunnies = s.things.filter((d) => d.kind === "bunny" && s.tick >= d.landTick);
+      bunnies[0].dazedUntil = s.tick + 20;
+      bunnies[1].vx = 120;
+      bunnies[1].vy = -45;
+      s.launch.blocked.push(bunnies[2].id);
+      return s;
+    }
   }
-  return s;
+  throw new Error("no scripted night passed through a busy State");
 }
 
 type Path = (string | number)[];
@@ -62,21 +107,24 @@ function set(root: unknown, path: Path, value: unknown): void {
 }
 
 describe("the State", () => {
-  const state = midRun();
+  const state = midNight();
 
-  it("the mid-run State has something of everything in it", () => {
-    expect(state.tick).toBe(150);
-    expect(state.launch.id).toBe(3);
-    expect(state.him.hot).toBe(true);
-    expect(state.things.some((d) => d.alive && d.bornTick > 0)).toBe(true);
-    expect(state.things.some((d) => !d.alive)).toBe(true);
-    expect(state.things.some((d) => d.alive && (d.vx !== 0 || d.vy !== 0))).toBe(true);
-    expect(state.him.vx !== 0 || state.him.vy !== 0).toBe(true);
+  it("the mid-night State has something of everything in it", () => {
+    expect(busy(state)).toBe(true);
+    expect(state.things.some((d) => state.tick < d.dazedUntil)).toBe(true);
+    expect(state.things.some((d) => d.kind === "bunny" && d.vx !== 0)).toBe(true);
+    expect(state.him.invulnUntil).toBeGreaterThan(0);
+    expect(state.tick).toBeGreaterThan(600);
+    expect(state.score).toBeGreaterThan(0);
+    expect(state.bestShot).toBeGreaterThan(0);
+    expect(state.lastHurtBy).not.toBe("");
+    expect(state.launch.blocked).toHaveLength(1);
+    expect(state.night.kinds).toEqual(["bunny", "token"]);
   });
 
   it("is plain data: numbers, booleans and strings, with no undefined and no Infinity", () => {
     const all = leaves(state);
-    expect(all.length).toBeGreaterThan(80);
+    expect(all.length).toBeGreaterThan(120);
     for (const { path, value } of all) {
       if (typeof value === "number") {
         expect(Number.isFinite(value), `${path.join(".")} is ${value}`).toBe(true);
@@ -149,30 +197,47 @@ describe("the State", () => {
     expect(revived).toEqual(a);
   });
 
-  it("a State at rest survives JSON too: a speed that ran down to nothing is a plain zero", () => {
+  it("no number in it is ever a negative zero: every tick of a night survives JSON", () => {
     // Slowing multiplies a speed by zero, and a negative speed times zero is
     // a negative zero, which JSON writes as a plain one: the stored State
-    // would not be the State that was stored. He is set down under the rack
-    // and sent into it too slowly to pop anything: he and the dummies he
-    // shoves all run down to rest, most of them from a negative speed.
+    // would not be the State that was stored. A night is played through,
+    // with dust bunnies thrown by the wave sliding to rest, and every
+    // number of every tick is looked at.
     const s = createState(20261111, DEFAULT_TUNE);
-    const rack = s.things.map((d) => [d.x, d.y]);
-    s.him.x = 184;
-    s.him.y = 250;
+    const input = scripted(3);
     const events: SimEvent[] = [];
-    for (let t = 0; t < 500; t++) {
-      step(s, { launch: t === 0 ? { dx: 0, dy: -1, power: 0.32 } : null, pullHeld: false }, DEFAULT_TUNE, events);
+    const negativeZero = (v: unknown, path: string): string => {
+      if (typeof v === "number") return Object.is(v, -0) ? path : "";
+      if (v !== null && typeof v === "object") {
+        for (const [k, item] of Object.entries(v as Record<string, unknown>)) {
+          const hit = negativeZero(item, `${path}.${k}`);
+          if (hit) return hit;
+        }
+      }
+      return "";
+    };
+    let slidToRest = 0;
+    let revived = 0;
+    for (let t = 0; t < 20000 && s.phase !== "over"; t++) {
+      const sliding = s.things.filter((d) => d.kind === "bunny" && (d.vx !== 0 || d.vy !== 0)).map((d) => d.id);
+      step(s, input(s), DEFAULT_TUNE, events);
+      slidToRest += s.things.filter((d) => sliding.includes(d.id) && d.vx === 0 && d.vy === 0).length;
+      const hit = negativeZero(s, "state");
+      if (hit) expect.fail(`${hit} is a negative zero at tick ${s.tick}`);
+      if (t % 211 === 0) {
+        const back = JSON.parse(JSON.stringify(s)) as State;
+        expect(back).toEqual(s);
+        expect(hashState(back)).toBe(hashState(s));
+        revived++;
+      }
     }
-    expect(events.some((e) => e.type === "pop")).toBe(false);
-    expect(s.things.filter((d, i) => d.x !== rack[i][0] || d.y !== rack[i][1]).length).toBeGreaterThanOrEqual(3);
-    expect([s.him.vx, s.him.vy]).toEqual([0, 0]);
-    for (const d of s.things) expect([d.vx, d.vy]).toEqual([0, 0]);
-    for (const { path, value } of leaves(s)) {
-      expect(Object.is(value, -0), `${path.join(".")} is a negative zero`).toBe(false);
-    }
-    const revived = JSON.parse(JSON.stringify(s)) as State;
-    expect(revived).toEqual(s);
-    expect(hashState(revived)).toBe(hashState(s));
+    expect(s.phase).toBe("over");
+    expect(slidToRest).toBeGreaterThan(0);
+    expect(revived).toBeGreaterThan(5);
+    // A launch straight along an axis gives him a speed of exactly zero the other way, with either sign.
+    const still = createState(1, DEFAULT_TUNE, { empty: true });
+    step(still, { launch: { dx: -0, dy: -1, power: 1 }, pullHeld: false }, DEFAULT_TUNE, events);
+    expect(Object.is(still.him.vx, -0)).toBe(false);
   });
 
   it("a field under another name is another State", () => {
@@ -214,5 +279,47 @@ describe("the State", () => {
     expect(createState(5, DEFAULT_TUNE)).toEqual(createState(5, DEFAULT_TUNE));
     expect(hashState(createState(5, DEFAULT_TUNE))).toBe(hashState(createState(5, DEFAULT_TUNE)));
     expect(hashState(createState(6, DEFAULT_TUNE))).not.toBe(hashState(createState(5, DEFAULT_TUNE)));
+  });
+
+  it("a fresh State is the start screen: the rack in place, everything full, nothing moving", () => {
+    const s = createState(5, DEFAULT_TUNE);
+    expect(s.v).toBe(1);
+    expect(s.phase).toBe("waiting");
+    expect(s.ended).toBe("");
+    expect([s.tick, s.normalTicks, s.slowedTicks]).toEqual([0, 0, 0]);
+    expect(s.hearts).toBe(3);
+    expect(s.pips).toBe(3);
+    expect(s.slow).toEqual({ meter: 16, refill: 0 });
+    expect(s.him).toEqual({ x: 180, y: 374, px: 180, py: 374, vx: 0, vy: 0, hot: false, lastContactTick: -1, invulnUntil: 0 });
+    expect(s.launch.id).toBe(0);
+    expect(s.launch.active).toBe(false);
+    expect(s.night).toEqual({
+      hour: 0,
+      hourStart: 0,
+      kinds: ["bunny", "token"],
+      nextRow: 0,
+      rowTick: -1,
+      rowLandTick: -1,
+      holdFrom: -1,
+      holdTo: -1,
+      clearTick: -1,
+      offerTick: -1,
+      settledTick: -1,
+    });
+    expect([s.score, s.bestShot, s.lastHurtBy, s.lastHurtHour]).toEqual([0, 0, "", -1]);
+    // The 19:00 rack: rows of 1, 2 and then the one that is left, centred; apex at (180, 163), toward him.
+    expect(s.things.map((d) => [d.kind, d.x, d.y, d.landTick, d.hp])).toEqual([
+      ["bunny", 180, 163, -1, 1],
+      ["bunny", 171, 147, -1, 1],
+      ["bunny", 189, 147, -1, 1],
+      ["bunny", 180, 131, -1, 1],
+    ]);
+    expect(s.nextId).toBe(5);
+    // Nothing in the room moves until the first launch: without one the tick does not advance.
+    const before = hashState(s);
+    const events: SimEvent[] = [];
+    for (let t = 0; t < 500; t++) step(s, { launch: null, pullHeld: t % 2 === 0 }, DEFAULT_TUNE, events);
+    expect(hashState(s)).toBe(before);
+    expect(events).toEqual([]);
   });
 });

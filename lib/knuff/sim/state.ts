@@ -6,7 +6,8 @@
  * list of fields written by hand, so a field added to the State in a later
  * step is copied and fingerprinted without anyone remembering to.
  */
-import { rackDummies } from "./dummies";
+import { BUILT, isBuilt } from "../content/kinds";
+import { placeRack } from "./night";
 import { seedStreams } from "./rng";
 import type { Room, State, Tune } from "./types";
 
@@ -25,30 +26,83 @@ export function defaultRoom(): Room {
 }
 
 /**
- * How a State may begin other than the default. Step 0 has the two the
- * feel lock needs; the rest of the spec's list (hour, hearts, charms,
- * plates, offers) joins with the things it sets.
+ * How a State may begin other than the default. The rest of the spec's
+ * list (hearts, charms, plates, offers) joins with the things it sets.
  */
 export type StartOptions = {
+  /** The hour the night begins in: 0 is 19:00, 10 is 05:00. The first launch starts it at its tick 0. */
+  hour?: number;
+  /**
+   * The kinds the night's rows may bring. By default, every kind built so
+   * far. A kind not listed is left out of the rows; a kind not built yet
+   * cannot be asked for.
+   */
+  kinds?: readonly string[];
+  /**
+   * Nothing in the room but him: no opening rack. Unless `kinds` says
+   * otherwise nothing arrives either, all night.
+   */
+  empty?: boolean;
   /** The floor's edges. The feel lock sets them to the toy's: 0, 0, 360, 480. */
   room?: Room;
-  /** Nothing in the room but him. */
-  empty?: boolean;
 };
 
 export function createState(seed: number, tune: Tune, start: StartOptions = {}): State {
+  const asked = start.kinds ?? (start.empty ? [] : BUILT);
+  const hour = Math.min(10, Math.max(0, Math.floor(start.hour ?? 0)));
   const s: State = {
     v: 1,
     seed: seed >>> 0,
     tick: 0,
+    normalTicks: 0,
+    slowedTicks: 0,
+    phase: "waiting",
+    ended: "",
     rng: seedStreams(seed >>> 0),
     room: start.room ? { ...start.room } : defaultRoom(),
-    him: { x: START_X, y: START_Y, px: START_X, py: START_Y, vx: 0, vy: 0, hot: false },
-    launch: { id: 0, startTick: 0, pops: 0, cushions: 0 },
+    him: { x: START_X, y: START_Y, px: START_X, py: START_Y, vx: 0, vy: 0, hot: false, lastContactTick: -1, invulnUntil: 0 },
+    hearts: tune.hearts,
+    pips: tune.pipMax,
+    pipTimer: tune.pipRefillTicks,
+    // The meter starts the night full.
+    slow: { meter: tune.slowMeterMax, refill: 0 },
+    launch: {
+      id: 0,
+      startTick: 0,
+      active: false,
+      carry: 0,
+      pops: 0,
+      bodyPops: 0,
+      refunded: false,
+      cushions: 0,
+      lastCushionTick: -1,
+      points: 0,
+      blocked: [],
+      popped: false,
+    },
     things: [],
     nextId: 1,
+    night: {
+      hour,
+      hourStart: 0,
+      // In the order the kinds were built, each once, so two ways of asking for the same night make the same State.
+      kinds: BUILT.filter((kind) => asked.includes(kind) && isBuilt(kind)),
+      nextRow: 0,
+      rowTick: -1,
+      rowLandTick: -1,
+      holdFrom: -1,
+      holdTo: -1,
+      clearTick: -1,
+      offerTick: -1,
+      settledTick: -1,
+    },
+    score: 0,
+    bestShot: 0,
+    lastHurtBy: "",
+    lastHurtHour: -1,
   };
-  if (!start.empty) rackDummies(s, tune, ROOM_W, ROOM_H);
+  // The 19:00 rack is in the room on the start screen, still until the first launch.
+  if (!start.empty) placeRack(s);
   return s;
 }
 

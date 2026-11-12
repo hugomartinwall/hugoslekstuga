@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -146,8 +147,21 @@ describe("the reader these checks lean on", () => {
 describe("the simulation is pure", () => {
   it("has files to check", () => {
     // Without this the whole block passes on an empty folder.
-    expect(pureFiles.map(rel)).toEqual(expect.arrayContaining([join("sim", "step.ts"), join("sim", "state.ts"), join("content", "tune.ts")]));
-    expect(pureFiles.length).toBeGreaterThanOrEqual(7);
+    expect(pureFiles.map(rel)).toEqual(
+      expect.arrayContaining([
+        join("sim", "step.ts"),
+        join("sim", "state.ts"),
+        join("sim", "night.ts"),
+        join("sim", "hot.ts"),
+        join("sim", "intruders.ts"),
+        join("sim", "score.ts"),
+        join("sim", "aim.ts"),
+        join("content", "tune.ts"),
+        join("content", "night.ts"),
+        join("content", "kinds.ts"),
+      ]),
+    );
+    expect(pureFiles.length).toBeGreaterThanOrEqual(14);
   });
 
   it("uses only relative imports, and none of them leaves the pure folders", () => {
@@ -186,6 +200,72 @@ describe("the simulation is pure", () => {
     // And prose about a rule is not a breach of it.
     expect(DOM.test(scan("// never read window here\nconst a = 'document';").code)).toBe(false);
     expect(CLOCK_OR_CHANCE.test(scan("/* no Math.random */ const update = 1;").code)).toBe(false);
+  });
+});
+
+describe("the simulation compiles with no page to lean on", () => {
+  /**
+   * The rule above knows a page global by a list of names, and a list can
+   * be short of one. This asks the compiler instead: the pure folders are
+   * type-checked with the language's own library and nothing else. No DOM,
+   * no Node, no timers: `window`, `document`, `console`, `setTimeout`,
+   * `performance`, `fetch` and every other name a page or a runtime adds
+   * is simply not there, and using one is a type error. (`Math.random` and
+   * `Date` are the language's own, which is why the list of names stays.)
+   */
+  const options: ts.CompilerOptions = {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    lib: ["lib.es2022.d.ts"],
+    types: [],
+    strict: true,
+    noEmit: true,
+    skipLibCheck: true,
+  };
+
+  /** Type-check the pure files, with any extra files given as text. */
+  function check(extra: Record<string, string> = {}): string[] {
+    const host = ts.createCompilerHost(options);
+    const { fileExists, readFile, getSourceFile } = host;
+    host.fileExists = (name) => name in extra || fileExists.call(host, name);
+    host.readFile = (name) => (name in extra ? extra[name] : readFile.call(host, name));
+    host.getSourceFile = (name, languageVersion, ...rest) =>
+      name in extra ? ts.createSourceFile(name, extra[name], languageVersion, true) : getSourceFile.call(host, name, languageVersion, ...rest);
+    const program = ts.createProgram([...pureFiles, ...Object.keys(extra)], options, host);
+    return ts.getPreEmitDiagnostics(program).map((d) => {
+      const where = d.file ? `${d.file.fileName.startsWith(LIB) ? rel(d.file.fileName) : d.file.fileName}: ` : "";
+      return where + ts.flattenDiagnosticMessageText(d.messageText, " ");
+    });
+  }
+
+  it("sim/, content/ and bots/ type-check against ES2022 alone: no DOM, no Node", () => {
+    expect(check()).toEqual([]);
+  });
+
+  it("the check can see a page global, a runtime global and a timer", () => {
+    // One program, a probe file for each name; every probe imports from the simulation as a real file would.
+    const probes: Record<string, [string, RegExp | null]> = {
+      window: ["export const w = window.innerWidth;", /Cannot find name 'window'/],
+      performance: ["export const t = performance.now();", /Cannot find name 'performance'/],
+      console: ["console.log(1);", /Cannot find name 'console'/],
+      timer: ["setTimeout(() => {}, 1);", /Cannot find name 'setTimeout'/],
+      process: ["export const p = process.env.NODE_ENV;", /Cannot find name 'process'/],
+      storage: ["export const s: Storage | null = null;", /Cannot find name 'Storage'/],
+      // And it has nothing against the language itself.
+      language: ['export const m = new Map<string, number[]>([["a", [Math.hypot(3, 4)]]]);', null],
+    };
+    const file = (name: string) => join(LIB, "sim", `probe-${name}.ts`);
+    const found = check(
+      Object.fromEntries(Object.entries(probes).map(([name, [code]]) => [file(name), `import { DT } from "./physics";\n${code}\nexport const dt = DT;\n`])),
+    );
+    for (const [name, [, message]] of Object.entries(probes)) {
+      const mine = found.filter((line) => line.startsWith(`${rel(file(name))}: `));
+      if (message === null) expect(mine, name).toEqual([]);
+      else expect(mine.join("\n"), name).toMatch(message);
+    }
+    // Every complaint is about a probe: the simulation's own files are clean in the same program.
+    expect(found.filter((line) => !line.includes("probe-"))).toEqual([]);
   });
 });
 
@@ -285,7 +365,7 @@ describe("nothing the player reads names the mascot", () => {
 
   it("has words to check", () => {
     const words = spoken.flatMap(readable);
-    expect(words).toEqual(expect.arrayContaining(["PULL BACK. LET GO.", "turn the phone upright"]));
+    expect(words).toEqual(expect.arrayContaining(["PULL BACK. LET GO.", "turn the phone upright", "BEFORE THE RING CLOSES", "a runaway token", "AGAIN"]));
     expect(words.some((w) => w.startsWith("Knuff, an arcade game."))).toBe(true);
   });
 
