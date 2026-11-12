@@ -1,5 +1,7 @@
 /**
- * Juice: particles, the trail, shake, squash, his blink. All of it is fed
+ * Juice: particles, the trail, shake, squash, his blink, and the marks
+ * that say what just happened (the thump ring, the wave of a lost heart,
+ * floating numbers, the pips turning coral). All of it is fed
  * by SimEvents and by the State after a tick; none of it reaches back into
  * the simulation. Random numbers here are the built-in ones on purpose:
  * this is drawing, and no outcome hangs on it.
@@ -10,6 +12,12 @@ import { C } from "./palette";
 
 export type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number };
 export type TrailDot = { x: number; y: number; hot: boolean };
+/** A landing's ring on the floor. It closes over the daze, in ticks: the ring is the timer. */
+export type Thump = { x: number; y: number; tick: number };
+/** The wave of a lost heart: one ring growing to its reach. */
+export type Wave = { x: number; y: number; life: number; max: number };
+/** A number that floats up from where it was made: a multiplier, or a launch's total. */
+export type Float = { x: number; y: number; text: string; life: number; max: number; big: boolean };
 
 /** Afterimages kept, as in the toy. */
 const TRAIL_LENGTH = 16;
@@ -17,10 +25,22 @@ const MAX_PARTICLES = 220;
 /** A freeze on the first pop of a launch and on its fifth, in seconds. None on the others. */
 const FREEZE_FIRST_POP_S = 0.028;
 const FREEZE_FIFTH_POP_S = 0.06;
+/** A refused launch: the pips are coral this long, in seconds. */
+const REFUSED_S = 0.2;
+/** The ring's eight squares fly off this long when he lands, in seconds. */
+const FRAGMENT_S = 0.15;
+const WAVE_S = 0.35;
+const FLOAT_S = 0.8;
+const MAX_FLOATS = 12;
 
 export type Effects = {
   readonly particles: Particle[];
   readonly trail: TrailDot[];
+  readonly thumps: Thump[];
+  readonly waves: Wave[];
+  readonly floats: Float[];
+  /** Seconds left of the pips drawn in coral after a refused launch. */
+  refused: number;
   /** Squash and stretch of his body, and the cushion it is anchored at ("" for a launch). */
   squashX: number;
   squashY: number;
@@ -42,9 +62,12 @@ export type Effects = {
   reset(): void;
 };
 
-export function createEffects(tune: Tune): Effects {
+export function createEffects(tuneNow: () => Tune): Effects {
   const particles: Particle[] = [];
   const trail: TrailDot[] = [];
+  const thumps: Thump[] = [];
+  const waves: Wave[] = [];
+  const floats: Float[] = [];
   let reduced = false;
   let blinkAt = -1;
   let blinkUntil = 0;
@@ -60,9 +83,18 @@ export function createEffects(tune: Tune): Effects {
     if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
   }
 
+  function float(x: number, y: number, text: string, big: boolean): void {
+    floats.push({ x, y, text, life: FLOAT_S, max: FLOAT_S, big });
+    if (floats.length > MAX_FLOATS) floats.shift();
+  }
+
   const fx: Effects = {
     particles,
     trail,
+    thumps,
+    waves,
+    floats,
+    refused: 0,
     squashX: 1,
     squashY: 1,
     squashSide: "",
@@ -74,6 +106,7 @@ export function createEffects(tune: Tune): Effects {
     },
 
     onEvent(e) {
+      const tune = tuneNow();
       switch (e.type) {
         case "launch":
           if (!reduced) {
@@ -97,18 +130,60 @@ export function createEffects(tune: Tune): Effects {
           }
           return 0;
         }
-        case "pop":
-          burst(e.x, e.y, 12, 190, C.ash, 3);
+        case "pop": {
+          burst(e.x, e.y, 12, 190, e.kind === "token" ? C.acid : C.ash, 3);
           burst(e.x, e.y, 5, 110, C.ink, 2);
           if (!reduced) fx.shake = Math.max(fx.shake, 2.5 + Math.min(4, e.n));
+          const times = e.chain * e.cushions;
+          if (times > 1) float(e.x, e.y - 10, `x${times}`, false);
           // Reduced motion keeps the freeze: it is a pause, not motion.
           return e.n === 1 ? FREEZE_FIRST_POP_S : e.n === 5 ? FREEZE_FIFTH_POP_S : 0;
+        }
+        case "land": {
+          thumps.push({ x: e.x, y: e.y, tick: e.tick });
+          if (thumps.length > 4) thumps.shift();
+          // The ring breaks into eight squares that fly off.
+          if (!reduced) {
+            const ringR = tune.himRadius + 4;
+            for (let i = 0; i < 8; i++) {
+              const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+              particles.push({
+                x: e.x + Math.cos(a) * ringR,
+                y: e.y + Math.sin(a) * ringR,
+                vx: Math.cos(a) * 150,
+                vy: Math.sin(a) * 150,
+                life: FRAGMENT_S,
+                max: FRAGMENT_S,
+                color: C.ink,
+                size: 2.4,
+              });
+            }
+          }
+          return 0;
+        }
+        case "launchEnd":
+          if (e.pops >= 3) float(e.x, e.y - tune.himRadius - 14, String(e.total), true);
+          return 0;
+        case "hurt":
+          waves.push({ x: e.x, y: e.y, life: WAVE_S, max: WAVE_S });
+          burst(e.x, e.y, 14, 230, C.coral, 3);
+          if (!reduced) fx.shake = Math.max(fx.shake, 7);
+          return 0;
+        case "refused":
+          fx.refused = REFUSED_S;
+          return 0;
+        case "arrive":
+          // The outline snaps solid, with four dust squares.
+          burst(e.x, e.y, reduced ? 3 : 4, 70, e.kind === "token" ? C.acid : C.ash, 2);
+          return 0;
         default:
           return 0;
       }
     },
 
     afterTick(s) {
+      const dazeTicks = tuneNow().dazeTicks;
+      while (thumps.length > 0 && s.tick - thumps[0].tick >= dazeTicks) thumps.shift();
       const h = s.him;
       const sp = Math.hypot(h.vx, h.vy);
       if (sp > 40) {
@@ -137,6 +212,20 @@ export function createEffects(tune: Tune): Effects {
         p.vx *= 1 - Math.min(1, scaledDt * 3);
         p.vy *= 1 - Math.min(1, scaledDt * 3);
       }
+      for (let i = waves.length - 1; i >= 0; i--) {
+        waves[i].life -= scaledDt;
+        if (waves[i].life <= 0) waves.splice(i, 1);
+      }
+      for (let i = floats.length - 1; i >= 0; i--) {
+        const f = floats[i];
+        f.life -= realDt;
+        if (f.life <= 0) {
+          floats.splice(i, 1);
+          continue;
+        }
+        if (!reduced) f.y -= 26 * realDt;
+      }
+      fx.refused = Math.max(0, fx.refused - realDt);
       fx.shake = Math.max(0, fx.shake - realDt * 26);
       fx.squashX += (1 - fx.squashX) * Math.min(1, realDt * 16);
       fx.squashY += (1 - fx.squashY) * Math.min(1, realDt * 16);
@@ -161,6 +250,10 @@ export function createEffects(tune: Tune): Effects {
     reset() {
       particles.length = 0;
       trail.length = 0;
+      thumps.length = 0;
+      waves.length = 0;
+      floats.length = 0;
+      fx.refused = 0;
       fx.shake = 0;
       fx.squashX = 1;
       fx.squashY = 1;

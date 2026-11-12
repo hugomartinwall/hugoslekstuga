@@ -18,6 +18,12 @@ export const C = {
   rail: "#2e3136",
   /** A dummy, as in the toy. */
   ash: "#9aa7b8",
+  /** The darkest the floor gets (03:00), and the warm it turns toward morning. */
+  floorNight: "#07080f",
+  floorWarm: "#1d1612",
+  /** A raised key (--color-panel). */
+  panel: "#1e2136",
+  magenta: COLOR_HEX.pink,
   mint: COLOR_HEX.green,
   acid: COLOR_HEX.yellow,
   coral: COLOR_HEX.tomato,

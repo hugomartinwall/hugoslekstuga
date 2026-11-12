@@ -48,6 +48,9 @@ export const PANEL_LABEL = {
 
 /** The end panel's labels. */
 export const END = {
+  best: "BEST",
+  newBest: "NEW BEST",
+  night: "NIGHT",
   bestShot: "BEST SHOT",
   /** What the panel calls a night that reached morning; any other night is called by the hour he fell in. */
   morning: "MORNING",
