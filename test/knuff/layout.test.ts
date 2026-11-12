@@ -199,6 +199,43 @@ describe("sizing on a laptop (a fine pointer)", () => {
   });
 });
 
+describe("the playable of the owner's checks (steps 1 to 5)", () => {
+  const playable = (w: number, h: number, dpr: number, coarse = false): Layout => layoutFor(w, h, dpr, coarse, NONE, true);
+
+  it("1280 × 400 with a mouse: 0.675, a room of 243 × 324, and nothing is refused", () => {
+    for (const dpr of [1, 1.25, 2]) {
+      const l = playable(1280, 400, dpr);
+      expect(l.s).toBeCloseTo(0.675, 12);
+      expect(Math.round(l.room.w)).toBe(243);
+      expect(Math.round(l.room.h)).toBe(324);
+      expect(l.tooSmall).toBe(false);
+      expect(l.room.y + l.room.h + LAPTOP_MARGIN).toBeLessThanOrEqual(400 + 1e-9);
+    }
+    expect(laptop(1280, 400, 1).tooSmall).toBe(true);
+  });
+
+  it("the window the owner judged the toy in, 768 × 479, is laid out as the final route lays it out", () => {
+    expect(playable(768, 479, 1)).toEqual(laptop(768, 479, 1));
+    expect(playable(1280, 633, 1.25)).toEqual(laptop(1280, 633, 1.25));
+    expect(playable(1440, 900, 1)).toEqual(laptop(1440, 900, 1));
+  });
+
+  it("a laptop page is never too small, however short, and the room is never inside out", () => {
+    for (let h = 0; h <= 440; h += 20) {
+      const l = playable(900, h, 1);
+      expect(l.tooSmall, `${h}`).toBe(false);
+      expect(l.s, `${h}`).toBeGreaterThan(0);
+      expect(l.room.w, `${h}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("a phone keeps its rule: on its side it is still too small, upright it is laid out as before", () => {
+    expect(playable(664, 390, 3, true).tooSmall).toBe(true);
+    expect(playable(390, 664, 3, true)).toEqual(phone(390, 664, 3));
+    expect(playable(360, 640, 3, true)).toEqual(phone(360, 640, 3));
+  });
+});
+
 describe("sizing, either way", () => {
   it("the room is never stretched: always 3 wide to 4 tall", () => {
     for (const coarse of [true, false]) {

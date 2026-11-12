@@ -51,7 +51,20 @@ function snapToCells(fit: number, dpr: number): number {
   return Math.floor(fit * 2 * dpr + EPS) / (2 * dpr);
 }
 
-export function layoutFor(pageW: number, pageH: number, dpr: number, coarse: boolean, safe: Insets): Layout {
+/**
+ * `playable` is the builds the owner checks before the game ships (the
+ * spec's steps 1 to 5): there a laptop page is never too small. Under 0.75
+ * the room goes on shrinking to fit, however short the window. A phone
+ * keeps its rule either way.
+ */
+export function layoutFor(
+  pageW: number,
+  pageH: number,
+  dpr: number,
+  coarse: boolean,
+  safe: Insets,
+  playable = false,
+): Layout {
   // The page less the safe areas.
   const W = pageW - safe.left - safe.right;
   const H = pageH - safe.top - safe.bottom;
@@ -78,6 +91,8 @@ export function layoutFor(pageW: number, pageH: number, dpr: number, coarse: boo
     // The snap alone can only land on multiples of 1 / (2 × dpr): where it
     // comes out under 1 the room shrinks to fit instead, as on a phone.
     if (s < 1) s = Math.min(1, fit);
+    // A window with no height at all still gets a room, not a negative one.
+    if (playable) s = Math.max(s, 0.05);
   }
 
   const roomW = ROOM_W * s;
@@ -107,7 +122,7 @@ export function layoutFor(pageW: number, pageH: number, dpr: number, coarse: boo
     s,
     dpr,
     coarse,
-    tooSmall: s < MIN_SCALE,
+    tooSmall: !playable && s < MIN_SCALE,
     page: { w: pageW, h: pageH },
     bar: { x: roomX, y: top, w: roomW, h: BAR_H },
     room: { x: roomX, y: roomY, w: roomW, h: roomH },
