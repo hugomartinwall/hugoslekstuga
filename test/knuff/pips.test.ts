@@ -111,6 +111,28 @@ describe("the pip timer", () => {
     expect(of(events, "pip").map((e) => e.tick - 192)).toEqual([95]);
   });
 
+  it("restarts on a launch from a hand that a pop filled, however far along the timer was", () => {
+    // Dust bunnies that stand still: two close together far up the room.
+    const still = tuned({ bunnySpeed: 0 });
+    const s = night(still);
+    put(s, "bunny", 180, 374 - 300);
+    put(s, "bunny", 180, 374 - 322);
+    // A launch from full starts the timer; the second pop, some twenty ticks on, fills him again.
+    const events = fire(s, still, shot(0, -1), 90);
+    const refund = of(events, "pip").find((e) => e.why === "pop")!;
+    expect(refund.tick).toBeGreaterThan(15);
+    expect(s.pips).toBe(3);
+    expect(s.him.hot).toBe(false);
+    // The timer stopped where it was: part of the way down.
+    expect(s.pipTimer).toBe(96 - 1 - refund.tick);
+    expect(of(events, "pip")).toHaveLength(1);
+    // The next launch takes him from full: a whole wait again, not what was left of the last.
+    const from = s.tick;
+    events.length = 0;
+    events.push(...fire(s, still, shot(1, 0, 0.5), 96));
+    expect(of(events, "pip").map((e) => [e.tick - from, e.why])).toEqual([[95, "timer"]]);
+  });
+
   it("counts ticks, slowed or not", () => {
     const s = night(tune);
     put(s, "bunny", 30, 30);
@@ -161,6 +183,18 @@ describe("the pip a launch gives back", () => {
     expect(s.launch.refunded).toBe(true);
     expect(s.launch.bodyPops).toBe(4);
     expect(still.pipRefundPop).toBe(2);
+  });
+
+  it("is one pip and no more, however many it pops: four pops from an empty hand leave him with one", () => {
+    const s = line(still, 4);
+    // Two launches into nothing first: one pip left.
+    tick(s, still, shot(1, 0, 0.5));
+    tick(s, still, shot(-1, 0, 0.5));
+    expect(s.pips).toBe(1);
+    const events = fire(s, still, shot(0, -1), 20);
+    expect(of(events, "pop")).toHaveLength(4);
+    expect(of(events, "pip").map((e) => [e.why, e.pips])).toEqual([["pop", 1]]);
+    expect(s.pips).toBe(1);
   });
 
   it("a launch with one pop gives none", () => {

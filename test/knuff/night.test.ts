@@ -450,6 +450,34 @@ describe("arrivals", () => {
     expect(night.tune.arriveDazedWithin).toBe(60);
   });
 
+  it("a dazed token stands still for its 36 ticks, then rolls on the way it was rolling", () => {
+    const night = new Night({ tokenSpeed: 150 }, { empty: true });
+    const s = night.s;
+    // It lands 50 u from him, pointed up the room and away.
+    const token = put(s, "token", 180 + 40, 374 - 30, { landTick: 5, vx: 0, vy: -150 });
+    night.through(5);
+    expect(token.dazedUntil).toBe(41);
+    for (let t = 6; t <= 40; t++) {
+      night.through(t);
+      expect([token.x, token.y], `tick ${t}`).toEqual([220, 344]);
+    }
+    // Its roll was kept all the while.
+    expect([token.vx, token.vy]).toEqual([0, -150]);
+    night.through(41);
+    expect([token.x, token.y]).toEqual([220, 344 - 150 / 60]);
+    night.through(50);
+    expect(token.y).toBeCloseTo(344 - (10 * 150) / 60, 9);
+    // A dazed dust bunny does not walk, but a shove still carries it: it slides.
+    const walking = new Night({ bunnySpeed: 22 }, { empty: true });
+    const still = put(walking.s, "bunny", 180 + 100, 374, { dazedUntil: 30 });
+    const shoved = put(walking.s, "bunny", 180 - 100, 374, { dazedUntil: 30, vx: -60 });
+    walking.through(20);
+    expect([still.x, still.y]).toEqual([280, 374]);
+    expect(shoved.x).toBeLessThan(80 - 5);
+    walking.through(40);
+    expect(still.x).toBeLessThan(280);
+  });
+
   it("a far spot is at least 150 u from him when it is announced", () => {
     // A token by itself or loose is at its own far spot; a file's head is at one.
     let tokens = 0;
@@ -833,6 +861,22 @@ describe("the pace: a row does not wait for its tick", () => {
           const first = dealtRows(STEP1)[hour][0];
           expect(night.rows()[0]).toMatchObject({ hour, row: first.row, how: "tick", at: 0 });
         }
+      });
+
+      it("an hour's first row is never brought by the pace: it has no row before it", () => {
+        // A night of dust bunnies alone has no first token, and 20:00's
+        // rows are the two bunches written for ticks 228 and 456. The room
+        // is empty and the clock has nothing to count from: the first of
+        // them waits for its tick.
+        const night = new Night({ pace }, { hour: 1, kinds: ["bunny"] });
+        night.through(227);
+        expect(night.rows()).toEqual([]);
+        expect([night.s.night.rowTick, night.s.night.rowLandTick]).toEqual([-1, -1]);
+        night.run(1);
+        expect(night.rows()).toEqual([{ hour: 1, row: 1, how: "tick", at: 228, n: 5, cut: 0 }]);
+        // From then on the pace deals as usual: five is under six, so the next is called the tick it lands.
+        night.through(264);
+        expect(night.rows()[1]).toEqual({ hour: 1, row: 2, how: "early", at: 264, n: 5, cut: 0 });
       });
 
       it("a row is called early with six left, and not with seven", () => {

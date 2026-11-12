@@ -43,6 +43,8 @@ describe("losing a heart", () => {
     const s = night(tune);
     put(s, "bunny", 180 + 21, 374);
     put(s, "token", 180, 374 - 20);
+    // Off to one side too: 12 across and 16 down is exactly a token's reach, 13 + 7 u.
+    put(s, "token", 180 + 12, 374 + 16);
     expect(of(run(s, tune, 50), "hurt")).toEqual([]);
     expect(s.hearts).toBe(3);
     // A hair closer and it does.

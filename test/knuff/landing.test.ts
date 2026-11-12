@@ -124,6 +124,30 @@ describe("hot by speed", () => {
     expect(of(more, "land")).toEqual([]);
   });
 
+  it("he lands in the very substep of the bounce or the pop, not at the end of the tick", () => {
+    // Fast enough for a tick of two substeps, into a cushion that gives
+    // little back: the bounce comes in the first substep and lands him
+    // there. He does not use the second to roll away from the cushion.
+    const dead = tuned({ wallRestitution: 0.5 });
+    const s = night(dead);
+    s.him.y = 8 + 13 + 2;
+    const events = fire(s, dead, shot(0, -1, 500 / 900));
+    expect(of(events, "cushion").map((e) => e.speed)).toEqual([500]);
+    expect(of(events, "land")).toEqual([{ type: "land", tick: 0, x: 180, y: 21, dazed: 0 }]);
+    expect([s.him.x, s.him.y]).toEqual([180, 21]);
+    // The same for a pop: a thing thrown at him takes him under the line in the first substep of two.
+    const still = tuned({ bunnySpeed: 0 });
+    const t = night(still);
+    put(t, "bunny", 180, 374 - 23, { vy: 300 });
+    const more = fire(t, still, shot(0, -1, 0.5));
+    const [pop] = of(more, "pop");
+    expect(pop.speed).toBe(450);
+    expect(of(more, "land").map((e) => [e.x, e.y])).toEqual([[pop.hx, pop.hy]]);
+    expect([t.him.x, t.him.y]).toEqual([pop.hx, pop.hy]);
+    // One substep of a 450 u/s tick is 3.75 u: that is as far as he got.
+    expect(374 - t.him.y).toBeCloseTo(3.75, 9);
+  });
+
   it("a launch too soft to be hot never flies: it costs its pip and lands where he stands", () => {
     // No launch in the game is this soft; a table typed by hand can ask for one.
     const soft = tuned(SOFT);
