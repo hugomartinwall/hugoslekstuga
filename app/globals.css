@@ -1000,6 +1000,14 @@ body {
   );
 }
 
+/* A print without background graphics drew the overlay as an opaque
+   sheet over the whole homepage. Paper has no scanlines anyway. */
+@media print {
+  .scanlines::after {
+    display: none;
+  }
+}
+
 /* One-frame room flicker when the DO NOT PRESS button is pressed —
    the cabinet takes the hit. */
 @keyframes screen-flicker {

@@ -121,8 +121,12 @@ export default function HomeList({
         <ul className="mt-2.5 grid auto-rows-fr gap-3">
           {games.map((t) => (
             <li key={t.slug}>
+              {/* No prefetch, here or on the pad below: the whole list is
+                  in view on a phone, so every route (with the games' and
+                  the chart's stylesheets) would load in the background. */}
               <Link
                 href={pathFor(t.slug)}
+                prefetch={false}
                 className="card-chunk flex h-full items-center gap-4 bg-cream-deep p-3"
               >
                 <CabinetCanvas
@@ -167,6 +171,7 @@ export default function HomeList({
             <li key={t.slug}>
               <Link
                 href={pathFor(t.slug)}
+                prefetch={false}
                 className="btn-chunk flex h-full min-h-24 flex-col items-center gap-2 px-1.5 pt-4 pb-3 text-center text-cream"
                 style={{ backgroundColor: COLOR_HEX[t.color] }}
               >

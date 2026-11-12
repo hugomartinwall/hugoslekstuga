@@ -285,7 +285,8 @@ export default function HomeShell() {
             the arcade row below. They are placed absolutely, so where
             they stand in the markup moves nothing on screen. They go
             quiet while the parkour owns the room: dimmed, and in a room
-            narrower than 1024px gone altogether, because there the
+            narrower than 64rem (1024px at the usual text size, and the
+            hint grows with the text) gone altogether, because there the
             controls hint needs their place. The hint's 308px are centred
             along the top and the keys reach 346px in from the right edge,
             so the two meet at 1000px, and below that the hint's last
@@ -295,7 +296,7 @@ export default function HomeShell() {
             of while a run is on.) */}
         <div
           className={`pointer-events-none absolute right-6 top-6 z-10 flex items-start gap-3 ${
-            parkour ? "opacity-30 max-[1024px]:opacity-0" : ""
+            parkour ? "opacity-30 max-[64rem]:opacity-0" : ""
           }`}
         >
           <div
@@ -417,7 +418,7 @@ function HomeKeys() {
           search
         </span>
       </Keycap>
-      <Keycap href="/about" size="sm" className="min-h-11">
+      <Keycap href="/about" prefetch={false} size="sm" className="min-h-11">
         <PixelIcon name="about" size={12} />
         <span className="font-pixel text-[10px] tracking-[0.1em] uppercase">
           about
