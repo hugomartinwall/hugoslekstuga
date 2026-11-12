@@ -40,6 +40,16 @@ export const ON_CHART_ACCENT =
   "not-focus-visible:[--ring-w:2px] not-focus-visible:[--ring-c:var(--color-cream)]";
 
 /**
+ * A lit key in forced colours, where the accent fill is repainted and a
+ * lit key looked like any other. The kit lights a key by the class
+ * `is-on` there, in the system's Highlight and its text colour. A
+ * keycap's own fill is a utility, though, and a utility outranks the
+ * kit's rule, so the two colours are said once more as utilities.
+ */
+const LIT_IN_FORCED_COLOURS =
+  "is-on forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]";
+
+/**
  * Map-anchored palette. Everything below draws ON the third-party
  * OSM/OpenSeaMap raster tiles, which are light — so these keep
  * dark-ink-on-light-chart semantics regardless of the site skin.
@@ -332,10 +342,10 @@ export function MapShell({
 
   return (
     <>
-      <div ref={containerRef} className="sjokort-chart h-full w-full" />
-
       {/* Settings — top-right (top-left is Hugo + the back key). The zoom
-          keys hang under it; chart.css places them. */}
+          keys hang under it; chart.css places them. It is written before
+          the chart so that Tab comes to it before the zoom keys below it
+          (it is absolutely placed: the order here moves nothing). */}
       <Keycap
         size="icon"
         onClick={onOpenSettings}
@@ -344,6 +354,8 @@ export function MapShell({
       >
         <PixelIcon name="settings" size={12} />
       </Keycap>
+
+      <div ref={containerRef} className="sjokort-chart h-full w-full" />
 
       {/* Locate / centre-on-me — bottom-left, lifted above the iOS safe
           area. While the watch runs the key is lit in the accent. It is
@@ -356,7 +368,7 @@ export function MapShell({
         onClick={handleLocate}
         aria-label={gps ? "Centre on my position" : "Find my position"}
         className={`absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 z-10 ${
-          tracking ? ON_CHART_ACCENT : ""
+          tracking ? `${ON_CHART_ACCENT} ${LIT_IN_FORCED_COLOURS}` : ""
         }`}
       >
         <PixelIcon name="locate" size={12} />

@@ -5,7 +5,8 @@
  * both of them set. Everything here is scoped to .sjokort-chart, the class
  * MapShell puts on the map container.
  *
- * The attribution control is left exactly as the library draws it.
+ * The attribution control is left exactly as the library draws it; only
+ * the room its corner has is set, at the end of this file.
  */
 
 /* The zoom keys stand in a column under the settings key (top-right), so
@@ -28,9 +29,11 @@
 
 /* MapShell gives the two buttons the kit's keycap classes. On the
    properties below the library has an opinion as well (29px, transparent,
-   a blue glow on focus, no shadow after a click); revert-layer drops every
-   unlayered value, the library's and this rule's, and lets the kit's
-   through, in every state. */
+   a blue glow on focus, no shadow after a click, never an outline);
+   revert-layer drops every unlayered value, the library's and this
+   rule's, and lets the kit's through, in every state. The kit asks for
+   an outline in forced colours only, where it is the key's frame and its
+   focus mark; everywhere else it asks for none, as the library did. */
 .sjokort-chart .maplibregl-ctrl-group .btn-chunk.btn-chunk {
   display: revert-layer;
   width: revert-layer;
@@ -39,6 +42,8 @@
   border-radius: revert-layer;
   background-color: revert-layer;
   box-shadow: revert-layer;
+  outline: revert-layer;
+  outline-offset: revert-layer;
 }
 
 /* The glyphs: the kit's pixel plus and minus (a 10x2 bar, a 2x10 upright)
@@ -61,6 +66,31 @@
    dims the glyph too, and the two would multiply. */
 .sjokort-chart .maplibregl-ctrl .btn-chunk:disabled .maplibregl-ctrl-icon {
   opacity: 1;
+}
+
+/* Forced colours repaint every background and drop every gradient, which
+   is what the two glyphs are made of: the keys were blank. Keep the
+   gradients and draw them in the colour this mode gives a button's text,
+   as it does to the icons of the other keys. */
+@media (forced-colors: active) {
+  .sjokort-chart .maplibregl-ctrl .btn-chunk .maplibregl-ctrl-icon {
+    forced-color-adjust: none;
+    color: ButtonText;
+  }
+
+  .sjokort-chart .maplibregl-ctrl .btn-chunk:disabled .maplibregl-ctrl-icon {
+    color: GrayText;
+  }
+}
+
+/* The attribution opens unfolded, and on a narrow phone it reached under
+   the locate key (bottom-left, ending at 3.5rem) until the first drag
+   folded it. Its corner now starts beside that key, so the pill wraps
+   there instead. The pill keeps the library's own 10px margin, which
+   leaves 0.5rem between the two. The pill itself is not touched, and
+   where it fits on one line (from about 390px wide) it does not move. */
+.sjokort-chart .maplibregl-ctrl-bottom-right {
+  left: calc(4rem - 10px);
 }
 
 /* Keyboard focus on the chart itself (arrow keys pan it, + and - zoom).
