@@ -75,7 +75,8 @@ or slim; it tells `onFiles` whether the files were dropped or picked,
 because the picker filters by `accept` and a drop does not), and
 `components/PixelIcon` + `lib/pixel-icons.ts` — 12×12 bitmap icons, one
 per tool and one per game, plus a few for the chrome (search, about,
-back, forward, close, plus, play, settings, locate). A new icon goes in
+back, forward, up, close, plus, play, settings, locate, and the burst on
+the homepage's forbidden key). A new icon goes in
 that file, never in a page. They replace the Unicode symbols (◴ ⊚ ▦),
 which every OS drew with a different fallback font. The registry's
 `emoji` field stays for old call sites; new UI uses
@@ -144,6 +145,10 @@ type into), and its focus trap counts a radio group as one Tab stop.
 drawn as backgrounds, which Windows High Contrast repaints. The kit has
 one `@media (forced-colors: active)` block that gives each back as a
 real outline in the system colours. A new chunk needs a line there.
+The focus band is drawn 2px outside a chunk, on the page. The homepage
+room is the exception: its floor is canvases, which this mode leaves
+dark, and Highlight on near-black cannot be seen in a light theme, so a
+key in the room (`[data-home="room"]`) draws the band inside itself.
 
 **Dev trap.** After editing `app/globals.css`, check the stylesheet the
 dev server actually serves (curl the css chunk and grep for the rule).
@@ -355,13 +360,16 @@ and the share images against the real painter (`mascot-copies`).
 - `components/PixelIcon.tsx` — the 12×12 icons
 - `components/Footer.tsx` / `ConditionalFooter.tsx` — the index footer
   (see below)
-- `components/HomeShell.tsx` — the homepage: the room from 768px up, the
-  list below (CRT power-on, scanlines, hints, the corner keys,
-  retired-slug quip)
+- `components/HomeShell.tsx` — the homepage: the room in a window at
+  least 48rem by 35rem, the list in anything smaller (CRT power-on,
+  scanlines, hints, the corner keys, retired-slug quip)
 - `components/ToolMap.tsx` — the room's swarm and arcade row (see below)
-- `components/HomeList.tsx` — the phone homepage (cabinet cards, keycap pad)
+- `components/HomeList.tsx` — the list homepage: phones, and any window
+  too small for the room (cabinet cards, keycap pad)
 - `components/CabinetCanvas.tsx` — one arcade cabinet with its screen
-  playing, as a standalone canvas
+  playing, as a standalone canvas. It paints one picture at mount and
+  then plays only while it is near the window, so the list's four draw
+  nothing while the room shows
 - `components/Slider.tsx` — labelled range (pixel label, big value,
   accent-filled track)
 - `components/CustomMinutes.tsx` — "Custom — N min" chip (focus)
@@ -453,7 +461,7 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 | `dot-nudge-target` | `{ x, y } \| null` | ToolMap tells TravelingDot where the clicked orb's landing spot is. |
 | `tool-hover` | `{ x, y, slug, tagline } \| null` (rAF-rate) | ToolMap broadcasts the hovered orb or cabinet; BrandDot's eyes track x/y, HomeShell swaps the hint under the marquee for the tagline. |
 | `wordmark-layout` | `{ bottom } \| null` | PixelWordmark published a fresh layout; HomeShell parks the attract hint just under the marquee. |
-| `parkour-start` / `parkour-end` | — | A parkour run begins/ends. BrandDot dispatches start on long-press; ToolMap suppresses click-nav + idle fetch during a run; HomeShell swaps the bottom hint. |
+| `parkour-start` / `parkour-end` | — | A parkour run begins/ends. BrandDot dispatches start on long-press; ToolMap suppresses click-nav + idle fetch during a run; HomeShell swaps the hint for the controls (along the top) and quiets the corner keys. HugoParkour sends `parkour-end` (and `hugo-stage` `{ present: false }`) once per run, also when it is unmounted mid-run: the window left the room's size, or the visitor went Back. |
 | `open-search` | — | Opens the ⌘K palette. The homepage's Search key dispatches it. |
 | `storage-write` | (internal) | Fired by `use-local-storage-state` for same-tab sync. Not a Hugo event — don't dispatch it yourself. |
 
@@ -521,8 +529,10 @@ then cuts. Esc quits from anywhere, including mid-transition.
 **Desktop-only, deliberately.** The trigger is gated to
 `(hover: hover) and (pointer: fine)` — the game has no touch controls
 and Esc is the only exit. It also only exists in the homepage's room
-layout: below 768px HugoParkour is not mounted, so a long-press in a
-narrow desktop window starts nothing. Any future affordance that hints at it
+layout: in a window smaller than the room (48rem by 35rem) HugoParkour
+is not mounted, so a long-press in a narrow or short desktop window
+starts nothing, and a run that is on when the window shrinks past that
+size ends. Any future affordance that hints at it
 (e.g. a "hold me" whisper) must share that gate so touch users are
 never teased with a game they can't play.
 
@@ -544,14 +554,22 @@ engine as the only draw path — don't sample `adviceEntries` directly.
 
 ## The homepage — a room and a list
 
-The homepage is built twice from the same parts (`components/HomeShell.tsx`
-picks by width, in step with its `md:` classes; the breakpoint is
-`ROOM_MEDIA` in `lib/home-layout.ts`: the same 48rem query, so a larger
-browser text size moves both together):
+The homepage is built twice from the same parts, and the window's size
+picks which: the room needs 48rem by 35rem (768 by 560px at the usual
+text size, and never less than that in px, because the room's parts are
+drawn in px). One question, asked in two places that must agree:
+`ROOM_MEDIA` in `lib/home-layout.ts` (HomeShell reads it with
+matchMedia and mounts the swarm) and the stylesheet's `room:` / `list:`
+variants in `app/globals.css` (they show one wrapper and hide the
+other). The two numbers and the reason for 35rem live beside
+`ROOM_MIN_HEIGHT_REM`; the stylesheet carries a copy of the query, and
+`test/home/room-media.test.ts` fails when the copy drifts. Use `room:`
+and `list:` wherever the two layouts differ, never `md:`, which knows
+the width only (a phone held sideways is wide enough and far too short).
 
-**From 768px up: the room** — one screen, no scrolling, styled as an
-arcade attract screen. `components/ToolMap.tsx` draws two kinds of thing
-that behave differently on purpose:
+**In a window at least 48rem by 35rem: the room** — one screen, no
+scrolling, styled as an arcade attract screen. `components/ToolMap.tsx`
+draws two kinds of thing that behave differently on purpose:
 
 - **Tools are orbs.** A swarm above the floor: a pull toward the middle
   of the free band, a mutual repel, a slow wander, drag-to-fling,
@@ -571,6 +589,17 @@ that behave differently on purpose:
   screen. Where the row stands comes from `cabinetRow()` in
   `lib/home-layout.ts`; the title and the hints read the same numbers.
 
+Every orb and every cabinet is a real SVG link (`<a href>`) around the
+`<g>` the parkour reads, so the room works with a keyboard, a screen
+reader and a middle click. Besides the soft `Zone`s there are hard
+keep-out boxes (`Keep`s: the title, the hint, the keys, the mascot): an
+orb put down or flung into one is walked out. The swarm takes one step
+a frame, as it always did; only that walk keeps wall-clock pace, so a
+slow machine still clears the title. Under reduced motion the swarm is
+shown at rest and its frame loop stops. During a parkour run the
+controls hint is found by `data-parkour-hint` and measured by layout
+offsets, and no orb rests across it.
+
 Two layers, as before: a **trail canvas** under the SVG (each orb
 leaves phosphor smears: a `rgba(7,8,15,0.5)` decay wash per frame) and
 the **SVG** on top with transparent hit targets, names and the NEW tag.
@@ -582,14 +611,19 @@ which made doors look like toys. HomeShell also adds the
 once-per-session CRT power-on (`sessionStorage` `hugoslekstuga:crt-on`)
 and `.scanlines`.
 
-**Below 768px: the list** — `components/HomeList.tsx`, a short
+**In anything smaller: the list** — `components/HomeList.tsx`, a short
 scrolling page: the title as a banner, games as cabinet cards
 (`components/CabinetCanvas.tsx`, the same machine with its screen
 playing), tools as a three-by-three pad of keycaps in their own
 colours, then the keys and the footer's small print. It is real links
 in the server-rendered HTML. **No swarm and no parkour are mounted on the
 list**: ToolMap, the room's PixelWordmark and HugoParkour only exist
-when the room is on screen.
+when the room is on screen. The list itself is in the page in both
+layouts (it is the server-rendered HTML), so nothing in it may work
+unseen: its banner stops its loop and its cabinets stop playing while
+the room shows. The two one-shot animations (the power-on's class, the
+forbidden key's flicker overlay) are taken off when they have played: a
+wrapper that is hidden and shown again would play them again.
 
 **The marquee** — `components/PixelWordmark.tsx` draws HUGOS LEKSTUGA
 as quantized phosphor pixels (Jersey 15 sampled once to an offscreen
@@ -633,9 +667,10 @@ leave it exactly as it is.
   pull every other route in the background).
 - `components/ConditionalFooter.tsx` decides where it shows. Never on a
   full-screen route (sjökort and every game: the list comes from the
-  registry). On the homepage: nothing from 768px up (the room is one
-  screen), and only the small print below that, because the phone
-  homepage is itself the index.
+  registry). On the homepage: nothing where the room shows (it is one
+  screen), and only the small print on the list, because the list is
+  itself the index. It is hidden with `room:hidden`, the same variant
+  HomeShell's two layouts use.
 
 ## Greyrot — the 3D one
 
