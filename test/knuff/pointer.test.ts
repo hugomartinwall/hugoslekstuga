@@ -90,6 +90,8 @@ type Rig = {
   handle: PointerHandle;
   launches: Launch[];
   presses: { n: number };
+  /** Presses of the key drawn in the canvas: the stand-in's is 44 × 44 at x 338 to 382, y 2 to 46. */
+  keys: { n: number };
   state: { tune: Tune; enabled: boolean };
   /** Move the clock on, ms. */
   wait(ms: number): void;
@@ -104,18 +106,22 @@ function rig(tune: Partial<Tune> = {}): Rig {
   const root = new FakeRoot();
   const launches: Launch[] = [];
   const presses = { n: 0 };
+  const keys = { n: 0 };
   const state = { tune: { ...DEFAULT_TUNE, ...tune }, enabled: true };
   const handle = attachPointer(root as unknown as HTMLElement, {
     tune: () => state.tune,
     enabled: () => state.enabled,
     onLaunch: (l) => launches.push(l),
     onPress: () => presses.n++,
+    keyAt: (x, y) => x >= 338 && x < 382 && y >= 2 && y < 46,
+    onKey: () => keys.n++,
   });
   return {
     root,
     handle,
     launches,
     presses,
+    keys,
     state,
     wait: (ms) => {
       clock += ms;
@@ -466,6 +472,86 @@ describe("the pull: a pointer first heard as a move", () => {
     r.wait(16);
     r.move(100, 560);
     expect(r.handle.pull()).toBeNull();
+  });
+});
+
+describe("the key drawn in the canvas (the pause key)", () => {
+  it("a press that begins and ends on it presses it, and is never a pull", () => {
+    for (const init of [{}, { pointerType: "mouse" }]) {
+      const r = rig();
+      r.down(360, 24, init);
+      expect(r.handle.pull()).toBeNull();
+      expect(r.root.captured.size).toBe(0);
+      r.wait(60);
+      r.up(362, 26, init);
+      expect(r.keys.n).toBe(1);
+      expect(r.launches).toHaveLength(0);
+    }
+  });
+
+  it("a touch that begins on it and travels is still not a pull, and ending off it presses nothing", () => {
+    const r = rig();
+    r.down(360, 24);
+    for (let i = 1; i <= 8; i++) {
+      r.wait(16);
+      r.move(360, 24 + i * 12);
+      expect(r.handle.pull()).toBeNull();
+    }
+    r.up(360, 120);
+    expect(r.keys.n).toBe(0);
+    expect(r.launches).toHaveLength(0);
+    // And the next press is an ordinary pull.
+    drag(r, 200, 300, 200, 380);
+    r.up(200, 380);
+    expect(r.launches).toHaveLength(1);
+  });
+
+  it("a pull that ends on it is a shot, not a press of the key", () => {
+    const r = rig();
+    drag(r, 300, 120, 360, 24);
+    r.up(360, 24);
+    expect(r.keys.n).toBe(0);
+    expect(r.launches).toHaveLength(1);
+  });
+
+  it("with a pull held, another finger on the key is ignored like any other", () => {
+    const r = rig();
+    drag(r, 200, 300, 200, 380);
+    r.down(360, 24, { pointerId: 2, isPrimary: false });
+    r.up(360, 24, { pointerId: 2, isPrimary: false });
+    expect(r.keys.n).toBe(0);
+    expect(r.handle.pull()?.aim).not.toBeNull();
+    r.up(200, 380);
+    expect(r.launches).toHaveLength(1);
+  });
+
+  it("the right button does not press it, and a touch the system takes away does not either", () => {
+    const r = rig();
+    r.down(360, 24, { pointerType: "mouse", button: 2, buttons: 2 });
+    r.up(360, 24, { pointerType: "mouse", button: 2 });
+    expect(r.keys.n).toBe(0);
+    r.down(360, 24);
+    r.root.fire("pointercancel", { clientX: 360, clientY: 24 });
+    r.up(360, 24);
+    expect(r.keys.n).toBe(0);
+  });
+
+  it("a pointer first heard as a move on the key is not taken up as a pull", () => {
+    const r = rig();
+    r.move(360, 24);
+    r.move(360, 90);
+    expect(r.handle.pull()).toBeNull();
+    r.up(360, 90);
+    expect(r.launches).toHaveLength(0);
+    expect(r.keys.n).toBe(0);
+  });
+
+  it("it is pressed whether or not the game is taking pulls: the game decides what a press does", () => {
+    const r = rig();
+    r.state.enabled = false;
+    r.down(360, 24);
+    r.up(360, 24);
+    expect(r.keys.n).toBe(1);
   });
 });
 

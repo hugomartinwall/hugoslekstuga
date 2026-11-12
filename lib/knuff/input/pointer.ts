@@ -117,6 +117,13 @@ export type PointerHooks = {
   onLaunch(launch: Launch): void;
   /** Any press on the root, pull or not. */
   onPress(): void;
+  /**
+   * Is this spot (client CSS px) on a key drawn in the canvas (the pause
+   * key)? A press that begins there is never a pull.
+   */
+  keyAt?(x: number, y: number): boolean;
+  /** A press that began on that key and ended on it. */
+  onKey?(): void;
 };
 
 export type PointerHandle = {
@@ -131,6 +138,9 @@ type Pull = { id: number; type: string; x0: number; y0: number; x: number; y: nu
 
 export function attachPointer(root: HTMLElement, hooks: PointerHooks): PointerHandle {
   let pull: Pull | null = null;
+  /** The pointer that came down on the canvas's key and has not come up yet. */
+  let keyPress: number | null = null;
+  const onKeyAt = (e: PointerEvent) => hooks.keyAt?.(e.clientX, e.clientY) === true;
   /**
    * Pointers that are down and are not to become a pull: another finger
    * while a pull was held, a touch that began in the edge strip, a press
@@ -209,6 +219,15 @@ export function attachPointer(root: HTMLElement, hooks: PointerHooks): PointerHa
     // old press is over.
     if (pull && (e.pointerId === pull.id || e.isPrimary || !isLive(pull))) drop();
     ignored.delete(e.pointerId);
+    keyPress = null;
+    // A press that begins on the key is the key's, never a pull. (With a
+    // pull held it is another finger, and ignored like any other.)
+    if (!pull && onKeyAt(e)) {
+      if (e.pointerType !== "mouse" || e.button === 0) keyPress = e.pointerId;
+      ignore(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     if (pull || !accepts(e, e.button === 0)) {
       ignore(e.pointerId);
       return;
@@ -242,7 +261,7 @@ export function attachPointer(root: HTMLElement, hooks: PointerHooks): PointerHa
     // no press before it (a panel closed by a press leaves a sheet over
     // the page for a moment, and that sheet takes the press): it is taken
     // up as if it had come down here.
-    if (!accepts(e, (e.buttons & 1) !== 0)) {
+    if (onKeyAt(e) || !accepts(e, (e.buttons & 1) !== 0)) {
       ignore(e.pointerId);
       return;
     }
@@ -253,6 +272,12 @@ export function attachPointer(root: HTMLElement, hooks: PointerHooks): PointerHa
 
   const onUp = (e: PointerEvent) => {
     ignored.delete(e.pointerId);
+    if (keyPress === e.pointerId) {
+      // The key acts when the press that began on it ends on it.
+      keyPress = null;
+      if (onKeyAt(e)) hooks.onKey?.();
+      return;
+    }
     if (!pull || e.pointerId !== pull.id) return;
     e.preventDefault();
     const p = pull;
@@ -271,6 +296,7 @@ export function attachPointer(root: HTMLElement, hooks: PointerHooks): PointerHa
   // A touch the system takes away is a cancel, never a shot.
   const onCancel = (e: PointerEvent) => {
     if (pull && e.pointerId === pull.id) drop();
+    if (keyPress === e.pointerId) keyPress = null;
     ignored.delete(e.pointerId);
   };
 
@@ -315,6 +341,7 @@ export function attachPointer(root: HTMLElement, hooks: PointerHooks): PointerHa
     detach() {
       if (pull) release(pull.id);
       pull = null;
+      keyPress = null;
       ignored.clear();
       root.removeEventListener("pointerdown", onDown);
       root.removeEventListener("pointermove", onMove);
