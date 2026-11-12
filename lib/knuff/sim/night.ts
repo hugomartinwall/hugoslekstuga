@@ -129,12 +129,25 @@ export function lastCall(hour: number, tune: Tune): number {
   return hour === 0 ? tune.paceLastCallFirst : tune.paceLastCall;
 }
 
+const BUNNY = KINDS.bunny;
+const TOKEN = KINDS.token;
+
+/** A thing's row of the kind table. (One comparison: this is asked for every thing on every tick.) */
+function rowOf(d: Thing): (typeof KINDS)[Thing["kind"]] {
+  switch (d.kind) {
+    case "bunny":
+      return BUNNY;
+    case "token":
+      return TOKEN;
+  }
+}
+
 /** Intruders alive or announced: what the room's cap counts. */
 export function intruders(s: State): number {
   let n = 0;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (d.hp > 0 && KINDS[d.kind].intruder) n++;
+    if (d.hp > 0 && rowOf(d).intruder) n++;
   }
   return n;
 }
@@ -144,7 +157,7 @@ export function threats(s: State): number {
   let n = 0;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (d.hp > 0 && KINDS[d.kind].clear) n++;
+    if (d.hp > 0 && rowOf(d).clear) n++;
   }
   return n;
 }
@@ -397,9 +410,8 @@ function paceMoment(s: State, tune: Tune): "early" | "clock" | "" {
 }
 
 /** The rows due this tick: the tabled rows whose tick has come, then what the pace's test announces, one thing at most. */
-function announceDue(s: State, tune: Tune, events: SimEvent[]): void {
+function announceDue(s: State, tune: Tune, rows: readonly Dealt[], events: SimEvent[]): void {
   const night = s.night;
-  const rows = dealtRows(night.kinds)[night.hour];
   const into = s.tick - night.hourStart;
   while (night.nextRow < rows.length && into >= rows[night.nextRow].tick) announceRow(s, tune, rows[night.nextRow++], "tick", events);
   if (!paced(tune)) return;
@@ -443,7 +455,8 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
     events.push({ type: "hour", tick: s.tick, hour: night.hour });
   }
 
-  announceDue(s, tune, events);
+  const rows = dealtRows(night.kinds)[night.hour];
+  announceDue(s, tune, rows, events);
 
   // Landings. An arrival that lands close to him lands dazed: its spot was
   // chosen a telegraph ago, and he may have flown there since.
@@ -461,7 +474,6 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
   // from last call on) and nothing that counts for clear is left.
   const into = s.tick - night.hourStart;
   if (night.clearTick < 0) {
-    const rows = dealtRows(night.kinds)[night.hour];
     const allOut = night.nextRow >= rows.length && (!paced(tune) || into >= lastCall(night.hour, tune));
     if (allOut && threats(s) === 0) {
       night.clearTick = s.tick;

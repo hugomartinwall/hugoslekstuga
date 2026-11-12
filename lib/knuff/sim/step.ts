@@ -113,9 +113,11 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
       if (h.hot) {
         h.x += h.vx * sub;
         h.y += h.vy * sub;
-        const speedIn = Math.hypot(h.vx, h.vy);
+        const vxIn = h.vx;
+        const vyIn = h.vy;
         const walls = collideWalls(h, r, s.room, tune.wallRestitution);
         if (walls !== 0) {
+          const speedIn = Math.hypot(vxIn, vyIn);
           // Two cushions in one substep: the side cushion counts as touched first.
           if (walls & LEFT) cushion(s, tune, events, "left", speedIn);
           if (walls & RIGHT) cushion(s, tune, events, "right", speedIn);
@@ -148,13 +150,18 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     }
   }
 
-  // 10. Close up. A popped thing is gone.
+  // 10. Close up. A popped thing is gone. (On most ticks nothing popped,
+  // and the list is left as it is.)
+  const things = s.things;
   let kept = 0;
-  for (let i = 0; i < s.things.length; i++) {
-    const d = s.things[i];
-    if (d.hp > 0) s.things[kept++] = d;
+  while (kept < things.length && things[kept].hp > 0) kept++;
+  if (kept < things.length) {
+    for (let i = kept + 1; i < things.length; i++) {
+      const d = things[i];
+      if (d.hp > 0) things[kept++] = d;
+    }
+    things.length = kept;
   }
-  s.things.length = kept;
   // A speed that reached zero from below is a negative zero in floating
   // point. Adding zero makes it a plain one and changes no other number,
   // so the State can go through JSON and come back the same.

@@ -111,9 +111,15 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
 function cloneValue(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(cloneValue);
   if (v !== null && typeof v === "object") {
-    const src = v as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(src)) out[key] = cloneValue(src[key]);
+    // A spread copies every field in one go and keeps the object's shape,
+    // so a copied State steps as fast as the one it was copied from. What
+    // it copied by reference (a nested object or list) is then copied in
+    // its turn.
+    const out: Record<string, unknown> = { ...(v as Record<string, unknown>) };
+    for (const key in out) {
+      const item = out[key];
+      if (item !== null && typeof item === "object") out[key] = cloneValue(item);
+    }
     return out;
   }
   return v;

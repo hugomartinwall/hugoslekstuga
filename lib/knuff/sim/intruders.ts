@@ -16,6 +16,21 @@ import { scorePop } from "./score";
 import type { SimEvent, State, Thing, Tune } from "./types";
 
 const BUNNY_R = KINDS.bunny.radius;
+const TOKEN_R = KINDS.token.radius;
+
+/**
+ * A thing's radius. One comparison, not a look-up in the kind table by
+ * name: this is asked for every thing on every substep, and a look-ahead
+ * player takes a quarter of a million substeps to choose one night's shots.
+ */
+function radiusOf(d: Thing): number {
+  switch (d.kind) {
+    case "bunny":
+      return BUNNY_R;
+    case "token":
+      return TOKEN_R;
+  }
+}
 
 /** Has it landed? Until then it is announced: it cannot be touched and cannot hurt. */
 export function landed(s: State, d: Thing): boolean {
@@ -33,7 +48,10 @@ export function dazed(s: State, d: Thing): boolean {
  */
 export function choose(s: State, tune: Tune): number {
   const h = s.him;
-  let fastest = 0;
+  // The fastest is found by comparing squares, and its speed worked out once.
+  let fastestSq = 0;
+  let fx = 0;
+  let fy = 0;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
     if (s.tick < d.landTick) continue;
@@ -55,14 +73,24 @@ export function choose(s: State, tune: Tune): number {
         d.wx = (ux * c - uy * sn) * tune.bunnySpeed + 0;
         d.wy = (ux * sn + uy * c) * tune.bunnySpeed + 0;
       }
-      const speed = Math.hypot(d.wx + d.vx, d.wy + d.vy);
-      if (speed > fastest) fastest = speed;
+      const sx = d.wx + d.vx;
+      const sy = d.wy + d.vy;
+      const sq = sx * sx + sy * sy;
+      if (sq > fastestSq) {
+        fastestSq = sq;
+        fx = sx;
+        fy = sy;
+      }
     } else if (s.tick >= d.dazedUntil) {
-      const speed = Math.hypot(d.vx, d.vy);
-      if (speed > fastest) fastest = speed;
+      const sq = d.vx * d.vx + d.vy * d.vy;
+      if (sq > fastestSq) {
+        fastestSq = sq;
+        fx = d.vx;
+        fy = d.vy;
+      }
     }
   }
-  return fastest;
+  return fastestSq === 0 ? 0 : Math.hypot(fx, fy);
 }
 
 /** One substep of the intruders' own motion. */
@@ -83,7 +111,7 @@ export function moveThings(s: State, tune: Tune, sub: number): void {
       d.x += d.vx * sub;
       d.y += d.vy * sub;
       // It mirrors off cushions with no loss.
-      collideWalls(d, KINDS.token.radius, room, 1);
+      collideWalls(d, TOKEN_R, room, 1);
     }
   }
 }
@@ -102,7 +130,7 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
     if (d.hp <= 0 || s.tick < d.landTick) continue;
     const dx = d.x - h.x;
     const dy = d.y - h.y;
-    const reach = tune.himRadius + KINDS[d.kind].radius;
+    const reach = tune.himRadius + radiusOf(d);
     if (dx >= reach || dx <= -reach || dy >= reach || dy <= -reach) continue;
     const dist = Math.hypot(dx, dy);
     if (dist >= reach) continue;
@@ -182,10 +210,7 @@ export function unblock(s: State, tune: Tune): void {
     for (let i = 0; i < s.things.length; i++) {
       const d = s.things[i];
       if (d.id !== blocked[b]) continue;
-      if (d.hp > 0) {
-        const reach = tune.himRadius + KINDS[d.kind].radius;
-        still = Math.hypot(d.x - h.x, d.y - h.y) < reach;
-      }
+      if (d.hp > 0) still = Math.hypot(d.x - h.x, d.y - h.y) < tune.himRadius + radiusOf(d);
       break;
     }
     if (!still) blocked.splice(b, 1);
@@ -200,11 +225,14 @@ export function overlapped(s: State, tune: Tune): number[] {
     const d = s.things[i];
     if (d.hp <= 0 || s.tick < d.landTick) continue;
     // A thing held at arm's length touches him and no more: that is not an overlap.
-    const reach = tune.himRadius + KINDS[d.kind].radius - 1e-7;
+    const reach = tune.himRadius + radiusOf(d) - 1e-7;
     if (Math.hypot(d.x - h.x, d.y - h.y) < reach) out.push(d.id);
   }
   return out;
 }
+
+/** The landed dust bunnies of the pass in hand. Filled and emptied by `spreadBunnies`; nothing is kept in it between two calls. */
+const bunch: Thing[] = [];
 
 /**
  * Dust bunnies are kept from overlapping each other: pushed apart equally
@@ -212,18 +240,25 @@ export function overlapped(s: State, tune: Tune): number[] {
  * speed. Every other pair of intruders passes through each other.
  */
 export function spreadBunnies(s: State): void {
-  const things = s.things;
+  // Every pair is looked at on every substep, so the dust bunnies are
+  // picked out once, in the room's order, and the pairs are made of those.
+  for (let i = 0; i < s.things.length; i++) {
+    const d = s.things[i];
+    if (d.kind === "bunny" && d.hp > 0 && s.tick >= d.landTick) bunch.push(d);
+  }
+  const n = bunch.length;
   const reach = BUNNY_R + BUNNY_R;
-  for (let a = 0; a < things.length; a++) {
-    const A = things[a];
-    if (A.kind !== "bunny" || A.hp <= 0 || s.tick < A.landTick) continue;
-    for (let b = a + 1; b < things.length; b++) {
-      const B = things[b];
-      if (B.kind !== "bunny" || B.hp <= 0 || s.tick < B.landTick) continue;
+  // Clearly apart, by a margin far wider than any rounding: such a pair needs no square root.
+  const apartSq = reach * reach * (1 + 1e-9);
+  for (let a = 0; a < n; a++) {
+    const A = bunch[a];
+    for (let b = a + 1; b < n; b++) {
+      const B = bunch[b];
       const dx = B.x - A.x;
       if (dx >= reach || dx <= -reach) continue;
       const dy = B.y - A.y;
       if (dy >= reach || dy <= -reach) continue;
+      if (dx * dx + dy * dy >= apartSq) continue;
       const dist = Math.hypot(dx, dy);
       if (dist >= reach) continue;
       const nx = dist > 1e-6 ? dx / dist : 1;
@@ -237,6 +272,7 @@ export function spreadBunnies(s: State): void {
       keepInside(s, B);
     }
   }
+  bunch.length = 0;
 }
 
 /** Step 9 for the things: a shoved dust bunny slows as the toy's dummies do. Tokens never slow. */
