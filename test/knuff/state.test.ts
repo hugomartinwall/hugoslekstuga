@@ -181,8 +181,11 @@ describe("the State", () => {
     // from a build that called things otherwise).
     const before = hashState(state);
     const renamed = cloneState(state) as unknown as { him: Record<string, unknown> };
-    renamed.him.wx = renamed.him.vx;
+    // The new name sorts where the old one did, so the values are walked in
+    // the same order: only the name can tell the two apart.
+    renamed.him.vx2 = renamed.him.vx;
     delete renamed.him.vx;
+    expect(Object.keys(renamed.him).sort().indexOf("vx2")).toBe(Object.keys(state.him).sort().indexOf("vx"));
     expect(hashState(renamed as unknown as State)).not.toBe(before);
     // Two values that change places are seen as well.
     const swapped = cloneState(state);

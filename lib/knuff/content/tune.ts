@@ -84,7 +84,8 @@ export const DEFAULT_TUNE: Tune = { ...TOY, ...GAME };
 /**
  * Lay a partial table over a whole one. A knob the table does not have,
  * or one of the wrong kind (a word where a number belongs), is left out:
- * the override may have been typed by hand into a link.
+ * the override may have been typed by hand into a link. A value of the
+ * right kind is taken as it is, sensible or not.
  */
 export function mergeTune(base: Tune, over: Partial<Tune> | null | undefined): Tune {
   const out: Tune = { ...base };
@@ -92,7 +93,10 @@ export function mergeTune(base: Tune, over: Partial<Tune> | null | undefined): T
   const target = out as Record<string, unknown>;
   const known = base as Record<string, unknown>;
   for (const [key, value] of Object.entries(over)) {
-    if (!(key in known)) continue;
+    // The table's own knobs only: `in` would also answer yes for what
+    // every object inherits, and a table typed by hand could then swap
+    // the merged table's prototype for one of its own.
+    if (!Object.prototype.hasOwnProperty.call(known, key)) continue;
     if (typeof value !== typeof known[key]) continue;
     if (typeof value === "number" && !Number.isFinite(value)) continue;
     if (key === "pullDir" && value !== "back" && value !== "push") continue;

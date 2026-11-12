@@ -165,6 +165,37 @@ describe("determinism", () => {
     expect(events.some((e) => e.type === "cushion" && e.side === "left" && e.x === 13)).toBe(true);
   });
 
+  it("a launch that is not made of numbers is no launch", () => {
+    // One NaN in his speed would spread to every number in the State within a tick.
+    const odd = [
+      { dx: Number.NaN, dy: -1, power: 1 },
+      { dx: 0, dy: Number.NaN, power: 1 },
+      { dx: Number.POSITIVE_INFINITY, dy: -1, power: 1 },
+      { dx: 0, dy: -1, power: Number.NaN },
+      { dx: 0, dy: 0, power: 1 },
+      { dx: 0, dy: -1, power: 0 },
+      { dx: 0, dy: -1, power: -1 },
+    ];
+    for (const launch of odd) {
+      const s = createState(8, DEFAULT_TUNE);
+      const quiet = createState(8, DEFAULT_TUNE);
+      const events: SimEvent[] = [];
+      for (let t = 0; t < 30; t++) {
+        step(s, { launch: t === 0 ? launch : null, pullHeld: false }, DEFAULT_TUNE, events);
+        step(quiet, { launch: null, pullHeld: false }, DEFAULT_TUNE, []);
+      }
+      expect(events.filter((e) => e.type === "launch"), JSON.stringify(launch)).toEqual([]);
+      expect(s.launch.id).toBe(0);
+      expect(s).toEqual(quiet);
+    }
+    // A power over 1 is a full launch, not more.
+    const over = createState(8, DEFAULT_TUNE, { empty: true });
+    const full = createState(8, DEFAULT_TUNE, { empty: true });
+    step(over, { launch: { dx: 1, dy: 0, power: 7 }, pullHeld: false }, DEFAULT_TUNE, []);
+    step(full, { launch: { dx: 1, dy: 0, power: 1 }, pullHeld: false }, DEFAULT_TUNE, []);
+    expect(over).toEqual(full);
+  });
+
   it("the aim line is worked out on a copy: it leaves the State as it was", () => {
     const s = run(55, 400);
     const before = hashState(s);
