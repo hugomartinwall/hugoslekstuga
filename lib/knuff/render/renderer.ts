@@ -114,10 +114,6 @@ export type Renderer = {
   draw(frame: Frame): void;
 };
 
-function powerColor(pull01: number): string {
-  return pull01 >= 0.98 ? C.coral : pull01 >= 0.55 ? C.acid : C.mint;
-}
-
 export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fonts: KnuffFonts): Renderer {
   const maybe = canvas.getContext("2d");
   if (!maybe) throw new Error("2d context unavailable");
@@ -416,7 +412,10 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       const dx = aim.launch.dx / len;
       const dy = aim.launch.dy / len;
       // Shorter than a shot, or no pip in hand: grey, to show that letting go here does nothing.
-      const col = aim.short || state.pips <= 0 ? C.inkMuted : powerColor(aim.pull01);
+      // Otherwise phosphor at every power. (The toy went mint, acid, coral
+      // with the pull: here acid is a token and coral is a lost heart, and
+      // the line must not be read as either. The band's length is the power.)
+      const col = aim.short || state.pips <= 0 ? C.inkMuted : C.ink;
       // The band is as long as the pointer has travelled, capped at a full pull.
       const bandU = Math.min(aim.lengthPx, tune.pullFullPx) / L.s;
       const bx = hx - dx * bandU;
