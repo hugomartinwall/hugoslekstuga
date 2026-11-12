@@ -521,7 +521,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
       for (const s of m.values()) {
         if (s.doneN === 0) continue;
         if (s.doneSimMin < 180 * (1 - w.self) || s.doneSimMax > 420 * (1 + w.self)) ok = false;
-        parts.push(`${s.label} ${f0(s.doneSimMin)}/${f0(s.doneSimMedian)}/${f0(s.doneSimMax)} s (${s.doneN} nights)`);
+        parts.push(`${s.label} ${f0(s.doneSimMin)}/${f0(s.doneSimMedian)}/${f0(s.doneSimMax)} s (${s.doneN} night${s.doneN === 1 ? "" : "s"})`);
       }
       return { ok, measured: parts.length ? `shortest/median/longest: ${parts.join("; ")}` : "no night reached the end" };
     },
