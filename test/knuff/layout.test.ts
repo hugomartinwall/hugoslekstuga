@@ -234,6 +234,14 @@ describe("the playable of the owner's checks (steps 1 to 5)", () => {
 
   it("the window the owner judged the toy in, 768 × 479, is laid out as the final route lays it out", () => {
     expect(playable(768, 479, 1)).toEqual(laptop(768, 479, 1));
+    // The room is 302 px there. The bar keeps 360, centred on it: six digits clear of the clock.
+    const l = laptop(768, 479, 1);
+    expect(Math.round(l.room.w)).toBe(302);
+    expect(l.bar.w).toBe(BAR_MIN_W);
+    expect(BAR_MIN_W).toBe(360);
+    expect(Math.abs(l.bar.x + l.bar.w / 2 - (l.room.x + l.room.w / 2))).toBeLessThanOrEqual(1);
+    // Where the room is 360 or wider the bar is the room's width, as before.
+    expect(laptop(1280, 633, 1).bar.w).toBe(laptop(1280, 633, 1).room.w);
     expect(playable(1280, 633, 1.25)).toEqual(laptop(1280, 633, 1.25));
     expect(playable(1440, 900, 1)).toEqual(laptop(1440, 900, 1));
   });
