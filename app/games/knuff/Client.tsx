@@ -71,7 +71,7 @@ function Knob<T extends number>({
       <ChipGroup
         labelledBy={id}
         className="flex-nowrap gap-1.5"
-        chipClassName="min-w-9 px-2.5"
+        chipClassName="min-w-9 px-2.5 pointer-coarse:min-w-11"
         options={settings.map((v) => ({ value: v, label: String(v) }))}
         value={settings.find((v) => v === value) ?? null}
         onChange={onSet}
@@ -290,7 +290,7 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         label={PANEL_LABEL.pause}
         returnFocus={false}
         style={GAME_ACCENT}
-        className="flex w-full max-w-sm flex-col gap-4 p-5"
+        className="flex max-h-[100dvh] w-full max-w-sm flex-col gap-4 overflow-y-auto p-5"
       >
         <Keycap tone="accent" size="lg" block data-autofocus onClick={resume}>
           {KEYS.resume}
@@ -318,7 +318,7 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         placement="bottom"
         returnFocus={false}
         style={GAME_ACCENT}
-        className="flex w-full max-w-sm flex-col gap-3 p-5"
+        className="flex max-h-[100dvh] w-full max-w-sm flex-col gap-3 overflow-y-auto p-5"
       >
         {over && (
           <>
