@@ -303,4 +303,22 @@ describe("a thing he overlaps at the release", () => {
     expect(s.launch.blocked).toEqual([over.id]);
     expect(s.things).toContain(touching);
   });
+
+  it("a thing that lands on him on the tick of the release was not there when he let go: that launch pops it", () => {
+    const tune = tuned({ bunnySpeed: 0, tokenSpeed: 0 });
+    const s = night(tune);
+    // By the order of a tick the release (step 2) comes before the
+    // landings (step 4): on the release tick these two are still announced.
+    const landing = put(s, "bunny", 180 + 6, 374 - 12, { landTick: s.tick });
+    const token = put(s, "token", 180 - 8, 374 - 10, { landTick: s.tick });
+    // One that landed the tick before is under him at the release: barred, and he flies through it.
+    const under = put(s, "token", 180, 374 - 6, { landTick: s.tick - 1 });
+    const events = tick(s, tune, shot(0, -1));
+    expect(
+      of(events, "pop")
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual([landing.id, token.id].sort());
+    expect(s.things).toEqual([under]);
+  });
 });

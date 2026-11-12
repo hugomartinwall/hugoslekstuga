@@ -223,7 +223,9 @@ export function overlapped(s: State, tune: Tune): number[] {
   const h = s.him;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (d.hp <= 0 || s.tick < d.landTick) continue;
+    // By the order of a tick the release comes before the landings: a thing
+    // that lands on the release tick was still announced when he let go.
+    if (d.hp <= 0 || s.tick <= d.landTick) continue;
     // A thing held at arm's length touches him and no more: that is not an overlap.
     const reach = tune.himRadius + radiusOf(d) - 1e-7;
     if (Math.hypot(d.x - h.x, d.y - h.y) < reach) out.push(d.id);
