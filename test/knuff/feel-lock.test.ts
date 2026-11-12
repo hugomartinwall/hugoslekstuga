@@ -542,8 +542,10 @@ describe("the lock bites: one changed motion number and the two part", () => {
     });
   }
 
-  it("covers every motion knob of the table, both ways", () => {
-    // A knob added to the motion half must get its nudges above.
+  it("covers every motion knob of the copied half, both ways", () => {
+    // A knob added to the copied half must be put on one of these two
+    // lists, and one that moves him must get its nudges above. (The knobs
+    // the game adds are not the toy's and are not listed here.)
     const MOTION: (keyof Tune)[] = [
       "maxSpeed",
       "dragK",
@@ -569,7 +571,6 @@ describe("the lock bites: one changed motion number and the two part", () => {
       "aimCushions",
       "noShotPx",
       "minPower",
-      "lineShowsPx",
       "dummyCount",
       "dummyRespawnTicks",
     ];
@@ -579,7 +580,7 @@ describe("the lock bites: one changed motion number and the two part", () => {
       expect(tried.some((v) => v > now), `${knob} is never nudged up`).toBe(true);
       expect(tried.some((v) => v < now), `${knob} is never nudged down`).toBe(true);
     }
-    expect(Object.keys(DEFAULT_TUNE).sort()).toEqual([...MOTION, ...NOT_MOTION].sort());
+    expect(Object.keys(TOY).sort()).toEqual([...MOTION, ...NOT_MOTION].sort());
   });
 });
 
