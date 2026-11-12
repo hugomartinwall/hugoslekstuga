@@ -12,26 +12,36 @@ import CabinetCanvas from "@/components/CabinetCanvas";
 import Tag from "@/components/ui/Tag";
 
 /**
- * The homepage on a phone.
+ * The homepage on a phone, and in any window too small for the room.
  *
  * A phone cannot hold fifteen labelled things and a title in one
- * floating swarm, so below 768px the homepage is a short scrolling
- * page built from the same parts: the pixel title as a banner, the
- * games as cabinet cards with their screens playing, and the tools as
- * a three-by-three pad of keycaps in their own colours.
+ * floating swarm, and neither can a phone held sideways or a short
+ * desktop window. Under 48rem of width or 35rem of height (the `list:`
+ * variant, ROOM_MEDIA in lib/home-layout.ts) the homepage is a short
+ * scrolling page built from the same parts: the pixel title as a
+ * banner, the games as cabinet cards with their screens playing, and
+ * the tools as a three-by-three pad of keycaps in their own colours.
  *
  * Everything here is a real link in the server-rendered HTML — it
  * works before (and without) JavaScript, and it is what a crawler
  * reads. No swarm physics and no parkour run on this layout.
+ *
+ * It is in the page while the room shows too (display:none), so nothing
+ * in it may keep working unseen: the banner and the cabinet screens
+ * stop by themselves, and the pad's jolt checks that there is a pad.
  */
 export default function HomeList({
   powerOn,
   jolt,
+  notice,
   children,
 }: {
   powerOn: boolean;
   /** Bumped by the forbidden button: the pad takes the hit. */
   jolt: number;
+  /** A line for the visitor that comes and goes (the retired-tool quip).
+   *  It takes the hint's place under the title while it is there. */
+  notice?: ReactNode;
   /** The keys row (search, about, the forbidden button). */
   children?: ReactNode;
 }) {
@@ -47,6 +57,8 @@ export default function HomeList({
     seenJolt.current = jolt;
     const pad = padRef.current;
     if (!pad) return;
+    // The button was pressed in the room: this pad is not on screen.
+    if (pad.offsetWidth === 0) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     for (const el of Array.from(pad.children) as HTMLElement[]) {
       const dx = (Math.random() - 0.5) * 36;
@@ -73,23 +85,45 @@ export default function HomeList({
       <div className="relative mt-12 h-44">
         <PixelWordmark powerOn={powerOn} banner />
       </div>
-      <p
-        aria-hidden
-        className="press-blink label-pixel mt-1 text-center tracking-[0.3em]"
-      >
-        press any tool
-      </p>
+      <div className="relative mt-1">
+        <p
+          aria-hidden
+          className="press-blink label-pixel text-center tracking-[0.3em]"
+        >
+          press any tool
+        </p>
+        {/* The notice lies over the hint and takes no room of its own:
+            nothing below moves when it comes, or when it goes seven
+            seconds later (a card that slid under a thumb would open the
+            wrong game). It used to stand in front of the keys row at the
+            bottom of the page, a screen or two below where anyone was
+            looking, and pushed that row down and up again.
+            There is room for it here, in the band between the title's
+            letters and the Games heading: about 92px on a phone, and the
+            notice is three lines at its longest (76px, at 320 to 390px
+            wide). The hint's line is not in the middle of that band, so
+            the notice is centred 6px above it and keeps 8px on either
+            side at its tallest. */}
+        {notice ? (
+          <div className="pointer-events-none absolute inset-x-0 top-[calc(50%-6px)] z-10 flex h-0 items-center justify-center">
+            <div className="fade-rise">{notice}</div>
+          </div>
+        ) : null}
+      </div>
 
       <section aria-labelledby="home-games" className="mt-8">
         <h2 id="home-games" className="label-pixel">
           Games
         </h2>
-        <ul className="mt-2.5 grid gap-3">
+        {/* One height for all four (auto-rows-fr): on the narrowest phones
+            the "new" tag drops under its game's name and made that one
+            card taller than the rest. */}
+        <ul className="mt-2.5 grid auto-rows-fr gap-3">
           {games.map((t) => (
             <li key={t.slug}>
               <Link
                 href={pathFor(t.slug)}
-                className="card-chunk flex items-center gap-4 bg-cream-deep p-3"
+                className="card-chunk flex h-full items-center gap-4 bg-cream-deep p-3"
               >
                 <CabinetCanvas
                   slug={t.slug}
@@ -122,12 +156,18 @@ export default function HomeList({
         <h2 id="home-tools" className="label-pixel">
           Tools
         </h2>
-        <ul ref={padRef} className="mt-2.5 grid grid-cols-3 gap-2.5">
+        {/* Nine keys of one size, icons on one line. A name that needs two
+            lines ("Spin the Wheel" on most phones) used to make its own
+            key taller and, with the contents centred, lift its icon above
+            its neighbours'. Now every row takes the tallest key's height
+            (auto-rows-fr), and a key is laid out from the top down: the
+            icon a fixed 16px in, the name under it, the spare room below. */}
+        <ul ref={padRef} className="mt-2.5 grid auto-rows-fr grid-cols-3 gap-2.5">
           {kit.map((t) => (
             <li key={t.slug}>
               <Link
                 href={pathFor(t.slug)}
-                className="btn-chunk flex h-full min-h-24 flex-col items-center justify-center gap-2 px-1.5 pt-3 pb-4 text-center text-cream"
+                className="btn-chunk flex h-full min-h-24 flex-col items-center gap-2 px-1.5 pt-4 pb-3 text-center text-cream"
                 style={{ backgroundColor: COLOR_HEX[t.color] }}
               >
                 <PixelIcon name={iconForSlug(t.slug, false)} size={36} />

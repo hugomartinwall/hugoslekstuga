@@ -13,13 +13,14 @@ import { tools } from "@/lib/tools";
  * viewport and do not scroll. The game routes come from the registry, so
  * a new game needs no edit here.
  *
- * The homepage is the one in-between. From `md` up the room is exactly one
- * screen with no scrolling, so the footer is hidden; below `md` the page
- * scrolls like any other and the footer shows. That is decided in CSS
- * (`md:hidden` on the <footer>), not by measuring the viewport in script,
- * so the server and the first paint already agree. And because that phone
- * page is itself the list of every game and tool, its footer is the small
- * print only.
+ * The homepage is the one in-between. In a window big enough for the room
+ * (48rem by 35rem) the homepage is exactly one screen with no scrolling,
+ * so the footer is hidden; in anything smaller it is the list, which
+ * scrolls like any other page, and the footer shows. That is decided in
+ * CSS (`room:hidden` on the <footer>, the same variant HomeShell's two
+ * layouts use), not by measuring the viewport in script, so the server
+ * and the first paint already agree. And because the list is itself the
+ * index of every game and tool, its footer is the small print only.
  */
 const FULL_SCREEN_ROUTES = new Set([
   pathFor("sjokort"),
@@ -60,7 +61,7 @@ export default function ConditionalFooter() {
     <div ref={holder} className="contents">
       <Footer
         pathname={pathname}
-        className={home ? "md:hidden" : undefined}
+        className={home ? "room:hidden" : undefined}
         index={!home}
         column={home ? "list" : "page"}
       />

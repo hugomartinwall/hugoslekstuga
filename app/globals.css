@@ -45,6 +45,23 @@
   --font-mono: var(--font-sans), ui-monospace, monospace;
 }
 
+/* The homepage is a room in a window at least 48rem wide and 35rem tall,
+   and a scrolling list in anything smaller. The same size is asked for
+   in px as well (768 by 560, what it comes to at the usual text size):
+   the room's parts are drawn in px, so a browser set to small text must
+   not get it in a smaller window. `room:` styles the first case and
+   `list:` the second; one of the two always applies and never both. Use
+   them wherever the two layouts differ (HomeShell, ConditionalFooter),
+   not `md:`, which knows the width only.
+   The script asks the same question with matchMedia. The query below is a
+   copy of ROOM_MEDIA in lib/home-layout.ts, where the two numbers and the
+   reason for them live (a stylesheet cannot import a constant), and
+   test/home/room-media.test.ts fails when the copy and the constant
+   differ. Do not write `not-room:`: Tailwind turns it into
+   `not (a) and (b)`, which no browser accepts as a query. */
+@custom-variant room (@media (min-width: 48rem) and (min-height: 35rem) and (min-width: 768px) and (min-height: 560px));
+@custom-variant list (@media not all and (min-width: 48rem) and (min-height: 35rem) and (min-width: 768px) and (min-height: 560px));
+
 /* Non-theme plumbing: pixel-notched corners + the Bayer dither tile.
    The notches are clip-path polygons (8px steps for cards, 4px for
    buttons/chips); the dither is a tiled 8×8 SVG at whisper opacity. */
@@ -466,9 +483,14 @@ body {
   }
 
   /* ── Focus, drawn inside the clip ─────────────────────────────────── */
+  /* The plate is in this list although a plate is a housing and not a
+     control: one of them is pressed whole (the homepage's forbidden key
+     is a <button> wearing the plate), and its clip cut the site-wide
+     outline away, so the key showed no keyboard focus at all. */
   .btn-chunk:focus-visible,
   .chip-chunk:focus-visible,
   .chip-chunk:has(> input:focus-visible),
+  .plate-chunk:focus-visible,
   .card-chunk:focus-visible,
   .card-chunk:has(> input:focus-visible) {
     outline: none;
@@ -824,12 +846,25 @@ body {
     .btn-chunk:focus-visible,
     .chip-chunk:focus-visible,
     .chip-chunk:has(> input:focus-visible),
+    .plate-chunk:focus-visible,
     .card-chunk:focus-visible,
     .card-chunk:has(> input:focus-visible),
     .field-chunk:focus-within,
     [role="switch"]:focus-visible {
       outline: 3px solid Highlight;
       outline-offset: 2px;
+    }
+
+    /* The homepage room is the one place a key stands on a picture and
+       not on the page: its floor is painted on canvases, which this mode
+       leaves as dark as they are. A band outside a key there is Highlight
+       on near-black, and in a light theme Highlight is a dark blue: 1.03
+       to 1, a focused key that looked like any other. So in the room the
+       band is drawn inside the key, where it has the key's own Canvas on
+       both sides. (`data-home` is HomeShell's name for the two layouts.) */
+    [data-home="room"] .btn-chunk:focus-visible,
+    [data-home="room"] .plate-chunk:focus-visible {
+      outline-offset: -4px;
     }
 
     /* The key legend is drawn with a shadow, which this mode drops: give
@@ -940,8 +975,14 @@ body {
   100% { transform: scaleY(1); filter: brightness(1); opacity: 1; }
 }
 
+/* `backwards`, not `both` (as with .card-arrive below): the last frame is
+   the resting state, and holding it left the room and the list with a
+   transform and a filter for the rest of the session. Either of them
+   makes the wrapper the containing block of its position:fixed children
+   (the parkour's layer, the list's flicker overlay) and a stacking
+   context. */
 .crt-on {
-  animation: crt-on 0.34s steps(5, jump-none) both;
+  animation: crt-on 0.34s steps(5, jump-none) backwards;
 }
 
 /* Whisper-subtle scanlines over the homepage room. 1px on, 2px off,
@@ -977,19 +1018,30 @@ body {
   animation: screen-flicker 180ms steps(2, jump-none) forwards;
 }
 
-/* Keyboard focus for the swarm's transparent hit-circles — the orb
-   body lives on the canvas below, so the ring is drawn in SVG. The
-   default rectangular outline never fits a round orb; suppress it and
-   let the circle stroke carry keyboard feedback instead. Pointer
-   interaction blurs the node on pointerdown (ToolMap), so mouse
-   clicks leave no "chosen" ring at all. */
-svg g[role="button"]:focus,
-svg g[role="button"]:focus-visible {
+/* Keyboard focus for the swarm's links (the homepage room's orbs and
+   cabinets). The body of each is painted on the canvas underneath, so
+   the focus mark is drawn in the SVG: a stepped ring a little way out
+   from the stepped disc, a stepped frame round a cabinet, 2px of cyan
+   like the kit's other focus rings. The site-wide outline is switched
+   off here: it would box the orb and its name together. Pointer
+   interaction blurs the link on pointerdown (ToolMap), so a mouse
+   click leaves no ring. A link here cannot be dragged off the page: a
+   drag moves the orb.
+   No line for this ring in the kit's forced-colours block, on purpose.
+   The room is painted on canvases, which forced colours leave dark, and
+   a stroke inside an <svg> keeps the colour it was given: the cyan stays
+   and still shows. A system colour would not (Highlight is a dark blue
+   in a light theme, and was invisible on the room when tried). */
+.swarm-link {
+  -webkit-user-drag: none;
+}
+.swarm-link:focus,
+.swarm-link:focus-visible {
   outline: none;
 }
-g:focus-visible > .swarm-hit {
+.swarm-link:focus-visible .swarm-ring {
   stroke: var(--color-blue);
-  stroke-width: 2;
+  stroke-width: 2px;
 }
 
 /* Subtle fade for advice swap, etc. */

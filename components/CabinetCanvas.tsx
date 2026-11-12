@@ -12,7 +12,27 @@ import { screenFor, STILL_T } from "@/lib/hugo/cabinet-screens";
  * Every instance on the page shares one animation frame (a module-level
  * ticker), the loop stops while the tab is hidden, and reduced motion
  * draws a single still frame instead.
+ *
+ * A cabinet only plays while it is on screen or about to be. The list
+ * these stand in is in the page in both layouts (it is the server-
+ * rendered HTML), and while the room showed, its four cabinets were
+ * repainted every frame under display:none. One that is not rendered,
+ * or has been scrolled well out of view, now leaves the ticker; it keeps
+ * its last picture and picks up again when it comes near (an
+ * intersection observer says which).
+ *
+ * The first picture is painted at mount, whether or not the cabinet is
+ * rendered: a canvas can be drawn on without a box, and it keeps what
+ * was drawn. So no cabinet is ever blank, wherever it is on the page and
+ * whichever layout is showing. That matters for a print made from a
+ * room-size window: paper is narrower than the room, so the print shows
+ * the list, and cabinets that had waited for a box to be painted in
+ * came out as four empty frames.
  */
+
+/** How far outside the window a cabinet starts playing: far enough that
+ *  one scrolled into view is already moving when it arrives. */
+const NEAR = "200px 0px";
 
 type Draw = (now: number) => void;
 const draws = new Set<Draw>();
@@ -80,12 +100,36 @@ export default function CabinetCanvas({
         (put) => painter(put, t),
       );
     };
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq.matches) {
-      paint(STILL_T);
-      return;
-    }
-    return subscribe((now) => paint(now / 1000));
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const play = () => subscribe((now) => paint(now / 1000));
+
+    // The first picture, now, rendered or not (see above). Under reduced
+    // motion it is also the only one.
+    paint(still ? STILL_T : performance.now() / 1000);
+    if (still) return;
+    // No way to tell where the cabinet is: play wherever it is, as before.
+    if (typeof IntersectionObserver === "undefined") return play();
+
+    // Playing. Not intersecting covers both cases: scrolled away, and
+    // not rendered at all.
+    let stop: (() => void) | null = null;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const near = entries[entries.length - 1].isIntersecting;
+        if (near && !stop) {
+          stop = play();
+        } else if (!near && stop) {
+          stop();
+          stop = null;
+        }
+      },
+      { rootMargin: NEAR },
+    );
+    io.observe(canvas);
+    return () => {
+      io.disconnect();
+      stop?.();
+    };
   }, [slug, accent, unit, w, h]);
 
   return (

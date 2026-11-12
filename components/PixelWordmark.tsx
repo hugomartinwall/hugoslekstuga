@@ -579,6 +579,8 @@ export default function PixelWordmark({
 
     const startOrRedrawStatic = () => {
       cancelAnimationFrame(raf);
+      // Nothing to draw: not laid out yet, or not on screen (see measure).
+      if (!layout) return;
       if (reduced) {
         draw(performance.now());
       } else {
@@ -612,6 +614,18 @@ export default function PixelWordmark({
       canvas.height = Math.round(size.h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
+      if (size.w === 0 || size.h === 0) {
+        // No box: the layout this title belongs to is not showing (the
+        // list's banner while the room is on screen). The frame loop
+        // used to run on regardless, drawing every cell into a canvas of
+        // no size. Stop it and forget the layout, so that nothing draws
+        // and a click on the room cannot blip letters nobody sees. The
+        // observer calls again when the banner is shown, and relayout()
+        // starts the loop afresh.
+        cancelAnimationFrame(raf);
+        layout = null;
+        return;
+      }
       relayout();
     };
     const ro = new ResizeObserver(measure);

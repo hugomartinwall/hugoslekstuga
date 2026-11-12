@@ -287,6 +287,40 @@ export const PIXEL_ICONS = {
     "............",
     "............",
   ],
+  // The same arrow, pointing up: with back and forward, the legend for
+  // the arrow keys (the parkour's controls hint). Its shaft is two cells
+  // shorter than theirs, so that all three stand on the same line: the
+  // sideways arrows fill rows 1 to 9, and turned upright with its full
+  // shaft this one reached row 11 and hung below them in the hint.
+  up: [
+    "............",
+    ".....#......",
+    "....###.....",
+    "...#####....",
+    "..#######...",
+    ".##.###.##..",
+    ".#..###..#..",
+    "....###.....",
+    "....###.....",
+    "....###.....",
+    "............",
+    "............",
+  ],
+  // An eight-pointed burst: what the one forbidden key wears.
+  burst: [
+    ".....##.....",
+    "#....##....#",
+    ".##.####.##.",
+    "..########..",
+    "..########..",
+    "############",
+    "############",
+    "..########..",
+    "..########..",
+    ".##.####.##.",
+    "#....##....#",
+    ".....##.....",
+  ],
   close: [
     "##........##",
     "###......###",
