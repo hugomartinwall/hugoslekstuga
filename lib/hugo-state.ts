@@ -134,8 +134,10 @@ function defaultMemory(now: number): HugoMemory {
   };
 }
 
-function defaultState(now: number): HugoState {
-  const mood = moodFromHour(new Date(now).getHours());
+function defaultState(
+  now: number,
+  mood: HugoMood = moodFromHour(new Date(now).getHours()),
+): HugoState {
   return {
     energy: 80,
     mood,
@@ -753,9 +755,29 @@ function getSnapshot(): HugoState {
   return state;
 }
 
+/**
+ * What the server renders, and what the browser's first render (the
+ * hydration) has to render too: one state, whatever the hour and the
+ * time zone.
+ *
+ * The live `state` starts from the visitor's clock (`moodFromHour`),
+ * and his mood is in the markup: BrandDot writes the breathing period
+ * and the halo from it. Handing the live state out here made the
+ * server's HTML and the browser's first render disagree whenever their
+ * hours fell in different mood bands, so React reported a hydration
+ * mismatch on every page at night and in the morning (and left the
+ * server's values in place until the next render). React swaps to
+ * `getSnapshot()` as soon as it has hydrated, so the hour's mood still
+ * arrives in the first frame.
+ */
+const SERVER_STATE: HugoState = (() => {
+  const s = defaultState(0, "calm");
+  // The one field `defaultMemory` takes from the local calendar.
+  return { ...s, memory: { ...s.memory, lastDateKey: "" } };
+})();
+
 function getServerSnapshot(): HugoState {
-  // Stable default so SSR markup matches the first client render.
-  return state;
+  return SERVER_STATE;
 }
 
 /**
