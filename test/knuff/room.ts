@@ -84,6 +84,18 @@ export function fire(s: State, tune: Tune, launch: Input, n = 1): SimEvent[] {
   return events;
 }
 
+/**
+ * Step until `done` says so, and return everything that happened. It
+ * gives up after `most` ticks: a rule that is broken must fail a case, not
+ * hang it (a State that no longer advances would never reach a tick count).
+ */
+export function until(s: State, tune: Tune, done: (events: SimEvent[]) => boolean, most = 400, input: Input = REST): SimEvent[] {
+  if (input.launch !== null) throw new Error("until() repeats its input on every tick: fire the launch first");
+  const events: SimEvent[] = [];
+  for (let i = 0; i < most && !done(events); i++) step(s, input, tune, events);
+  return events;
+}
+
 /** The events of one type. */
 export function of<T extends SimEvent["type"]>(events: SimEvent[], type: T): Extract<SimEvent, { type: T }>[] {
   return events.filter((e): e is Extract<SimEvent, { type: T }> => e.type === type);

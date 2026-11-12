@@ -96,6 +96,18 @@ class Night {
     this.s.things.length = 0;
     return this;
   }
+
+  /**
+   * Play on, popping everything as it lands, until the hour's first extra
+   * bunch has been announced. It gives up after two hours' worth of ticks:
+   * a night that deals no extra bunch must fail the case, not hang it.
+   */
+  toFirstExtra(): Seen {
+    for (let i = 0; i < 3600 && this.s.phase !== "over" && this.rows().every((r) => r.row !== -1); i++) this.run(1, this.popLanded);
+    const extra = this.rows().find((r) => r.row === -1);
+    if (!extra) throw new Error(`no extra bunch was announced from ${CLOCK[this.s.night.hour]} on`);
+    return extra;
+  }
 }
 
 /** The intruders a written row brings, by kind. */
@@ -482,23 +494,46 @@ describe("arrivals", () => {
     expect(distance(none.s, none.s.things[0])).toBeGreaterThan(250);
   });
 
-  it("a token alone is 20 u clear of every cushion, a loose one 9 u, and a blob keeps its whole disc inside", () => {
-    for (let seed = 1; seed <= 30; seed++) {
-      const alone = new Night({}, { hour: 1 }, seed).run(1);
-      const t = alone.s.things[0];
-      expect(t.x).toBeGreaterThanOrEqual(8 + 20);
-      expect(t.x).toBeLessThanOrEqual(352 - 20);
-      expect(t.y).toBeGreaterThanOrEqual(8 + 20);
-      expect(t.y).toBeLessThanOrEqual(472 - 20);
-      const bunch = new Night({}, { hour: 6 }, seed).run(1);
-      for (const d of bunch.s.things) {
-        const inset = d.kind === "token" ? 9 : 8;
-        expect(d.x).toBeGreaterThanOrEqual(8 + inset);
-        expect(d.x).toBeLessThanOrEqual(352 - inset);
-        expect(d.y).toBeGreaterThanOrEqual(8 + inset);
-        expect(d.y).toBeLessThanOrEqual(472 - inset);
+  it("a token alone is 20 u clear of every cushion, a loose one 9 u, and a file's head 60 u", () => {
+    /** How close a thing is to the nearest cushion. */
+    const clear = (d: { x: number; y: number }) => Math.min(d.x - 8, 352 - d.x, d.y - 8, 472 - d.y);
+    const alone: number[] = [];
+    const loose: number[] = [];
+    const heads: number[] = [];
+    for (let seed = 1; seed <= 60; seed++) {
+      // 20:00 opens with the first token, alone.
+      alone.push(clear(new Night({}, { hour: 1 }, seed).run(1).s.things[0]));
+      // 04:00 opens with a bunch that has three loose tokens.
+      for (const d of new Night({}, { hour: 9 }, seed).run(1).s.things) if (d.kind === "token") loose.push(clear(d));
+      // 04:00's file, at pace 1, on its tick.
+      const file = new Night({ pace: 1 }, { hour: 9 }, seed).through(512);
+      file.empty().run(1);
+      heads.push(clear(file.s.things[0]));
+    }
+    // Each kind of spot keeps its own distance, and comes as close as that distance allows: no nearer, and not kept further off.
+    expect(Math.min(...alone)).toBeGreaterThanOrEqual(20);
+    expect(Math.min(...alone)).toBeLessThan(40);
+    expect(Math.min(...loose)).toBeGreaterThanOrEqual(9);
+    expect(Math.min(...loose)).toBeLessThan(20);
+    expect(Math.min(...heads)).toBeGreaterThanOrEqual(60);
+    expect(Math.min(...heads)).toBeLessThan(80);
+    expect(loose).toHaveLength(180);
+  });
+
+  it("a blob's spot is far enough in that its whole disc is on the floor: no dust bunny is pressed against a cushion", () => {
+    let pressed = 0;
+    let bunnies = 0;
+    for (let seed = 1; seed <= 60; seed++) {
+      for (const d of new Night({}, { hour: 8 }, seed).run(1).s.things) {
+        if (d.kind !== "bunny") continue;
+        bunnies++;
+        // A dust bunny clamped to the floor's edge sits exactly its radius from it.
+        if (d.x === 16 || d.x === 344 || d.y === 16 || d.y === 464) pressed++;
+        expect(Math.min(d.x - 8, 352 - d.x, d.y - 8, 472 - d.y)).toBeGreaterThanOrEqual(8);
       }
     }
+    expect(bunnies).toBe(60 * 7);
+    expect(pressed).toBe(0);
   });
 
   it("a blob: dust bunnies scattered round one spot, pushed apart to 17 u", () => {
@@ -1054,8 +1089,7 @@ describe("the pace: extra bunches until last call", () => {
         for (let hour = 0; hour < HOURS; hour++) {
           const night = new Night({ pace, tokenSpeed: 150, hearts: 999 }, { hour });
           // Popped as it lands, until the first extra bunch has been announced.
-          while (night.rows().every((r) => r.row !== -1)) night.run(1, night.popLanded);
-          const row = night.rows().find((r) => r.row === -1)!;
+          const row = night.toFirstExtra();
           const things = night.s.things.filter((d) => d.landTick === night.s.tick - 1 + 36);
           const bunnies = things.filter((d) => d.kind === "bunny");
           const tokens = things.filter((d) => d.kind === "token");
@@ -1078,7 +1112,7 @@ describe("the pace: extra bunches until last call", () => {
   it("two fewer tokens from 00:00 on, and never fewer than none: with paceTokens at 1 or 0, none", () => {
     const tokensAt = (hour: number, paceTokens: number): number => {
       const night = new Night({ pace: 2, paceTokens }, { hour });
-      while (night.rows().every((r) => r.row !== -1)) night.run(1, night.popLanded);
+      night.toFirstExtra();
       return night.s.things.filter((d) => d.kind === "token" && d.landTick === night.s.tick - 1 + 36).length;
     };
     // Before midnight the knob is the count; after it, two fewer, and never under zero.

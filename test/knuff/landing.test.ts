@@ -4,7 +4,7 @@ import { hotSpeed } from "../../lib/knuff/sim/physics";
 import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
 import type { SimEvent } from "../../lib/knuff/sim/types";
-import { REST, distance, fire, night, of, put, run, scripted, shot, speedOf, tick, tuned } from "./room";
+import { REST, distance, fire, night, of, put, run, scripted, shot, speedOf, tick, tuned, until } from "./room";
 
 /**
  * Hot and landed (§3.5). He is a weapon while he is hot and a target the
@@ -80,7 +80,7 @@ describe("hot by speed", () => {
     const s = night(soft);
     const bunny = put(s, "bunny", 180, 374 - 27);
     const events = fire(s, soft, shot(0, -1, 0.36));
-    while (of(events, "pop").length === 0 && s.tick < 20) events.push(...tick(s, soft));
+    events.push(...until(s, soft, (seen) => of([...events, ...seen], "pop").length > 0, 20));
     const [pop] = of(events, "pop");
     expect(pop.id).toBe(bunny.id);
     // He came in over the line and left the pop under it.
@@ -148,7 +148,7 @@ describe("hot after a pop: popHotTicks", () => {
     const s = night(window);
     put(s, "bunny", 180, 374 - 27);
     const events = fire(s, window, shot(0, -1, 0.36));
-    while (of(events, "pop").length === 0 && s.tick < 20) events.push(...tick(s, window));
+    events.push(...until(s, window, (seen) => of([...events, ...seen], "pop").length > 0, 20));
     const popTick = of(events, "pop")[0].tick;
     // The near edge: under the line on the very tick of the pop, and still hot.
     expect(speedOf(s)).toBeLessThan(hotAt);
@@ -229,7 +229,7 @@ describe("hot after a pop: popHotTicks", () => {
     expect(speedOf(s)).toBeLessThan(60);
     expect(s.him.hot).toBe(true);
     let last = speedOf(s);
-    while (s.him.hot && s.tick < 30) {
+    for (let i = 0; i < 30 && s.him.hot; i++) {
       last = speedOf(s);
       events.push(...tick(s, still));
     }
@@ -367,7 +367,7 @@ describe("the thump", () => {
         put(s, "bunny", 180 - 8.5, 374 - 25);
         const second = put(s, "bunny", 180 + 8.5, 374 - 25);
         const events = fire(s, soft, shot(0, -1, 0.36));
-        while (of(events, "land").length === 0 && s.tick < 20) events.push(...tick(s, soft));
+        events.push(...until(s, soft, (seen) => of([...events, ...seen], "land").length > 0, 20));
         const landed = of(events, "land")[0].tick;
         expect(of(events, "pop")).toHaveLength(1);
         expect(s.things).toEqual([second]);
@@ -376,11 +376,12 @@ describe("the thump", () => {
         expect(second.dazedUntil).toBe(landed + 36);
         const stood = [second.x, second.y];
         // For the 36 ticks of the daze it does not walk, and it costs nothing.
-        while (s.tick < landed + 36) {
+        for (let i = 0; i < 36 && s.tick < landed + 36; i++) {
           events.push(...tick(s, soft));
           expect([second.x, second.y]).toEqual(stood);
           expect([second.wx, second.wy]).toEqual([0, 0]);
         }
+        expect(s.tick).toBe(landed + 36);
         expect(of(events, "hurt")).toEqual([]);
         expect(s.hearts).toBe(3);
         // On the tick the daze ends it walks into him.

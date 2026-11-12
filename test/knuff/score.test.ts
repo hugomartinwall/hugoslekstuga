@@ -4,7 +4,7 @@ import { carryFor, chainFor, countCushion, cushionsFor } from "../../lib/knuff/s
 import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
 import type { SimEvent, State, Tune } from "../../lib/knuff/sim/types";
-import { fire, night, of, put, run, scripted, shot, tick, tuned } from "./room";
+import { fire, night, of, put, run, scripted, shot, tick, tuned, until } from "./room";
 
 /**
  * Score (§7). A pop scores points × chain × cushions. The chain is counted
@@ -341,7 +341,7 @@ describe("a launch's total, the score and the best shot", () => {
     // A bigger one raises it, and as it is made: it is the best shot before it has landed.
     for (let i = 0; i < 4; i++) put(s, "bunny", s.him.x, s.him.y + 40 + i * 30);
     const events = tick(s, tune, shot(0, 1));
-    while (of(events, "pop").length < 3 && s.tick < 400) events.push(...tick(s, tune));
+    events.push(...until(s, tune, (seen) => of(seen, "pop").length >= 3, 400));
     expect(s.launch.active).toBe(true);
     expect(s.bestShot).toBe(60);
     events.push(...run(s, tune, 90));

@@ -110,10 +110,11 @@ describe("after a lost heart", () => {
     // A second dust bunny is put on him. It keeps walking in, and is held off.
     events.push(...run(s, tune, 20));
     const second = put(s, "bunny", 180 - 12, 374);
-    while (s.tick < 72) {
+    for (let i = 0; i < 72 && s.tick < 72; i++) {
       events.push(...tick(s, tune));
       expect(distance(s, second)).toBeCloseTo(21, 6);
     }
+    expect(s.tick).toBe(72);
     expect(of(events, "hurt").map((e) => e.tick)).toEqual([0]);
     events.push(...tick(s, tune));
     expect(of(events, "hurt").map((e) => [e.tick, e.id])).toEqual([

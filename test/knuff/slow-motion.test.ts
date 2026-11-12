@@ -166,7 +166,7 @@ describe("the meter coming back", () => {
       run(s, quiet, 16 - left, HOLD);
       const events = tick(s, quiet, shot(0, -1, 0.5));
       // In flight it is as he left it.
-      while (of(events, "land").length === 0 && s.tick < 200) {
+      for (let i = 0; i < 200 && of(events, "land").length === 0; i++) {
         expect(s.slow.meter).toBe(left);
         events.push(...tick(s, quiet));
       }
