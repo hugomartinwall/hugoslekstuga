@@ -589,6 +589,26 @@ describe("arrivals", () => {
     expect(blobs).toBeGreaterThan(100);
   });
 
+  it("a blob is as wide as its disc: seven dust bunnies lie 8 + 9√7 over √2 from their middle, on average", () => {
+    // Points scattered evenly over a disc of radius R lie R / √2 from its
+    // centre, root mean square. The push apart and measuring from their own
+    // middle move that by a fraction of a unit; a disc of 8 + 8√7 is 1.9 u short.
+    let sum = 0;
+    let count = 0;
+    for (let seed = 1; seed <= 200; seed++) {
+      const bunnies = new Night({}, { hour: 8 }, seed).run(1).s.things.filter((d) => d.kind === "bunny");
+      expect(bunnies).toHaveLength(7);
+      const cx = bunnies.reduce((t, d) => t + d.x, 0) / 7;
+      const cy = bunnies.reduce((t, d) => t + d.y, 0) / 7;
+      for (const d of bunnies) {
+        sum += (d.x - cx) ** 2 + (d.y - cy) ** 2;
+        count++;
+      }
+    }
+    const want = (8 + 9 * Math.sqrt(7)) / Math.SQRT2;
+    expect(Math.abs(Math.sqrt(sum / count) - want)).toBeLessThan(0.6);
+  });
+
   it("loose tokens each roll their own way; a file is a line 24 u apart, all rolling the way the line points", () => {
     const rolling = { tokenSpeed: 150 };
     // 01:00's opening bunch has two loose tokens.
