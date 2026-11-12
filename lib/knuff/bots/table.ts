@@ -201,10 +201,10 @@ export type Sums = ReadonlyMap<string, Sum>;
  * hour by one hour either way. An invariant, and a bound that says "in
  * any night" or "ever", is never loosened: one case fails.
  */
-export type Widen = { share: number; self: number; hour: number };
-export const AS_WRITTEN: Widen = { share: 0, self: 0, hour: 0 };
-export const SMOKE: Widen = { share: 0.1, self: 0.1, hour: 1 };
-export const SMOKE_LOOK_AHEAD: Widen = { share: 0.2, self: 0.2, hour: 1 };
+export type Widen = { share: number; part: number; hour: number };
+export const AS_WRITTEN: Widen = { share: 0, part: 0, hour: 0 };
+export const SMOKE: Widen = { share: 0.1, part: 0.1, hour: 1 };
+export const SMOKE_LOOK_AHEAD: Widen = { share: 0.2, part: 0.2, hour: 1 };
 
 export type Verdict = { ok: boolean; measured: string };
 
@@ -269,7 +269,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     check: (m, _t, w) => {
       const s = get(m, "spam");
       const third = get(m, "expert").scoreMedian / 3;
-      return { ok: s.scoreMedian <= third * (1 + w.self), measured: `${f0(s.scoreMedian)} against ${f0(third)}` };
+      return { ok: s.scoreMedian <= third * (1 + w.part), measured: `${f0(s.scoreMedian)} against ${f0(third)}` };
     },
   },
   {
@@ -288,7 +288,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     check: (m, _t, w) => {
       const s = get(m, "flicker");
       const third = get(m, "expert").scoreMedian / 3;
-      return { ok: s.scoreMedian <= third * (1 + w.self), measured: `${f0(s.scoreMedian)} against ${f0(third)}` };
+      return { ok: s.scoreMedian <= third * (1 + w.part), measured: `${f0(s.scoreMedian)} against ${f0(third)}` };
     },
   },
   {
@@ -316,7 +316,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     check: (m, _t, w) => {
       const s = get(m, "kiter");
       const o = get(m, "ordinary").scoreMedian;
-      return { ok: s.scoreMedian <= 0.9 * o * (1 + w.self), measured: `${f0(s.scoreMedian)} against 0.9 x ${f0(o)} = ${f0(0.9 * o)} (ratio ${(s.scoreMedian / o).toFixed(2)})` };
+      return { ok: s.scoreMedian <= 0.9 * o * (1 + w.part), measured: `${f0(s.scoreMedian)} against 0.9 x ${f0(o)} = ${f0(0.9 * o)} (ratio ${(s.scoreMedian / o).toFixed(2)})` };
     },
   },
   {
@@ -327,7 +327,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
       const s = get(m, "corner");
       const o = get(m, "ordinary").scoreMedian;
       return {
-        ok: s.scoreMedian <= 0.9 * o * (1 + w.self),
+        ok: s.scoreMedian <= 0.9 * o * (1 + w.part),
         measured: `${f0(s.scoreMedian)} against ${f0(0.9 * o)} (ratio ${(s.scoreMedian / o).toFixed(2)}); alive when 05:00 ends ${pct(share(s.aliveAt[END], s.n))}, at 00:00 ${pct(share(s.aliveAt[5], s.n))}`,
       };
     },
@@ -341,7 +341,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
       const others = AIMLESS.map((k) => get(m, k));
       const best = others.reduce((a, b) => (b.scoreMedian > a.scoreMedian ? b : a));
       return {
-        ok: s.scoreMedian > best.scoreMedian * (1 - w.self),
+        ok: s.scoreMedian > best.scoreMedian * (1 - w.part),
         measured: `${f0(s.scoreMedian)} against the best of them, ${best.label} ${f0(best.scoreMedian)} (${others.map((o) => `${o.label} ${f0(o.scoreMedian)}`).join(", ")})`,
       };
     },
@@ -361,7 +361,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     text: "Cautious: lasts a median of at least 45 s of real time",
     check: (m, _t, w) => {
       const s = get(m, "cautious");
-      return { ok: s.realMedian >= 45 * (1 - w.self), measured: `${s.realMedian.toFixed(1)} s real (${s.simMedian.toFixed(1)} s simulated)` };
+      return { ok: s.realMedian >= 45 * (1 - w.part), measured: `${s.realMedian.toFixed(1)} s real (${s.simMedian.toFixed(1)} s simulated)` };
     },
   },
   {
@@ -424,7 +424,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     text: "Ordinary: the room empty for at most 15% of the ticks from its first launch to the end of its night",
     check: (m, _t, w) => {
       const s = get(m, "ordinary");
-      return { ok: s.emptyShare <= 0.15 * (1 + w.self), measured: `${pct(s.emptyShare)} with the pause between hours, ${pct(s.emptyShareNoPause)} without it; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
+      return { ok: s.emptyShare <= 0.15 * (1 + w.part), measured: `${pct(s.emptyShare)} with the pause between hours, ${pct(s.emptyShareNoPause)} without it; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
     },
   },
   {
@@ -460,7 +460,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     text: "Expert: the room empty for at most 25% of its ticks",
     check: (m, _t, w) => {
       const s = get(m, "expert");
-      return { ok: s.emptyShare <= 0.25 * (1 + w.self), measured: `${pct(s.emptyShare)} with the pause, ${pct(s.emptyShareNoPause)} without it; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
+      return { ok: s.emptyShare <= 0.25 * (1 + w.part), measured: `${pct(s.emptyShare)} with the pause, ${pct(s.emptyShareNoPause)} without it; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
     },
   },
   {
@@ -520,7 +520,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
       const parts: string[] = [];
       for (const s of m.values()) {
         if (s.doneN === 0) continue;
-        if (s.doneSimMin < 180 * (1 - w.self) || s.doneSimMax > 420 * (1 + w.self)) ok = false;
+        if (s.doneSimMin < 180 * (1 - w.part) || s.doneSimMax > 420 * (1 + w.part)) ok = false;
         parts.push(`${s.label} ${f0(s.doneSimMin)}/${f0(s.doneSimMedian)}/${f0(s.doneSimMax)} s (${s.doneN} night${s.doneN === 1 ? "" : "s"})`);
       }
       return { ok, measured: parts.length ? `shortest/median/longest: ${parts.join("; ")}` : "no night reached the end" };

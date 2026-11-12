@@ -98,7 +98,7 @@ describe("the step-1 table, as a smoke check", () => {
     const alive = (n: number) => [100, n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     // 75 nights in 100 at 20:00: outside as written and with 10 points, inside with 20.
     const short = made({ n: 100, aliveAt: alive(75), realMedian: 38, earlyHeartNights: 1 });
-    expect(verdicts(short, { share: 0, self: 0, hour: 0 })[at20]).toBe(false);
+    expect(verdicts(short, { share: 0, part: 0, hour: 0 })[at20]).toBe(false);
     expect(verdicts(short, SMOKE)[at20]).toBe(false);
     expect(verdicts(short, SMOKE_LOOK_AHEAD)[at20]).toBe(true);
     // 38 s against 45: inside only when a fifth is taken off.
