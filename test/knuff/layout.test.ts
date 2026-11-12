@@ -225,7 +225,7 @@ describe("the playable of the owner's checks (steps 1 to 5)", () => {
       expect(Math.round(l.room.h)).toBe(324);
       expect(l.tooSmall).toBe(false);
       expect(l.room.y + l.room.h + LAPTOP_MARGIN).toBeLessThanOrEqual(400 + 1e-9);
-      // A bar as narrow as that room would run the score into the clock: it keeps 300 px, centred on the room.
+      // A bar as narrow as that room would run the score into the clock: it keeps 360 px, centred on the room.
       expect(l.bar.w).toBe(BAR_MIN_W);
       expect(Math.abs(l.bar.x + l.bar.w / 2 - (l.room.x + l.room.w / 2))).toBeLessThanOrEqual(1);
     }

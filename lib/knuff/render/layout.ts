@@ -19,8 +19,13 @@ export const BAR_H = 48;
 export const DECK_MIN = 130;
 /** The margin under the room on a laptop, px. There is no deck there. */
 export const LAPTOP_MARGIN = 28;
-/** The playable's bar on a laptop is never narrower than this, px (the room at 0.83 px a unit). */
-export const BAR_MIN_W = 300;
+/**
+ * The bar on a laptop is never narrower than this, px (the room at 1 px a
+ * unit), where the room has shrunk under it. At 300 a six-digit score
+ * stood a few pixels from the clock in a 768 × 479 window and read as one
+ * string with it.
+ */
+export const BAR_MIN_W = 360;
 /** Under this scale the game does not run. */
 export const MIN_SCALE = 0.75;
 
@@ -121,10 +126,10 @@ export function layoutFor(
   const blockH = BAR_H + roomH + LAPTOP_MARGIN;
   const top = whole(safe.top + Math.max(0, (H - blockH) / 2));
   const roomY = top + BAR_H;
-  // The bar sits on the room and is as wide as it. Where the playable has
-  // shrunk the room under what the final route allows, a bar that narrow
-  // would run the score into the clock: it keeps a width it can be read at.
-  const barW = playable ? Math.max(roomW, Math.min(W, BAR_MIN_W)) : roomW;
+  // The bar sits on the room and is as wide as it, but never narrower
+  // than the room at 1 px a unit: under that a six-digit score runs into
+  // the clock, which the bar must hold clear of each other (§9.2).
+  const barW = Math.max(roomW, Math.min(W, BAR_MIN_W));
   const barX = whole(roomX - (barW - roomW) / 2);
   return {
     s,
