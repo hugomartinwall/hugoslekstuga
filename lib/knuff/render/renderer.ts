@@ -484,14 +484,19 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
         ctx.fillRect(Math.round(X(dx) - dr * S * 0.5), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
         ctx.fillRect(Math.round(X(dx) + dr * S * 0.5 - eyeS), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
       }
-      if (state.tick < d.dazedUntil) {
-        // Dazed: two 3 u phosphor squares, 3 u apart, 2 u above the body,
-        // for exactly as long as it is harmless.
-        const q = Math.max(2, Math.round(S * 3));
-        ctx.fillStyle = C.ink;
-        ctx.fillRect(Math.round(X(dx - 4.5)), Math.round(Y(dy - dr - 5)), q, q);
-        ctx.fillRect(Math.round(X(dx + 1.5)), Math.round(Y(dy - dr - 5)), q, q);
-      }
+    }
+    // Dazed: two 3 u phosphor squares, 3 u apart, 2 u above the body, for
+    // exactly as long as it is harmless. In a pass of their own, after
+    // every body: in a bunch a neighbour was drawn over them.
+    const dazeQ = Math.max(2, Math.round(S * 3));
+    ctx.fillStyle = C.ink;
+    for (const d of state.things) {
+      if (state.tick < d.landTick || state.tick >= d.dazedUntil) continue;
+      const dx = d.px + (d.x - d.px) * alpha;
+      const dy = d.py + (d.y - d.py) * alpha;
+      const dr = KINDS[d.kind].radius;
+      ctx.fillRect(Math.round(X(dx - 4.5)), Math.round(Y(dy - dr - 5)), dazeQ, dazeQ);
+      ctx.fillRect(Math.round(X(dx + 1.5)), Math.round(Y(dy - dr - 5)), dazeQ, dazeQ);
     }
 
     // His pips, above the things in the room and under him.
