@@ -7,6 +7,7 @@ import {
   MIN_SCALE,
   carriedAt,
   hintFor,
+  hourStep,
   layoutFor,
   pauseKeyRect,
   type Insets,
@@ -339,6 +340,54 @@ describe("what is drawn for reading: where it goes", () => {
       // And they never sit on each other.
       expect(Math.abs(at.pips - at.meter), `${y}`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+});
+
+describe("the night's twelve steps in the top bar", () => {
+  const tune = DEFAULT_TUNE;
+  const REST = { launch: null, pullHeld: false };
+  /** The twelve steps as the bar draws them. */
+  const steps = (s: State) => Array.from({ length: 12 }, (_, i) => hourStep(s, i));
+  const row = (done: number, now: boolean) =>
+    Array.from({ length: 12 }, (_, i) => (i < done ? "done" : i === done && now ? "now" : "to come"));
+  /** A night with nothing in it, begun at `hour` by a launch straight up. */
+  const begun = (hour: number) => {
+    const s = createState(7, tune, { hour, empty: true });
+    step(s, { launch: { dx: 0, dy: -1, power: 1 }, pullHeld: false }, tune, []);
+    expect(s.phase).toBe("night");
+    return s;
+  };
+
+  it("before the first launch no hour is lit", () => {
+    expect(steps(createState(7, tune, { empty: true }))).toEqual(row(0, false));
+  });
+
+  it("in a night the hours done are filled and the hour now is lit", () => {
+    for (const hour of [0, 3, 10]) expect(steps(begun(hour)), `${hour}`).toEqual(row(hour, true));
+  });
+
+  it("at morning the first eleven are filled and the twelfth, the boss's, is to come: none is lit", () => {
+    const s = begun(10);
+    for (let i = 0; i < 5000 && s.phase !== "over"; i++) step(s, REST, tune, []);
+    expect(s.ended).toBe("morning");
+    // The State's hour is one past the last.
+    expect(s.night.hour).toBe(11);
+    expect(steps(s)).toEqual(row(11, false));
+  });
+
+  it("a night lost in 05:00 keeps 05:00 lit: the hour it was lost in", () => {
+    const s = begun(10);
+    s.hearts = 1;
+    for (let i = 0; i < 300 && s.him.hot; i++) step(s, REST, tune, []);
+    expect(s.him.hot).toBe(false);
+    // A dust bunny walks into him while he is landed.
+    const x = s.him.x + 30;
+    const y = s.him.y;
+    s.things.push({ id: s.nextId++, kind: "bunny", x, y, px: x, py: y, vx: 0, vy: 0, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil: 0, phase: 0 });
+    for (let i = 0; i < 300 && s.phase !== "over"; i++) step(s, REST, tune, []);
+    expect(s.ended).toBe("hearts");
+    expect(s.night.hour).toBe(10);
+    expect(steps(s)).toEqual(row(10, true));
   });
 });
 

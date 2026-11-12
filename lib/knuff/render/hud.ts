@@ -11,7 +11,7 @@
 import { HINT, HINT_AGAIN, TOO_SMALL } from "../content/copy";
 import { CLOCK, HOURS } from "../content/night";
 import type { State, Tune } from "../sim/types";
-import { pauseKeyRect } from "./layout";
+import { hourStep, pauseKeyRect } from "./layout";
 import { C, rgba } from "./palette";
 import type { Paint } from "./renderer";
 
@@ -68,10 +68,11 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean): void {
   const hair = Math.max(1, Math.round(dpr));
   for (let i = 0; i < 12; i++) {
     const x = Math.round(x0 + i * 8 * dpr);
-    if (i < s.night.hour) {
+    const lit = hourStep(s, i);
+    if (lit === "done") {
       ctx.fillStyle = C.ink;
       ctx.fillRect(x, y0, Math.round(stepW), Math.round(stepH));
-    } else if (i === s.night.hour && s.phase !== "waiting") {
+    } else if (lit === "now") {
       ctx.fillStyle = C.magenta;
       ctx.fillRect(x, y0, Math.round(stepW), Math.round(stepH));
     } else {

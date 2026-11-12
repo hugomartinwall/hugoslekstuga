@@ -157,6 +157,19 @@ export function pauseKeyRect(bar: Rect): Rect {
   return { x: bar.x + bar.w - 52, y: bar.y + 2, w: 44, h: 44 };
 }
 
+/**
+ * The `i`th of the night's twelve steps in the top bar (§9.2): an hour
+ * done, the hour now (lit magenta), or an hour to come. No hour is in
+ * progress before the first launch, or once morning has come: the State's
+ * hour is then one past the last, which in step 1 is the twelfth step,
+ * the boss's, and that hour never began.
+ */
+export function hourStep(s: State, i: number): "done" | "now" | "to come" {
+  if (i < s.night.hour) return "done";
+  if (i === s.night.hour && s.phase !== "waiting" && s.ended !== "morning") return "now";
+  return "to come";
+}
+
 /** Which of the two hints is up, from the State alone. */
 export function hintFor(s: State): { hand: boolean; words: "first" | "again" | "" } {
   const launches = s.launch.id;
