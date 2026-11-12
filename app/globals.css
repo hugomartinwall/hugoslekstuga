@@ -762,6 +762,17 @@ body {
     padding-right: var(--dialog-pad, 0px);
   }
 
+  /* A full-screen game locks the page with a class of its own: its route
+     puts it on <html> and takes it off again. Nothing is saved and nothing
+     is restored, so it cannot trip over the dialog's lock above when a
+     game opens a dialog over itself. No rubber band either: a thumb that
+     reaches the page's edge must not drag the whole screen. */
+  html.game-open,
+  html.game-open body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   /* Centre a column on a whole pixel. `margin: auto` lands on a half pixel
      whenever the leftover width is odd, and at 1x that smears every 1px
      ring inside. Falls back to plain auto margins where round() is missing. */
