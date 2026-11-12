@@ -1,13 +1,8 @@
-import type { Metadata, Viewport } from "next";
-import { findTool } from "@/lib/tools";
+import type { Viewport } from "next";
+import { toolMetadata } from "@/lib/site";
 import Client from "./Client";
 
-const tool = findTool("adventure")!;
-
-export const metadata: Metadata = {
-  title: tool.title,
-  description: tool.description,
-};
+export const metadata = toolMetadata("adventure");
 
 /**
  * Page-scoped: only the game goes edge-to-edge. viewport-fit=cover is what

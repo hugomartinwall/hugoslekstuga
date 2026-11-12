@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -10,6 +11,17 @@ import { defineConfig } from "vitest/config";
  * event diffing). Nothing here touches a DOM or a canvas.
  */
 export default defineConfig({
+  // The app's "@/…" imports. The suites in test/site import the modules
+  // they guard (the sprite painter, the share-image code) instead of
+  // reading them as text, and those modules reach each other this way.
+  resolve: {
+    alias: [
+      {
+        find: /^@\//,
+        replacement: fileURLToPath(new URL("./", import.meta.url)),
+      },
+    ],
+  },
   test: {
     include: ["test/**/*.test.ts"],
     // Survival Maxx's geometry sweeps take several seconds each; its campaign
