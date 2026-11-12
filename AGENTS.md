@@ -252,6 +252,9 @@ Don't reuse a retired slug for something new.
   old clustered homepage); the swarm doesn't need it.
 - `lib/colors.ts` — single source for the 8 accent colours (+ `INK_HEX`
   / `CREAM_HEX` literals for canvas code that can't read CSS variables)
+- `lib/site.ts` — the site's address, name and tagline, and
+  `toolMetadata()` / `pageMetadata()`: what a page says about itself in
+  its `<head>` (see "Tool page shape")
 - `lib/hugo/sprite.ts` — the canonical Hugo pixel sprite (see below)
 - `lib/hugo-state.ts` — Hugo's shared mood/memory store
 - `lib/advice-engine.ts` — the Advice draw logic (see below)
@@ -285,13 +288,62 @@ Every tool is three files:
 
 - `app/tools/<slug>/Client.tsx` — `"use client"`, the actual UI
 - `app/tools/<slug>/page.tsx` — server-component wrapper that exports
-  `metadata = { title, description }` from the registry and renders `<Client />`
+  `metadata = toolMetadata("<slug>")` (from `lib/site.ts`) and renders
+  `<Client />`
 - `app/tools/<slug>/opengraph-image.tsx` — one-line wrapper around
-  `renderToolOG("<slug>")` from `lib/og.tsx`
+  `renderToolOG("<slug>")` from `lib/og.tsx`, under a first line that
+  carries the card's fingerprint (see "The card's address" below)
 
-Same shape for the game at `app/games/overrun/`.
+Same shape for the games at `app/games/<slug>/`.
 The split is so each page ships its own `<title>` and `<meta description>`
 — client components can't export `metadata`.
+
+**What a page says about itself.** `toolMetadata` builds the page's
+whole share block from its registry entry: the canonical link and
+og:url are the page's own address (spelled as `app/sitemap.ts` spells
+it), and the title and description are the same text in `<title>`, the
+og: tags and the twitter: tags. It has to say all of it, because Next
+merges a page's metadata into its layout's one level deep: a page that
+sets `openGraph` replaces the layout's whole object. For the same reason
+the root layout says only what is true of every page. Never put a
+canonical link or an og:url there: it carried the homepage's until
+2026-11, and every tool, the 404 and the lab said they were the
+homepage. The homepage sets its own in `app/page.tsx`. A page outside
+the registry uses `pageMetadata({ title, description, path })`. Those
+are the only places an address is written: under `app/`, a canonical
+link or a share block by hand, anywhere but the layout, the homepage
+and `/about`, fails `test/site/page-head.test.ts`.
+
+The share image is not set by hand: Next adds the folder's
+opengraph-image file to the page's share block. A page that sets
+`openGraph` and has no image file of its own gets no picture at all, so
+`/about`, which shows the site's, hands the layout's image on
+(`app/about/page.tsx` is the pattern).
+
+**The card's address.** The `?…` on an og:image address is a hash of
+the wrapper file alone, not of `lib/og.tsx`, where the picture is drawn,
+and caches keyed on the address go on showing the old card. So each
+wrapper's first line carries the fingerprint of the picture it draws
+(`// Picture 1a2b3c4d: …`). When a card's picture changes (a change in
+`lib/og.tsx`, or a tool's title, tagline, colour or icon),
+`test/site/share-image-address.test.ts` fails and says the new
+fingerprint; writing it into the wrapper is what gives the card its new
+address. The site image (`app/opengraph-image.tsx`) is held the same
+way. Its fingerprint is still kept in that suite and not in its file,
+because its address had to stay when the cards got theirs; it moves
+into the file the next time its picture changes (the suite says how).
+
+**The words on a card** are set in a hand-drawn face (GLYPHS in
+`lib/og.tsx`: capitals, figures and a few marks). A character it does
+not have is drawn as a solid block, and a letter it has only without
+its accent is set without it, so draw the glyph: rows of `X` and `.`,
+all as wide, seven from the cap line to the baseline.
+
+`test/site/` holds all of this: what each page says about itself
+(`page-head`), that an image's file follows its picture
+(`share-image-address`), every word the images set and the glyphs they
+are set in (`share-image-words`), and the mascot's copies in the icons
+and the share images against the real painter (`mascot-copies`).
 
 ## Shared components (use, don't reinvent)
 
@@ -341,6 +393,14 @@ squash), `drawCabinet` (the arcade-cabinet orb the games use on the
 map), `pixelDisc`, `readAccent`/`subscribeAccent` (his persisted colour,
 `hugoslekstuga:dot-color`), `spriteCanvasSize`. Never draw Hugo with
 CSS circles or a second sprite sheet — extend the one module.
+
+Two files cannot import it and carry a copy of him in coral:
+`app/apple-icon.tsx` (kept import-free, its comment says why) and
+`app/icon.svg`. The share images (`lib/og.tsx`) import his rows, his
+palette and `RESTING_PUPILS`, and place the boxes themselves.
+`test/site/mascot-copies.test.ts` has the real painter draw him at rest
+and fails when any of the three stops matching it, cell for cell: change
+the sprite and the copies have to follow.
 
 **`lib/hugo-state.ts` is his brain**: mood (sleepy/calm/curious/
 excited/grumpy), energy, visit streaks, `firstSeen` — persisted at
@@ -874,6 +934,7 @@ tools that are supposed to be fetchless.
 npm run dev           # Next dev on :3000
 npm run lint
 npm run test          # vitest — Overrun's suites + Adventure's + Greyrot's
+                      # + the site's own (test/site: head tags, share images)
 npm run build         # rm -rf .next first if Next caches stale routes —
                       # NOTE: that rm kills a running dev server; restart it
 npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)
@@ -943,13 +1004,19 @@ Mechanical steps once it's earned a slot:
    gets a 12×12 icon in `lib/pixel-icons.ts` under its slug. The footer
    index and the search palette pick the new entry up from the registry.
 2. Create `app/tools/<slug>/Client.tsx` (`"use client"`) and the server
-   wrapper `page.tsx` exporting `metadata` from the registry entry.
+   wrapper `page.tsx` exporting `metadata = toolMetadata("<slug>")`.
 3. Create `app/tools/<slug>/opengraph-image.tsx` — a one-line wrapper
    around `renderToolOG("<slug>")` from `lib/og.tsx`. Copy any existing
-   tool's OG file as the template and update the slug + alt string.
-   Skipping this means the tool's share preview falls back to the
-   generic site-wide OG.
+   tool's OG file as the template and update the slug, the alt string
+   and the fingerprint in its first line (step 5 says which).
+   Skipping this leaves the tool's share preview with no picture at
+   all (its page sets its own share block, and nothing puts the site
+   image back).
 4. Use the shared components and helpers — don't reinvent.
+5. `npm run test`: `test/site/` fails if the page or the image route
+   names another tool's slug, if the title or tagline has a character
+   the share image cannot draw, and until the wrapper's first line
+   carries the new card's fingerprint (the failure prints it).
 
 That's it. The cluster system is retired and there's no `lib/links.ts`
 to update — the homepage swarm picks up the new tool automatically
