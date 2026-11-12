@@ -445,6 +445,10 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     return freeze;
   };
 
+  /** The picture's clock: the frame's, less the time spent paused. */
+  let pausedFor = 0;
+  let lastFrameAt = -1;
+
   const loop = createLoop({
     // The State says which ticks are slowed, and counts them: a pull is
     // held, something in the room can hurt him, and the meter is not empty.
@@ -456,14 +460,22 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     render(frame) {
       // A window dragged to another screen changes the pixel ratio without a resize.
       if (window.devicePixelRatio !== measuredDpr) relayout();
-      fx.update(frame.realDt, frame.scaledDt, frame.now);
+      // A paused picture is a still one: the effects stop where they are,
+      // and the clock the hints, the blink and the shake read stops with
+      // them and goes on from where it stopped.
+      const stopped = paused || left;
+      if (stopped && lastFrameAt >= 0) pausedFor += frame.now - lastFrameAt;
+      lastFrameAt = frame.now;
+      const now = frame.now - pausedFor;
+      if (!stopped) fx.update(frame.realDt, frame.scaledDt, now);
       const pull = pointer.pull();
       const aim = pull?.aim ?? null;
       renderer.draw({
         state,
         tune,
         alpha: frame.alpha,
-        now: frame.now,
+        now,
+        still: stopped,
         live: inNight() && !paused && !left,
         pull,
         line: aim ? lineFor(aim) : null,

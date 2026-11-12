@@ -64,6 +64,8 @@ export type Frame = {
   now: number;
   /** A night is in progress and nothing holds it: the pause key acts. */
   live: boolean;
+  /** Paused: the picture must not change from one frame to the next. */
+  still: boolean;
   /** The pull being held, or null. */
   pull: PullView | null;
   /** The aim line of that pull, once it has become one. */
@@ -347,7 +349,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     const tickNow = state.tick - 1 + alpha;
     const floor = floorAt(state.night.hour);
 
-    if (!f.reduced && fx.shake > 0) {
+    if (!f.reduced && !f.still && fx.shake > 0) {
       ctx.translate(Math.round((Math.random() - 0.5) * fx.shake * dpr), Math.round((Math.random() - 0.5) * fx.shake * dpr));
     }
 
