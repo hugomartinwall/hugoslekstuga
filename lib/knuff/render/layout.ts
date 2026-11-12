@@ -11,7 +11,7 @@
  * scale, in CSS px per unit.
  */
 import { ROOM_H, ROOM_W } from "../sim/state";
-import type { State, Tune } from "../sim/types";
+import type { State, Thing, Tune } from "../sim/types";
 
 /** The top bar's height, px. */
 export const BAR_H = 48;
@@ -191,4 +191,36 @@ export function carriedAt(s: State, tune: Tune, y: number): { pips: number; mete
   if (y - s.room.top <= r + 15) return { pips: r + 10, meter: r + 20 };
   if (s.room.bottom - y <= r + 15) return { pips: -(r + 10), meter: -(r + 20) };
   return { pips: r + 10, meter: -(r + 11) };
+}
+
+// ── A dazed thing ─────────────────────────────────────────────────────
+
+/** A dust bunny's eyes are squares this many units across, their outer edges half its radius from its centre, on its middle row. */
+export const EYE_U = 2.4;
+
+/**
+ * The two squares a dazed thing wears in place of its eyes (§9.5), in
+ * units from its centre: 3 × 3 u, 3 u apart, on its middle row. They reach
+ * 4.8 u from its centre, well inside a dust bunny (8 u) and a token (7 u),
+ * and a dust bunny's eyes lie inside them. They are drawn in a pass after
+ * every body, so nothing in the room covers them.
+ */
+export const DAZE_MARKS: readonly Rect[] = [
+  { x: -4.5, y: -1.5, w: 3, h: 3 },
+  { x: 1.5, y: -1.5, w: 3, h: 3 },
+];
+
+/**
+ * The order the bodies in the room are drawn in, into `out`: the live
+ * ones, then the dazed ones. Announced things are left out. Dust bunnies
+ * are kept apart, but a token rolls through anything and a dust bunny
+ * walks through a dazed token: drawn over the live thing it overlaps, a
+ * dazed thing's marks lie on its own body, never on one that can cost a
+ * heart.
+ */
+export function bodyOrder(s: State, out: Thing[]): Thing[] {
+  out.length = 0;
+  for (const d of s.things) if (s.tick >= d.landTick && s.tick >= d.dazedUntil) out.push(d);
+  for (const d of s.things) if (s.tick >= d.landTick && s.tick < d.dazedUntil) out.push(d);
+  return out;
 }

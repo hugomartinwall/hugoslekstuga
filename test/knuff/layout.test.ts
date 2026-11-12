@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { player, runNight, STEP1_NIGHT, nightSeed } from "../../lib/knuff/bots/driver";
+import { KINDS } from "../../lib/knuff/content/kinds";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
 import {
   BAR_H,
   BAR_MIN_W,
+  DAZE_MARKS,
+  EYE_U,
   LAPTOP_MARGIN,
   MIN_SCALE,
+  bodyOrder,
   carriedAt,
   hintFor,
   hourStep,
@@ -15,7 +20,7 @@ import {
 } from "../../lib/knuff/render/layout";
 import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
-import type { SimEvent, State } from "../../lib/knuff/sim/types";
+import type { SimEvent, State, Thing } from "../../lib/knuff/sim/types";
 
 /**
  * Where the room is drawn: the sizing rules of the spec (§9.1), row by
@@ -388,6 +393,125 @@ describe("the night's twelve steps in the top bar", () => {
     expect(s.ended).toBe("hearts");
     expect(s.night.hour).toBe(10);
     expect(steps(s)).toEqual(row(10, true));
+  });
+});
+
+describe("a dazed thing's marks (§9.5)", () => {
+  const tune = DEFAULT_TUNE;
+  const REST = { launch: null, pullHeld: false };
+  const radius = (d: Thing) => KINDS[d.kind].radius;
+  const dazed = (s: State, d: Thing) => s.tick < d.dazedUntil;
+  /** How near a box, in units from the centre (cx, cy), comes to the point (ox, oy). */
+  const reachOf = (b: { x: number; y: number; w: number; h: number }, cx: number, cy: number, ox: number, oy: number) => {
+    const nx = Math.min(Math.max(ox, cx + b.x), cx + b.x + b.w);
+    const ny = Math.min(Math.max(oy, cy + b.y), cy + b.y + b.h);
+    return Math.hypot(nx - ox, ny - oy);
+  };
+  /** Do `d`'s marks touch `o`'s body? */
+  const marksOn = (d: Thing, o: Thing) => DAZE_MARKS.some((m) => reachOf(m, d.x, d.y, o.x, o.y) <= radius(o));
+  /** The marks as they were drawn until now: 2 u above the body. */
+  const OLD_MARKS = (d: Thing) => [
+    { x: -4.5, y: -radius(d) - 5, w: 3, h: 3 },
+    { x: 1.5, y: -radius(d) - 5, w: 3, h: 3 },
+  ];
+  const put = (s: State, kind: Thing["kind"], x: number, y: number, dazedUntil = 0): Thing => {
+    const d: Thing = { id: s.nextId++, kind, x, y, px: x, py: y, vx: 0, vy: 0, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil, phase: 0 };
+    s.things.push(d);
+    return d;
+  };
+
+  it("are two 3 × 3 u squares, 3 u apart, on the middle row, well inside a dust bunny and a token", () => {
+    const [a, b] = DAZE_MARKS;
+    expect(DAZE_MARKS.length).toBe(2);
+    for (const m of DAZE_MARKS) expect([m.w, m.h, m.y + m.h / 2]).toEqual([3, 3, 0]);
+    expect(b.x - (a.x + a.w)).toBe(3);
+    expect(a.x + b.x + b.w).toBe(0);
+    for (const kind of ["bunny", "token"] as const) {
+      // Every corner at least 2 u inside the body: rounding to device pixels cannot take a mark out of it.
+      for (const m of DAZE_MARKS) {
+        for (const [x, y] of [
+          [m.x, m.y],
+          [m.x + m.w, m.y],
+          [m.x, m.y + m.h],
+          [m.x + m.w, m.y + m.h],
+        ]) {
+          expect(Math.hypot(x, y), kind).toBeLessThanOrEqual(KINDS[kind].radius - 2);
+        }
+      }
+    }
+  });
+
+  it("take the place of a dust bunny's eyes: each eye lies inside a mark", () => {
+    const r = KINDS.bunny.radius;
+    const eyes = [
+      { x: -r / 2, y: -EYE_U / 2, w: EYE_U, h: EYE_U },
+      { x: r / 2 - EYE_U, y: -EYE_U / 2, w: EYE_U, h: EYE_U },
+    ];
+    for (const [i, e] of eyes.entries()) {
+      const m = DAZE_MARKS[i];
+      expect(e.x).toBeGreaterThanOrEqual(m.x);
+      expect(e.x + e.w).toBeLessThanOrEqual(m.x + m.w);
+      expect(e.y).toBeGreaterThanOrEqual(m.y);
+      expect(e.y + e.h).toBeLessThanOrEqual(m.y + m.h);
+    }
+  });
+
+  it("the live things are drawn first and the dazed ones over them; announced things are not bodies yet", () => {
+    const s = createState(7, tune, { empty: true });
+    s.tick = 100;
+    const a = put(s, "bunny", 100, 300, 130);
+    const b = put(s, "token", 106, 301);
+    const c = put(s, "token", 200, 300, 130);
+    const d = put(s, "bunny", 207, 300);
+    const e = put(s, "bunny", 260, 300);
+    e.landTick = 120;
+    const f = put(s, "bunny", 100, 100, 100);
+    expect(bodyOrder(s, []).map((t) => t.id)).toEqual([b, d, f, a, c].map((t) => t.id));
+    // A live thing across a dazed one's marks is under them.
+    expect(marksOn(a, b) && marksOn(c, d)).toBe(true);
+  });
+
+  it("the opening rack after a weak straight first pull: no mark touches another body, where 2 u above it they lay on the bunny above", () => {
+    let wereOnLive = 0;
+    for (const power of [0.6, 0.7, 0.8]) {
+      for (const seed of [1, 7, 42]) {
+        const s = createState(seed, tune);
+        step(s, { launch: { dx: 0, dy: -1, power }, pullHeld: false }, tune, []);
+        for (let i = 0; i < 600 && s.him.hot; i++) step(s, REST, tune, []);
+        const at = `power ${power}, seed ${seed}`;
+        const out = s.things.filter((d) => dazed(s, d));
+        expect(out.length, at).toBeGreaterThan(0);
+        for (const d of out) {
+          for (const o of s.things) {
+            if (o === d) continue;
+            expect(marksOn(d, o), at).toBe(false);
+            if (!dazed(s, o) && OLD_MARKS(d).some((m) => reachOf(m, d.x, d.y, o.x, o.y) <= radius(o))) wereOnLive++;
+          }
+        }
+      }
+    }
+    expect(wereOnLive).toBeGreaterThan(0);
+  });
+
+  it("in whole nights, no live body is ever drawn over a mark it touches", () => {
+    let crossings = 0;
+    const order: Thing[] = [];
+    for (let i = 0; i < 6; i++) {
+      runNight(nightSeed(i), player("kiter"), tune, STEP1_NIGHT, (_events, s) => {
+        bodyOrder(s, order);
+        for (const [di, d] of order.entries()) {
+          if (!dazed(s, d)) continue;
+          for (const [oi, o] of order.entries()) {
+            if (o === d || !marksOn(d, o)) continue;
+            crossings++;
+            // Drawn before it, under it: the marks lie on its own body.
+            if (!dazed(s, o)) expect(oi, `night ${i} tick ${s.tick}`).toBeLessThan(di);
+          }
+        }
+      });
+    }
+    // The nights did bring a token across a dazed thing, and the other way round.
+    expect(crossings).toBeGreaterThan(0);
   });
 });
 

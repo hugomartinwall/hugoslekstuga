@@ -26,10 +26,20 @@ import type { PullView } from "../input/pointer";
 import type { AimLine } from "../sim/aim";
 import { KINDS } from "../content/kinds";
 import { ROOM_H, ROOM_W } from "../sim/state";
-import type { State, Tune } from "../sim/types";
+import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
-import { DECK_HINT_MIN, carriedAt, hintFor, layoutFor, type Insets, type Layout } from "./layout";
+import {
+  DAZE_MARKS,
+  DECK_HINT_MIN,
+  EYE_U,
+  bodyOrder,
+  carriedAt,
+  hintFor,
+  layoutFor,
+  type Insets,
+  type Layout,
+} from "./layout";
 import { C, mix, rgba } from "./palette";
 
 /** The floor through the night: darker each hour until 03:00, then warming toward morning. */
@@ -37,6 +47,9 @@ function floorAt(hour: number): string {
   if (hour <= 8) return mix(C.floor, C.floorNight, Math.max(0, hour) / 8);
   return mix(C.floorNight, C.floorWarm, Math.min(1, (hour - 8) / 3));
 }
+
+/** The things in the room in the order they are drawn: filled afresh each frame. */
+const inOrder: Thing[] = [];
 
 /** The canvas is never backed by more device pixels per px than this. */
 const MAX_DPR = 3;
@@ -467,9 +480,10 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       }
     }
 
-    // The things in the room. Kind is told by outline; colour only confirms it.
-    for (const d of state.things) {
-      if (state.tick < d.landTick) continue;
+    // The things in the room. Kind is told by outline; colour only confirms
+    // it. The live ones first, then the dazed ones over them (a token rolls
+    // through anything): a dazed thing's marks are then on its own body.
+    for (const d of bodyOrder(state, inOrder)) {
       const dx = d.px + (d.x - d.px) * alpha;
       const dy = d.py + (d.y - d.py) * alpha;
       const dr = KINDS[d.kind].radius;
@@ -479,26 +493,26 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
         paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.acid, C.ink, 0.45) : C.acid);
         paint.disc(X(dx), Y(dy), dr * S * 0.45, cellFx, floor);
       } else {
-        // A small round body with two eyes.
+        // A small round body with two eyes. Dazed, it wears its marks in their place.
         paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.ash, C.ink, 0.45) : C.ash);
-        const eyeS = Math.max(2, Math.round(S * 2.4));
-        ctx.fillStyle = C.page;
-        ctx.fillRect(Math.round(X(dx) - dr * S * 0.5), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
-        ctx.fillRect(Math.round(X(dx) + dr * S * 0.5 - eyeS), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
+        if (state.tick >= d.dazedUntil) {
+          const eyeS = Math.max(2, Math.round(S * EYE_U));
+          ctx.fillStyle = C.page;
+          ctx.fillRect(Math.round(X(dx) - dr * S * 0.5), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
+          ctx.fillRect(Math.round(X(dx) + dr * S * 0.5 - eyeS), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
+        }
       }
     }
-    // Dazed: two 3 u phosphor squares, 3 u apart, 2 u above the body, for
-    // exactly as long as it is harmless. In a pass of their own, after
-    // every body: in a bunch a neighbour was drawn over them.
+    // Dazed: two 3 u phosphor squares, 3 u apart, inside its own body in
+    // place of its eyes, for exactly as long as it is harmless. In a pass
+    // of their own, after every body, so no neighbour is drawn over them.
     const dazeQ = Math.max(2, Math.round(S * 3));
     ctx.fillStyle = C.ink;
-    for (const d of state.things) {
-      if (state.tick < d.landTick || state.tick >= d.dazedUntil) continue;
+    for (const d of inOrder) {
+      if (state.tick >= d.dazedUntil) continue;
       const dx = d.px + (d.x - d.px) * alpha;
       const dy = d.py + (d.y - d.py) * alpha;
-      const dr = KINDS[d.kind].radius;
-      ctx.fillRect(Math.round(X(dx - 4.5)), Math.round(Y(dy - dr - 5)), dazeQ, dazeQ);
-      ctx.fillRect(Math.round(X(dx + 1.5)), Math.round(Y(dy - dr - 5)), dazeQ, dazeQ);
+      for (const m of DAZE_MARKS) ctx.fillRect(Math.round(X(dx + m.x)), Math.round(Y(dy + m.y)), dazeQ, dazeQ);
     }
 
     // His pips, above the things in the room and under him.
