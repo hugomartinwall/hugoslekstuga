@@ -88,11 +88,18 @@ export type SpriteColors = {
   pupil: string;
 };
 
+/** How far the shade sits from the accent toward the room dark, and the
+ *  highlight toward phosphor. Two copies of the mascot cannot import
+ *  this file (app/apple-icon.tsx, app/icon.svg) and carry the results as
+ *  hex; test/site/mascot-copies.test.ts holds them to what is drawn here. */
+export const SHADE_MIX = 0.52;
+export const HIGHLIGHT_MIX = 0.55;
+
 export function spriteColors(accent: string): SpriteColors {
   return {
     body: accent,
-    shade: mixHex(accent, ROOM_RGB, 0.52),
-    highlight: mixHex(accent, INK_RGB, 0.55),
+    shade: mixHex(accent, ROOM_RGB, SHADE_MIX),
+    highlight: mixHex(accent, INK_RGB, HIGHLIGHT_MIX),
     white: INK_HEX,
     pupil: CREAM_HEX,
   };
@@ -112,6 +119,14 @@ export const DEFAULT_EYE_STATE: EyeState = {
   dx: 0,
   dy: 0,
 };
+
+/** The pupils with the eyes at rest, in cells: the left column of each
+ *  eye, one cell wide and two tall. A gaze moves them one cell right or
+ *  down. The share images (lib/og.tsx) draw his pupils from this too. */
+export const RESTING_PUPILS = [
+  { x: 5, y: 6, w: 1, h: 2 },
+  { x: 9, y: 6, w: 1, h: 2 },
+] as const;
 
 export type SpriteDrawOptions = {
   /** Centre of the sprite, in current ctx coordinates. */
@@ -197,8 +212,8 @@ export function drawHugoSprite(
     const pupilX = eye.dx === 1 ? 1 : 0;
     const pupilY = eye.dy === 1 ? 1 : 0;
     ctx.fillStyle = colors.pupil;
-    for (const ex of [5, 9]) {
-      ctx.fillRect((ex + pupilX) * px, (6 + pupilY) * px, px, 2 * px);
+    for (const p of RESTING_PUPILS) {
+      ctx.fillRect((p.x + pupilX) * px, (p.y + pupilY) * px, p.w * px, p.h * px);
     }
   }
 

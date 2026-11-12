@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import type { ReactElement, ReactNode } from "react";
 import { isGameSlug } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX, INK_HEX } from "@/lib/colors";
-import { SPRITE_ROWS, spriteColors } from "@/lib/hugo/sprite";
+import { RESTING_PUPILS, SPRITE_ROWS, spriteColors } from "@/lib/hugo/sprite";
 import { PIXEL_ICONS, iconForSlug, type PixelIconName } from "@/lib/pixel-icons";
 import { findTool, type Tool } from "@/lib/tools";
 
@@ -11,9 +11,17 @@ import { findTool, type Tool } from "@/lib/tools";
  *
  * `renderToolOG("<slug>")` is the per-page card; each
  * `app/{tools,games}/<slug>/opengraph-image.tsx` is a thin wrapper around
- * it, so a change to the card touches this file and not thirteen. The
+ * it, so the card is drawn in this file and not in thirteen. The
  * site-wide image (`app/opengraph-image.tsx`) lays out the same parts
  * its own way, so both set their words in one pixel face.
+ *
+ * One thing does have to change in the thirteen. An image's address
+ * ends in a hash of its route file alone, which a change here does not
+ * touch, and caches keyed on the address go on showing the old picture.
+ * So each wrapper's first line carries the fingerprint of the picture
+ * it draws, and test/site/share-image-address.test.ts fails when a
+ * picture and its line part ways: it says the fingerprint to write. The
+ * site image (app/opengraph-image.tsx) is held the same way.
  *
  * Why everything is a box: ImageResponse has no canvas, and it can only
  * set type from a font file it is handed — the repo ships none (the
@@ -164,8 +172,12 @@ function Layer({
  * Row 0 is the cap line and row 6 stands on the baseline. A glyph with
  * more rows than that hangs below (the comma's tail); one listed in
  * GLYPH_RISE starts that many rows above the cap line (the dots on Ö).
+ * A row is `X` for a lit cell and `.` for a dark one, and the rows of a
+ * glyph are all as wide; test/site/share-image-words.test.ts holds every
+ * glyph to that, because any other character is a cell that is quietly
+ * not drawn.
  */
-const GLYPHS: Record<string, readonly string[]> = {
+export const GLYPHS: Record<string, readonly string[]> = {
   A: [".XXX.", "X...X", "X...X", "XXXXX", "X...X", "X...X", "X...X"],
   B: ["XXXX.", "X...X", "X...X", "XXXX.", "X...X", "X...X", "XXXX."],
   C: [".XXX.", "X...X", "X....", "X....", "X....", "X...X", ".XXX."],
@@ -212,31 +224,51 @@ const GLYPHS: Record<string, readonly string[]> = {
   "?": [".XXX.", "X...X", "....X", "...X.", "..X..", ".....", "..X.."],
   "!": ["X", "X", "X", "X", "X", ".", "X"],
   "-": ["...", "...", "...", "XXX", "...", "...", "..."],
+  // The same hand as the marks above: one-cell strokes, dots the size
+  // of the full stop's, the plus on the dash's row, and the ampersand
+  // ends in the Q's tail.
+  "&": [".XX..", "X..X.", "X.X..", ".X...", "X.X.X", "X..X.", ".XX.X"],
+  ":": ["..", "XX", "XX", "..", "..", "XX", "XX"],
+  "/": ["..X", "..X", ".X.", ".X.", ".X.", "X..", "X.."],
+  "(": ["..X", ".X.", "X..", "X..", "X..", ".X.", "..X"],
+  ")": ["X..", ".X.", "..X", "..X", "..X", ".X.", "X.."],
+  "+": [".....", "..X..", "..X..", "XXXXX", "..X..", "..X..", "....."],
 };
 
-const GLYPH_RISE: Record<string, number> = { Å: 3, Ä: 2, Ö: 2 };
+export const GLYPH_RISE: Record<string, number> = { Å: 3, Ä: 2, Ö: 2 };
 
-/** What a character with no glyph is drawn as: the empty box a font
- *  shows for a missing letter. Visible on purpose. */
-const NO_GLYPH = ["XXXXX", "X...X", "X...X", "X...X", "X...X", "X...X", "XXXXX"];
+/** What a character with no glyph is drawn as: a solid block. It was an
+ *  empty box, the sign a font shows for a missing letter, and among
+ *  these capitals that read as an O or a zero ("ROCK & ROLL: 100%" came
+ *  out as "ROCK O ROLLO 1000"). A block is no letter. */
+const NO_GLYPH = ["XXXXX", "XXXXX", "XXXXX", "XXXXX", "XXXXX", "XXXXX", "XXXXX"];
 /** Characters already reported missing, so each is said once. */
 const warned = new Set<string>();
 
-/**
- * The glyph for one character. An accented letter the face has not
- * drawn falls back to its plain letter (É sets as E); anything else
- * unknown is the empty box, and says so in the server log, where a
- * build shows it.
- */
-function glyphFor(ch: string): { rows: readonly string[]; rise: number } {
+type Glyph = { rows: readonly string[]; rise: number };
+
+/** The face's glyph for one character, if it has one. An accented
+ *  letter the face has not drawn falls back to its plain letter (É sets
+ *  as E). */
+function findGlyph(ch: string): Glyph | null {
   const own = GLYPHS[ch];
   if (own) return { rows: own, rise: GLYPH_RISE[ch] ?? 0 };
   const plain = GLYPHS[ch.normalize("NFD")[0]];
-  if (plain) return { rows: plain, rise: 0 };
+  return plain ? { rows: plain, rise: 0 } : null;
+}
+
+/**
+ * The glyph one character is drawn with. A character the face does not
+ * have is the block, and says so in the server log, where a build shows
+ * it.
+ */
+function glyphFor(ch: string): Glyph {
+  const found = findGlyph(ch);
+  if (found) return found;
   if (!warned.has(ch)) {
     warned.add(ch);
     console.warn(
-      `[og] no pixel glyph for ${JSON.stringify(ch)}: drawn as an empty box. Add it to GLYPHS in lib/og.tsx.`,
+      `[og] no pixel glyph for ${JSON.stringify(ch)}: drawn as a solid block. Add it to GLYPHS in lib/og.tsx.`,
     );
   }
   return { rows: NO_GLYPH, rise: 0 };
@@ -253,6 +285,19 @@ function pixelChars(text: string): string[] {
       .replace(/[\u2018\u2019]/g, "'")
       .replace(/[\u2013\u2014]/g, "-")
       .replace(/\u2026/g, "..."),
+  );
+}
+
+/**
+ * The characters of `text` the face has not drawn. Each would come out
+ * wrong on an image: an accented letter as its plain one (Ö as O), any
+ * other as the block. test/site/share-image-words.test.ts puts every
+ * word the images set through this, so a new word with a new character
+ * fails there and not in somebody's link preview.
+ */
+export function missingGlyphs(text: string): string[] {
+  return [...new Set(pixelChars(text))].filter(
+    (ch) => ch !== " " && !GLYPHS[ch],
   );
 }
 
@@ -417,15 +462,7 @@ export function Hugo({
       {boxes(bitmapRects(SPRITE_ROWS, "s"), cell, c.shade, "s")}
       {boxes(bitmapRects(SPRITE_ROWS, "h"), cell, c.highlight, "h")}
       {boxes(bitmapRects(SPRITE_ROWS, "w"), cell, c.white, "w")}
-      {boxes(
-        [
-          { x: 5, y: 6, w: 1, h: 2 },
-          { x: 9, y: 6, w: 1, h: 2 },
-        ],
-        cell,
-        c.pupil,
-        "p",
-      )}
+      {boxes(RESTING_PUPILS, cell, c.pupil, "p")}
     </Layer>
   );
 }
