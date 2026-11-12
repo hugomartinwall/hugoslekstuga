@@ -6,6 +6,7 @@ import { ChipGroup } from "@/components/ui/Chip";
 import Dialog from "@/components/ui/Dialog";
 import { TextArea } from "@/components/ui/Field";
 import Keycap from "@/components/ui/Keycap";
+import ScrollRegion from "@/components/ui/ScrollRegion";
 import Tag from "@/components/ui/Tag";
 import { CREAM_HEX, accentVars } from "@/lib/colors";
 import { END, KEYS, PANEL_LABEL, ROOT_LABEL } from "@/lib/knuff/content/copy";
@@ -37,6 +38,15 @@ import type { Tune } from "@/lib/knuff/sim/types";
  */
 
 const GAME_ACCENT = accentVars("pink");
+
+/**
+ * Each panel's frame. On a page too short for a panel, what is inside
+ * scrolls under the frame (components/ui/ScrollRegion): the stepped frame
+ * is drawn on the panel, and a panel that scrolled itself took it along.
+ * The panel is no taller than the page less the scrim's padding and a
+ * margin above, so its top never leaves the page.
+ */
+const PANEL = "flex max-h-[calc(100dvh-3rem)] w-full max-w-sm flex-col";
 
 /** The playable's. `?tune=<json>`: knobs laid over the default table, by name. */
 function tuneFromAddress(): Partial<Tune> | undefined {
@@ -290,24 +300,28 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         label={PANEL_LABEL.pause}
         returnFocus={false}
         style={GAME_ACCENT}
-        className="flex max-h-[100dvh] w-full max-w-sm flex-col gap-4 overflow-y-auto p-5"
+        className={PANEL}
       >
-        <Keycap tone="accent" size="lg" block data-autofocus onClick={resume}>
-          {KEYS.resume}
-        </Keycap>
-        {/* The playable's. PACE and HOT AFTER A POP change the rules: the
-            night in progress is dropped and the start screen comes back. */}
-        <div data-knobs="pause" className="flex flex-col gap-2">
-          <Knobs knobs={view.knobs} onSet={setTune} />
-          <Keycap size="sm" className="self-start" onClick={() => setMore(true)}>
-            MORE
-          </Keycap>
-        </div>
-        {!standalone && (
-          <Keycap href="/" tone="neutral" block onClick={leave}>
-            {KEYS.back}
-          </Keycap>
-        )}
+        <ScrollRegion>
+          <div className="flex flex-col gap-4 p-5">
+            <Keycap tone="accent" size="lg" block data-autofocus onClick={resume}>
+              {KEYS.resume}
+            </Keycap>
+            {/* The playable's. PACE and HOT AFTER A POP change the rules: the
+                night in progress is dropped and the start screen comes back. */}
+            <div data-knobs="pause" className="flex flex-col gap-2">
+              <Knobs knobs={view.knobs} onSet={setTune} />
+              <Keycap size="sm" className="self-start" onClick={() => setMore(true)}>
+                MORE
+              </Keycap>
+            </div>
+            {!standalone && (
+              <Keycap href="/" tone="neutral" block onClick={leave}>
+                {KEYS.back}
+              </Keycap>
+            )}
+          </div>
+        </ScrollRegion>
       </Dialog>
 
       <Dialog
@@ -318,51 +332,61 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         placement="bottom"
         returnFocus={false}
         style={GAME_ACCENT}
-        className="flex max-h-[100dvh] w-full max-w-sm flex-col gap-3 overflow-y-auto p-5"
+        className={PANEL}
       >
         {over && (
           <>
-            {!standalone && (
-              <Keycap href="/" tone="quiet" size="sm" className="self-start" onClick={leave}>
-                {KEYS.back}
-              </Keycap>
-            )}
-            <div className="flex items-end justify-between gap-3">
-              <p data-end="score" className="font-display text-7xl leading-none text-ink">
-                {over.score}
-              </p>
-              {over.newBest && (
-                <Tag tone="solid" className="mb-2">
-                  {END.newBest}
-                </Tag>
-              )}
-            </div>
-            <dl className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  [END.best, String(over.best), "best"],
-                  [END.night, over.night, "night"],
-                  [END.bestShot, String(over.bestShot), "bestShot"],
-                ] as const
-              ).map(([label, value, key]) => (
-                <div key={key}>
-                  <dt className="label-pixel">{label}</dt>
-                  <dd data-end={key} className="font-display text-2xl leading-tight text-ink">
-                    {value}
-                  </dd>
+            {/* AGAIN stays put under what scrolls. It takes the focus as the
+                panel opens, and inside the scrolling part that focus scrolled
+                the score out of view on a short page: here the panel opens on
+                its top, the score, and AGAIN is in view under it. */}
+            <ScrollRegion>
+              <div className="flex flex-col gap-3 px-5 pt-5">
+                {!standalone && (
+                  <Keycap href="/" tone="quiet" size="sm" className="self-start" onClick={leave}>
+                    {KEYS.back}
+                  </Keycap>
+                )}
+                <div className="flex items-end justify-between gap-3">
+                  <p data-end="score" className="font-display text-7xl leading-none text-ink">
+                    {over.score}
+                  </p>
+                  {over.newBest && (
+                    <Tag tone="solid" className="mb-2">
+                      {END.newBest}
+                    </Tag>
+                  )}
                 </div>
-              ))}
-            </dl>
-            {over.line !== "" && (
-              <p data-end="line" className="text-[15px] text-ink-soft">
-                {over.line}
-              </p>
-            )}
-            {/* The playable's. A value set here is used by the night AGAIN starts. */}
-            <div data-knobs="end" className="flex flex-col gap-2">
-              <Knobs knobs={view.knobs} onSet={setTune} />
+                <dl className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      [END.best, String(over.best), "best"],
+                      [END.night, over.night, "night"],
+                      [END.bestShot, String(over.bestShot), "bestShot"],
+                    ] as const
+                  ).map(([label, value, key]) => (
+                    <div key={key}>
+                      <dt className="label-pixel">{label}</dt>
+                      <dd data-end={key} className="font-display text-2xl leading-tight text-ink">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                {over.line !== "" && (
+                  <p data-end="line" className="text-[15px] text-ink-soft">
+                    {over.line}
+                  </p>
+                )}
+                {/* The playable's. A value set here is used by the night AGAIN starts. */}
+                <div data-knobs="end" className="flex flex-col gap-2">
+                  <Knobs knobs={view.knobs} onSet={setTune} />
+                </div>
+              </div>
+            </ScrollRegion>
+            <div className="shrink-0 px-5 pt-3 pb-5">
+              <AgainKey onAgain={() => gameRef.current?.restart()} />
             </div>
-            <AgainKey onAgain={() => gameRef.current?.restart()} />
           </>
         )}
       </Dialog>
@@ -376,55 +400,59 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         label="More knobs"
         returnFocus={() => screen === "paused" || screen === "over"}
         style={GAME_ACCENT}
-        className="flex max-h-[90dvh] w-full max-w-sm flex-col gap-3 overflow-y-auto p-5"
+        className={PANEL}
       >
-        <div className="flex items-center gap-2">
-          <span id={pipsId} className="label-pixel whitespace-nowrap">
-            PIPS BACK
-          </span>
-          <ChipGroup
-            labelledBy={pipsId}
-            className="gap-1.5"
-            options={[
-              { value: 96, label: "96" },
-              { value: 120, label: "120" },
-            ]}
-            value={view.knobs.pipRefillTicks === 96 || view.knobs.pipRefillTicks === 120 ? view.knobs.pipRefillTicks : null}
-            onChange={(pipRefillTicks) => setTune({ pipRefillTicks })}
-          />
-        </div>
-        <TextArea
-          label="Any knob, as JSON"
-          rows={3}
-          value={draft}
-          placeholder='{"paceTokens":3}'
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        {fault !== "" && (
-          <p role="alert" className="text-sm text-tomato">
-            {fault}
-          </p>
-        )}
-        <div className="flex gap-2">
-          <Keycap tone="accent" onClick={apply}>
-            APPLY
-          </Keycap>
-          <Keycap onClick={closeMore}>CLOSE</Keycap>
-        </div>
-        <div>
-          <p className="label-pixel">IN FORCE</p>
-          <p data-knobs="in-force" className="text-xs text-ink-soft">
-            pace {view.knobs.pace} · popHotTicks {view.knobs.popHotTicks} · aimCushions {view.knobs.aimCushions} ·
-            pipRefillTicks {view.knobs.pipRefillTicks}
-          </p>
-          <p className="label-pixel mt-2">NOT AT ITS STARTING VALUE</p>
-          <p data-knobs="named" className="text-xs break-all text-ink-soft">
-            {view.named}
-          </p>
-        </div>
+        <ScrollRegion>
+          <div className="flex flex-col gap-3 p-5">
+            <div className="flex items-center gap-2">
+              <span id={pipsId} className="label-pixel whitespace-nowrap">
+                PIPS BACK
+              </span>
+              <ChipGroup
+                labelledBy={pipsId}
+                className="gap-1.5"
+                options={[
+                  { value: 96, label: "96" },
+                  { value: 120, label: "120" },
+                ]}
+                value={view.knobs.pipRefillTicks === 96 || view.knobs.pipRefillTicks === 120 ? view.knobs.pipRefillTicks : null}
+                onChange={(pipRefillTicks) => setTune({ pipRefillTicks })}
+              />
+            </div>
+            <TextArea
+              label="Any knob, as JSON"
+              rows={3}
+              value={draft}
+              placeholder='{"paceTokens":3}'
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            {fault !== "" && (
+              <p role="alert" className="text-sm text-tomato">
+                {fault}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Keycap tone="accent" onClick={apply}>
+                APPLY
+              </Keycap>
+              <Keycap onClick={closeMore}>CLOSE</Keycap>
+            </div>
+            <div>
+              <p className="label-pixel">IN FORCE</p>
+              <p data-knobs="in-force" className="text-xs text-ink-soft">
+                pace {view.knobs.pace} · popHotTicks {view.knobs.popHotTicks} · aimCushions {view.knobs.aimCushions} ·
+                pipRefillTicks {view.knobs.pipRefillTicks}
+              </p>
+              <p className="label-pixel mt-2">NOT AT ITS STARTING VALUE</p>
+              <p data-knobs="named" className="text-xs break-all text-ink-soft">
+                {view.named}
+              </p>
+            </div>
+          </div>
+        </ScrollRegion>
       </Dialog>
     </>
   );
