@@ -553,6 +553,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
         if (!on && !destroyed) loop.start();
       },
       launch(launch) {
+        // As a release: there is none on a page too small, under a panel, or after the night.
+        if (renderer.layout.tooSmall || paused || left || state.phase === "over") return;
         queued = launch;
       },
       tune: () => tune,

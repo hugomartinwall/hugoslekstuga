@@ -416,7 +416,7 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         </div>
         <div>
           <p className="label-pixel">IN FORCE</p>
-          <p data-knobs="in-force" className="text-xs break-all text-ink-soft">
+          <p data-knobs="in-force" className="text-xs text-ink-soft">
             pace {view.knobs.pace} · popHotTicks {view.knobs.popHotTicks} · aimCushions {view.knobs.aimCushions} ·
             pipRefillTicks {view.knobs.pipRefillTicks}
           </p>

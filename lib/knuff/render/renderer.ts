@@ -454,11 +454,14 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       }
     }
 
-    // His trail: a decaying smear in his colour.
+    // His trail: a decaying smear in his colour. While he is drawn as his
+    // outline only, the part of it under him would show through: left out.
+    const outlined = state.tick < h.invulnUntil && state.phase !== "over";
     if (!f.reduced) {
       for (let i = 0; i < fx.trail.length; i++) {
         const t = fx.trail[i];
         const k = (i + 1) / (fx.trail.length + 1);
+        if (outlined && Math.hypot(t.x - hx, t.y - hy) < r * (1.3 + 0.6 * k)) continue;
         paint.disc(X(t.x), Y(t.y), r * S * (0.3 + 0.6 * k), cellFx, rgba(f.accent, 0.1 + 0.42 * k));
       }
     }
@@ -540,7 +543,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       scaleY: sy,
       // Nothing can cost him a heart: his outline only. Not a flash, and
       // not a white ring, which means hot.
-      outline: state.tick < h.invulnUntil && state.phase !== "over",
+      outline: outlined,
     });
 
     // The hot ring: whole, phosphor, 2 u thick, 4 u outside his circle.
