@@ -11,6 +11,7 @@
  * scale, in CSS px per unit.
  */
 import { ROOM_H, ROOM_W } from "../sim/state";
+import type { State, Tune } from "../sim/types";
 
 /** The top bar's height, px. */
 export const BAR_H = 48;
@@ -18,6 +19,8 @@ export const BAR_H = 48;
 export const DECK_MIN = 130;
 /** The margin under the room on a laptop, px. There is no deck there. */
 export const LAPTOP_MARGIN = 28;
+/** The playable's bar on a laptop is never narrower than this, px (the room at 0.83 px a unit). */
+export const BAR_MIN_W = 300;
 /** Under this scale the game does not run. */
 export const MIN_SCALE = 0.75;
 
@@ -118,14 +121,56 @@ export function layoutFor(
   const blockH = BAR_H + roomH + LAPTOP_MARGIN;
   const top = whole(safe.top + Math.max(0, (H - blockH) / 2));
   const roomY = top + BAR_H;
+  // The bar sits on the room and is as wide as it. Where the playable has
+  // shrunk the room under what the final route allows, a bar that narrow
+  // would run the score into the clock: it keeps a width it can be read at.
+  const barW = playable ? Math.max(roomW, Math.min(W, BAR_MIN_W)) : roomW;
+  const barX = whole(roomX - (barW - roomW) / 2);
   return {
     s,
     dpr,
     coarse,
     tooSmall: !playable && s < MIN_SCALE,
     page: { w: pageW, h: pageH },
-    bar: { x: roomX, y: top, w: roomW, h: BAR_H },
+    bar: { x: barX, y: top, w: barW, h: BAR_H },
     room: { x: roomX, y: roomY, w: roomW, h: roomH },
     deck: { x: roomX, y: roomY + roomH, w: roomW, h: 0 },
   };
+}
+
+// ── Where the things drawn for reading go ─────────────────────────────
+
+/** The deck must be this tall for the hint to be drawn in it, px. Under that it goes on the floor. */
+export const DECK_HINT_MIN = 124;
+/** The pad and the hand show until this launch. */
+export const HINT_UNTIL_LAUNCH = 3;
+/** The second hint shows from his first landing until this launch. */
+export const HINT_AGAIN_UNTIL_LAUNCH = 6;
+
+/** The pause key's box in the top bar, CSS px: 44 × 44 in the right corner. */
+export function pauseKeyRect(bar: Rect): Rect {
+  return { x: bar.x + bar.w - 52, y: bar.y + 2, w: 44, h: 44 };
+}
+
+/** Which of the two hints is up, from the State alone. */
+export function hintFor(s: State): { hand: boolean; words: "first" | "again" | "" } {
+  const launches = s.launch.id;
+  const landed = launches >= 2 || (launches === 1 && !s.launch.active);
+  return {
+    hand: launches < HINT_UNTIL_LAUNCH,
+    words: landed && launches < HINT_AGAIN_UNTIL_LAUNCH ? "again" : !landed && launches < HINT_UNTIL_LAUNCH ? "first" : "",
+  };
+}
+
+/**
+ * Where his pips and his meter go, as offsets in units from his centre
+ * (negative is up the room). Near the top cushion the meter moves under
+ * the pips; near the bottom one the pips move above him and the meter
+ * above them. So neither leaves the floor.
+ */
+export function carriedAt(s: State, tune: Tune, y: number): { pips: number; meter: number } {
+  const r = tune.himRadius;
+  if (y - s.room.top <= r + 15) return { pips: r + 10, meter: r + 20 };
+  if (s.room.bottom - y <= r + 15) return { pips: -(r + 10), meter: -(r + 20) };
+  return { pips: r + 10, meter: -(r + 11) };
 }

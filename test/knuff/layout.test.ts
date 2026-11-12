@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { BAR_H, LAPTOP_MARGIN, MIN_SCALE, layoutFor, type Insets, type Layout } from "../../lib/knuff/render/layout";
+import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
+import {
+  BAR_H,
+  BAR_MIN_W,
+  LAPTOP_MARGIN,
+  MIN_SCALE,
+  carriedAt,
+  hintFor,
+  layoutFor,
+  pauseKeyRect,
+  type Insets,
+  type Layout,
+} from "../../lib/knuff/render/layout";
+import { createState } from "../../lib/knuff/sim/state";
+import { step } from "../../lib/knuff/sim/step";
+import type { SimEvent, State } from "../../lib/knuff/sim/types";
 
 /**
  * Where the room is drawn: the sizing rules of the spec (§9.1), row by
@@ -210,6 +225,9 @@ describe("the playable of the owner's checks (steps 1 to 5)", () => {
       expect(Math.round(l.room.h)).toBe(324);
       expect(l.tooSmall).toBe(false);
       expect(l.room.y + l.room.h + LAPTOP_MARGIN).toBeLessThanOrEqual(400 + 1e-9);
+      // A bar as narrow as that room would run the score into the clock: it keeps 300 px, centred on the room.
+      expect(l.bar.w).toBe(BAR_MIN_W);
+      expect(Math.abs(l.bar.x + l.bar.w / 2 - (l.room.x + l.room.w / 2))).toBeLessThanOrEqual(1);
     }
     expect(laptop(1280, 400, 1).tooSmall).toBe(true);
   });
@@ -233,6 +251,86 @@ describe("the playable of the owner's checks (steps 1 to 5)", () => {
     expect(playable(664, 390, 3, true).tooSmall).toBe(true);
     expect(playable(390, 664, 3, true)).toEqual(phone(390, 664, 3));
     expect(playable(360, 640, 3, true)).toEqual(phone(360, 640, 3));
+  });
+});
+
+describe("what is drawn for reading: where it goes", () => {
+  /** A night, one launch straight up at `power`, stepped until `until` says stop. */
+  function night(): State {
+    return createState(7, DEFAULT_TUNE, { empty: true });
+  }
+  const events: SimEvent[] = [];
+  const fire = (s: State, power = 1) => step(s, { launch: { dx: 0.3, dy: -1, power }, pullHeld: false }, DEFAULT_TUNE, events);
+  const coast = (s: State) => step(s, { launch: null, pullHeld: false }, DEFAULT_TUNE, events);
+  const toLanding = (s: State) => {
+    for (let i = 0; i < 600 && s.him.hot; i++) coast(s);
+    expect(s.him.hot).toBe(false);
+  };
+
+  it("the pause key is 44 × 44 in the bar's right corner: x 338 to 382, y 2 to 46 on a 390 px phone", () => {
+    const k = pauseKeyRect(phone(390, 664, 3).bar);
+    expect(k).toEqual({ x: 338, y: 2, w: 44, h: 44 });
+    const l = laptop(1280, 633, 1);
+    const kl = pauseKeyRect(l.bar);
+    expect(kl.x + kl.w).toBe(l.bar.x + l.bar.w - 8);
+    expect(kl.y).toBe(l.bar.y + 2);
+  });
+
+  it("the first words and the hand show from the start; the words change at his first landing", () => {
+    const s = night();
+    expect(hintFor(s)).toEqual({ hand: true, words: "first" });
+    fire(s);
+    // In his first flight the first words still stand.
+    expect(s.him.hot).toBe(true);
+    expect(hintFor(s)).toEqual({ hand: true, words: "first" });
+    toLanding(s);
+    expect(hintFor(s)).toEqual({ hand: true, words: "again" });
+  });
+
+  it("the hand goes at the third launch, and the second words at the sixth", () => {
+    const s = night();
+    const seen: string[] = [];
+    for (let n = 1; n <= 7; n++) {
+      // A pip is back by the time he has landed and waited.
+      s.pips = DEFAULT_TUNE.pipMax;
+      fire(s);
+      expect(s.launch.id).toBe(n);
+      const h = hintFor(s);
+      seen.push(`${n}:${h.hand ? "hand" : "-"}/${h.words || "-"}`);
+      toLanding(s);
+    }
+    expect(seen).toEqual(["1:hand/first", "2:hand/again", "3:-/again", "4:-/again", "5:-/again", "6:-/-", "7:-/-"]);
+  });
+
+  it("his pips are 23 u under his centre and the meter 24 u above it; near a cushion they change sides", () => {
+    const s = night();
+    const r = DEFAULT_TUNE.himRadius;
+    expect(r).toBe(13);
+    expect(carriedAt(s, DEFAULT_TUNE, 240)).toEqual({ pips: 23, meter: -24 });
+    // Within his radius + 15 u of the top cushion the meter goes under the pips, 33 u under his centre.
+    expect(carriedAt(s, DEFAULT_TUNE, s.room.top + 28)).toEqual({ pips: 23, meter: 33 });
+    expect(carriedAt(s, DEFAULT_TUNE, s.room.top + 28.5)).toEqual({ pips: 23, meter: -24 });
+    // Within the same distance of the bottom cushion the pips go above him, and the meter above them.
+    expect(carriedAt(s, DEFAULT_TUNE, s.room.bottom - 28)).toEqual({ pips: -23, meter: -33 });
+    expect(carriedAt(s, DEFAULT_TUNE, s.room.bottom - 28.5)).toEqual({ pips: 23, meter: -24 });
+  });
+
+  it("neither ever leaves the floor, wherever he can stand", () => {
+    const s = night();
+    const r = DEFAULT_TUNE.himRadius;
+    for (let y = s.room.top + r; y <= s.room.bottom - r; y += 0.5) {
+      const at = carriedAt(s, DEFAULT_TUNE, y);
+      // A pip is 6 u tall and the meter 3 u.
+      for (const [off, half] of [
+        [at.pips, 3],
+        [at.meter, 1.5],
+      ]) {
+        expect(y + off - half, `${y}`).toBeGreaterThanOrEqual(s.room.top);
+        expect(y + off + half, `${y}`).toBeLessThanOrEqual(s.room.bottom);
+      }
+      // And they never sit on each other.
+      expect(Math.abs(at.pips - at.meter), `${y}`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 

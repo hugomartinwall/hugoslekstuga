@@ -28,8 +28,8 @@ import { KINDS } from "../content/kinds";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Tune } from "../sim/types";
 import type { Effects } from "./effects";
-import { DECK_HINT_MIN, carriedAt, drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall, hintFor } from "./hud";
-import { layoutFor, type Insets, type Layout } from "./layout";
+import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
+import { DECK_HINT_MIN, carriedAt, hintFor, layoutFor, type Insets, type Layout } from "./layout";
 import { C, mix, rgba } from "./palette";
 
 /** The floor through the night: darker each hour until 03:00, then warming toward morning. */

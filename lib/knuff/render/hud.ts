@@ -11,37 +11,15 @@
 import { HINT, HINT_AGAIN, TOO_SMALL } from "../content/copy";
 import { CLOCK } from "../content/night";
 import type { State, Tune } from "../sim/types";
-import type { Rect } from "./layout";
+import { pauseKeyRect } from "./layout";
 import { C, rgba } from "./palette";
 import type { Paint } from "./renderer";
-
-/** The deck must be this tall for the hint to be drawn in it, px. Under that it goes on the floor. */
-export const DECK_HINT_MIN = 124;
-/** The pad and the hand show until this launch. */
-export const HINT_UNTIL_LAUNCH = 3;
-/** The second hint shows from his first landing until this launch. */
-export const HINT_AGAIN_UNTIL_LAUNCH = 6;
 
 /** Seconds for one pull-and-let-go of the ghost hand. */
 const HAND_LOOP_S = 2.2;
 
 /** A heart on a 7 × 6 grid of 2 px cells: 14 × 12 px. */
 const HEART = [".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."];
-
-/** The pause key's box in the top bar, CSS px: 44 × 44 in the right corner. */
-export function pauseKeyRect(bar: Rect): Rect {
-  return { x: bar.x + bar.w - 52, y: bar.y + 2, w: 44, h: 44 };
-}
-
-/** Which of the two hints is up, from the State alone. */
-export function hintFor(s: State): { hand: boolean; words: "first" | "again" | "" } {
-  const launches = s.launch.id;
-  const landed = launches >= 2 || (launches === 1 && !s.launch.active);
-  return {
-    hand: launches < HINT_UNTIL_LAUNCH,
-    words: landed && launches < HINT_AGAIN_UNTIL_LAUNCH ? "again" : !landed && launches < HINT_UNTIL_LAUNCH ? "first" : "",
-  };
-}
 
 // ── The top bar ───────────────────────────────────────────────────────
 
@@ -138,19 +116,6 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean): void {
 }
 
 // ── On him ────────────────────────────────────────────────────────────
-
-/**
- * Where his pips and his meter go, as offsets in units from his centre
- * (negative is up the room). Near the top cushion the meter moves under
- * the pips; near the bottom one the pips move above him and the meter
- * above them. So neither leaves the floor.
- */
-export function carriedAt(s: State, tune: Tune, y: number): { pips: number; meter: number } {
-  const r = tune.himRadius;
-  if (y - s.room.top <= r + 15) return { pips: r + 10, meter: r + 20 };
-  if (s.room.bottom - y <= r + 15) return { pips: -(r + 10), meter: -(r + 20) };
-  return { pips: r + 10, meter: -(r + 11) };
-}
 
 /**
  * The pips: 6 × 6 u squares, one every 9 u. Filled is ready, hollow is
