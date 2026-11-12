@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KINDS } from "../../lib/knuff/content/kinds";
+import { land } from "../../lib/knuff/sim/hot";
 import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
 import type { SimEvent } from "../../lib/knuff/sim/types";
@@ -302,6 +303,32 @@ describe("a thing he overlaps at the release", () => {
     tick(s, tune, shot(0, -1));
     expect(s.launch.blocked).toEqual([over.id]);
     expect(s.things).toContain(touching);
+  });
+
+  it("a dust bunny the thump set down touching him is popped by the next launch straight at it, on the release tick", () => {
+    const tune = tuned({ bunnySpeed: 0 });
+    const touch = tune.himRadius + KINDS.bunny.radius;
+    let underByARounding = 0;
+    for (let deg = 0; deg < 360; deg += 5) {
+      const s = night(tune);
+      const a = (deg * Math.PI) / 180;
+      // Overlapping him as he lands: the thump sets it down touching him, out along the line between them.
+      const d = put(s, "bunny", s.him.x + Math.cos(a) * 10, s.him.y + Math.sin(a) * 10);
+      s.him.hot = true;
+      s.launch.active = true;
+      s.launch.id = 1;
+      land(s, tune, []);
+      const at = `${deg}°`;
+      expect(distance(s, d), at).toBeCloseTo(touch, 9);
+      // Set down by floating point, it can lie a rounding inside his reach: touching all the same.
+      if (distance(s, d) < touch) underByARounding++;
+      expect(d.dazedUntil, at).toBeGreaterThan(s.tick);
+      const events = tick(s, tune, shot(Math.cos(a), Math.sin(a)));
+      expect(s.launch.id, at).toBe(2);
+      expect(of(events, "pop").map((e) => e.id), at).toEqual([d.id]);
+      expect(s.launch.blocked, at).toEqual([]);
+    }
+    expect(underByARounding).toBeGreaterThan(0);
   });
 
   it("a thing that lands on him on the tick of the release was not there when he let go: that launch pops it", () => {
