@@ -233,6 +233,31 @@ describe("wouldSlow is what step then does", () => {
     expect(s.normalTicks).toBe(normal);
   });
 
+  it("a row announced into an empty room: that tick is a normal one and the next is slowed", () => {
+    // The order of a tick (§12.4): slow motion is counted (step 3) before
+    // the night's part announces a row (step 4). So with a pull held in an
+    // empty room, the tick the row arrives on found no threat.
+    const tune = tuned(STILL);
+    const s = createState(1, tune, { empty: true, kinds: ["bunny", "token"] });
+    s.phase = "night";
+    let rowTick = -1;
+    for (let i = 0; i < 2000 && rowTick < 0; i++) {
+      expect(threat(s)).toBe(false);
+      expect(wouldSlow(s, HOLD)).toBe(false);
+      const at = s.tick;
+      if (of(tick(s, tune, HOLD), "announce").length > 0) rowTick = at;
+      expect(s.slowedTicks).toBe(0);
+      expect(s.normalTicks).toBe(i + 1);
+    }
+    expect(rowTick).toBeGreaterThanOrEqual(0);
+    // Now there is a threat, and the tick after is a slowed one.
+    expect(threat(s)).toBe(true);
+    expect(wouldSlow(s, HOLD)).toBe(true);
+    const normal = s.normalTicks;
+    tick(s, tune, HOLD);
+    expect([s.slowedTicks, s.normalTicks, s.slow.meter]).toEqual([1, normal, 15]);
+  });
+
   it("the tick of the first launch can be a slowed one: by then the rack is a threat", () => {
     const tune = tuned();
     const s = createState(1, tune);
