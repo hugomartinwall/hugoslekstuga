@@ -23,6 +23,11 @@ export function swallowPresses(ms = 400): void {
   // Above everything, the map library's own controls included.
   sheet.style.cssText =
     "position:fixed;inset:0;z-index:2147483000;touch-action:none;";
+  // Doing nothing with the press includes the focus. A dialog closed by
+  // a press has just handed the focus back to the key that opened it;
+  // left to itself, the browser answers a press on this sheet by moving
+  // the focus to the page, and the next Tab started from the top.
+  sheet.addEventListener("mousedown", (e) => e.preventDefault());
   document.body.appendChild(sheet);
   window.setTimeout(() => sheet.remove(), ms);
 }
