@@ -129,7 +129,7 @@ describe("the aim line in an empty room", () => {
 
   it("a launch with no direction has no line, and neither has a night that is over", () => {
     const s = night(tune);
-    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "", padAfter: false });
+    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "", padAfter: false, battery: [], burst: [] });
     s.phase = "over";
     expect(aimLine(s, UP, tune).pts).toEqual([180, 374]);
   });
@@ -259,7 +259,9 @@ describe("the line names what the real game touches", () => {
       events.length = 0;
       step(real, t === 0 ? { launch, pullHeld: false } : REST, tune, events);
       for (const e of events) {
-        if (e.type === "pop") return { end: "thing", hitId: e.id, ticks: t };
+        // What he pops or hits, or a battery he knocks; not what a blast pops or hits.
+        if ((e.type === "pop" || e.type === "hit") && e.source !== "blast") return { end: "thing", hitId: e.id, ticks: t };
+        if (e.type === "knock") return { end: "thing", hitId: e.id, ticks: t };
         if (e.type === "cushion" && ++cushions > tune.aimCushions) return { end: "cushion", hitId: -1, ticks: t };
         if (e.type === "land") return { end: "land", hitId: -1, ticks: t };
       }
@@ -275,6 +277,8 @@ describe("the line names what the real game touches", () => {
       return seed / 4294967296;
     };
     const ends: Record<string, number> = {};
+    let knocks = 0;
+    let gums = 0;
     let flying = 0;
     let moving = 0;
     for (let room = 0; room < 500; room++) {
@@ -300,7 +304,13 @@ describe("the line names what the real game touches", () => {
       // The line has a point for where he is now, one for each whole tick before the end, and the end.
       expect(line.pts.length / 2, `room ${room}`).toBe(real.ticks + 2);
       ends[line.end] = (ends[line.end] ?? 0) + 1;
+      const on = s.things.find((d) => d.id === line.hitId);
+      if (on?.kind === "battery") knocks++;
+      if (on?.kind === "gum") gums++;
     }
+    // Gum and batteries were among the first things (step 4): the real game and the line agree on them too.
+    expect(knocks).toBeGreaterThan(0);
+    expect(gums).toBeGreaterThan(0);
     // The rooms were of every sort: each way a line can end came up often, bar running out of time, which never does.
     expect(ends.thing).toBeGreaterThan(80);
     expect(ends.cushion).toBeGreaterThan(20);
@@ -445,5 +455,97 @@ describe("the charm the line names (§4.2, §9.3)", () => {
     s.offer.armedTick = -1;
     const line = aimLine(s, UP, tune);
     expect([line.takes, line.charm]).toEqual([-1, ""]);
+  });
+});
+
+describe("a battery first (§4.2): the second line", () => {
+  const tune = tuned({ bunnySpeed: 0, batterySpeed: 0, tokenSpeed: 0 });
+
+  /** The real game with no further input: where the battery it knocks goes, tick by tick, and where it bursts. */
+  function real(s: State, launch: Launch): { knocked: number; path: number[]; burst: number[]; why: string } {
+    const c = cloneState(s);
+    const events: SimEvent[] = [];
+    let knocked = -1;
+    const path: number[] = [];
+    for (let t = 0; t < AIM_TICKS + 60; t++) {
+      events.length = 0;
+      step(c, t === 0 ? { launch, pullHeld: false } : REST, tune, events);
+      for (const e of events) {
+        if (e.type === "knock" && knocked < 0) {
+          knocked = e.id;
+          path.push(e.x, e.y);
+        }
+        if (e.type === "burst" && e.id === knocked) return { knocked, path: [...path, e.x, e.y], burst: [e.x, e.y], why: e.why };
+      }
+      const b = c.things.find((d) => d.id === knocked);
+      if (b) path.push(b.x, b.y);
+    }
+    return { knocked, path, burst: [], why: "" };
+  }
+
+  it("ends on the battery it knocks, and follows the battery to where it bursts: into a bunch", () => {
+    const s = night(tune);
+    const b = put(s, "battery", 186, 300, { fuseTick: 400 });
+    for (let i = 0; i < 5; i++) put(s, "bunny", 170 + i * 12, 220);
+    const UP = { dx: 0, dy: -1, power: 1 };
+    const line = aimLine(s, UP, tune);
+    expect([line.end, line.hitId]).toEqual(["thing", b.id]);
+    const r = real(s, UP);
+    expect(r.knocked).toBe(b.id);
+    expect(line.battery).toEqual(r.path);
+    expect(line.burst).toEqual(r.burst);
+    // It starts where the battery was knocked, and the ring is where it bursts, short of the bunch's middle.
+    expect([line.battery[0], line.battery[1]]).toEqual([b.x, b.y]);
+    expect(line.burst[1]).toBeGreaterThan(220);
+  });
+
+  it("knocked into a cushion, it bursts there; knocked into the open, it bursts when its 48 ticks run out", () => {
+    const s = night(tune);
+    s.him.y = 200;
+    s.him.py = 200;
+    put(s, "battery", 180, 150, { fuseTick: 400 });
+    const UP = { dx: 0, dy: -1, power: 1 };
+    const line = aimLine(s, UP, tune);
+    expect(line.burst[1]).toBe(8 + 10);
+    expect(line.burst).toEqual(real(s, UP).burst);
+    expect(real(s, UP).why).toBe("touch");
+    // Across the room, slowly: the knock's time runs out before any cushion.
+    const t = night(tune);
+    t.him.x = 300;
+    t.him.px = 300;
+    put(t, "battery", 300 - 40, 374 - 2, { fuseTick: 400 });
+    const LEFT = { dx: -1, dy: 0, power: 0.5 };
+    const slow = aimLine(t, LEFT, tune);
+    const r = real(t, LEFT);
+    expect(slow.end).toBe("thing");
+    expect(r.why).toBe("knock");
+    expect(slow.burst).toEqual(r.burst);
+    expect(slow.battery).toEqual(r.path);
+    // Where it was knocked, where it is at the end of that tick and of each of the 47 after, and where it bursts, 48 ticks after the knock.
+    expect(slow.battery.length / 2).toBe(1 + 48 + 1);
+  });
+
+  it("no second line when the first thing is anything else, or when he knocks nothing", () => {
+    const s = night(tune);
+    put(s, "bunny", 180, 300);
+    put(s, "battery", 180, 200, { fuseTick: 400 });
+    const line = aimLine(s, { dx: 0, dy: -1, power: 1 }, tune);
+    expect(line.end).toBe("thing");
+    expect([line.battery, line.burst]).toEqual([[], []]);
+    const empty = night(tune);
+    expect(aimLine(empty, { dx: 0, dy: -1, power: 1 }, tune).battery).toEqual([]);
+  });
+
+  it("what a blast pops or hits on the way is not where the line ends: it ends on what he reaches", () => {
+    const s = night(tune);
+    // A battery not his goes off on the second tick, popping nothing, beside his path; a dust bunny is ahead.
+    put(s, "battery", 260, 300, { fuseTick: 2 });
+    // And one of his, going off at once by a gum, which its blast hits.
+    put(s, "battery", 40, 100, { fuseTick: 2, mine: true, knockTick: 0, launchId: 1 });
+    put(s, "gum", 60, 100);
+    put(s, "bunny", 60 + 30, 100);
+    const d = put(s, "bunny", 180, 200);
+    const line = aimLine(s, { dx: 0, dy: -1, power: 1 }, tune);
+    expect([line.end, line.hitId]).toEqual(["thing", d.id]);
   });
 });

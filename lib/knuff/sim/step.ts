@@ -11,6 +11,7 @@
  * test/knuff/feel-lock.test.ts holds every tick he is hot against the toy.
  */
 import { BOSS_HOUR } from "../content/night";
+import { clearQueue, fuses, knockedTouches, resolveBlasts } from "./battery";
 import { bossContact, moveBoss, nightBonus } from "./boss";
 import { armedLaunch, bounceOff } from "./charms";
 import { countTick, endLaunch, givePip, isHot, isLaunch, land } from "./hot";
@@ -42,6 +43,9 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     s.night.hourStart = s.tick;
     events.push({ type: "hour", tick: s.tick, hour: s.night.hour });
   }
+
+  // The blasts of a tick are queued and resolved inside it: nothing is left from the tick before.
+  clearQueue();
 
   // Every mover remembers where it was, so the picture can be drawn between two ticks.
   h.px = h.x;
@@ -115,6 +119,8 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
         givePip(s, "timer", events);
       }
     }
+    // Fuses and knock timers: a battery whose time has come is queued.
+    fuses(s, tune);
 
     // 6. Choose: each intruder sets its velocity for this tick.
     const fastestThing = choose(s, tune);
@@ -157,14 +163,22 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
         moveBoss(s, tune, sub, events);
         running = bossContact(s, tune, events);
       }
-      // Contacts in the order of `things`, with the landing test after each.
+      // Contacts in the order of `things`, with the landing test after each;
+      // then knocked batteries against what bursts them.
       if (running) running = contacts(s, tune, events);
       if (!running) {
         s.ended = "hearts";
         break;
       }
+      knockedTouches(s);
       if (s.launch.blocked.length > 0) unblock(s);
       spreadBunnies(s);
+    }
+
+    // 8. Blasts: those queued this tick resolve, in the order queued.
+    if (running) {
+      running = resolveBlasts(s, tune, events);
+      if (!running) s.ended = "hearts";
     }
 
     if (running) {

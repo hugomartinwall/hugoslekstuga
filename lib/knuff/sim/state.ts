@@ -133,6 +133,7 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
       took: false,
       popped: false,
     },
+    pastShots: [],
     charms,
     stats,
     plates,

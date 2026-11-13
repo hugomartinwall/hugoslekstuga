@@ -51,11 +51,16 @@ export function put(s: State, kind: Thing["kind"], x: number, y: number, over: P
     vy: 0,
     wx: 0,
     wy: 0,
-    hp: KINDS[kind].hits,
+    // A battery takes no hits (it bursts): it is alive until it has.
+    hp: Math.max(1, KINDS[kind].hits),
     landTick: -1,
     dazedUntil: 0,
     phase: 0,
     worth0: false,
+    fuseTick: -1,
+    knockTick: -1,
+    mine: false,
+    launchId: -1,
     ...over,
   };
   s.things.push(d);

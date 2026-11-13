@@ -95,6 +95,7 @@ export const GAME = {
   aimCushions: 1,
   pipMax: 3,
   pipRefundPop: 2,
+  gumStopMinPips: 1,
 
   // Hot and landing.
   popHotTicks: 0,
@@ -129,6 +130,12 @@ export const GAME = {
   bunnyWobble: 0.6,
   bunnyWobbleRate: 0.07,
   tokenSpeed: 150,
+  batterySpeed: 14,
+  batteryFuseTicks: 300,
+  batteryKnockKeep: 0.9,
+  batteryKnockTicks: 48,
+  blastRadius: 70,
+  blastChainTicks: 12,
 
   // Score.
   chainCap: 8,

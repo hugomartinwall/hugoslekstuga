@@ -119,7 +119,7 @@ describe("the State", () => {
     expect(state.bestShot).toBeGreaterThan(0);
     expect(state.lastHurtBy).not.toBe("");
     expect(state.launch.blocked).toHaveLength(1);
-    expect(state.night.kinds).toEqual(["bunny", "token", "polisher"]);
+    expect(state.night.kinds).toEqual(["bunny", "token", "polisher", "gum", "battery"]);
   });
 
   it("is plain data: numbers, booleans and strings, with no undefined and no Infinity", () => {
@@ -296,7 +296,7 @@ describe("the State", () => {
     expect(s.night).toEqual({
       hour: 0,
       hourStart: 0,
-      kinds: ["bunny", "token", "polisher"],
+      kinds: ["bunny", "token", "polisher", "gum", "battery"],
       nextRow: 0,
       rowTick: -1,
       rowLandTick: -1,
@@ -308,6 +308,7 @@ describe("the State", () => {
       offers: true,
     });
     expect([s.score, s.bestShot, s.lastHurtBy, s.lastHurtHour]).toEqual([0, 0, "", -1]);
+    expect(s.pastShots).toEqual([]);
     // The polisher is not in the room until 06:00.
     expect(s.boss.present).toBe(false);
     expect([s.boss.hp, s.boss.speed, s.boss.beganTick, s.boss.lastHitTick]).toEqual([6, DEFAULT_TUNE.bossSpeed, -1, -1]);

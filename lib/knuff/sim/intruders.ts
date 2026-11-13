@@ -1,18 +1,22 @@
 /**
  * The intruders: what each kind does, and what happens when one meets him
- * (spec §5.2 to §5.4, as far as dust bunnies and tokens go), and the
- * offer's pickup tiles, which he takes rather than hits.
+ * (spec §5.2 to §5.4, as far as dust bunnies, tokens, gum and batteries
+ * go), and the offer's pickup tiles, which he takes rather than hits.
  *
  * A dust bunny walks toward him, its heading swinging. A token rolls
  * straight, mirrors off cushions and never slows. His hot body pops either
  * in one hit and flies on; so does Spark's ring, while it lasts. Landed,
  * either costs him a heart unless it is dazed or he is invulnerable, and is
- * then held at arm's length. A pickup does not move, hurts nothing and is
+ * then held at arm's length. Gum lies still and takes two hits
+ * (sim/battery.ts). A battery drifts toward him; his hot body knocks it
+ * rather than pops it, and a knocked battery is his and bursts on what it
+ * touches (sim/battery.ts). A pickup does not move, hurts nothing and is
  * not hit: an armed launch whose circle overlaps it takes it (§6.3).
  *
  * Everything here that changes a State is called from `step` only.
  */
 import { KINDS } from "../content/kinds";
+import { BATTERY_R, bursting, gapToGum, gumContact, knock, queueBurst } from "./battery";
 import { canTake, overlapsTile, takePickup } from "./charms";
 import { givePip, isHot, keepInside, land, loseHeart } from "./hot";
 import { collideWalls, popImpulse, slow } from "./physics";
@@ -35,15 +39,19 @@ function radiusOf(d: Thing): number {
       return BUNNY_R;
     case "token":
       return TOKEN_R;
+    case "battery":
+      return BATTERY_R;
+    case "gum":
     case "pickup":
       return 0;
   }
 }
 
-/** Does his circle, at its size after charms, overlap this thing? */
+/** Does his circle, at its size after charms, overlap this thing? Gum and a pickup are boxes. */
 function overlapsHim(s: State, d: Thing, slack = 0): boolean {
   const h = s.him;
   if (d.kind === "pickup") return overlapsTile(h.x, h.y, s.stats.radius - slack, d);
+  if (d.kind === "gum") return gapToGum(h.x, h.y, d) < s.stats.radius - slack;
   return Math.hypot(d.x - h.x, d.y - h.y) < s.stats.radius + radiusOf(d) - slack;
 }
 
@@ -69,8 +77,29 @@ export function choose(s: State, tune: Tune): number {
   let fy = 0;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (s.tick < d.landTick || d.kind === "pickup") continue;
-    if (d.kind === "bunny") {
+    if (s.tick < d.landTick || d.kind === "pickup" || d.kind === "gum") continue;
+    if (d.kind === "battery") {
+      // It drifts toward him, unless it is dazed, is his (it never comes
+      // for him), or is going off this tick. A shove rides on top.
+      if (s.tick < d.dazedUntil || d.mine || bursting(s, d)) {
+        d.wx = 0;
+        d.wy = 0;
+      } else {
+        const dx = h.x - d.x;
+        const dy = h.y - d.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        d.wx = (dx / dist) * tune.batterySpeed + 0;
+        d.wy = (dy / dist) * tune.batterySpeed + 0;
+      }
+      const sx = d.wx + d.vx;
+      const sy = d.wy + d.vy;
+      const sq = sx * sx + sy * sy;
+      if (sq > fastestSq) {
+        fastestSq = sq;
+        fx = sx;
+        fy = sy;
+      }
+    } else if (d.kind === "bunny") {
       if (s.tick < d.dazedUntil) {
         d.wx = 0;
         d.wy = 0;
@@ -127,6 +156,13 @@ export function moveThings(s: State, tune: Tune, sub: number): void {
       d.y += d.vy * sub;
       // It mirrors off cushions with no loss.
       collideWalls(d, TOKEN_R, room, 1);
+    } else if (d.kind === "battery") {
+      // Its drift, and a knock or a shove on top. One going off this tick stays where it bursts.
+      if (bursting(s, d)) continue;
+      d.x += (d.wx + d.vx) * sub;
+      d.y += (d.wy + d.vy) * sub;
+      // A shoved battery bounces off a cushion; a knocked one bursts on it.
+      if (collideWalls(d, BATTERY_R, room, tune.lightWallRestitution) !== 0 && d.knockTick >= 0) queueBurst(s, d, "touch");
     }
   }
 }
@@ -150,6 +186,13 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
       if (canTake(s) && !s.launch.blocked.includes(d.id) && overlapsTile(h.x, h.y, r, d)) takePickup(s, tune, d, events);
       continue;
     }
+    if (d.kind === "gum") {
+      // Gum lies flat: his hot body or Spark's ring hits it, and he may stop on it.
+      if (h.hot) gumContact(s, tune, d, events);
+      continue;
+    }
+    // A battery going off this tick no longer touches anything.
+    if (d.kind === "battery" && bursting(s, d)) continue;
     const dx = d.x - h.x;
     const dy = d.y - h.y;
     const reach = r + radiusOf(d);
@@ -161,7 +204,9 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
     if (dist >= far) continue;
     if (dist >= reach) {
       // Only the ring reaches it. It pops in one hit and counts in his
-      // chain; it is not a body pop, and he feels nothing.
+      // chain; it is not a body pop, and he feels nothing. (The ring does
+      // nothing to a battery.)
+      if (d.kind === "battery") continue;
       if (s.launch.blocked.length > 0 && s.launch.blocked.includes(d.id)) continue;
       d.hp = 0;
       h.lastContactTick = s.tick;
@@ -192,6 +237,15 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
     if (h.hot) {
       // A thing he overlapped at the release cannot be hit by this launch until he has left it.
       if (s.launch.blocked.length > 0 && s.launch.blocked.includes(d.id)) continue;
+      if (d.kind === "battery") {
+        // His hot body does not pop a battery: it knocks it, and it is his.
+        if (knock(s, tune, d, nx, ny, events)) {
+          // The landing test, after every contact.
+          h.hot = isHot(s, tune, Math.hypot(h.vx, h.vy));
+          if (!h.hot) land(s, tune, events);
+        }
+        continue;
+      }
       // His hot body pops it. He feels part of the knock and flies on.
       const speed = Math.hypot(h.vx, h.vy);
       const tvx = d.kind === "bunny" ? d.wx + d.vx : isDazed ? 0 : d.vx;
@@ -232,6 +286,8 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
       continue;
     }
 
+    // A battery that is his never costs him a heart: it passes him.
+    if (d.mine) continue;
     // He is landed: a touch costs a heart, unless the thing is dazed or he is invulnerable.
     if (!isDazed && s.tick >= h.invulnUntil) {
       loseHeart(s, tune, d, events);
@@ -328,11 +384,11 @@ export function spreadBunnies(s: State): void {
   bunch.length = 0;
 }
 
-/** Step 9 for the things: a shoved dust bunny slows as the toy's dummies do. Tokens never slow. */
+/** Step 9 for the things: a shoved dust bunny, and a knocked or shoved battery, slow as the toy's dummies do. Tokens never slow. */
 export function slowThings(s: State, tune: Tune): void {
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (d.kind !== "bunny" || d.hp <= 0) continue;
+    if ((d.kind !== "bunny" && d.kind !== "battery") || d.hp <= 0) continue;
     if (d.vx !== 0 || d.vy !== 0) {
       slow(d, tune.lightDragK, tune.lightFriction, tune.lightRestSpeed);
       // A speed that ran down to nothing from below is a negative zero; see `step`.

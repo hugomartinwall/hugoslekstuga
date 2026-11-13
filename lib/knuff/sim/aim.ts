@@ -15,6 +15,10 @@
  * plate behind it is named as well. On that same run it learns whether the
  * launch meets the polisher's pad after the line has ended, which will
  * cost a heart: the end is then marked in coral, as the pad's own is.
+ *
+ * When the first thing is a battery (he knocks it), the copy is stepped on
+ * until that battery bursts: its path is the second line, and where it
+ * bursts the broken ring of its blast (§4.2).
  */
 import { cloneState } from "./state";
 import { step } from "./step";
@@ -48,6 +52,14 @@ export type AimLine = {
   charm: string;
   /** The launch meets the pad after the line has ended (within the 120 ticks), and that will cost a heart: his last one too. */
   padAfter: boolean;
+  /**
+   * The line ends on a battery he knocks: its centre from the knock, one
+   * point a tick, to where it bursts (x0, y0, x1, y1, ...). Empty for any
+   * other line.
+   */
+  battery: number[];
+  /** Where that battery bursts, as [x, y]: the middle of the second line's ring. Empty if it does not burst inside the look. */
+  burst: number[];
 };
 
 /** How far ahead the line looks, in ticks. */
@@ -60,7 +72,19 @@ const NO_INPUT: Input = { launch: null, pullHeld: false };
  * cushions and stops at the next. The State is left as it was.
  */
 export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TICKS): AimLine {
-  const out: AimLine = { pts: [s.him.x, s.him.y], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "", padAfter: false };
+  const out: AimLine = {
+    pts: [s.him.x, s.him.y],
+    cushions: [],
+    cushionPts: [],
+    end: "time",
+    hitId: -1,
+    takes: -1,
+    plate: -1,
+    charm: "",
+    padAfter: false,
+    battery: [],
+    burst: [],
+  };
   const copy = cloneState(s);
   // With no pip the real step refuses the launch, and the grey line of an
   // empty hand would have nothing to show: the copy is given one.
@@ -69,14 +93,25 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
   const events: SimEvent[] = [];
   /** The line is still being drawn; once it has ended, the copy runs on only to see what the launch takes. */
   let drawing = true;
-  for (let t = 0; t < maxTicks; t++) {
+  /** The battery the line ended on, followed until it bursts; -1 for none, or once it has. */
+  let following = -1;
+  // A battery knocked late in the look is followed past it, to its burst: a knock's time is short.
+  const most = maxTicks + tune.batteryKnockTicks + 1;
+  for (let t = 0; t < most; t++) {
+    if (t >= maxTicks && following < 0) break;
     events.length = 0;
     step(copy, t === 0 ? { launch, pullHeld: false } : NO_INPUT, tune, events);
     // No launch came of it (it has no direction, or the night is over): there is no line.
     if (copy.launch.id === launches) return out;
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
-      if (e.type === "offerTaken") {
+      // Past the look's end only the knocked battery is followed, to its burst.
+      if (t >= maxTicks && e.type !== "burst") continue;
+      if (e.type === "burst" && e.id === following) {
+        out.battery.push(e.x, e.y);
+        out.burst.push(e.x, e.y);
+        following = -1;
+      } else if (e.type === "offerTaken") {
         out.takes = e.item;
         out.charm = e.charm;
       } else if (e.type === "hurt" && e.by === "polisher") {
@@ -102,16 +137,21 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
           out.end = "cushion";
           drawing = false;
         }
-      } else if (e.type === "pop") {
+      } else if (e.type === "pop" || e.type === "hit") {
+        // What a blast pops or hits is not what he reaches.
+        if (e.source === "blast") continue;
+        out.pts.push(e.type === "pop" ? e.hx : e.x, e.type === "pop" ? e.hy : e.y);
+        out.end = "thing";
+        out.hitId = e.id;
+        drawing = false;
+      } else if (e.type === "knock") {
+        // A battery first: the line ends on it, and the battery's own line begins.
         out.pts.push(e.hx, e.hy);
         out.end = "thing";
         out.hitId = e.id;
         drawing = false;
-      } else if (e.type === "hit") {
-        out.pts.push(e.x, e.y);
-        out.end = "thing";
-        out.hitId = e.id;
-        drawing = false;
+        following = e.id;
+        out.battery.push(e.x, e.y);
       } else if (e.type === "bossBounce") {
         out.pts.push(e.x, e.y);
         out.end = "polisher";
@@ -128,10 +168,15 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
       }
     }
     if (drawing) out.pts.push(copy.him.x, copy.him.y);
+    if (following >= 0) {
+      const b = copy.things.find((d) => d.id === following);
+      if (b && b.hp > 0) out.battery.push(b.x, b.y);
+      else following = -1;
+    }
     // The night ended under him (morning came): the line stops where he was.
     if (copy.phase === "over") return out;
-    // The line has ended, and so has the launch (he landed, or the pad threw him: a launch of its own).
-    if (!drawing && (!copy.launch.active || copy.launch.id !== launches + 1)) return out;
+    // The line has ended, and so has the launch (he landed, or the pad threw him: a launch of its own), and its battery has burst.
+    if (!drawing && following < 0 && (!copy.launch.active || copy.launch.id !== launches + 1)) return out;
   }
   return out;
 }

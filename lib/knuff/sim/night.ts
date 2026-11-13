@@ -35,6 +35,12 @@ export type Dealt = {
   alone: boolean;
   /** Tokens in a file. */
   file: number;
+  /** Gum: how many, and where: alone at a far spot, or under the blob (§3.3, "Formations"). */
+  gum: number;
+  gumForm: "alone" | "under" | "";
+  /** Batteries: how many, and where: alone at a far spot, or beside the blob, on the side facing him. */
+  battery: number;
+  batteryForm: "alone" | "beside" | "";
   /** It brings a kind for the first time: it holds the row after it back (the pace's second rule). */
   first: boolean;
 };
@@ -50,7 +56,20 @@ function dealHour(hour: number, kinds: readonly string[]): Dealt[] {
   const out: Dealt[] = [];
   let openingLeftEmpty = false;
   written.forEach((r, index) => {
-    const d: Dealt = { row: index, tick: r.tick, bunnies: 0, rack: false, loose: 0, alone: false, file: 0, first: r.first !== "" };
+    const d: Dealt = {
+      row: index,
+      tick: r.tick,
+      bunnies: 0,
+      rack: false,
+      loose: 0,
+      alone: false,
+      file: 0,
+      gum: 0,
+      gumForm: "",
+      battery: 0,
+      batteryForm: "",
+      first: r.first !== "",
+    };
     let any = false;
     for (const p of r.parts) {
       // A row keeps what the night brings; nothing is swapped back in for what is left out.
@@ -63,6 +82,12 @@ function dealHour(hour: number, kinds: readonly string[]): Dealt[] {
         d.alone = p.form === "alone";
       } else if (p.kind === "token" && p.form === "file") {
         d.file += p.n;
+      } else if (p.kind === "gum" && (p.form === "alone" || p.form === "under")) {
+        d.gum += p.n;
+        d.gumForm = p.form;
+      } else if (p.kind === "battery" && (p.form === "alone" || p.form === "beside")) {
+        d.battery += p.n;
+        d.batteryForm = p.form;
       } else {
         // A kind with no rules yet. createState keeps such a kind out of the list.
         continue;
@@ -133,6 +158,8 @@ export function lastCall(hour: number, tune: Tune): number {
 
 const BUNNY = KINDS.bunny;
 const TOKEN = KINDS.token;
+const GUM = KINDS.gum;
+const BATTERY = KINDS.battery;
 const PICKUP = KINDS.pickup;
 
 /** A thing's row of the kind table. (One comparison: this is asked for every thing on every tick.) */
@@ -142,6 +169,10 @@ function rowOf(d: Thing): (typeof KINDS)[Thing["kind"]] {
       return BUNNY;
     case "token":
       return TOKEN;
+    case "gum":
+      return GUM;
+    case "battery":
+      return BATTERY;
     case "pickup":
       return PICKUP;
   }
@@ -173,10 +204,13 @@ export function threats(s: State): number {
 const RACK_LAND_TICK = -1;
 
 export function addThing(s: State, kind: Thing["kind"], x: number, y: number, landTick: number, vx: number, vy: number): Thing {
-  const r = KINDS[kind].radius;
+  const row = KINDS[kind];
+  // Kept inside the floor: a circle by its radius, a box (gum) by half its size.
+  const rx = row.radius > 0 ? row.radius : row.boxW / 2;
+  const ry = row.radius > 0 ? row.radius : row.boxH / 2;
   const room = s.room;
-  const px = Math.min(room.right - r, Math.max(room.left + r, x));
-  const py = Math.min(room.bottom - r, Math.max(room.top + r, y));
+  const px = Math.min(room.right - rx, Math.max(room.left + rx, x));
+  const py = Math.min(room.bottom - ry, Math.max(room.top + ry, y));
   const d: Thing = {
     id: s.nextId++,
     kind,
@@ -188,12 +222,17 @@ export function addThing(s: State, kind: Thing["kind"], x: number, y: number, la
     vy,
     wx: 0,
     wy: 0,
-    hp: KINDS[kind].hits,
+    // Alive until it is popped. A battery takes no hits (it bursts) and is alive until it has.
+    hp: Math.max(1, row.hits),
     landTick,
     dazedUntil: 0,
     // A dust bunny's wobble starts where the behaviour stream says.
     phase: kind === "bunny" ? rand(s.rng, "behaviour") * Math.PI * 2 : 0,
     worth0: false,
+    fuseTick: -1,
+    knockTick: -1,
+    mine: false,
+    launchId: -1,
   };
   s.things.push(d);
   return d;
@@ -253,8 +292,8 @@ const BLOB_SPACING = 17;
  * far spot, pushed apart until no two centres are closer than 17 u, and
  * kept inside the floor.
  */
-function placeBlob(s: State, tune: Tune, n: number, landTick: number, events: SimEvent[]): void {
-  if (n <= 0) return;
+function placeBlob(s: State, tune: Tune, n: number, landTick: number, events: SimEvent[]): { x: number; y: number; R: number } | null {
+  if (n <= 0) return null;
   const R = 8 + 9 * Math.sqrt(n);
   const c = farSpot(s, tune, R + 8);
   const xs: number[] = [];
@@ -295,6 +334,38 @@ function placeBlob(s: State, tune: Tune, n: number, landTick: number, events: Si
     if (!moved) break;
   }
   for (let i = 0; i < n; i++) announce(s, addThing(s, "bunny", xs[i], ys[i], landTick, 0, 0), events);
+  return { x: c.x, y: c.y, R };
+}
+
+/**
+ * A battery: alone at a far spot (inset 20), or beside the blob: on its
+ * rim on the side facing him, at the blob's spot plus R + 14 u toward him,
+ * kept inside the floor. Its fuse runs from its landing.
+ */
+function placeBattery(s: State, tune: Tune, blob: { x: number; y: number; R: number } | null, landTick: number, events: SimEvent[]): void {
+  let x: number;
+  let y: number;
+  if (blob) {
+    const dx = s.him.x - blob.x;
+    const dy = s.him.y - blob.y;
+    const dist = Math.hypot(dx, dy);
+    const k = blob.R + 14;
+    x = dist > 1e-6 ? blob.x + (dx / dist) * k : blob.x;
+    y = dist > 1e-6 ? blob.y + (dy / dist) * k : blob.y + k;
+  } else {
+    const p = farSpot(s, tune, 20);
+    x = p.x;
+    y = p.y;
+  }
+  const d = addThing(s, "battery", x, y, landTick, 0, 0);
+  d.fuseTick = landTick + tune.batteryFuseTicks;
+  announce(s, d, events);
+}
+
+/** Gum: alone at a far spot (inset 20), or at the blob's spot, under the bunch. */
+function placeGum(s: State, tune: Tune, blob: { x: number; y: number } | null, landTick: number, events: SimEvent[]): void {
+  const p = blob ?? farSpot(s, tune, 20);
+  announce(s, addThing(s, "gum", p.x, p.y, landTick, 0, 0), events);
 }
 
 /** One token at its own far spot, rolling in its own direction once it lands. */
@@ -342,20 +413,37 @@ function announceRow(s: State, tune: Tune, d: Dealt, how: "tick" | "early" | "cl
     let bunnies = d.bunnies;
     let loose = d.loose;
     let file = d.file;
-    // The cap: dust bunnies are cut first, then tokens. What is cut never arrives.
-    let over = intruders(s) + bunnies + loose + file - tune.roomCap;
+    let gum = d.gum;
+    let battery = d.battery;
+    // The cap: dust bunnies are cut first, then tokens, then gum, then
+    // batteries. What is cut never arrives.
+    let over = intruders(s) + bunnies + loose + file + gum + battery - tune.roomCap;
     if (over > 0) {
-      cut = Math.min(over, bunnies + loose + file);
+      cut = Math.min(over, bunnies + loose + file + gum + battery);
       const fewerBunnies = Math.min(bunnies, over);
       bunnies -= fewerBunnies;
       over -= fewerBunnies;
       const fewerLoose = Math.min(loose, over);
       loose -= fewerLoose;
       over -= fewerLoose;
-      file -= Math.min(file, over);
+      const fewerFile = Math.min(file, over);
+      file -= fewerFile;
+      over -= fewerFile;
+      const fewerGum = Math.min(gum, over);
+      gum -= fewerGum;
+      over -= fewerGum;
+      battery -= Math.min(battery, over);
     }
-    // The blob first, then each token.
-    placeBlob(s, tune, bunnies, lands, events);
+    // The blob first; then what is placed by it (a battery beside, gum
+    // under), or alone; then each token.
+    let blob = placeBlob(s, tune, bunnies, lands, events);
+    // A blob the cap cut whole still has its spot, for what lies beside or under it.
+    if (!blob && ((battery > 0 && d.batteryForm === "beside") || (gum > 0 && d.gumForm === "under"))) {
+      const c = farSpot(s, tune, 16);
+      blob = { x: c.x, y: c.y, R: 8 };
+    }
+    for (let i = 0; i < battery; i++) placeBattery(s, tune, d.batteryForm === "beside" ? blob : null, lands, events);
+    for (let i = 0; i < gum; i++) placeGum(s, tune, d.gumForm === "under" ? blob : null, lands, events);
     for (let i = 0; i < loose; i++) placeToken(s, tune, d.alone ? 20 : 9, lands, events);
     placeFile(s, tune, file, lands, events);
     announced = s.nextId - firstId;
@@ -387,6 +475,11 @@ function extraBunch(s: State, tune: Tune): Dealt {
     loose: kinds.includes("token") ? Math.max(0, Math.floor(tokens)) : 0,
     alone: false,
     file: 0,
+    // An extra bunch carries nothing else: no gum, battery or envelope.
+    gum: 0,
+    gumForm: "",
+    battery: 0,
+    batteryForm: "",
     first: false,
   };
 }
@@ -455,8 +548,9 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
     (settled && s.tick >= Math.max(night.clearTick, night.settledTick) + tune.hourPauseTicks) ||
     s.tick - night.hourStart >= tune.hourMaxTicks
   ) {
-    // An offer nobody took is lost.
+    // An offer nobody took is lost, and the hour's gum is swept away (no points).
     closeOffer(s, events);
+    sweepGum(s);
     night.hour++;
     night.hourStart = s.tick;
     night.nextRow = 0;
@@ -511,10 +605,16 @@ function landArrivals(s: State, tune: Tune, events: SimEvent[]): void {
     const d = s.things[i];
     if (d.landTick !== s.tick) continue;
     const dist = Math.hypot(d.x - h.x, d.y - h.y);
-    const dazed = dist <= tune.arriveDazedWithin;
+    // Every kind that can hurt lands dazed close to him; gum hurts nothing and is never dazed.
+    const dazed = dist <= tune.arriveDazedWithin && rowOf(d).hurts;
     if (dazed) daze(s, d, s.tick + tune.dazeTicks, events);
     events.push({ type: "arrive", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, dist, dazed });
   }
+}
+
+/** The end of an hour: its gum is swept away. Gone by the end of the tick, and it pays nothing. */
+function sweepGum(s: State): void {
+  for (let i = 0; i < s.things.length; i++) if (s.things[i].kind === "gum") s.things[i].hp = 0;
 }
 
 /** Daze a thing until `until`. A new daze never shortens one. */

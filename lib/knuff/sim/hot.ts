@@ -9,6 +9,7 @@
  * Everything here that changes a State is called from `step` only.
  */
 import { KINDS } from "../content/kinds";
+import { keepShot } from "./battery";
 import { takeUnderHim } from "./charms";
 import { daze } from "./night";
 import type { Input, SimEvent, State, Thing, Tune } from "./types";
@@ -96,11 +97,13 @@ export function endLaunch(s: State, events: SimEvent[]): void {
   if (!l.active) return;
   l.active = false;
   if (l.blocked.length > 0) l.blocked.length = 0;
+  // A battery it knocked still alive: its total is kept, for that blast to add to (§5.4).
+  keepShot(s);
   events.push({ type: "launchEnd", tick: s.tick, x: s.him.x, y: s.him.y, id: l.id, pops: l.pops, total: l.points });
 }
 
 /** One pip back, unless he is at the maximum (his, after charms): a pip that would take him over it is lost. */
-export function givePip(s: State, why: "timer" | "pop" | "plate", events: SimEvent[]): boolean {
+export function givePip(s: State, why: "timer" | "pop" | "plate" | "gum", events: SimEvent[]): boolean {
   if (s.pips >= s.stats.pipMax) return false;
   s.pips++;
   events.push({ type: "pip", tick: s.tick, pips: s.pips, why });
@@ -113,22 +116,23 @@ export function givePip(s: State, why: "timer" | "pop" | "plate", events: SimEve
  * his pips are refilled and the pip timer restarts, so the player always
  * gets one clean shot after a hit.
  */
-export function loseHeart(s: State, tune: Tune, d: { kind: Thing["kind"] | "polisher"; id: number }, events: SimEvent[]): void {
+export function loseHeart(s: State, tune: Tune, d: { kind: Thing["kind"] | "polisher"; id: number }, events: SimEvent[], blast = false): void {
   const h = s.him;
   s.hearts--;
   h.invulnUntil = s.tick + tune.invulnTicks;
   s.lastHurtBy = d.kind;
   s.lastHurtHour = s.night.hour;
-  events.push({ type: "hurt", tick: s.tick, x: h.x, y: h.y, by: d.kind, id: d.id, hearts: s.hearts });
+  events.push({ type: "hurt", tick: s.tick, x: h.x, y: h.y, by: d.kind, id: d.id, hearts: s.hearts, blast });
 
-  // The wave. It throws every dust bunny within reach straight away from
-  // him and turns every token to roll straight away. It pops nothing and
-  // dazes nothing, and it throws dazed things too.
+  // The wave. It throws every dust bunny and battery within reach straight
+  // away from him and turns every token to roll straight away. It pops
+  // nothing and dazes nothing, it throws dazed things too, and it changes
+  // no battery's timers or owner.
   const reachSq = tune.hitWaveRadius * tune.hitWaveRadius;
   for (let i = 0; i < s.things.length; i++) {
     const o = s.things[i];
-    // The wave moves intruders; a pickup's tile lies where it lies.
-    if (o.hp <= 0 || s.tick < o.landTick || o.kind === "pickup") continue;
+    // The wave moves intruders; a pickup's tile lies where it lies, and gum ignores it.
+    if (o.hp <= 0 || s.tick < o.landTick || o.kind === "pickup" || o.kind === "gum") continue;
     const dx = o.x - h.x;
     const dy = o.y - h.y;
     const distSq = dx * dx + dy * dy;
@@ -136,7 +140,7 @@ export function loseHeart(s: State, tune: Tune, d: { kind: Thing["kind"] | "poli
     const dist = Math.sqrt(distSq);
     const nx = dist > 1e-6 ? dx / dist : 1;
     const ny = dist > 1e-6 ? dy / dist : 0;
-    const speed = o.kind === "bunny" ? tune.hitWaveSpeed : tune.tokenSpeed;
+    const speed = o.kind === "token" ? tune.tokenSpeed : tune.hitWaveSpeed;
     o.vx = nx * speed;
     o.vy = ny * speed;
   }
@@ -155,7 +159,8 @@ export function threat(s: State): boolean {
   if (s.boss.present) return true;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (d.hp > 0 && KINDS[d.kind].hurts) return true;
+    // A battery that is his can never cost him a heart.
+    if (d.hp > 0 && KINDS[d.kind].hurts && !d.mine) return true;
   }
   return false;
 }

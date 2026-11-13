@@ -1358,3 +1358,223 @@ describe("the pace: what it sends", () => {
     }
   });
 });
+
+describe("gum and batteries in the night (step 4)", () => {
+  /** The night as it stands at step 4: every kind built so far in its rows, the polisher left out. */
+  const NOW = ["bunny", "token", "gum", "battery"];
+  const dealt = dealtRows(NOW);
+  const shape = (hour: number) => dealt[hour].map((d) => [d.row, d.tick, d.bunnies, d.loose, d.file, d.gum, d.battery]);
+
+  it("21:00 and 22:00 go back to their written ticks: each opens with its new kind alone at tick 0", () => {
+    expect(shape(2)).toEqual([
+      [0, 0, 0, 0, 0, 1, 0],
+      [1, 342, 5, 1, 0, 0, 0],
+      [2, 684, 5, 1, 0, 0, 0],
+    ]);
+    expect(shape(3)).toEqual([
+      [0, 0, 0, 0, 0, 0, 1],
+      [1, 342, 6, 1, 0, 0, 0],
+      [2, 684, 6, 1, 0, 0, 0],
+    ]);
+    expect([dealt[2][0].first, dealt[2][0].gumForm, dealt[3][0].first, dealt[3][0].batteryForm]).toEqual([true, "alone", true, "alone"]);
+    // 23:00 and 00:00 still open with what step 5 builds: they stay shifted, bunch, bunch, file.
+    expect(dealt[4].map((d) => [d.row, d.tick])).toEqual([
+      [1, 0],
+      [3, 342],
+      [2, 513],
+    ]);
+    expect(dealt[5].map((d) => [d.row, d.tick])).toEqual([
+      [1, 0],
+      [3, 342],
+      [2, 513],
+    ]);
+  });
+
+  it("every gum and battery of the table is dealt, beside and under their bunches, in place of the dust bunnies the table swaps", () => {
+    const all = dealt.flat();
+    expect(all.reduce((sum, d) => sum + d.battery, 0)).toBe(6);
+    expect(all.reduce((sum, d) => sum + d.gum, 0)).toBe(5);
+    // 23:00: five dust bunnies, a battery beside and a token; then 6 + 1 with gum under.
+    expect(shape(4)[0]).toEqual([1, 0, 5, 1, 0, 0, 1]);
+    expect(shape(4)[1]).toEqual([3, 342, 6, 1, 0, 1, 0]);
+    expect([dealt[4][0].batteryForm, dealt[4][1].gumForm]).toEqual(["beside", "under"]);
+    // 02:00, 03:00 and 05:00 open with a battery beside (and gum under, but at 03:00's second).
+    expect(shape(7)[0]).toEqual([0, 0, 6, 2, 0, 1, 1]);
+    expect(shape(8).map((r) => r.slice(5))).toEqual([
+      [1, 1],
+      [0, 1],
+      [0, 0],
+    ]);
+    expect(shape(10)[0]).toEqual([0, 0, 6, 3, 0, 1, 1]);
+    // A bunch keeps its size with what is swapped in: 6 + battery + gum = 8 at 05:00.
+    expect(dealt[10][0].bunnies + dealt[10][0].battery + dealt[10][0].gum).toBe(BUNCH[10][0]);
+    // The step-1 night still leaves both out.
+    expect(dealtRows(STEP1).flat().some((d) => d.gum > 0 || d.battery > 0)).toBe(false);
+  });
+
+  for (const [hour, kind] of [
+    [2, "gum"],
+    [3, "battery"],
+  ] as const) {
+    it(`the first ${kind} comes alone at tick 0 of ${CLOCK[hour]}, as the only thing the hour has sent, at a far spot 20 u in`, () => {
+      for (const pace of [1, 2, 3]) {
+        const night = new Night({ pace }, { hour, kinds: NOW });
+        night.run(1);
+        expect(night.rows()).toEqual([{ hour, row: 0, how: "tick", at: 0, n: 1, cut: 0 }]);
+        expect(night.s.things.map((d) => d.kind)).toEqual([kind]);
+        const d = night.s.things[0];
+        expect(distance(night.s, d)).toBeGreaterThanOrEqual(150);
+        expect(Math.min(d.x - 8, 352 - d.x, d.y - 8, 472 - d.y)).toBeGreaterThanOrEqual(20);
+      }
+    });
+  }
+
+  it("a battery's fuse runs from its landing: alone and left be, it bursts by itself 300 ticks after it lands", () => {
+    const night = new Night({ pace: 1 }, { hour: 3, kinds: NOW });
+    night.run(1);
+    const b = night.s.things[0];
+    expect([b.landTick, b.fuseTick, b.knockTick, b.mine, b.launchId]).toEqual([36, 336, -1, false, -1]);
+    night.through(335);
+    expect(of(night.events, "burst")).toEqual([]);
+    night.run(1);
+    expect(of(night.events, "burst").map((e) => [e.id, e.tick, e.why, e.mine])).toEqual([[b.id, 336, "fuse", false]]);
+  });
+
+  it("at pace 2 gum holds the row after it, though it does not count for clear: until it is gone, or the tabled tick comes", () => {
+    const kept = new Night({ pace: 2 }, { hour: 2, kinds: NOW });
+    kept.through(341);
+    expect(kept.rows()).toHaveLength(1);
+    expect(threats(kept.s)).toBe(0);
+    kept.run(1);
+    expect(kept.rows()[1]).toEqual({ hour: 2, row: 1, how: "tick", at: 342, n: 6, cut: 0 });
+    const popped = new Night({ pace: 2 }, { hour: 2, kinds: NOW });
+    popped.through(100).empty().run(1);
+    expect(popped.rows()[1]).toMatchObject({ row: 1, how: "early", at: 101 });
+  });
+
+  it("at pace 2 a battery holds the row after it until it has burst: the row comes the tick after its fuse", () => {
+    const night = new Night({ pace: 2 }, { hour: 3, kinds: NOW });
+    night.through(336);
+    expect(night.rows()).toHaveLength(1);
+    night.run(1);
+    expect(night.rows()[1]).toEqual({ hour: 3, row: 1, how: "early", at: 337, n: 7, cut: 0 });
+  });
+
+  /** The blob's far spot of the row announced on the next tick, worked out from the arrivals stream as §3.3 says. */
+  function blobSpot(s: State, n: number): { x: number; y: number; R: number } {
+    const R = 8 + 9 * Math.sqrt(n);
+    const inset = R + 8;
+    const stream = { ...s.rng };
+    const w = 344 - 2 * inset;
+    const h = 464 - 2 * inset;
+    let best = { x: 0, y: 0, d: -1 };
+    for (let i = 0; i < 24; i++) {
+      const x = 8 + inset + rand(stream, "arrivals") * w;
+      const y = 8 + inset + rand(stream, "arrivals") * h;
+      const d = Math.hypot(x - s.him.x, y - s.him.y);
+      if (d >= 150) return { x, y, R };
+      if (d > best.d) best = { x, y, d };
+    }
+    return { x: best.x, y: best.y, R };
+  }
+
+  it("a battery beside a bunch stands on its rim facing him: the blob's spot plus R + 14 u toward him, inside the floor", () => {
+    let seen = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      // 23:00 opens (shifted) with five dust bunnies, a battery beside and a token.
+      const night = new Night({}, { hour: 4, kinds: NOW }, seed);
+      const spot = blobSpot(night.s, 5);
+      night.run(1);
+      const b = night.s.things.find((d) => d.kind === "battery")!;
+      const dx = night.s.him.x - spot.x;
+      const dy = night.s.him.y - spot.y;
+      const k = (spot.R + 14) / Math.hypot(dx, dy);
+      const want = { x: Math.min(342, Math.max(18, spot.x + dx * k)), y: Math.min(462, Math.max(18, spot.y + dy * k)) };
+      expect(b.x, `seed ${seed}`).toBeCloseTo(want.x, 9);
+      expect(b.y, `seed ${seed}`).toBeCloseTo(want.y, 9);
+      expect([b.landTick, b.fuseTick]).toEqual([36, 336]);
+      seen++;
+    }
+    expect(seen).toBe(40);
+  });
+
+  it("gum under a bunch lies at the blob's spot, under it; and is announced after the battery and before the tokens", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      // 02:00 opens with six dust bunnies, a battery beside, two tokens and gum under.
+      const night = new Night({}, { hour: 7, kinds: NOW }, seed);
+      const spot = blobSpot(night.s, 6);
+      night.run(1);
+      const g = night.s.things.find((d) => d.kind === "gum")!;
+      expect([g.x, g.y]).toEqual([Math.min(338, Math.max(22, spot.x)), Math.min(466, Math.max(14, spot.y))]);
+      expect(night.s.things.map((d) => d.kind)).toEqual(["bunny", "bunny", "bunny", "bunny", "bunny", "bunny", "battery", "gum", "token", "token"]);
+    }
+  });
+
+  it("the cap cuts dust bunnies first, then tokens, then gum, then batteries; a battery whose bunch was cut whole still stands by its spot", () => {
+    // 02:00's first row brings 6 + 1 + 2 + 1 = 10.
+    const cut = (room: number) => {
+      const night = new Night({}, { hour: 7, kinds: NOW });
+      for (let i = 0; i < room; i++) put(night.s, "bunny", 20 + (i % 10) * 30, 30 + Math.floor(i / 10) * 30);
+      night.run(1);
+      const row = night.rows()[0];
+      const came = night.s.things.slice(room).map((d) => d.kind);
+      return { n: row.n, cut: row.cut, came };
+    };
+    expect(cut(14)).toEqual({ n: 10, cut: 0, came: ["bunny", "bunny", "bunny", "bunny", "bunny", "bunny", "battery", "gum", "token", "token"] });
+    expect(cut(20)).toEqual({ n: 4, cut: 6, came: ["battery", "gum", "token", "token"] });
+    expect(cut(22)).toEqual({ n: 2, cut: 8, came: ["battery", "gum"] });
+    expect(cut(23)).toEqual({ n: 1, cut: 9, came: ["battery"] });
+    expect(cut(24)).toEqual({ n: 0, cut: 10, came: [] });
+  });
+
+  it("gum is swept away when its hour ends, and pays nothing; a battery stays", () => {
+    const night = new Night({ pace: 1 }, { hour: 2, kinds: NOW });
+    night.run(1);
+    const g = night.s.things[0];
+    expect(g.kind).toBe("gum");
+    const b = put(night.s, "battery", 40, 40, { fuseTick: 5000 });
+    // Nothing else is left in the room: the hour runs to its end with gum and the battery in it.
+    night.run(4000, () => {
+      night.s.things = night.s.things.filter((d) => d === g || d === b);
+    });
+    expect(night.s.night.hour).toBeGreaterThan(2);
+    expect(night.s.things.includes(g)).toBe(false);
+    expect(night.s.things.includes(b)).toBe(true);
+    expect(night.s.score).toBe(0);
+    expect(of(night.events, "hit")).toEqual([]);
+  });
+
+  it("an extra bunch carries no gum and no battery", () => {
+    for (const hour of [2, 3, 7, 10]) {
+      const night = new Night({ pace: 3 }, { hour, kinds: NOW });
+      const extra = night.toFirstExtra();
+      const ids = of(night.events, "announce").filter((e) => e.tick === night.began[hour] + extra.at);
+      expect(new Set(ids.map((e) => e.kind))).toEqual(new Set(["bunny", "token"]));
+    }
+  });
+
+  it("gum does not count for clear, and counts toward the cap; a battery counts for both", () => {
+    const s = new Night({}, { empty: true }).s;
+    put(s, "gum", 100, 100);
+    expect([threats(s), intruders(s)]).toEqual([0, 1]);
+    put(s, "battery", 200, 100, { fuseTick: 500 });
+    expect([threats(s), intruders(s)]).toEqual([1, 2]);
+    // A battery he has knocked still counts until it bursts.
+    s.things[1].mine = true;
+    s.things[1].knockTick = 0;
+    expect(threats(s)).toBe(1);
+  });
+
+  it("gum lands where it was announced and is never dazed, even close to him; a battery close to him lands dazed", () => {
+    const night = new Night({}, { empty: true });
+    const g = put(night.s, "gum", 180 + 30, 374, { landTick: 5 });
+    const b = put(night.s, "battery", 180 - 30, 374, { landTick: 5, fuseTick: 305 });
+    night.through(5);
+    expect(g.dazedUntil).toBe(0);
+    expect(b.dazedUntil).toBe(41);
+    expect(of(night.events, "arrive").map((e) => [e.kind, e.dazed])).toEqual([
+      ["gum", false],
+      ["battery", true],
+    ]);
+  });
+});

@@ -67,6 +67,8 @@ export type Tune = {
   pipRefillTicks: number;
   /** The body pop of a launch that gives one pip back, once. 0 means never. */
   pipRefundPop: number;
+  /** A gum stop leaves him at least this many pips. */
+  gumStopMinPips: number;
 
   // ── Hot and landing ─────────────────────────────────────────────────
   /** After a pop he stays hot this many ticks whatever his speed. 0: only speed counts. */
@@ -132,6 +134,18 @@ export type Tune = {
   bunnyWobbleRate: number;
   /** A token's roll, u/s. */
   tokenSpeed: number;
+  /** A battery's drift toward him, u/s. */
+  batterySpeed: number;
+  /** From its landing to bursting by itself, ticks. */
+  batteryFuseTicks: number;
+  /** The share of his speed along the line of the hit that a knocked battery leaves with. */
+  batteryKnockKeep: number;
+  /** A knocked battery bursts this long after the first knock at the latest, ticks. */
+  batteryKnockTicks: number;
+  /** Reach of a battery's blast, u. */
+  blastRadius: number;
+  /** A battery caught in a blast goes off this much later, ticks. */
+  blastChainTicks: number;
 
   // ── Score ───────────────────────────────────────────────────────────
   /** Largest chain multiplier. */
@@ -248,8 +262,9 @@ export type Him = {
 export type ThingKind = BuiltKind | "pickup";
 
 /**
- * A thing in the room: a dust bunny, a token, or a charm's pickup tile.
- * Everything in `things` is alive (a popped thing, and a pickup whose
+ * A thing in the room: a dust bunny, a token, gum, a battery, or a charm's
+ * pickup tile. Everything in `things` is alive (a popped thing, a battery
+ * that has burst, gum swept away at the end of its hour, and a pickup whose
  * offer is over, is gone by the end of its tick); it is announced until
  * `landTick` and landed from then on. A pickup is never announced: it
  * lies there from the tick its offer opens.
@@ -277,6 +292,20 @@ export type Thing = {
   phase: number;
   /** A dust bunny of the boss's hour (trickled in, or coughed out): it pops for no points. */
   worth0: boolean;
+  /**
+   * A battery: the tick it goes off, at the latest. Its fuse ends
+   * `batteryFuseTicks` after it lands; a knock brings it to
+   * `batteryKnockTicks` after the first knock, a blast that catches it to
+   * `blastChainTicks` after the blast, whichever is soonest. -1 for every
+   * other kind.
+   */
+  fuseTick: number;
+  /** A battery: the tick of its first knock; -1 if he has never knocked it. A knocked battery bursts on what it touches. */
+  knockTick: number;
+  /** A battery: it is his (he knocked it, or a blast of his caught it). It never costs him a heart from then on, by touch or by blast. */
+  mine: boolean;
+  /** A battery that is his: the launch its blast belongs to (§5.4); -1 while it is not his. */
+  launchId: number;
 };
 
 /** The launch in progress, or the last one. */
@@ -422,6 +451,9 @@ export type Boss = {
   shovedTick: number;
 };
 
+/** An ended launch that still has a battery alive: its total, which a blast that belongs to it adds to (§5.4). */
+export type PastShot = { id: number; points: number };
+
 export type State = {
   v: 1;
   seed: number;
@@ -450,6 +482,12 @@ export type State = {
   /** The slow-motion meter, in slowed ticks, and the count toward its next refill. */
   slow: { meter: number; refill: number };
   launch: LaunchState;
+  /**
+   * The totals of ended launches that still have a battery alive whose
+   * blast belongs to them, oldest first. An entry is dropped when its last
+   * battery has burst.
+   */
+  pastShots: PastShot[];
   /** Body charms taken, in order. */
   charms: string[];
   /** His numbers after charms: statsFor(charms, tune). */
@@ -518,7 +556,8 @@ export type SimEvent =
       cushions: number;
       coin: number;
       points: number;
-      source: "body" | "spark";
+      /** His body, Spark's ring, or a blast of his (`n` 0: a blast pop is not in his chain; its points are twice the kind's, flat). */
+      source: "body" | "spark" | "blast";
       speed: number;
     }
   /** He landed. `dazed` is how many dust bunnies the thump dazed. */
@@ -526,15 +565,63 @@ export type SimEvent =
   /** A launch ended: on a landing, at the next release, or with the night. `x`, `y` is where he was. */
   | { type: "launchEnd"; tick: number; x: number; y: number; id: number; pops: number; total: number }
   /** A pip came back. `pips` is the count now. */
-  | { type: "pip"; tick: number; pips: number; why: "timer" | "pop" | "heart" | "plate" }
-  /** A heart was lost to thing `id` (0 and "polisher": the polisher's pad). `x`, `y` is his centre, where the wave goes out from. */
-  | { type: "hurt"; tick: number; x: number; y: number; by: Thing["kind"] | "polisher"; id: number; hearts: number }
+  | { type: "pip"; tick: number; pips: number; why: "timer" | "pop" | "heart" | "plate" | "gum" }
   /**
-   * A counted hit on a thing that takes several: so far the polisher's plug
-   * (id 0). `x`, `y` is his centre as he met it; `left` its hits left; `points` what
-   * it paid; `two` whether it counted as two (off a cushion).
+   * A heart was lost to thing `id` (0 and "polisher": the polisher's pad).
+   * `x`, `y` is his centre, where the wave goes out from. `blast`: to the
+   * blast of battery `id`, not to its touch.
    */
-  | { type: "hit"; tick: number; x: number; y: number; kind: "polisher"; id: number; left: number; points: number; two: boolean }
+  | { type: "hurt"; tick: number; x: number; y: number; by: Thing["kind"] | "polisher"; id: number; hearts: number; blast: boolean }
+  /**
+   * A counted hit on a thing that takes several: gum, or the polisher's plug
+   * (id 0). `x`, `y` is his centre as he met it (the gum's centre for a
+   * blast's hit); `left` its hits left; `points` what it paid; `two`
+   * whether it counted as two (off a cushion, or Spark's ring). `source`:
+   * his body, Spark's ring, or a blast of his. `stop`: gum with two left
+   * stopped him dead on it, and he lands.
+   */
+  | {
+      type: "hit";
+      tick: number;
+      x: number;
+      y: number;
+      kind: "polisher" | "gum";
+      id: number;
+      left: number;
+      points: number;
+      two: boolean;
+      source: "body" | "spark" | "blast";
+      stop: boolean;
+    }
+  /**
+   * His hot body knocked battery `id`: it leaves at `vx`, `vy` and is his.
+   * `x`, `y` is the battery, `hx`, `hy` his centre; `speed` his speed going in;
+   * `until` the tick it goes off at the latest.
+   */
+  | { type: "knock"; tick: number; x: number; y: number; hx: number; hy: number; id: number; vx: number; vy: number; speed: number; until: number }
+  /**
+   * Battery `id` went off at `x`, `y`. `mine`: the blast was his (it pops,
+   * and the 40 is paid). `why`: its fuse ran out, it touched something
+   * after a knock, the knock's time ran out, or a blast had set it off.
+   * `launchId`: the launch its points went to (-1 if it was not his);
+   * `points` what the blast paid in all (the 40, its pops at twice their
+   * points, its hits on gum); `pops` how many it popped; `set` how many
+   * batteries it set off; `hurt` whether it cost him a heart.
+   */
+  | {
+      type: "burst";
+      tick: number;
+      x: number;
+      y: number;
+      id: number;
+      mine: boolean;
+      why: "fuse" | "touch" | "knock" | "chain";
+      launchId: number;
+      points: number;
+      pops: number;
+      set: number;
+      hurt: boolean;
+    }
   /** The polisher lands, at the end of its telegraph. */
   | { type: "bossArrive"; tick: number; x: number; y: number; lane: number; dir: 1 | -1 }
   /** The plug was hit: `left` hits remain; `coughed` dust bunnies came out of it. */

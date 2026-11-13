@@ -25,7 +25,7 @@ describe("losing a heart", () => {
     const bunny = put(s, "bunny", 180 + 10, 374);
     const events = tick(s, tune);
     expect(s.hearts).toBe(2);
-    expect(of(events, "hurt")).toEqual([{ type: "hurt", tick: 0, x: 180, y: 374, by: "bunny", id: bunny.id, hearts: 2 }]);
+    expect(of(events, "hurt")).toEqual([{ type: "hurt", tick: 0, x: 180, y: 374, by: "bunny", id: bunny.id, hearts: 2, blast: false }]);
     expect(s.lastHurtBy).toBe("bunny");
     expect(s.lastHurtHour).toBe(0);
   });

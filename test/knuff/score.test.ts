@@ -352,8 +352,10 @@ describe("a launch's total, the score and the best shot", () => {
   });
 
   it("the score is the sum of every pop, and of every launch's total, all night", () => {
+    // Dust bunnies and tokens only: every point is a pop's. (The night with gum and batteries, whose
+    // flat scores and blasts are added in, is the case after this one.)
     const long = tuned({ hearts: 40 });
-    const s = createState(9, long);
+    const s = createState(9, long, { kinds: ["bunny", "token", "polisher"] });
     const input = scripted(6);
     const events: SimEvent[] = [];
     for (let t = 0; t < 9000 && s.phase !== "over"; t++) step(s, input(), long, events);
@@ -371,5 +373,143 @@ describe("a launch's total, the score and the best shot", () => {
     // Some of them were banked, and some chained.
     expect(pops.some((e) => e.cushions >= 2)).toBe(true);
     expect(pops.some((e) => e.chain >= 3)).toBe(true);
+  });
+});
+
+describe("flat scores and blasts (step 4)", () => {
+  const T = tuned({ ...STILL, batterySpeed: 0 });
+
+  it("a hit on gum pays 15 for each hit point it takes off: once, or twice for a hit that counts as two", () => {
+    // Straight, on gum with two left: one off, 15, and he stops on it.
+    const s = night(T);
+    put(s, "gum", 180, 280);
+    fire(s, T, shot(0, -1), 20);
+    expect([s.score, s.launch.points, s.bestShot]).toEqual([15, 15, 15]);
+    // Off a cushion: two off, 30.
+    const b = night(T);
+    b.him.y = 60;
+    b.him.py = 60;
+    put(b, "gum", 180, 150);
+    fire(b, T, shot(0, -1), 20);
+    expect(b.score).toBe(30);
+    // Flat: not a pop, and the chain does not move.
+    expect([b.launch.pops, b.launch.popped]).toEqual([0, false]);
+  });
+
+  it("a blast of his pays 40, and its pops twice their points, flat, into the launch that knocked it", () => {
+    const s = night(T);
+    const b = put(s, "battery", 180, 300, { fuseTick: 400 });
+    for (let i = 0; i < 4; i++) put(s, "bunny", 160 + i * 14, 250);
+    const events = fire(s, T, shot(0, -1), 30);
+    const [k] = of(events, "knock");
+    const [burst] = of(events, "burst");
+    expect([k.id, burst.id, burst.mine, burst.launchId]).toEqual([b.id, b.id, true, 1]);
+    expect(burst.points).toBe(40 + 4 * 20);
+    // His blast's pops are not his chain's: the launch popped nothing with his body.
+    expect(s.launch.pops).toBe(0);
+    // Still the launch in flight, or landed since: its total holds the blast.
+    expect(s.score).toBe(120);
+    const ends = of(events, "launchEnd");
+    expect(ends.length === 0 ? s.launch.points : ends[0].total).toBe(120);
+    expect(s.bestShot).toBe(120);
+  });
+
+  it("a blast that goes off after its launch has ended adds to that launch's entry in pastShots, and raises the best shot", () => {
+    const s = night(T);
+    // His battery, of launch 1, which has ended: its total was 30.
+    s.launch = { ...s.launch, id: 1, active: false, points: 30 };
+    s.pastShots = [{ id: 1, points: 30 }];
+    s.bestShot = 30;
+    s.score = 30;
+    const b = put(s, "battery", 180, 150, { mine: true, knockTick: 0, launchId: 1, fuseTick: 3 });
+    put(s, "token", 180 + 40, 150);
+    // A second launch is in flight meanwhile, and scores 10 of its own.
+    put(s, "bunny", 180, 374 - 40);
+    const events = fire(s, T, shot(0, -1), 6);
+    const [burst] = of(events, "burst");
+    expect([burst.id, burst.launchId, burst.points]).toEqual([b.id, 1, 40 + 50]);
+    expect(s.launch.id).toBe(2);
+    expect(s.launch.points).toBe(10);
+    expect(s.score).toBe(30 + 10 + 90);
+    // The entry is dropped once its last battery has burst; the best shot is the old launch with its blast.
+    expect(s.pastShots).toEqual([]);
+    expect(s.bestShot).toBe(120);
+  });
+
+  it("a launch that ends with a battery of his alive keeps its total in pastShots until that battery has burst", () => {
+    const s = night(T);
+    const b = put(s, "battery", 180, 300, { fuseTick: 400 });
+    const events = tick(s, T, shot(0, -1));
+    events.push(...until(s, T, (e) => of(e, "knock").length > 0, 20));
+    // A new launch at once: the knocking launch ends with its battery still flying.
+    events.push(...tick(s, T, shot(0, 1)));
+    expect(of(events, "launchEnd").map((e) => e.id)).toEqual([1]);
+    expect(s.pastShots).toEqual([{ id: 1, points: 0 }]);
+    events.push(...until(s, T, (e) => of(e, "burst").length > 0, 60));
+    const [burst] = of(events, "burst");
+    expect([burst.id, burst.launchId]).toEqual([b.id, 1]);
+    expect(s.pastShots).toEqual([]);
+    expect(s.bestShot).toBe(40);
+  });
+
+  it("a battery set off by a blast of his takes that blast's launch, and pays its 40 there", () => {
+    const s = night(T);
+    s.launch = { ...s.launch, id: 3, active: false, points: 0 };
+    s.pastShots = [{ id: 3, points: 0 }];
+    put(s, "battery", 180, 150, { mine: true, knockTick: 0, launchId: 3, fuseTick: 1 });
+    const other = put(s, "battery", 180 + 60, 150, { fuseTick: 400 });
+    const events = run(s, T, 20);
+    expect(of(events, "burst").map((e) => [e.launchId, e.points])).toEqual([
+      [3, 40],
+      [3, 40],
+    ]);
+    expect(other.launchId).toBe(3);
+    expect(s.bestShot).toBe(80);
+    expect(s.pastShots).toEqual([]);
+  });
+
+  it("all night, with gum and batteries: the score is every pop, every hit and every blast; and every launch's total with its blasts", () => {
+    const long = tuned({ hearts: 40 });
+    let knocks = 0;
+    let gums = 0;
+    for (let seed = 9; seed < 12; seed++) {
+      const s = createState(seed, long, { kinds: ["bunny", "token", "gum", "battery"] });
+      const input = scripted(seed);
+      const events: SimEvent[] = [];
+      /** Each launch's total, its blasts included, by id. */
+      const totals = new Map<number, number>();
+      for (let t = 0; t < 14000 && s.phase !== "over"; t++) {
+        const from = events.length;
+        step(s, input(), long, events);
+        for (let i = from; i < events.length; i++) {
+          const e = events[i];
+          if (e.type === "launchEnd") totals.set(e.id, (totals.get(e.id) ?? 0) + e.total);
+          if (e.type === "burst" && e.mine && !(s.launch.active && s.launch.id === e.launchId)) totals.set(e.launchId, (totals.get(e.launchId) ?? 0) + e.points);
+        }
+      }
+      const pops = of(events, "pop");
+      const hits = of(events, "hit");
+      const bursts = of(events, "burst");
+      knocks += of(events, "knock").length;
+      gums += hits.filter((e) => e.kind === "gum").length;
+      // Every point is a pop by his body or Spark's ring, a hit on gum by either, or a blast (its 40, its pops and its hits).
+      const own = (e: { source: string }) => e.source !== "blast";
+      const sum = pops.filter(own).reduce((a, e) => a + e.points, 0) + hits.filter(own).reduce((a, e) => a + e.points, 0) + bursts.reduce((a, e) => a + e.points, 0);
+      expect(s.score, `seed ${seed}`).toBe(sum);
+      // A blast pays 40 if it is his, and what it popped and hit; one not his pays nothing.
+      for (const e of bursts) if (!e.mine) expect(e.points).toBe(0);
+      const blastPops = pops.filter((p) => p.source === "blast");
+      const blastHits = hits.filter((h) => h.source === "blast");
+      for (const p of blastPops) expect(p.points).toBe(p.chain === 1 && p.n === 0 ? 2 * KINDS[p.kind].points : -1);
+      for (const h of blastHits) expect([h.kind, h.points, h.two]).toEqual(["gum", 15, false]);
+      expect(bursts.reduce((a, e) => a + e.points, 0)).toBe(40 * bursts.filter((e) => e.mine).length + blastPops.reduce((a, p) => a + p.points, 0) + blastHits.reduce((a, h) => a + h.points, 0));
+      // A launch's total is what it scored and the blasts that belong to it: they add up to the score.
+      if (s.launch.active) totals.set(s.launch.id, (totals.get(s.launch.id) ?? 0) + s.launch.points);
+      expect([...totals.values()].reduce((a, b) => a + b, 0), `seed ${seed}`).toBe(s.score);
+      expect(s.bestShot, `seed ${seed}`).toBe(Math.max(...totals.values()));
+    }
+    // The nights had knocks and gum in them.
+    expect(knocks).toBeGreaterThan(3);
+    expect(gums).toBeGreaterThan(3);
   });
 });

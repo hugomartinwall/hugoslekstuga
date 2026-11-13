@@ -160,9 +160,10 @@ describe("the pip timer", () => {
     }
     expect([...seen].sort()).toEqual(s.stats.pipMax === 4 ? [0, 1, 2, 3, 4] : [0, 1, 2, 3]);
     expect(of(events, "refused").length).toBeGreaterThan(0);
-    // The night as it starts has a Pip plate lit (plate 4): it gives pips too.
+    // The night as it starts has a Pip plate lit (plate 4): it gives pips too. And from 21:00 a
+    // gum stop leaves him a pip if he has none.
     const why = new Set(of(events, "pip").map((e) => e.why));
-    expect([...why].sort()).toEqual(["heart", "plate", "pop", "timer"]);
+    expect([...why].sort()).toEqual(["gum", "heart", "plate", "pop", "timer"]);
   });
 });
 

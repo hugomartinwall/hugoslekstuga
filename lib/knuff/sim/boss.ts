@@ -24,6 +24,7 @@
  * changes a State is called from `step` only.
  */
 import { KINDS, POLISHER } from "../content/kinds";
+import { bursting, queueBurst } from "./battery";
 import { armedLaunch } from "./charms";
 import { endLaunch, isHot, land, loseHeart } from "./hot";
 import { overlapped } from "./intruders";
@@ -236,16 +237,23 @@ function clearSpot(
   return { ...p, nx: n[0], ny: n[1] };
 }
 
-/** The intruders it meets are pushed out of its body; a token bounces off it. Pickups lie where they lie. */
+/**
+ * The intruders it meets are pushed out of its body; a token bounces off
+ * it; a battery he knocked bursts on it. Pickups and gum lie where they lie.
+ */
 function pushThings(s: State): void {
   const box = boxOf(s.boss);
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (d.hp <= 0 || s.tick < d.landTick || d.kind === "pickup") continue;
+    if (d.hp <= 0 || s.tick < d.landTick || d.kind === "pickup" || d.kind === "gum" || bursting(s, d)) continue;
     const r = KINDS[d.kind].radius;
     if (d.x + r <= box.x0 || d.x - r >= box.x1 || d.y + r <= box.y0 || d.y - r >= box.y1) continue;
     const q = clearSpot(s, box, d.x, d.y, r);
     if (!q) continue;
+    if (d.kind === "battery" && d.knockTick >= 0) {
+      queueBurst(s, d, "touch");
+      continue;
+    }
     d.x = q.x;
     d.y = q.y;
     if (d.kind === "token") {
@@ -535,7 +543,7 @@ function hitPlug(s: State, tune: Tune, events: SimEvent[]): void {
   s.score += points;
   if (l.points > s.bestShot) s.bestShot = l.points;
   l.hit.push(0);
-  events.push({ type: "hit", tick: s.tick, x: h.x, y: h.y, kind: "polisher", id: 0, left: b.hp, points, two });
+  events.push({ type: "hit", tick: s.tick, x: h.x, y: h.y, kind: "polisher", id: 0, left: b.hp, points, two, source: "body", stop: false });
   if (b.hp <= 0) {
     b.mode = "down";
     b.modeUntil = -1;

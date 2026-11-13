@@ -49,14 +49,15 @@ export const KINDS: Record<Exclude<Kind, "polisher">, KindRow> = {
 };
 
 /** A kind of thing in the room that has rules so far: a thing in the room is one of these. */
-export type BuiltKind = "bunny" | "token";
+export type BuiltKind = "bunny" | "token" | "gum" | "battery";
 
 /**
  * The kinds that have rules so far, in the order they were built: what a
  * night can bring (State.night.kinds). The polisher is one of them: a
  * night whose kinds leave it out has no 06:00, and ends when 05:00 ends.
+ * Gum and the battery came in step 4.
  */
-export const BUILT: readonly (BuiltKind | "polisher")[] = ["bunny", "token", "polisher"];
+export const BUILT: readonly (BuiltKind | "polisher")[] = ["bunny", "token", "polisher", "gum", "battery"];
 
 export function isBuilt(kind: string): kind is BuiltKind | "polisher" {
   return (BUILT as readonly string[]).includes(kind);
