@@ -434,16 +434,17 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     // The polisher's telegraph: its outline where it will land, and the way it will head.
     drawBossTelegraph(paint, state);
 
+    // Shorter than a shot, or no pip in hand: grey, to show that letting go here does nothing.
+    // Otherwise phosphor at every power. (The toy went mint, acid, coral
+    // with the pull: here acid is a token and coral is a lost heart, and
+    // the line must not be read as either. The band's length is the power.)
+    const col = aim && (aim.short || state.pips <= 0) ? C.inkMuted : C.ink;
+
     // The aim: the band behind him and a dotted line ahead.
     if (aim) {
       const len = Math.hypot(aim.launch.dx, aim.launch.dy);
       const dx = aim.launch.dx / len;
       const dy = aim.launch.dy / len;
-      // Shorter than a shot, or no pip in hand: grey, to show that letting go here does nothing.
-      // Otherwise phosphor at every power. (The toy went mint, acid, coral
-      // with the pull: here acid is a token and coral is a lost heart, and
-      // the line must not be read as either. The band's length is the power.)
-      const col = aim.short || state.pips <= 0 ? C.inkMuted : C.ink;
       // The band is as long as the pointer has travelled, capped at a full pull.
       const bandU = Math.min(aim.lengthPx, tune.pullFullPx) / L.s;
       const bx = hx - dx * bandU;
@@ -459,22 +460,16 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
       if (f.line && f.line.pts.length >= 4) {
         aimDots(f.line, col);
-        // Where it ends it says what will happen.
+        // Where it ends it says what will happen. (A cross waits for its own pass, over the polisher.)
         const pts = f.line.pts;
         const ex = pts[pts.length - 2];
         const ey = pts[pts.length - 1];
-        if (f.line.end === "thing" || f.line.end === "polisher" || f.line.end === "pad") {
-          // A cross on the thing he reaches: coral on the polisher's pad, which will cost a heart.
-          const arm = Math.round(r * S * 0.9);
-          const tw = Math.max(2, Math.round(dpr * 2.6));
-          ctx.fillStyle = f.line.end === "pad" ? C.coral : col;
-          ctx.fillRect(Math.round(X(ex) - arm), Math.round(Y(ey) - tw / 2), arm * 2, tw);
-          ctx.fillRect(Math.round(X(ex) - tw / 2), Math.round(Y(ey) - arm), tw, arm * 2);
-        } else if (f.line.end === "land") {
+        if (f.line.end === "land") {
           // The thump's ring where he would land.
           paint.ring(X(ex), Y(ey), tune.thumpRadius * S, rgba(col, 0.6), ringW);
-        } else {
-          ctx.fillStyle = rgba(col, 0.5);
+        } else if (f.line.end === "cushion" || f.line.end === "time") {
+          // Coral if the launch runs on into the pad, which will cost a heart.
+          ctx.fillStyle = f.line.padAfter ? C.coral : rgba(col, 0.5);
           const q = Math.max(4, Math.round(dpr * 5));
           ctx.fillRect(Math.round(X(ex) - q / 2), Math.round(Y(ey) - q / 2), q, q);
         }
@@ -530,6 +525,20 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
     // The polisher, over the intruders.
     drawBoss(paint, state, tune, alpha);
+
+    // The cross where the aim line ends on a thing, over the polisher: the plug he would hit is
+    // where the machine's trailing end will be when he gets there, inside its box as it stands now.
+    // Coral on the pad, which will cost a heart, and where the launch runs on into the pad after it.
+    if (aim && f.line && f.line.pts.length >= 4 && (f.line.end === "thing" || f.line.end === "polisher" || f.line.end === "pad")) {
+      const pts = f.line.pts;
+      const ex = pts[pts.length - 2];
+      const ey = pts[pts.length - 1];
+      const arm = Math.round(r * S * 0.9);
+      const tw = Math.max(2, Math.round(dpr * 2.6));
+      ctx.fillStyle = f.line.end === "pad" || f.line.padAfter ? C.coral : col;
+      ctx.fillRect(Math.round(X(ex) - arm), Math.round(Y(ey) - tw / 2), arm * 2, tw);
+      ctx.fillRect(Math.round(X(ex) - tw / 2), Math.round(Y(ey) - arm), tw, arm * 2);
+    }
 
     // Spark's ring, under his pips, him and the hot ring.
     drawSparkRing(paint, state, hx, hy, tune.sparkReach);
