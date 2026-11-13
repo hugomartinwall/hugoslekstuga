@@ -11,7 +11,8 @@
  *       [--pace=1|2|3]           the same as --tune='{"pace":3}'
  *       [--plates]               the step-1 table with the two starting plates lit (Bumper on 0, Pip on 4)
  *       [--charms]               the charm test of §13.3: 120 nights a charm (--seeds), from 23:00,
- *                                for the Expert and the Ordinary (--player=expert or ordinary)
+ *                                for the Expert and the Ordinary (--player=expert or ordinary);
+ *                                --arms=bell,coin runs those charms only, beside the arm without one
  *       [--offers]               the offer checks of step 2 (§14): offers made, how they opened,
  *                                taken by accident by a player who ignores them, and the named one
  *                                got by a player who takes one; on the night as it stands
@@ -104,9 +105,12 @@ if (process.argv.includes("--charms")) {
   // The charm test: every arm for each player asked for (both by default), on the same seeds.
   const count = option("seeds") === undefined ? CHARM_NIGHTS : seeds;
   const players = (asked ?? [...CHARM_PLAYERS]).filter((k): k is (typeof CHARM_PLAYERS)[number] => (CHARM_PLAYERS as readonly string[]).includes(k));
+  // --arms=bell,coin: those charms only (and the arm without one), for a longer run of the ones that sit on a line.
+  const only = option("arms")?.split(",");
+  const arms = CHARM_ARMS.filter((c) => c === "" || !only || only.includes(c));
   const sums = new Map<string, CharmSum>();
   for (const key of players) {
-    for (const charm of CHARM_ARMS) {
+    for (const charm of arms) {
       const { nights, fired } = nightsOf(key, count, charmNight(charm), fileFor(`${key}__${charm || "none"}`), charm);
       sums.set(`${key}|${charm}`, sumCharm(key, charm, nights, fired));
     }
