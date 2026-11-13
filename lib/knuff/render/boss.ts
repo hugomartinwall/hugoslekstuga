@@ -8,11 +8,17 @@
  *     and an arrow the way it will head.
  *   - The casing: a grey box with a hairline frame.
  *   - The pad, its whole leading end: coral while it moves along a lane and
- *     hurts; the casing's grey while it is off.
+ *     hurts. While it is off (stalled, changing lane), the end that will
+ *     lead when it sets off is drawn as the pad to come: broken, coral and
+ *     dark in turn. Pad and plug swap ends at the tick it sets off, so
+ *     the ends are drawn the way it will go, never the way it came: after
+ *     a hit, the end he hit is the one that is marked.
  *   - The plug, the middle 24 u of the trailing end: phosphor while it can
  *     be hit; dark while it cannot (stalled, changing lane, beaten).
  *   - Its hits left: a row of squares along its middle, filled for each.
- *   - Stalled at a wall: an arrow to the next lane.
+ *   - Stalled at a wall, and changing lane: an arrow to the next lane.
+ *   - Stalled after a hit: an arrow along the lane the way it will set
+ *     off, and a bar under the hits that empties until it does.
  *
  * Nothing blinks: a state is a colour, held as long as it is true.
  */
@@ -102,24 +108,32 @@ export function drawBossTelegraph(p: Paint, s: State): void {
   fillU(p, box.x0, box.y1 + 4, box.x0 + (box.x1 - box.x0) * left, box.y1 + 6, C.inkMuted);
 }
 
-/** The machine itself: casing, pad, plug, its hits left, and the arrow while it stalls at a wall. Drawn after the intruders. */
+/** The machine itself: casing, pad, plug, its hits left, and the arrows while it stalls. Drawn after the intruders. */
 export function drawBoss(p: Paint, s: State, tune: Tune, alpha: number): void {
   const b = s.boss;
   if (!solid(b)) return;
   const box = boxAt(s, alpha);
   const hair = Math.max(1, Math.round(p.dpr));
   const on = live(b);
-  const lead = b.dir > 0 ? box.x1 : box.x0;
-  const trail = b.dir > 0 ? box.x0 : box.x1;
+  // The way it heads: while it moves along a lane (or stands beaten), the way it goes; stalled or
+  // changing lane, the way it will set off, for what trails now leads then.
+  const coming = b.mode === "wallStall" || b.mode === "laneMove" || b.mode === "hitStall";
+  const ahead = coming ? -b.dir : b.dir;
+  const lead = ahead > 0 ? box.x1 : box.x0;
+  const trail = ahead > 0 ? box.x0 : box.x1;
   const cy = (box.y0 + box.y1) / 2;
 
   // The casing.
   fillU(p, box.x0, box.y0, box.x1, box.y1, C.casing);
-  // The pad: the whole leading end. Coral while it hurts.
-  const padIn = lead - b.dir * END_U;
+  // The pad: the whole leading end. Coral while it hurts; the pad to come, broken.
+  const padIn = lead - ahead * END_U;
   fillU(p, Math.min(lead, padIn), box.y0, Math.max(lead, padIn), box.y1, on ? C.coral : C.casingDark);
+  if (coming) {
+    // Broken: coral and dark in turn down the whole end, 5 u and 3 u. Whole, it hurts; broken, it will.
+    for (let v = box.y0; v < box.y1 - 0.01; v += 8) fillU(p, Math.min(lead, padIn), v, Math.max(lead, padIn), Math.min(box.y1, v + 5), C.coral);
+  }
   // The plug: the middle of the trailing end. Phosphor while it can be hit.
-  const plugIn = trail + b.dir * END_U;
+  const plugIn = trail + ahead * END_U;
   const half = tune.plugWidth / 2;
   fillU(p, Math.min(trail, plugIn), cy - half, Math.max(trail, plugIn), cy + half, on ? C.ink : C.page);
   frameU(p, box, C.inkMuted, hair);
@@ -143,10 +157,16 @@ export function drawBoss(p: Paint, s: State, tune: Tune, alpha: number): void {
     }
   }
 
-  // Stalled at a wall, and changing lane: an arrow to the lane it goes to.
+  // Stalled at a wall, and changing lane: an arrow to the lane it goes to, at the wall's end.
   if (b.mode === "wallStall" || b.mode === "laneMove") {
     const down = nextLane(b) > b.lane;
     const ax = (box.x0 + box.x1) / 2 + (b.dir > 0 ? 38 : -38);
     arrowU(p, ax, cy, 0, down ? 1 : -1, C.ink);
+  }
+  // Stalled after a hit: an arrow the way it will set off, at the end that will lead, and a bar that empties until it does.
+  if (b.mode === "hitStall") {
+    arrowU(p, (box.x0 + box.x1) / 2 + ahead * 38, cy, ahead, 0, C.ink);
+    const left = Math.max(0, Math.min(1, (b.modeUntil - s.tick) / Math.max(1, tune.bossStallTicks)));
+    fillU(p, x0, my + MARK_U / 2 + 5, x0 + width * left, my + MARK_U / 2 + 7, C.inkMuted);
   }
 }
