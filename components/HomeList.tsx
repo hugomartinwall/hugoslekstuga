@@ -79,10 +79,17 @@ export default function HomeList({
     // The list ignores the pointer for its first moment. A key on another
     // page that leads here ("Back home" on the 404) sits where the game
     // cards open, and the second tap of a double tap used to open a game.
-    <div className="press-guard mx-auto w-full max-w-xl px-4 pb-2">
+    <div className="press-guard @container mx-auto w-full max-w-xl px-4 pb-2">
       {/* The title, as a banner. The corner mascot sits over its top-left
-          margin, so the banner starts a little way down. */}
-      <div className="relative mt-12 h-44">
+          margin, so the banner starts a little way down. In a short
+          window (a phone on its side) the tall phone's 176px box filled
+          most of the first screen, so there it is 112px: the letters, their
+          glow, and air above the notice below them, and the first game
+          card comes up into view. Only where the title is one line (about
+          48px tall): PixelWordmark stacks the two words in a box narrower
+          than 520px (STACK_BELOW_W), and this column's width is that
+          box's width. */}
+      <div className="relative mt-12 h-44 [@media(max-height:35rem)]:@min-[520px]:h-28">
         <PixelWordmark powerOn={powerOn} banner />
       </div>
       <div className="relative mt-1">
