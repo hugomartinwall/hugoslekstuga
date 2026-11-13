@@ -18,6 +18,8 @@ export type Thump = { x: number; y: number; tick: number };
 export type Wave = { x: number; y: number; life: number; max: number };
 /** A number that floats up from where it was made: a multiplier, or a launch's total. */
 export type Float = { x: number; y: number; text: string; life: number; max: number; big: boolean };
+/** A battery going off: a ring of squares growing to its reach. `mine`: his (amber), or not (coral). */
+export type Blast = { x: number; y: number; life: number; max: number; mine: boolean };
 
 /** Afterimages kept, as in the toy. */
 const TRAIL_LENGTH = 16;
@@ -31,6 +33,7 @@ const REFUSED_S = 0.2;
 const FRAGMENT_S = 0.15;
 const WAVE_S = 0.35;
 const FLOAT_S = 0.8;
+const BLAST_S = 0.3;
 const MAX_FLOATS = 12;
 
 export type Effects = {
@@ -39,6 +42,7 @@ export type Effects = {
   readonly thumps: Thump[];
   readonly waves: Wave[];
   readonly floats: Float[];
+  readonly blasts: Blast[];
   /** Seconds left of the pips drawn in coral after a refused launch. */
   refused: number;
   /** Squash and stretch of his body, and the cushion it is anchored at ("" for a launch). */
@@ -69,6 +73,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
   const thumps: Thump[] = [];
   const waves: Wave[] = [];
   const floats: Float[] = [];
+  const blasts: Blast[] = [];
   let reduced = false;
   let blinkAt = -1;
   let blinkUntil = 0;
@@ -95,6 +100,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
     thumps,
     waves,
     floats,
+    blasts,
     refused: 0,
     squashX: 1,
     squashY: 1,
@@ -135,6 +141,8 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
         }
         case "pop": {
           burst(e.x, e.y, 12, 190, e.kind === "token" ? C.acid : C.ash, 3);
+          // A blast's pops: no freeze, no multiplier (they are flat), the squares only.
+          if (e.source === "blast") return 0;
           burst(e.x, e.y, 5, 110, C.ink, 2);
           if (!reduced) fx.shake = Math.max(fx.shake, 2.5 + Math.min(4, e.n));
           const times = e.chain * e.cushions * e.coin;
@@ -177,13 +185,34 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           return 0;
         case "arrive":
           // The outline snaps solid, with four dust squares.
-          burst(e.x, e.y, reduced ? 3 : 4, 70, e.kind === "token" ? C.acid : C.ash, 2);
+          burst(e.x, e.y, reduced ? 3 : 4, 70, e.kind === "token" ? C.acid : e.kind === "gum" ? C.magenta : e.kind === "battery" ? C.amber : C.ash, 2);
           return 0;
         case "hit":
+          if (e.kind === "gum") {
+            // Gum: magenta squares, and what it paid. A stop is a landing too (its own ring follows).
+            burst(e.x, e.y, e.left > 0 ? 8 : 14, 160, C.magenta, 3);
+            if (!reduced) fx.shake = Math.max(fx.shake, e.stop ? 3 : 2);
+            float(e.x, e.y - 14, String(e.points), false);
+            return 0;
+          }
           // A hit on the plug: what it paid floats where he met it.
           burst(e.x, e.y, 16, 220, C.ink, 3);
           if (!reduced) fx.shake = Math.max(fx.shake, e.two ? 6 : 4);
           float(e.x, e.y - 14, String(e.points), e.two);
+          return 0;
+        case "knock":
+          // A knock: a spray of amber where they met, along the way it flies.
+          burst(e.x, e.y, 10, 180, C.amber, 3);
+          if (!reduced) fx.shake = Math.max(fx.shake, 3);
+          return 0;
+        case "burst":
+          // A blast: a ring of squares to its reach, and what it paid, if it was his.
+          blasts.push({ x: e.x, y: e.y, life: BLAST_S, max: BLAST_S, mine: e.mine });
+          if (blasts.length > 6) blasts.shift();
+          burst(e.x, e.y, 24, 320, e.mine ? C.amber : C.coral, 3);
+          burst(e.x, e.y, 8, 160, C.ink, 2);
+          if (!reduced) fx.shake = Math.max(fx.shake, 6);
+          if (e.mine && e.points > 0) float(e.x, e.y - 16, String(e.points), e.points >= 100);
           return 0;
         case "bossBounce":
           burst(e.x, e.y, 4, 100, C.inkMuted, 2);
@@ -240,6 +269,10 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
         waves[i].life -= scaledDt;
         if (waves[i].life <= 0) waves.splice(i, 1);
       }
+      for (let i = blasts.length - 1; i >= 0; i--) {
+        blasts[i].life -= scaledDt;
+        if (blasts[i].life <= 0) blasts.splice(i, 1);
+      }
       for (let i = floats.length - 1; i >= 0; i--) {
         const f = floats[i];
         f.life -= realDt;
@@ -277,6 +310,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       thumps.length = 0;
       waves.length = 0;
       floats.length = 0;
+      blasts.length = 0;
       fx.refused = 0;
       fx.shake = 0;
       fx.squashX = 1;

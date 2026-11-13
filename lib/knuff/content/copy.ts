@@ -64,6 +64,7 @@ export const END = {
 export const KIND_NAME: Readonly<Record<string, string>> = {
   bunny: "a dust bunny",
   token: "a runaway token",
+  battery: "a battery",
   polisher: "the floor polisher",
 };
 

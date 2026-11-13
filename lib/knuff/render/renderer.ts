@@ -11,9 +11,10 @@
  * white ring: it means he is a weapon.
  *
  * Bottom to top: the page; the cushions and their lit plates; the floor
- * and its dither; the offer's inserts and tiles; the start hint where it is
- * drawn on the floor; the thump ring, the wave and the telegraph outlines;
- * the aim band and line; his trail; the things in the room; Spark's ring;
+ * and its dither; the offer's inserts and tiles, and gum; the start hint
+ * where it is drawn on the floor; the thump ring, the wave and the
+ * telegraph outlines; blast rings and blasts; the aim band and line (and a
+ * knocked battery's line); his trail; the things in the room; Spark's ring;
  * his pips; him; the hot ring; the slow-motion bar; particles; floating
  * numbers; the top bar; the start hint where it is drawn in the deck; the
  * mark where the pull began.
@@ -31,6 +32,7 @@ import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
+import { drawBattery, drawBatteryLine, drawBlastRings, drawGum, drawTelegraph } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
   DAZE_MARKS,
@@ -391,6 +393,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     }
     // The offer: each offered plate's insert, each pickup's tile, and their names.
     drawOffer(paint, state);
+    // Gum lies flat on the floor, under everything that moves.
+    drawGum(paint, state, f.line !== null ? f.line.hitId : -1);
 
     // The hint on the floor, under everything that moves. Its hand is in
     // the way of a pull, so it stands back while one is held or he flies.
@@ -415,7 +419,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     for (const d of state.things) {
       if (state.tick >= d.landTick) continue;
       const dr = KINDS[d.kind].radius;
-      if (d.kind === "token") {
+      if (d.kind === "gum" || d.kind === "battery") {
+        drawTelegraph(paint, d);
+      } else if (d.kind === "token") {
         paint.ring(X(d.x), Y(d.y), dr * S, C.acid, ringW);
         // Which way it will roll: three squares, stepping off along its roll.
         const v = Math.hypot(d.vx, d.vy);
@@ -433,6 +439,12 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     }
     // The polisher's telegraph: its outline where it will land, and the way it will head.
     drawBossTelegraph(paint, state);
+    // A battery's blast: its reach, for its last 60 ticks and from the moment it is knocked; and the blasts going off.
+    drawBlastRings(paint, state, tune, alpha);
+    for (const b of fx.blasts) {
+      const k = 1 - b.life / b.max;
+      paint.ring(X(b.x), Y(b.y), (10 + (tune.blastRadius - 10) * (f.reduced ? 1 : k)) * S, rgba(b.mine ? C.amber : C.coral, 1 - 0.7 * k), Math.max(3, Math.round(S * 4)));
+    }
 
     // Shorter than a shot, or no pip in hand: grey, to show that letting go here does nothing.
     // Otherwise phosphor at every power. (The toy went mint, acid, coral
@@ -460,6 +472,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
       if (f.line && f.line.pts.length >= 4) {
         aimDots(f.line, col);
+        // A battery first: its own line, and the ring where it bursts.
+        drawBatteryLine(paint, f.line, tune, col);
         // Where it ends it says what will happen. (A cross waits for its own pass, over the polisher.)
         const pts = f.line.pts;
         const ex = pts[pts.length - 2];
@@ -500,6 +514,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
         // A ring with a hole.
         paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.acid, C.ink, 0.45) : C.acid);
         paint.disc(X(dx), Y(dy), dr * S * 0.45, cellFx, floor);
+      } else if (d.kind === "battery") {
+        // A tall cell with its terminal, flashing.
+        drawBattery(paint, state, d, dx, dy, willHit, f.reduced);
       } else {
         // A small round body with two eyes. Dazed, it wears its marks in their place.
         paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.ash, C.ink, 0.45) : C.ash);

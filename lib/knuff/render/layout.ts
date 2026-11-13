@@ -224,7 +224,8 @@ export const DAZE_MARKS: readonly Rect[] = [
  */
 export function bodyOrder(s: State, out: Thing[]): Thing[] {
   out.length = 0;
-  for (const d of s.things) if (d.kind !== "pickup" && s.tick >= d.landTick && s.tick >= d.dazedUntil) out.push(d);
-  for (const d of s.things) if (d.kind !== "pickup" && s.tick >= d.landTick && s.tick < d.dazedUntil) out.push(d);
+  // Gum lies flat on the floor and is drawn with it; a pickup is a tile on the floor.
+  for (const d of s.things) if (d.kind !== "pickup" && d.kind !== "gum" && s.tick >= d.landTick && s.tick >= d.dazedUntil) out.push(d);
+  for (const d of s.things) if (d.kind !== "pickup" && d.kind !== "gum" && s.tick >= d.landTick && s.tick < d.dazedUntil) out.push(d);
   return out;
 }
