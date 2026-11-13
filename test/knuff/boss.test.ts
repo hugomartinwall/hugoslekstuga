@@ -632,6 +632,36 @@ describe("where the machine puts him", () => {
     expect(base.boss.shovedTick).toBe(-1);
     expect(of(run(cloneState(base), T, 5), "hurt")).toHaveLength(1);
   });
+
+  it("its landing on him puts him there while he is landed; flying through it as it lands, he is not put there", () => {
+    /** He stands landed just ahead of the pad, as if he had come to rest there, and the pad comes on: the hearts it takes. */
+    const inTheWay = (s: State) => {
+      him(s, boxOf(s.boss).x1 + 13 + 0.5, s.boss.y);
+      return of(run(s, T, 5), "hurt").length;
+    };
+    // Landed under it as it lands in lane 0: pushed out from under it, below, and the tick is kept.
+    const s = fight();
+    tick(s, T);
+    him(s, 100, 50);
+    const [arrive] = of(run(s, T, BOSS_TELEGRAPH), "bossArrive");
+    expect(s.him.x).toBeCloseTo(100, 6);
+    expect(s.him.y).toBeCloseTo(68 + 13, 6);
+    expect(s.boss.shovedTick).toBe(arrive.tick);
+    expect(inTheWay(cloneState(s))).toBe(0);
+    // Launched on the tick it lands, from under it: pushed out all the same, but where he comes to rest is his launch's doing.
+    const f = fight();
+    tick(f, T);
+    him(f, 100, 50);
+    run(f, T, BOSS_TELEGRAPH - 1);
+    expect(f.boss.mode).toBe("arriving");
+    const ev = tick(f, T, shot(1, 0));
+    expect(of(ev, "launch")).toHaveLength(1);
+    expect(of(ev, "bossArrive")).toHaveLength(1);
+    expect(f.him.y).toBeCloseTo(68 + 13, 6);
+    expect(f.him.hot).toBe(true);
+    expect(f.boss.shovedTick).toBe(-1);
+    expect(inTheWay(f)).toBe(1);
+  });
 });
 
 describe("so the fight always ends", () => {

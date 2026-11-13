@@ -402,6 +402,44 @@ describe("the charm the line names (§4.2, §9.3)", () => {
     expect(took[0].tick).toBeGreaterThan(cushions[1].tick);
   });
 
+  it("a take after the line has ended is named over the lit plate that is its first cushion", () => {
+    // As above, with plate 9, the first cushion, lit: the line names Coin when it gets there, and then the tile it takes.
+    const s = offered();
+    s.offer.items[0] = { ...s.offer.items[0], plate: 6 };
+    s.plates[9] = { charm: "coin", readyTick: 0 };
+    const tile = s.things.find((d) => d.kind === "pickup")!;
+    tile.x = tile.px = 149;
+    tile.y = tile.py = 143;
+    const launch = { dx: -1, dy: -1.6, power: 1 };
+    const line = aimLine(s, launch, tune);
+    expect([line.end, line.plate]).toEqual(["cushion", 9]);
+    expect([line.takes, line.charm]).toEqual([1, "heavy"]);
+    // Without the tile it is the plate's name.
+    tile.hp = 0;
+    expect([aimLine(s, launch, tune).takes, aimLine(s, launch, tune).charm]).toEqual([-1, "coin"]);
+  });
+
+  it("runs on to the end of the launch, within the 120 ticks: a tile taken 60 ticks and more after the release is named", () => {
+    const s = offered();
+    s.offer.items[0] = { ...s.offer.items[0], plate: 6 };
+    // Up and to the left: plate 9, the top cushion at about tick 41, where the line stops, and down to the right onto the tile.
+    const tile = s.things.find((d) => d.kind === "pickup")!;
+    tile.x = tile.px = 224;
+    tile.y = tile.py = 229;
+    const launch = { dx: -1, dy: -1.5, power: 1 };
+    const line = aimLine(s, launch, tune);
+    expect(line.end).toBe("cushion");
+    expect([line.takes, line.charm]).toEqual([1, "heavy"]);
+    // The real launch takes it, more than 60 ticks after it was released, and that long after the line's end too.
+    const real = cloneState(s);
+    const from = real.tick;
+    const ev = [...tick(real, tune, { launch, pullHeld: false }), ...until(real, tune, (e) => e.some((x) => x.type === "launchEnd"), AIM_TICKS)];
+    const took = ev.filter((e) => e.type === "offerTaken");
+    expect(took).toHaveLength(1);
+    expect(took[0].tick - from).toBeGreaterThanOrEqual(60);
+    expect(took[0].tick - from).toBeGreaterThanOrEqual(line.pts.length / 2 + 15);
+  });
+
   it("names nothing a launch released now could not take: an offer that has not armed", () => {
     const s = offered();
     s.offer.armedTick = -1;
