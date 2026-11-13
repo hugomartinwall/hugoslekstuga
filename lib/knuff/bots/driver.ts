@@ -447,6 +447,8 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     } else emptyRun = 0;
 
     let came = 0;
+    /** Of them, things that came out of other things inside the tick (a token from the money bag, a dust bunny the polisher coughed): they land at once. */
+    let cameOut = 0;
     let newHour = false;
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
@@ -569,6 +571,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           break;
         case "announce":
           came++;
+          if (e.landTick === e.tick) cameOut++;
           announcedAt.set(e.id, e.tick);
           if (e.kind === "token") rowHasToken = true;
           rowKinds.add(e.kind);
@@ -692,7 +695,10 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     }
     n.announced += came;
     // The most the room held at once in the tick: what it found, less the gum an hour change swept, and what was announced.
-    const room = roomBefore - (newHour ? gumBefore : 0) + came;
+    // What comes out of another thing comes in the tick's moves, after its pops, and only while the room is under the
+    // cap: so the most is the room after the night's part of the tick (what it found, less the swept gum, and the
+    // rows announced) or the room at its end, whichever is more.
+    const room = Math.max(roomBefore - (newHour ? gumBefore : 0) + came - cameOut, intruders(s));
     n.roomSum += room;
     if (room > n.maxRoom) n.maxRoom = room;
 

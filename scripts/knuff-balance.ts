@@ -20,7 +20,8 @@
  *                                step 5), plates dark, nothing offered; it still ends when 05:00 ends
  *       [--charms]               the charm test of §13.3: 120 nights a charm (--seeds), from 23:00,
  *                                for the Expert and the Ordinary (--player=expert or ordinary);
- *                                --arms=bell,coin runs those charms only, beside the arm without one
+ *                                --arms=bell,coin runs those charms only, beside the arm without one;
+ *                                with --whole, on the whole night (every kind, and 06:00)
  *       [--boss]                 the boss check of step 3 (§14): fights begun at 06:00 with three hearts,
  *                                two wall charms and two body charms at random, 200 a player (--seeds),
  *                                for the Expert, the Ordinary and the players who do not aim (--player)
@@ -135,11 +136,11 @@ if (process.argv.includes("--charms")) {
   const sums = new Map<string, CharmSum>();
   for (const key of players) {
     for (const charm of arms) {
-      const { nights, fired } = nightsOf(key, count, charmNight(charm), fileFor(`${key}__${charm || "none"}`), charm);
+      const { nights, fired } = nightsOf(key, count, charmNight(charm, whole), fileFor(`${whole ? "whole__" : ""}${key}__${charm || "none"}`), charm);
       sums.set(`${key}|${charm}`, sumCharm(key, charm, nights, fired));
     }
   }
-  const t = printCharmTest(sums, `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; nights ${first} to ${first + count - 1}${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`);
+  const t = printCharmTest(sums, `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; ${whole ? "the WHOLE NIGHT from 23:00 (every kind in the rows, 06:00 with the polisher)" : "the step-1 night's kinds from 23:00"}; nights ${first} to ${first + count - 1}${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`);
   console.log(t.lines.join("\n"));
   process.exit(t.fails > 0 ? 1 : 0);
 }

@@ -45,11 +45,15 @@ export function platesWith(charm: string): string[] {
   return plates;
 }
 
-/** The night of one arm: "" is the arm without a charm. */
-export function charmNight(charm: string): StartOptions {
+/**
+ * The night of one arm: "" is the arm without a charm. Until step 5 the
+ * test ran on the step-1 night's kinds; `whole` runs it on the whole
+ * night (every kind in the rows, and 06:00 with the polisher).
+ */
+export function charmNight(charm: string, whole = false): StartOptions {
   return {
     hour: CHARM_FROM,
-    kinds: ["bunny", "token"],
+    ...(whole ? {} : { kinds: ["bunny", "token"] }),
     offers: false,
     plates: platesWith(charm),
     charms: charm !== "" && !isWallCharm(charm) ? [charm] : [],
