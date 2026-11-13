@@ -89,6 +89,10 @@ export type FightSum = {
   twos: number;
   throws: number;
   throwsHurt: number;
+  /** Hearts to the pad a fight, landed and hot; and in all fights, those on an end shown as the pad for less than a telegraph. */
+  padLanded: number;
+  padHot: number;
+  padUnread: number;
   heartsLost: number;
   launches: number;
   /** Hearts left at a win: mean. */
@@ -125,6 +129,9 @@ export function sumFights(player: string, nights: readonly Night[], tune: Tune):
     twos: mean(nights.map((n) => n.fight.twos)),
     throws: mean(nights.map((n) => n.fight.throws)),
     throwsHurt: mean(nights.map((n) => n.fight.throwsHurt)),
+    padLanded: mean(nights.map((n) => n.fight.padLanded)),
+    padHot: mean(nights.map((n) => n.fight.padHot)),
+    padUnread: nights.reduce((a, n) => a + n.fight.padUnread, 0),
     heartsLost: mean(nights.map((n) => n.fight.hearts)),
     launches: mean(nights.map((n) => n.fight.launches)),
     heartsAtWin: mean(won.map((n) => (n.fight.bonus - tune.nightBonus) / tune.heartBonus)),
@@ -176,5 +183,8 @@ export function printFights(sums: ReadonlyMap<string, FightSum>, title: string):
   verdict(inside === 0, "at the end of no tick is he inside the machine's box (every player, every fight)", `${inside} ticks; deepest ${deepest.toExponential(2)} u`);
   say("");
   say(`${fails} bound${fails === 1 ? "" : "s"} FAIL.`);
+  say("");
+  say("The pad's hearts (printed, not gating): a fight, while he was landed and while he was hot; and in all fights, those on an end drawn as the pad for less than a telegraph (from the polisher's announcement, and from the start of each stall, the pad to come)");
+  for (const s of sums.values()) say(`${s.player.padEnd(13)} | landed ${r2(s.padLanded)} | hot ${r2(s.padHot)} | shown under 36 ticks: ${s.padUnread}`);
   return { lines, fails };
 }

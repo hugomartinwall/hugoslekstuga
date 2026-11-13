@@ -155,7 +155,16 @@ export type Fight = {
   /** The pad's throws, and those that cost a heart. */
   throws: number;
   throwsHurt: number;
-
+  /** Hearts lost to the pad while he was landed, and while he was hot. */
+  padLanded: number;
+  padHot: number;
+  /**
+   * Hearts lost to the pad on an end that had been drawn as the pad for
+   * less than a telegraph: the end that leads is shown from the polisher's
+   * announcement (its arrow), and from the start of every stall (the pad to
+   * come), so this counts what nobody could have read.
+   */
+  padUnread: number;
   /** Hearts lost from 06:00 on, to anything. */
   hearts: number;
   /** Ticks at whose end his circle overlapped the machine's box, and the deepest overlap at the end of a tick, u. */
@@ -183,7 +192,11 @@ export type Night = {
   /** Length of each hour that ended, ticks. */
   hourLen: number[];
   losses: Loss[];
-  /** Hearts lost against a fairness rule: to a thing announced for less than the telegraph, or to a close arrival that was not dazed. */
+  /**
+   * Hearts lost against a fairness rule: to a thing announced for less than
+   * the telegraph, to a close arrival that was not dazed, or to the
+   * polisher's pad on an end shown as the pad for less than the telegraph.
+   */
   unfair: number;
   /** Ticks with nothing alive and nothing announced; those of them in the pause between hours; the longest run. */
   ticksEmpty: number;
@@ -263,7 +276,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     offers: [],
     charms: [],
     plates: [],
-    fight: { began: -1, ended: "", ticks: 0, hits: 0, twos: 0, throws: 0, throwsHurt: 0, hearts: 0, insideTicks: 0, deepest: 0, bonus: 0, launches: 0 },
+    fight: { began: -1, ended: "", ticks: 0, hits: 0, twos: 0, throws: 0, throwsHurt: 0, padLanded: 0, padHot: 0, padUnread: 0, hearts: 0, insideTicks: 0, deepest: 0, bonus: 0, launches: 0 },
   };
   const fight = n.fight;
   const announcedAt = new Map<number, number>();
@@ -279,6 +292,8 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
   /** The offer out now, and what the launch in flight was aimed at. */
   let offer: OfferSeen | null = null;
   let launchAim = -1;
+  /** The tick from which the polisher's leading end has been shown as the pad (its telegraph's arrow, or a stall's pad to come). */
+  let padShownFrom = -1;
   for (let guard = 0; s.phase !== "over" && guard < most; guard++) {
     now.clock = s.normalTicks + slowedUnits * s.slowedTicks;
     const input = bot.act(s, tune, now);
@@ -286,6 +301,8 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     // The room as the tick finds it: intruders only (an offer's tiles are not).
     const roomBefore = intruders(s);
     const inPause = s.night.clearTick >= 0;
+    /** Is he hot at this point of the tick's events? */
+    let hot = s.him.hot;
     events.length = 0;
     step(s, input, tune, events);
     if (s.phase === "waiting") {
@@ -306,6 +323,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
       switch (e.type) {
         case "launch":
           n.launches++;
+          hot = true;
           if (fight.began >= 0) fight.launches++;
           if (offer && s.launch.armed) offer.armedLaunches++;
           launchAim = aim;
@@ -363,12 +381,19 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           break;
         case "land":
           now.landedTick = e.tick;
+          hot = false;
           break;
         case "hour":
           if (hourStart >= 0) n.hourLen.push(e.tick - hourStart);
           hourStart = e.tick;
           rowsThisHour = 0;
-          if (e.hour >= HOURS) fight.began = e.tick;
+          if (e.hour >= HOURS) {
+            fight.began = e.tick;
+            padShownFrom = e.tick;
+          }
+          break;
+        case "bossStall":
+          padShownFrom = e.tick;
           break;
         case "hit":
           if (e.kind === "polisher") {
@@ -379,6 +404,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
         case "bossThrow":
           fight.throws++;
           if (e.hurt) fight.throwsHurt++;
+          hot = true;
           break;
         case "announce":
           came++;
@@ -416,7 +442,14 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           n.losses.push(loss);
           n.heartsLost++;
           if (fight.began >= 0) fight.hearts++;
-          if (ann !== undefined && loss.sinceAnnounce < tune.telegraphTicks) n.unfair++;
+          if (e.by === "polisher") {
+            if (hot) fight.padHot++;
+            else fight.padLanded++;
+            if (e.tick - padShownFrom < tune.telegraphTicks) {
+              fight.padUnread++;
+              n.unfair++;
+            }
+          } else if (ann !== undefined && loss.sinceAnnounce < tune.telegraphTicks) n.unfair++;
           else if (arr !== undefined && arr.dist <= tune.arriveDazedWithin && loss.sinceLand < tune.dazeTicks) n.unfair++;
           break;
         }
