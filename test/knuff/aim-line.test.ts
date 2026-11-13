@@ -129,7 +129,7 @@ describe("the aim line in an empty room", () => {
 
   it("a launch with no direction has no line, and neither has a night that is over", () => {
     const s = night(tune);
-    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1 });
+    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "" });
     s.phase = "over";
     expect(aimLine(s, UP, tune).pts).toEqual([180, 374]);
   });
@@ -308,5 +308,59 @@ describe("the line names what the real game touches", () => {
     expect(ends.time ?? 0).toBe(0);
     expect(flying).toBeGreaterThan(20);
     expect(moving).toBeGreaterThan(100);
+  });
+});
+
+describe("the charm the line names (§4.2, §9.3)", () => {
+  const tune = tuned({ bunnySpeed: 0 });
+
+  /** An empty room with an armed offer out: a pickup at (180, 250), and plate 1 offered as Spark. */
+  function offered(): State {
+    const s = night(tune);
+    run(s, tune, 2);
+    const tile = put(s, "pickup", 180, 250, { landTick: 0 });
+    s.offer = {
+      open: true,
+      openTick: 1,
+      armedTick: 1,
+      items: [
+        { kind: "plate", charm: "spark", plate: 9, thingId: -1 },
+        { kind: "pickup", charm: "heavy", plate: -1, thingId: tile.id },
+      ],
+    };
+    return s;
+  }
+
+  it("names the offered thing the launch would take", () => {
+    const s = offered();
+    const line = aimLine(s, UP, tune);
+    expect([line.takes, line.charm]).toEqual([1, "heavy"]);
+    // And an offered plate that would be the launch's first cushion.
+    const left = aimLine(s, { dx: -1, dy: -1.5, power: 1 }, tune);
+    expect([left.plate, left.takes, left.charm]).toEqual([9, 0, "spark"]);
+    // Nothing was taken in the State: it is a copy.
+    expect(s.offer.open).toBe(true);
+    expect(s.plates[9].charm).toBe("");
+  });
+
+  it("only otherwise the lit plate that is its first cushion; a dark plate names nothing", () => {
+    const s = night(tune);
+    // Up and to the left: the first cushion is plate 0, lit with Bumper from the start.
+    const upLeft = aimLine(s, { dx: -0.35, dy: -1, power: 1 }, tune);
+    expect([upLeft.plate, upLeft.takes, upLeft.charm]).toEqual([0, -1, "bumper"]);
+    // Straight up: plate 1, dark.
+    const up = aimLine(s, UP, tune);
+    expect([up.plate, up.charm]).toEqual([1, ""]);
+    // A pickup on the way names its charm, whatever the first cushion carries.
+    const o = offered();
+    o.plates[1] = { charm: "coin", readyTick: 0 };
+    expect(aimLine(o, UP, tune).charm).toBe("heavy");
+  });
+
+  it("names nothing a launch released now could not take: an offer that has not armed", () => {
+    const s = offered();
+    s.offer.armedTick = -1;
+    const line = aimLine(s, UP, tune);
+    expect([line.takes, line.charm]).toEqual([-1, ""]);
   });
 });

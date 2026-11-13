@@ -6,6 +6,10 @@
  * where they will be when he gets there, and there is no second motion
  * loop to keep in step with the first. The copy's events say what
  * happened; then the copy and the events are thrown away.
+ *
+ * It also says which charm the top bar names while the pull is held
+ * (§4.2, §9.3): the offered thing the launch would take, or else the lit
+ * plate that is its first cushion.
  */
 import { cloneState } from "./state";
 import { step } from "./step";
@@ -26,6 +30,15 @@ export type AimLine = {
   end: "thing" | "cushion" | "land" | "time";
   /** The thing he reaches first, or -1. He is always hot when he reaches it. */
   hitId: number;
+  /** The offered thing the launch would take, as its place in `state.offer.items`; -1 for none. */
+  takes: number;
+  /** The plate of its first cushion; -1 if the line ends before one. */
+  plate: number;
+  /**
+   * The charm the top bar names: the offered one it would take, or else
+   * the one on the lit plate that is its first cushion; "" for none.
+   */
+  charm: string;
 };
 
 /** How far ahead the line looks, in ticks. */
@@ -38,7 +51,7 @@ const NO_INPUT: Input = { launch: null, pullHeld: false };
  * cushions and stops at the next. The State is left as it was.
  */
 export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TICKS): AimLine {
-  const out: AimLine = { pts: [s.him.x, s.him.y], cushions: [], cushionPts: [], end: "time", hitId: -1 };
+  const out: AimLine = { pts: [s.him.x, s.him.y], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "" };
   const copy = cloneState(s);
   // With no pip the real step refuses the launch, and the grey line of an
   // empty hand would have nothing to show: the copy is given one.
@@ -52,7 +65,15 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
     if (copy.launch.id === launches) return out;
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
-      if (e.type === "cushion") {
+      if (e.type === "offerTaken") {
+        out.takes = e.item;
+        out.charm = e.charm;
+      } else if (e.type === "cushion") {
+        if (out.plate < 0) {
+          out.plate = e.plate;
+          // A plate this launch takes is named for what it takes; any other lit first plate for what it carries.
+          if (out.takes < 0) out.charm = copy.plates[e.plate].charm;
+        }
         out.cushions.push(out.pts.length / 2);
         out.cushionPts.push(e.x, e.y);
         if (out.cushionPts.length / 2 > tune.aimCushions) {
