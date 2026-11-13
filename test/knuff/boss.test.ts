@@ -4,7 +4,7 @@ import { BOSS_HOUR } from "../../lib/knuff/content/night";
 import { BOSS_TELEGRAPH, LANES, boxOf, laneMiddle, laneTop, overlapDepth } from "../../lib/knuff/sim/boss";
 import { aimLine } from "../../lib/knuff/sim/aim";
 import { wouldSlow } from "../../lib/knuff/sim/hot";
-import { createState, type StartOptions } from "../../lib/knuff/sim/state";
+import { cloneState, createState, type StartOptions } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
 import type { BossMode, Input, SimEvent, State, Tune } from "../../lib/knuff/sim/types";
 import { HOLD, fire, of, put, run, scripted, shot, tick, tuned, until } from "./room";
@@ -514,6 +514,47 @@ describe("the casing", () => {
     expect(s.him.x).toBeCloseTo(232 - 13, 6);
     expect(s.him.hot).toBe(false);
     expect(s.hearts).toBe(3);
+  });
+});
+
+describe("where the machine puts him", () => {
+  it("a lane change into an end lane slides him along the cushion onto the face that will lead: the pad throws him there and takes no heart", () => {
+    const s = landed();
+    // At the right end of lane 6, about to move down into lane 7; he sits in the bottom right corner.
+    machine(s, { lane: 6, x: 352 - 60, dir: 1, mode: "laneMove", laneStep: 1 });
+    him(s, 352 - 13, 472 - 13);
+    const events = until(s, T, (e) => of(e, "bossThrow").length > 0, 120);
+    // Slid along the bottom cushion to the left of the box, which leads when it sets off: thrown, unhurt.
+    const turn = of(events, "bossTurn")[0];
+    const [thrown] = of(events, "bossThrow");
+    expect(turn.dir).toBe(-1);
+    expect(thrown.tick - turn.tick).toBeLessThan(T.telegraphTicks);
+    expect(thrown.hurt).toBe(false);
+    expect(of(events, "hurt")).toEqual([]);
+    expect(s.hearts).toBe(3);
+    expect(s.boss.shovedTick).toBeGreaterThan(turn.tick - T.telegraphTicks);
+  });
+
+  it("only for a telegraph after it put him there, and only until he launches", () => {
+    // The pad heading right in lane 3, its leading end at 150; he stands landed just ahead of it.
+    const base = landed();
+    machine(base, { lane: 3, x: 90, dir: 1 });
+    him(base, 150 + 13 + 0.5, 212);
+    const probe = cloneState(base);
+    const at = of(run(probe, T, 5), "bossThrow")[0].tick;
+    const hearts = (ago: number, launchedAfter = false) => {
+      const s = cloneState(base);
+      s.boss.shovedTick = at - ago;
+      // As if he had launched since it put him there, and landed again.
+      if (launchedAfter) s.launch.startTick = at - ago + 1;
+      return of(run(s, T, 5), "hurt").length;
+    };
+    expect(hearts(T.telegraphTicks - 1)).toBe(0);
+    expect(hearts(T.telegraphTicks)).toBe(1);
+    expect(hearts(10, true)).toBe(1);
+    // Never put there: the pad takes its heart.
+    expect(base.boss.shovedTick).toBe(-1);
+    expect(of(run(cloneState(base), T, 5), "hurt")).toHaveLength(1);
   });
 });
 

@@ -66,6 +66,7 @@ export function noBoss(tune: Tune): Boss {
     beganTick: -1,
     lastHitTick: -1,
     nextTrickleTick: -1,
+    shovedTick: -1,
   };
 }
 
@@ -278,6 +279,20 @@ function announceBoss(s: State, tune: Tune): void {
   b.beganTick = s.tick;
   b.lastHitTick = -1;
   b.nextTrickleTick = s.tick + tune.bossTrickleTicks;
+  b.shovedTick = -1;
+}
+
+/**
+ * The machine moves him: it lands on him, or a face that is not the pad
+ * pushes him. The tick is kept, so that the pad does not take a heart from
+ * him before he has had a telegraph to see where it has put him.
+ */
+function shove(s: State, x: number, y: number): void {
+  const h = s.him;
+  if (x === h.x && y === h.y) return;
+  h.x = x;
+  h.y = y;
+  if (!h.hot) s.boss.shovedTick = s.tick;
 }
 
 /** It lands: whatever is inside its box, him included, is pushed out, never hurt. Not into the pad's way, while there is another way out. */
@@ -290,10 +305,7 @@ function landBoss(s: State, events: SimEvent[]): void {
   const pad: Face = b.dir > 0 ? "R" : "L";
   const h = s.him;
   const q = clearSpot(s, box, h.x, h.y, s.stats.radius, "", pad);
-  if (q) {
-    h.x = q.x;
-    h.y = q.y;
-  }
+  if (q) shove(s, q.x, q.y);
   pushThings(s);
   events.push({ type: "bossArrive", tick: s.tick, x: b.x, y: b.y, lane: b.lane, dir: b.dir });
 }
@@ -439,6 +451,11 @@ function throwHim(s: State, tune: Tune, vx: number, vy: number, hurt: boolean, m
  * sets off from the nearest spot on that side clear of the machine, as a
  * lane change moves him when it would squeeze him. Returns false if that
  * was his last heart.
+ *
+ * Nor does it take a heart from him, landed where the machine itself put
+ * him less than a telegraph ago, before he has launched: a lane change
+ * into an end lane can slide him along the cushion onto the very face that
+ * leads when it sets off, and he must have the time to read that.
  */
 function padHit(s: State, tune: Tune, box: Box, events: SimEvent[]): boolean {
   const b = s.boss;
@@ -446,8 +463,9 @@ function padHit(s: State, tune: Tune, box: Box, events: SimEvent[]): boolean {
   const r = s.stats.radius;
   const metX = h.x;
   const metY = h.y;
+  const putThere = !h.hot && b.shovedTick >= 0 && s.tick - b.shovedTick < tune.telegraphTicks && s.launch.startTick <= b.shovedTick;
   let hurt = false;
-  if (s.tick >= h.invulnUntil) {
+  if (s.tick >= h.invulnUntil && !putThere) {
     loseHeart(s, tune, { kind: "polisher", id: 0 }, events);
     hurt = true;
     if (s.hearts <= 0) {
@@ -581,10 +599,7 @@ export function bossContact(s: State, tune: Tune, events: SimEvent[]): boolean {
   const q = clearSpot(s, box, h.x, h.y, r, h.vy < 0 ? "T" : "B");
   if (!h.hot) {
     // Landed: the casing pushes him, and he is never hurt by it.
-    if (q) {
-      h.x = q.x;
-      h.y = q.y;
-    }
+    if (q) shove(s, q.x, q.y);
     return true;
   }
   const speedIn = Math.hypot(h.vx, h.vy);

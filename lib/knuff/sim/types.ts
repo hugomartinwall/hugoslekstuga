@@ -412,6 +412,8 @@ export type Boss = {
   lastHitTick: number;
   /** The tick the next dust bunny is announced. */
   nextTrickleTick: number;
+  /** The tick it last moved him while he was landed (its landing, a lane change, a push); -1 if it never has. */
+  shovedTick: number;
 };
 
 export type State = {
