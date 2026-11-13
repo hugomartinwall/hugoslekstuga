@@ -150,8 +150,15 @@ export function HugoRoom({
           <h2 id={titleId} className="font-display text-3xl leading-none">
             Hugo&rsquo;s room
           </h2>
+          {/* A finger has no Esc key: on a touch screen the line says
+              what a finger can do (the scrim closes the room). */}
           <p className="mt-1 text-xs text-ink-soft">
-            Press Esc or click outside to close.
+            <span className="pointer-coarse:hidden">
+              Press Esc or click outside to close.
+            </span>
+            <span className="hidden pointer-coarse:inline">
+              Tap outside to close.
+            </span>
           </p>
         </div>
         <Keycap
@@ -198,7 +205,9 @@ export function HugoRoom({
           <Pair label="Total visits" value={`${memory.visitCount}`} />
           <Pair label="Naps" value={`${memory.naps}`} />
           <Pair label="Tantrums" value={`${memory.tantrums}`} />
-          <Pair label="Somersaults" value={`${memory.flips}`} />
+          {/* Under a finger the Search row below is hidden, so nothing
+              moves up beside the somersaults: they take the whole row. */}
+          <Pair label="Somersaults" value={`${memory.flips}`} wideOnTouch />
           <Pair
             wide
             label="Favourite tool"
@@ -260,11 +269,15 @@ function Pair({
   label,
   value,
   wide = false,
+  wideOnTouch = false,
   keys = false,
 }: {
   label: string;
   value: ReactNode;
   wide?: boolean;
+  /** A full row where the main pointer is a finger (where a `keys` row
+   *  beside it is hidden). */
+  wideOnTouch?: boolean;
   /** A shortcut, not a memory: help for a keyboard, so where the main
    *  pointer is a finger the row is not shown (as the search palette's
    *  key legends are not). */
@@ -274,7 +287,9 @@ function Pair({
     <div
       className={`flex items-center justify-between gap-2 ${
         wide ? "min-[375px]:col-span-2" : ""
-      } ${keys ? "pointer-coarse:hidden" : ""}`}
+      } ${wideOnTouch ? "pointer-coarse:min-[375px]:col-span-2" : ""} ${
+        keys ? "pointer-coarse:hidden" : ""
+      }`}
     >
       <dt className="text-ink-soft">{label}</dt>
       <dd className="text-right font-bold">{value}</dd>
