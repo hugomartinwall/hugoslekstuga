@@ -63,6 +63,10 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = "
   const naming = named !== "" && CHARM_NAME[named] !== undefined;
   const wide = bar.w - NAME_FROM_PX - NAME_TO_PX >= NAME_SPAN_PX;
 
+  // The bar is on top of the room (§9.9): a pull band that runs up out of the room goes under it, not through its words.
+  ctx.fillStyle = C.page;
+  ctx.fillRect(Math.round(bx), Math.round(by), Math.round(B), Math.round(bar.h * dpr));
+
   // Hearts: the first at x 12, y 18 to 30, one every 18 px. Four at most, with Thick skin.
   if (!naming || wide) {
     const most = Math.max(s.stats.maxHearts, s.hearts);
