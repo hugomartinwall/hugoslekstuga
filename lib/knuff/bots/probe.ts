@@ -88,7 +88,7 @@ export function nearestLanded(s: State, hurts = false): { d: number; a: number }
   let angle = 0;
   let any = false;
   for (const d of s.things) {
-    if (!isDown(s, d) || d.kind === "pickup") continue;
+    if (!isDown(s, d) || d.kind === "pickup" || d.kind === "heart") continue;
     if (hurts && (!KINDS[d.kind].hurts || d.mine)) continue;
     const dd = (d.x - s.him.x) * (d.x - s.him.x) + (d.y - s.him.y) * (d.y - s.him.y);
     if (dd < best) {
@@ -143,8 +143,9 @@ export function rollout(s: State, tune: Tune, launch: Launch | null, ticks: numb
   step(c, { launch, pullHeld: false }, tune, events);
   for (let i = 1; i < ticks && (c.phase === "night" || c.phase === "boss"); i++) {
     // Landed in a room with no intruder: nothing announced from now on can land and reach him inside the horizon.
-    // (While no offer is out there is no tile in the room, and every thing is an intruder.) The polisher can.
-    if (!c.him.hot && !c.boss.present && (c.things.length === 0 || (c.offer.open && intruders(c) === 0))) break;
+    // (While no offer is out and the love heart has not come there is no tile in the room, and every thing is an
+    // intruder; a tile cannot be taken by a mascot who is landed.) The polisher can.
+    if (!c.him.hot && !c.boss.present && (c.things.length === 0 || ((c.offer.open || c.night.heartSpent) && intruders(c) === 0))) break;
     events.length = 0;
     step(c, NO_INPUT, tune, events);
   }

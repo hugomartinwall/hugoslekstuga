@@ -73,6 +73,30 @@ export function drawTelegraph(p: Paint, d: Thing): void {
   if (d.kind === "gum") brokenBox(p, d.x, d.y, GUM_W, GUM_H, C.magenta);
   else if (d.kind === "battery") brokenBox(p, d.x, d.y + NUB_H / 2, CELL_W, CELL_H, C.amber);
   else if (d.kind === "envelope") brokenBox(p, d.x, d.y, ENV_W, ENV_H, C.paper);
+  else if (d.kind === "heart") brokenBox(p, d.x, d.y, HEART_TILE, HEART_TILE, C.coral);
+}
+
+/** The love heart's tile, u (decision 9): square, so it is never taken for an intruder. */
+const HEART_TILE = 28;
+/** The heart on it, 7 rows of 2 u cells. */
+const HEART_ROWS = [".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X...", "......."];
+
+/** The love heart, on the floor with the tiles: a coral heart on a square tile with a coral frame. */
+export function drawHeart(p: Paint, s: State): void {
+  for (const d of s.things) {
+    if (d.kind !== "heart" || d.hp <= 0 || s.tick < d.landTick) continue;
+    const x0 = d.x - HEART_TILE / 2;
+    const y0 = d.y - HEART_TILE / 2;
+    rect(p, x0, y0, HEART_TILE, HEART_TILE, C.coral);
+    rect(p, x0 + 2, y0 + 2, HEART_TILE - 4, HEART_TILE - 4, C.page);
+    const cell = 2.5;
+    const w = HEART_ROWS[0].length * cell;
+    for (let r = 0; r < HEART_ROWS.length; r++) {
+      for (let c = 0; c < HEART_ROWS[r].length; c++) {
+        if (HEART_ROWS[r][c] === "X") rect(p, d.x - w / 2 + c * cell, d.y - 8 + r * cell, cell, cell, C.coral);
+      }
+    }
+  }
 }
 
 /**

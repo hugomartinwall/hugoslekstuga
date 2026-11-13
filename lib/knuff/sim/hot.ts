@@ -11,6 +11,7 @@
 import { KINDS } from "../content/kinds";
 import { keepShot } from "./battery";
 import { takeUnderHim } from "./charms";
+import { takeHeart } from "./intruders";
 import { daze } from "./night";
 import type { Input, SimEvent, State, Thing, Tune } from "./types";
 
@@ -50,6 +51,8 @@ export function keepInside(s: State, d: Thing): void {
 export function land(s: State, tune: Tune, events: SimEvent[]): void {
   const h = s.him;
   takeUnderHim(s, tune, events);
+  // So is the love heart's tile, if he lands on it.
+  for (let i = 0; i < s.things.length; i++) if (s.things[i].kind === "heart") takeHeart(s, s.things[i], events);
   h.vx = 0;
   h.vy = 0;
   h.hot = false;
@@ -132,7 +135,7 @@ export function loseHeart(s: State, tune: Tune, d: { kind: Thing["kind"] | "poli
   for (let i = 0; i < s.things.length; i++) {
     const o = s.things[i];
     // The wave moves intruders; a pickup's tile lies where it lies, and gum and the money bag ignore it.
-    if (o.hp <= 0 || s.tick < o.landTick || o.kind === "pickup" || o.kind === "gum" || o.kind === "bag") continue;
+    if (o.hp <= 0 || s.tick < o.landTick || o.kind === "pickup" || o.kind === "heart" || o.kind === "gum" || o.kind === "bag") continue;
     const dx = o.x - h.x;
     const dy = o.y - h.y;
     const distSq = dx * dx + dy * dy;

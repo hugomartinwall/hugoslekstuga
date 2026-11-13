@@ -152,7 +152,8 @@ describe("determinism", () => {
     expect(made.rng.behaviour).not.toBe(fresh.behaviour);
     // Each stream moves only on a tick its own system drew from: the offers
     // stream when an offer is made, the arrivals stream when something is
-    // announced, the behaviour stream when a dust bunny is placed (its wobble).
+    // announced (or the love heart shown), the behaviour stream when a dust
+    // bunny is placed (its wobble).
     let offersMoved = 0;
     let arrivalsMoved = 0;
     let before = { ...made.rng };
@@ -164,7 +165,8 @@ describe("determinism", () => {
       }
       if (now.rng.arrivals !== before.arrivals) {
         arrivalsMoved++;
-        if (!has("announce")) expect.fail(`the arrivals stream moved at tick ${now.tick - 1} with nothing announced`);
+        // (The love heart's place is drawn from it too, and the heart is shown, not announced: it is not an intruder.)
+        if (!has("announce") && !has("heartShown")) expect.fail(`the arrivals stream moved at tick ${now.tick - 1} with nothing announced`);
       }
       if (now.rng.behaviour !== before.behaviour && !events.some((e) => e.type === "announce" && e.kind === "bunny"))
         expect.fail(`the behaviour stream moved at tick ${now.tick - 1} with no dust bunny placed`);
@@ -257,7 +259,7 @@ describe("determinism", () => {
     expect(createState(1, DEFAULT_TUNE, { hour: -3 }).night.hour).toBe(0);
     // The kinds: every kind built so far by default, the polisher among them; a list is kept in the
     // order the kinds were built; a kind with no rules yet cannot be asked for.
-    expect(createState(1, DEFAULT_TUNE).night.kinds).toEqual(["bunny", "token", "polisher", "gum", "battery", "envelope", "bag"]);
+    expect(createState(1, DEFAULT_TUNE).night.kinds).toEqual(["bunny", "token", "polisher", "gum", "battery", "envelope", "bag", "heart"]);
     expect(createState(1, DEFAULT_TUNE, { kinds: ["token", "bunny", "token"] }).night.kinds).toEqual(["bunny", "token"]);
     expect(createState(1, DEFAULT_TUNE, { kinds: ["bunny", "envelope", "bag", "gum", "polisher", "nonsense"] }).night.kinds).toEqual(["bunny", "polisher", "gum", "envelope", "bag"]);
     // A night of tokens only has no rack; one that is empty but for its kinds has none either, and its rows still come.

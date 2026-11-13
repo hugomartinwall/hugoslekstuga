@@ -52,6 +52,11 @@ function knocked(s: State, x: number, y: number, vx: number, vy: number, over: P
   return battery(s, x, y, { mine: true, knockTick: s.tick, launchId: Math.max(1, s.launch.id), fuseTick: s.tick + 48, vx, vy, ...over });
 }
 
+/** The love heart's tile, lying there, until long after any case ends. */
+function heart(s: State, x: number, y: number): Thing {
+  return put(s, "heart", x, y, { landTick: 0, goneTick: 1e9 });
+}
+
 /** Light one plate with a wall charm. */
 function light(s: State, plate: number, charm: string): void {
   s.plates[plate] = { charm, readyTick: 0 };
@@ -259,6 +264,24 @@ describe("his hot body, no cushion yet this launch", () => {
     expect(s.him.vy).toBeLessThan(0.6 * speedIn);
   });
 
+  it("the love heart is taken, if he is missing a heart: he gets one, and he is not slowed; at full hearts it stays", () => {
+    const s = room();
+    s.hearts = 2;
+    const h = heart(s, 180, 280);
+    const events = fire(s, T, shot(0, -1), 10);
+    expect(of(events, "heartTaken").map((e) => [e.id, e.hearts])).toEqual([[h.id, 3]]);
+    expect([s.hearts, alive(s, h)]).toEqual([3, false]);
+    expect(of(events, "pop")).toEqual([]);
+    const free = room();
+    fire(free, T, shot(0, -1), 10);
+    expect(speedOf(s)).toBeCloseTo(speedOf(free), 9);
+    // Full: not taken, and it stays.
+    const full = room();
+    const stays = heart(full, 180, 280);
+    expect(of(fire(full, T, shot(0, -1), 10), "heartTaken")).toEqual([]);
+    expect([full.hearts, alive(full, stays)]).toEqual([3, true]);
+  });
+
   it("a pickup is taken, if the offer allows, and he is not slowed", () => {
     const s = room();
     run(s, T, 2);
@@ -377,6 +400,16 @@ describe("his hot body, off a cushion", () => {
     expect(of(events, "bagToken")).toHaveLength(1);
   });
 
+  it("the love heart: the same, it is taken", () => {
+    const s = banked();
+    s.hearts = 1;
+    const h = heart(s, 180, 150);
+    const events = fire(s, T, shot(0, -1), 20);
+    expect(of(events, "cushion")).toHaveLength(1);
+    expect(of(events, "heartTaken").map((e) => e.id)).toEqual([h.id]);
+    expect(s.hearts).toBe(2);
+  });
+
   it("a pickup: the same, it is taken", () => {
     const s = banked();
     run(s, T, 2);
@@ -475,6 +508,17 @@ describe("Spark's ring (it only exists after a cushion)", () => {
     expect(of(ev, "hit").map((e) => [e.id, e.source, e.two])).toEqual([[inPath.id, "spark", true]]);
     expect(of(ev, "bounce").map((e) => e.id)).toEqual([inPath.id]);
     expect(inPath.hp).toBe(6);
+  });
+
+  it("the love heart: nothing (only his body takes it)", () => {
+    const s = sparked();
+    s.hearts = 2;
+    const h = heart(s, SIDE + 14, 150);
+    const { events, closest } = nearest(s, (s) => h.x - 14 - s.him.x - 13);
+    expect(closest).toBeGreaterThan(0);
+    expect(closest).toBeLessThan(12);
+    expect(of(events, "heartTaken")).toEqual([]);
+    expect([s.hearts, alive(s, h)]).toEqual([2, true]);
   });
 
   it("a pickup: nothing (only his body takes one)", () => {
@@ -656,6 +700,14 @@ describe("the wave of a lost heart", () => {
     expect([g!.x, g!.y, g!.vx, g!.vy, g!.hp]).toEqual([220, 374, 0, 0, 2]);
   });
 
+  it("the love heart: nothing (its tile lies where it lies)", () => {
+    let h: Thing | null = null;
+    hurt((s) => {
+      h = heart(s, 180 + 50, 374);
+    });
+    expect([h!.x, h!.y, h!.vx, h!.vy]).toEqual([230, 374, 0, 0]);
+  });
+
   it("a pickup: nothing; him: invulnerable 72 ticks and his pips refilled", () => {
     let tile: Thing | null = null;
     const { s } = hurt((s) => {
@@ -713,6 +765,7 @@ describe("Bell", () => {
       b = battery(s, 40, 440);
       g = put(s, "gum", 320, 440);
       bag = put(s, "bag", 300, 300);
+      heart(s, 60, 300);
     });
     expect([b!.dazedUntil, g!.dazedUntil, g!.hp, bag!.dazedUntil, bag!.hp]).toEqual([0, 0, 2, 0, 8]);
   });
@@ -796,6 +849,14 @@ describe("a blast of his (70 u)", () => {
     expect(of(events, "burst")[0].points).toBe(40 + 15);
   });
 
+  it("the love heart: nothing", () => {
+    const { s } = his();
+    s.hearts = 2;
+    const h = heart(s, 180 + 30, 150);
+    run(s, T, 2);
+    expect([alive(s, h), s.hearts]).toEqual([true, 2]);
+  });
+
   it("a pickup: nothing", () => {
     const { s } = his();
     const tile = put(s, "pickup", 180 + 30, 150, { landTick: 0 });
@@ -869,10 +930,11 @@ describe("a blast that is not his (70 u)", () => {
     stand(s, 180, 440);
     const g = put(s, "gum", 180 + 30, 150);
     const tile = put(s, "pickup", 180 - 30, 150, { landTick: 0 });
+    const h = heart(s, 180, 150 + 30);
     battery(s, 180, 150, {}, 1);
     run(s, T, 2);
     expect(g.hp).toBe(2);
-    expect(alive(s, tile)).toBe(true);
+    expect([alive(s, tile), alive(s, h)]).toEqual([true, true]);
   });
 
   it("the polisher: nothing", () => {
@@ -961,11 +1023,13 @@ describe("a knocked battery in flight", () => {
     expect([other.mine, other.launchId, other.fuseTick]).toEqual([true, b.launchId, burst.tick + 12]);
   });
 
-  it("passes over gum, and over a pickup", () => {
+  it("passes over gum, over a pickup, and over the love heart", () => {
     const { s, b } = flying();
     const g = put(s, "gum", 90, 200);
     const tile = put(s, "pickup", 130, 200, { landTick: 0 });
+    const h = heart(s, 110, 200);
     const events = run(s, T, 34);
+    expect(alive(s, h)).toBe(true);
     // It is past both, still flying (a knocked thing slows as the toy's dummies do), and neither is touched.
     expect(b.x).toBeGreaterThan(130 + 18 + 10);
     expect(b.vx).toBeGreaterThan(0);
@@ -1144,6 +1208,12 @@ describe("touching him while he is landed", () => {
     put(s, "pickup", 180 + 20, 374, { landTick: 0 });
     expect(of(run(s, T, 30), "hurt")).toEqual([]);
     expect(s.hearts).toBe(3);
+    // The love heart under him, landed: nothing. It is taken only during a launch.
+    const t = room();
+    t.hearts = 2;
+    const h = heart(t, 180, 374 + 10);
+    expect(of(run(t, T, 30), "heartTaken")).toEqual([]);
+    expect([t.hearts, alive(t, h)]).toEqual([2, true]);
   });
 
   it("the polisher's casing pushes him, and never hurts him", () => {
@@ -1208,9 +1278,11 @@ describe("the polisher's pad", () => {
     stand(s, 180, 440);
     const g = put(s, "gum", 170, 212);
     const tile = put(s, "pickup", 220, 212, { landTick: 0 });
+    const h = heart(s, 195, 212);
     run(s, B, 60);
     expect([g.x, g.y, g.hp]).toEqual([170, 212, 2]);
     expect([tile.x, tile.y]).toEqual([220, 212]);
+    expect([h.x, h.y, alive(s, h)]).toEqual([195, 212, true]);
   });
 
   it("him: it throws him, hot or landed, invulnerable or not, and costs a heart unless he is invulnerable", () => {
@@ -1233,7 +1305,7 @@ describe("the polisher's pad", () => {
 // ── 13. The polisher changing lane, or landing at 06:00 ───────────────
 
 describe("the polisher changing lane, or landing at 06:00", () => {
-  it("dust bunnies, tokens, envelopes and batteries are pushed, never hurt; gum lies where it lies", () => {
+  it("dust bunnies, tokens, envelopes and batteries are pushed, never hurt; gum and the love heart lie where they lie", () => {
     const s = fight();
     machine(s, { lane: 2, x: 120, dir: -1, mode: "laneMove", laneStep: 1 });
     stand(s, 300, 440);
@@ -1242,7 +1314,9 @@ describe("the polisher changing lane, or landing at 06:00", () => {
     const b = battery(s, 140, lower + 20);
     const e = put(s, "envelope", 80, lower + 10);
     const g = put(s, "gum", 120, lower);
+    const h = heart(s, 150, lower);
     const events = run(s, B, 70);
+    expect([h.x, h.y, alive(s, h)]).toEqual([150, lower, true]);
     expect(s.boss.lane).toBe(3);
     expect(overlapDepth(s.boss, d.x, d.y, 8)).toBe(0);
     expect(overlapDepth(s.boss, b.x, b.y, 10)).toBe(0);

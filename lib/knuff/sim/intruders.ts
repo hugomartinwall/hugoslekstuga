@@ -49,6 +49,7 @@ function radiusOf(d: Thing): number {
     case "bag":
       return BAG_R;
     case "gum":
+    case "heart":
     case "pickup":
       return 0;
   }
@@ -57,7 +58,7 @@ function radiusOf(d: Thing): number {
 /** Does his circle, at its size after charms, overlap this thing? Gum and a pickup are boxes. */
 function overlapsHim(s: State, d: Thing, slack = 0): boolean {
   const h = s.him;
-  if (d.kind === "pickup") return overlapsTile(h.x, h.y, s.stats.radius - slack, d);
+  if (d.kind === "pickup" || d.kind === "heart") return overlapsTile(h.x, h.y, s.stats.radius - slack, d);
   if (d.kind === "gum") return gapToGum(h.x, h.y, d) < s.stats.radius - slack;
   return Math.hypot(d.x - h.x, d.y - h.y) < s.stats.radius + radiusOf(d) - slack;
 }
@@ -84,7 +85,7 @@ export function choose(s: State, tune: Tune): number {
   let fy = 0;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (s.tick < d.landTick || d.kind === "pickup" || d.kind === "gum") continue;
+    if (s.tick < d.landTick || d.kind === "pickup" || d.kind === "gum" || d.kind === "heart") continue;
     if (d.kind === "battery") {
       // It drifts toward him, unless it is dazed, is his (it never comes
       // for him), or is going off this tick. A shove rides on top.
@@ -268,6 +269,11 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
       if (canTake(s) && !s.launch.blocked.includes(d.id) && overlapsTile(h.x, h.y, r, d)) takePickup(s, tune, d, events);
       continue;
     }
+    if (d.kind === "heart") {
+      // The love heart: touched during a launch, at any speed, it gives one heart, up to his maximum.
+      takeHeart(s, d, events);
+      continue;
+    }
     if (d.kind === "gum") {
       // Gum lies flat: his hot body or Spark's ring hits it, and he may stop on it.
       if (h.hot) gumContact(s, tune, d, events);
@@ -398,6 +404,22 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
     keepInside(s, d);
   }
   return true;
+}
+
+/**
+ * The love heart is taken if he touches its tile during a launch, at any
+ * speed (the tick he lands included), and he is missing a heart: he gets
+ * one, and it is gone. At full hearts it is not taken and stays. Not by a
+ * launch released on top of it, until he has left it (§5.2 rule 5).
+ */
+export function takeHeart(s: State, d: Thing, events: SimEvent[]): void {
+  const h = s.him;
+  if (!s.launch.active || d.hp <= 0 || s.tick < d.landTick || s.hearts >= s.stats.maxHearts) return;
+  if (s.launch.blocked.length > 0 && s.launch.blocked.includes(d.id)) return;
+  if (!overlapsTile(h.x, h.y, s.stats.radius, d)) return;
+  d.hp = 0;
+  s.hearts++;
+  events.push({ type: "heartTaken", tick: s.tick, x: d.x, y: d.y, id: d.id, hearts: s.hearts });
 }
 
 /** An envelope popped by his body or Spark's ring: the fifth of one V in this launch pays `vBonus`. */

@@ -1819,3 +1819,139 @@ describe("venture capital in the night (step 5)", () => {
     expect([bag.hp, KINDS.bag.radius]).toEqual([8, 34]);
   });
 });
+
+describe("the love of your life in the night (step 5)", () => {
+  /** Every kind built but the polisher: the night as it ends when 05:00 ends. */
+  const ALL = ["bunny", "token", "gum", "battery", "envelope", "bag", "heart"];
+
+  /**
+   * A night begun at `hour` with nothing in its rows, the heart's own rule only, and him missing `missing` hearts.
+   * At pace 2 an hour with nothing in it still lasts to last call and the pause after it: 1,020 ticks.
+   */
+  function waiting(hour: number, missing: number, over: Partial<Tune> = {}): Night {
+    const night = new Night({ pace: 2, ...over }, { hour, kinds: ["heart"], empty: true });
+    night.s.hearts = 3 - missing;
+    return night;
+  }
+
+  it("is passed over by the pace's order: it is not a row, and it is not an intruder", () => {
+    expect(dealtRows(ALL)[6].map((d) => d.row)).toEqual([0, 2]);
+    expect([KINDS.heart.intruder, KINDS.heart.clear, KINDS.heart.hurts]).toEqual([false, false, false]);
+  });
+
+  it("at tick 342 of 01:00, if he is missing a heart, its tile is announced at (60 + 240 × a, 40), and lies there a telegraph later", () => {
+    const night = waiting(6, 1);
+    night.through(341);
+    expect(night.s.things).toEqual([]);
+    night.run(1);
+    const [shown] = of(night.events, "heartShown");
+    expect([shown.tick, shown.landTick, shown.y]).toEqual([342, 378, 40]);
+    expect(shown.x).toBeGreaterThanOrEqual(60);
+    expect(shown.x).toBeLessThanOrEqual(300);
+    const [h] = night.s.things;
+    expect([h.kind, h.landTick, h.goneTick]).toEqual(["heart", 378, 378 + 480]);
+    expect(night.s.night.heartSpent).toBe(true);
+    // Its place is the arrivals stream's next draw.
+    const again = waiting(6, 1);
+    again.through(341);
+    const a = rand({ ...again.s.rng }, "arrivals");
+    expect(shown.x).toBeCloseTo(60 + 240 * a, 9);
+    // No row event: the pace's tests pass over it, and so does the room's count.
+    expect(night.rows()).toEqual([]);
+    expect(intruders(night.s)).toBe(0);
+    expect(threats(night.s)).toBe(0);
+  });
+
+  it("not missing one at 01:00, it waits for tick 342 of the first later hour at which he is; it comes once a night at most", () => {
+    const night = waiting(6, 0);
+    night.through(342);
+    expect(of(night.events, "heartShown")).toEqual([]);
+    expect(night.s.night.heartSpent).toBe(false);
+    // 02:00: he is missing one by then.
+    night.run(2000, () => {
+      if (night.s.night.hour === 7) night.s.hearts = 2;
+    });
+    const shown = of(night.events, "heartShown");
+    expect(shown).toHaveLength(1);
+    expect(shown[0].tick - night.began[7]).toBe(342);
+    // Missing one again in a later hour: it does not come again.
+    night.s.things.length = 0;
+    night.s.hearts = 1;
+    night.run(3000);
+    expect(of(night.events, "heartShown")).toHaveLength(1);
+  });
+
+  it("at full hearts all night it never comes; nor before 01:00", () => {
+    const night = waiting(6, 0);
+    night.run(5 * 1800);
+    expect(of(night.events, "heartShown")).toEqual([]);
+    const early = waiting(0, 1);
+    early.run(636 + 5 * 1020 - 10);
+    expect(early.s.night.hour).toBe(5);
+    expect(of(early.events, "heartShown")).toEqual([]);
+  });
+
+  it("keeps its tick at every pace", () => {
+    for (const pace of [1, 2, 3]) {
+      // (At pace 1 an empty hour is clear at once: a dust bunny standing far off keeps it open.)
+      const night = waiting(6, 2, { pace });
+      if (pace === 1) put(night.s, "bunny", 340, 20, { dazedUntil: 1e9 });
+      night.through(342);
+      expect(of(night.events, "heartShown").map((e) => e.tick), `pace ${pace}`).toEqual([342]);
+    }
+  });
+
+  it("sits on its tile for 480 ticks and then leaves", () => {
+    const night = waiting(6, 1);
+    night.through(378 + 479);
+    expect(night.s.things.map((d) => d.kind)).toEqual(["heart"]);
+    night.run(1);
+    expect(of(night.events, "heartGone").map((e) => e.tick)).toEqual([378 + 480]);
+    expect(night.s.things).toEqual([]);
+  });
+
+  it("taken during a launch, at any speed, the tick he lands on it included; never by a launch released on it until he has left it", () => {
+    // He lands on it: half power straight up, the tile where that flight ends.
+    const probe = waiting(6, 1);
+    probe.through(377);
+    const landing = new Night({ pace: 2 }, { hour: 6, kinds: ["heart"], empty: true });
+    fire(landing.s, landing.tune, shot(0, -1, 0.5), 40);
+    const at = { x: landing.s.him.x, y: landing.s.him.y };
+    const night = waiting(6, 1);
+    night.through(377);
+    const h = night.s.things[0];
+    h.x = at.x;
+    h.y = at.y - 10;
+    const events = fire(night.s, night.tune, shot(0, -1, 0.5), 40);
+    const [land] = of(events, "land");
+    const [taken] = of(events, "heartTaken");
+    expect(taken.tick).toBeLessThanOrEqual(land.tick);
+    expect(night.s.hearts).toBe(3);
+    // Released standing on it: that launch does not take it on the way off; the next one, coming back, does.
+    // (Its tile has lain there a tick: one that comes on the tick of the release was not there when he let go.)
+    const on = waiting(6, 1);
+    on.through(378);
+    const tile = on.s.things[0];
+    tile.x = on.s.him.x;
+    tile.y = on.s.him.y;
+    const first = fire(on.s, on.tune, shot(0, -1, 0.5), 40);
+    expect(of(first, "heartTaken")).toEqual([]);
+    expect(on.s.hearts).toBe(2);
+    const back = fire(on.s, on.tune, shot(0, 1, 0.5), 40);
+    expect(of(back, "heartTaken")).toHaveLength(1);
+    expect(on.s.hearts).toBe(3);
+  });
+
+  it("gives one heart up to his maximum: four with Thick skin", () => {
+    const night = new Night({ pace: 2 }, { hour: 6, kinds: ["heart"], empty: true, charms: ["thickSkin"] });
+    expect(night.s.hearts).toBe(4);
+    night.s.hearts = 3;
+    night.through(377);
+    expect(of(night.events, "heartShown")).toHaveLength(1);
+    const h = night.s.things[0];
+    h.x = 180;
+    h.y = 300;
+    fire(night.s, night.tune, shot(0, -1), 10);
+    expect(night.s.hearts).toBe(4);
+  });
+});

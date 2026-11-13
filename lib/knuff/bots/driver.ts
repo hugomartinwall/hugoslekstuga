@@ -609,7 +609,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     if (taken <= 600 && !n.nearLanded) {
       let best = 1e18;
       for (const d of s.things) {
-        if (d.landTick > taken || taken < d.dazedUntil || d.kind === "pickup") continue;
+        if (d.landTick > taken || taken < d.dazedUntil || d.kind === "pickup" || d.kind === "heart") continue;
         const dd = (d.x - s.him.x) * (d.x - s.him.x) + (d.y - s.him.y) * (d.y - s.him.y);
         if (dd < best) best = dd;
       }

@@ -32,7 +32,7 @@ import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
-import { drawBag, drawBattery, drawBatteryLine, drawBlastRings, drawEnvelope, drawGum, drawTelegraph, onFloor } from "./intruders";
+import { drawBag, drawBattery, drawBatteryLine, drawBlastRings, drawEnvelope, drawGum, drawHeart, drawTelegraph, onFloor } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
   DAZE_MARKS,
@@ -395,6 +395,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     drawOffer(paint, state);
     // Gum lies flat on the floor, under everything that moves.
     drawGum(paint, state, f.line !== null ? f.line.hitId : -1);
+    // The love heart's tile, with the tiles on the floor.
+    drawHeart(paint, state);
 
     // The hint on the floor, under everything that moves. Its hand is in
     // the way of a pull, so it stands back while one is held or he flies.
@@ -419,7 +421,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     for (const d of state.things) {
       if (state.tick >= d.landTick) continue;
       const dr = KINDS[d.kind].radius;
-      if (d.kind === "gum" || d.kind === "battery" || d.kind === "envelope") {
+      if (d.kind === "gum" || d.kind === "battery" || d.kind === "envelope" || d.kind === "heart") {
         drawTelegraph(paint, d);
       } else if (d.kind === "bag") {
         // The money bag's outline, for its longer telegraph.

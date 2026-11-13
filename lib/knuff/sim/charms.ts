@@ -119,9 +119,9 @@ export function insertCentre(s: State, plate: number): { x: number; y: number } 
   }
 }
 
-/** Does a circle overlap a pickup's square tile? */
+/** Does a circle overlap a square tile: a pickup's (36 u), or the love heart's (28 u)? */
 export function overlapsTile(x: number, y: number, r: number, d: Thing): boolean {
-  const half = KINDS.pickup.boxW / 2;
+  const half = (d.kind === "heart" ? KINDS.heart.boxW : KINDS.pickup.boxW) / 2;
   const cx = x < d.x - half ? d.x - half : x > d.x + half ? d.x + half : x;
   const cy = y < d.y - half ? d.y - half : y > d.y + half ? d.y + half : y;
   const dx = x - cx;

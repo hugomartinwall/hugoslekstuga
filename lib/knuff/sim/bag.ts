@@ -168,13 +168,14 @@ export function bagContact(s: State, tune: Tune, d: Thing, events: SimEvent[]): 
 /**
  * Step 5's part: what goes by itself. A token the bag let out stops and
  * fades `bagTokenLife` after it appeared: it is gone, harmless and worth
- * nothing.
+ * nothing. The love heart leaves `heartLife` after its tile came.
  */
 export function fades(s: State, events: SimEvent[]): void {
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
     if (d.goneTick < 0 || d.hp <= 0 || s.tick < d.goneTick) continue;
     d.hp = 0;
-    events.push({ type: "fade", tick: s.tick, x: d.x, y: d.y, id: d.id });
+    if (d.kind === "heart") events.push({ type: "heartGone", tick: s.tick, x: d.x, y: d.y, id: d.id });
+    else events.push({ type: "fade", tick: s.tick, x: d.x, y: d.y, id: d.id });
   }
 }

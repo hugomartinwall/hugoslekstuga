@@ -173,6 +173,7 @@ const GUM = KINDS.gum;
 const BATTERY = KINDS.battery;
 const ENVELOPE = KINDS.envelope;
 const BAG = KINDS.bag;
+const HEART = KINDS.heart;
 const PICKUP = KINDS.pickup;
 
 /** A thing's row of the kind table. (One comparison: this is asked for every thing on every tick.) */
@@ -190,6 +191,8 @@ function rowOf(d: Thing): (typeof KINDS)[Thing["kind"]] {
       return ENVELOPE;
     case "bag":
       return BAG;
+    case "heart":
+      return HEART;
     case "pickup":
       return PICKUP;
   }
@@ -660,6 +663,8 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
 
   const rows = dealtRows(night.kinds)[night.hour];
   announceDue(s, tune, rows, events);
+  // The love heart is not a row of the pace's order: it keeps its own tick.
+  heartDue(s, tune, events);
   landArrivals(s, tune, events);
 
   // Clear: every row has been announced (at pace 2 and 3 that is true only
@@ -706,6 +711,35 @@ function landArrivals(s: State, tune: Tune, events: SimEvent[]): void {
     if (dazed) daze(s, d, s.tick + tune.dazeTicks, events);
     events.push({ type: "arrive", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, dist, dazed });
   }
+}
+
+/** The love heart's line of the timetable: the hour it first may come, and its tick. */
+const HEART_ROW = ROWS.find((r) => r.parts.some((p) => p.kind === "heart"));
+/** Where its tile lies: x = 60 + 240 × a for a draw a, 40 u down, in the room as built (the room's own edges place it). */
+const HEART_X0 = 52;
+const HEART_SPAN = 240;
+const HEART_DOWN = 32;
+
+/**
+ * The love heart appears once a night at most (§3.4): at tick 342 of
+ * 01:00 if he is missing a heart then; if he is not, at tick 342 of the
+ * first later hour, to 05:00, at which he is. Its tile lies close to the
+ * top cushion at a spot drawn from the arrivals stream, announced a
+ * telegraph before it lies there, and it leaves `heartLife` after that.
+ * It keeps that tick at every pace. Not on a night whose kinds leave it out.
+ */
+function heartDue(s: State, tune: Tune, events: SimEvent[]): void {
+  const night = s.night;
+  if (night.heartSpent || !HEART_ROW || night.hour < HEART_ROW.hour || s.tick - night.hourStart !== HEART_ROW.tick) return;
+  if (!night.kinds.includes("heart") || s.hearts >= s.stats.maxHearts) return;
+  night.heartSpent = true;
+  const room = s.room;
+  const x = room.left + HEART_X0 + HEART_SPAN * rand(s.rng, "arrivals");
+  const y = room.top + HEART_DOWN;
+  const lands = s.tick + tune.telegraphTicks;
+  const d = addThing(s, "heart", x, y, lands, 0, 0);
+  d.goneTick = lands + tune.heartLife;
+  events.push({ type: "heartShown", tick: s.tick, x: d.x, y: d.y, id: d.id, landTick: lands });
 }
 
 /** The end of an hour: its gum is swept away. Gone by the end of the tick, and it pays nothing. */

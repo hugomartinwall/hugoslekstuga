@@ -239,13 +239,13 @@ function clearSpot(
 
 /**
  * The intruders it meets are pushed out of its body; a token bounces off
- * it; a battery he knocked bursts on it. Pickups and gum lie where they lie.
+ * it; a battery he knocked bursts on it. Pickups, the heart and gum lie where they lie.
  */
 function pushThings(s: State): void {
   const box = boxOf(s.boss);
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if (d.hp <= 0 || s.tick < d.landTick || d.kind === "pickup" || d.kind === "gum" || bursting(s, d)) continue;
+    if (d.hp <= 0 || s.tick < d.landTick || d.kind === "pickup" || d.kind === "heart" || d.kind === "gum" || bursting(s, d)) continue;
     const r = KINDS[d.kind].radius;
     if (d.x + r <= box.x0 || d.x - r >= box.x1 || d.y + r <= box.y0 || d.y - r >= box.y1) continue;
     const q = clearSpot(s, box, d.x, d.y, r);
