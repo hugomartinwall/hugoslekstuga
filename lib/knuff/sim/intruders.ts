@@ -20,11 +20,13 @@ import { BATTERY_R, bursting, gapToGum, gumContact, knock, queueBurst } from "./
 import { canTake, overlapsTile, takePickup } from "./charms";
 import { givePip, isHot, keepInside, land, loseHeart } from "./hot";
 import { collideWalls, popImpulse, slow } from "./physics";
-import { scorePop } from "./score";
+import { scorePop, scoreV } from "./score";
 import type { SimEvent, State, Thing, Tune } from "./types";
 
 const BUNNY_R = KINDS.bunny.radius;
 const TOKEN_R = KINDS.token.radius;
+const ENVELOPE_R = KINDS.envelope.radius;
+const DEG = Math.PI / 180;
 
 /**
  * A thing's radius. One comparison, not a look-up in the kind table by
@@ -41,6 +43,8 @@ function radiusOf(d: Thing): number {
       return TOKEN_R;
     case "battery":
       return BATTERY_R;
+    case "envelope":
+      return ENVELOPE_R;
     case "gum":
     case "pickup":
       return 0;
@@ -99,6 +103,30 @@ export function choose(s: State, tune: Tune): number {
         fx = sx;
         fy = sy;
       }
+    } else if (d.kind === "envelope") {
+      // It flies at `envelopeSpeed`, its heading turned toward him by at most
+      // `envelopeTurnDeg` a tick. Dazed, it stands still and its heading is kept.
+      if (s.tick < d.dazedUntil) {
+        d.wx = 0;
+        d.wy = 0;
+      } else {
+        const bearing = Math.atan2(h.y - d.y, h.x - d.x);
+        let turn = bearing - d.heading;
+        if (turn > Math.PI) turn -= 2 * Math.PI;
+        else if (turn < -Math.PI) turn += 2 * Math.PI;
+        const most = tune.envelopeTurnDeg * DEG;
+        d.heading = wrap(d.heading + (turn > most ? most : turn < -most ? -most : turn));
+        d.wx = Math.cos(d.heading) * tune.envelopeSpeed + 0;
+        d.wy = Math.sin(d.heading) * tune.envelopeSpeed + 0;
+      }
+      const sx = d.wx + d.vx;
+      const sy = d.wy + d.vy;
+      const sq = sx * sx + sy * sy;
+      if (sq > fastestSq) {
+        fastestSq = sq;
+        fx = sx;
+        fy = sy;
+      }
     } else if (d.kind === "bunny") {
       if (s.tick < d.dazedUntil) {
         d.wx = 0;
@@ -137,6 +165,13 @@ export function choose(s: State, tune: Tune): number {
   return fastestSq === 0 ? 0 : Math.hypot(fx, fy);
 }
 
+/** An angle brought inside -π..π. */
+function wrap(a: number): number {
+  if (a > Math.PI) return a - 2 * Math.PI;
+  if (a <= -Math.PI) return a + 2 * Math.PI;
+  return a;
+}
+
 /** One substep of the intruders' own motion. */
 export function moveThings(s: State, tune: Tune, sub: number): void {
   const room = s.room;
@@ -156,6 +191,27 @@ export function moveThings(s: State, tune: Tune, sub: number): void {
       d.y += d.vy * sub;
       // It mirrors off cushions with no loss.
       collideWalls(d, TOKEN_R, room, 1);
+    } else if (d.kind === "envelope") {
+      // Its flight, and a shove on top. A shove bounces off a cushion as a
+      // dummy's does; its heading is mirrored off a cushion it flies into.
+      d.x += (d.wx + d.vx) * sub;
+      d.y += (d.wy + d.vy) * sub;
+      collideWalls(d, ENVELOPE_R, room, tune.lightWallRestitution);
+      let turned = false;
+      const cx = Math.cos(d.heading);
+      const cy = Math.sin(d.heading);
+      if ((d.x <= room.left + ENVELOPE_R && cx < 0) || (d.x >= room.right - ENVELOPE_R && cx > 0)) {
+        d.heading = wrap(Math.PI - d.heading);
+        turned = true;
+      }
+      if ((d.y <= room.top + ENVELOPE_R && cy < 0) || (d.y >= room.bottom - ENVELOPE_R && cy > 0)) {
+        d.heading = wrap(-d.heading);
+        turned = true;
+      }
+      if (turned && s.tick >= d.dazedUntil) {
+        d.wx = Math.cos(d.heading) * tune.envelopeSpeed + 0;
+        d.wy = Math.sin(d.heading) * tune.envelopeSpeed + 0;
+      }
     } else if (d.kind === "battery") {
       // Its drift, and a knock or a shove on top. One going off this tick stays where it bursts.
       if (bursting(s, d)) continue;
@@ -228,6 +284,7 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
         source: "spark",
         speed: Math.hypot(h.vx, h.vy),
       });
+      if (d.kind === "envelope") vPop(s, tune, d, events);
       continue;
     }
     const nx = dist > 1e-6 ? dx / dist : 0;
@@ -248,12 +305,14 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
       }
       // His hot body pops it. He feels part of the knock and flies on.
       const speed = Math.hypot(h.vx, h.vy);
-      const tvx = d.kind === "bunny" ? d.wx + d.vx : isDazed ? 0 : d.vx;
-      const tvy = d.kind === "bunny" ? d.wy + d.vy : isDazed ? 0 : d.vy;
+      // A dust bunny and an envelope move by their own way (a walk, a flight) and a shove on top; a token by its roll.
+      const own = d.kind === "bunny" || d.kind === "envelope";
+      const tvx = own ? d.wx + d.vx : isDazed ? 0 : d.vx;
+      const tvy = own ? d.wy + d.vy : isDazed ? 0 : d.vy;
       const closing = (h.vx - tvx) * nx + (h.vy - tvy) * ny;
       const hx = h.x;
       const hy = h.y;
-      popImpulse(h, nx, ny, closing, tune.lightMass, tune, s.stats.popImpulse);
+      popImpulse(h, nx, ny, closing, d.kind === "envelope" ? tune.envelopeMass : tune.lightMass, tune, s.stats.popImpulse);
       d.hp = 0;
       h.lastContactTick = s.tick;
       const scored = scorePop(s, d, tune, true);
@@ -274,6 +333,7 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
         source: "body",
         speed,
       });
+      if (d.kind === "envelope") vPop(s, tune, d, events);
       // One pip back, once, on the launch's `pipRefundPop`th body pop.
       const l = s.launch;
       if (tune.pipRefundPop > 0 && l.bodyPops === tune.pipRefundPop && !l.refunded) {
@@ -307,6 +367,12 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
     keepInside(s, d);
   }
   return true;
+}
+
+/** An envelope popped by his body or Spark's ring: the fifth of one V in this launch pays `vBonus`. */
+function vPop(s: State, tune: Tune, d: Thing, events: SimEvent[]): void {
+  const points = scoreV(s, d, tune);
+  if (points > 0) events.push({ type: "vBonus", tick: s.tick, x: d.x, y: d.y, v: d.v, points });
 }
 
 /** Once he has left a thing (or a tile) he overlapped at the release, this launch can hit (or take) it again. */
@@ -384,11 +450,11 @@ export function spreadBunnies(s: State): void {
   bunch.length = 0;
 }
 
-/** Step 9 for the things: a shoved dust bunny, and a knocked or shoved battery, slow as the toy's dummies do. Tokens never slow. */
+/** Step 9 for the things: a shoved dust bunny or envelope, and a knocked or shoved battery, slow as the toy's dummies do. Tokens never slow. */
 export function slowThings(s: State, tune: Tune): void {
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
-    if ((d.kind !== "bunny" && d.kind !== "battery") || d.hp <= 0) continue;
+    if ((d.kind !== "bunny" && d.kind !== "battery" && d.kind !== "envelope") || d.hp <= 0) continue;
     if (d.vx !== 0 || d.vy !== 0) {
       slow(d, tune.lightDragK, tune.lightFriction, tune.lightRestSpeed);
       // A speed that ran down to nothing from below is a negative zero; see `step`.

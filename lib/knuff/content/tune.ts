@@ -136,12 +136,21 @@ export const GAME = {
   batteryKnockTicks: 48,
   blastRadius: 70,
   blastChainTicks: 12,
+  envelopeSpeed: 60,
+  envelopeTurnDeg: 0.5,
+  envelopeMass: 0.2,
+  bagSpeed: 10,
+  bagHits: 8,
+  bagTokenEvery: 2,
+  bagTokenLife: 480,
+  heartLife: 480,
 
   // Score.
   chainCap: 8,
   carryMax: 3,
   cushionCap: 3,
   cushionMergeTicks: 9,
+  vBonus: 100,
 
   // Charms and offers.
   offerArmTicks: 60,

@@ -171,7 +171,7 @@ function fire(s: State, tune: Tune, plate: number, events: SimEvent[]): string {
       for (let i = 0; i < s.things.length; i++) {
         const d = s.things[i];
         if (d.hp <= 0 || s.tick < d.landTick) continue;
-        if (d.kind === "bunny" || d.kind === "token") daze(s, d, until, events);
+        if (d.kind === "bunny" || d.kind === "token" || d.kind === "envelope") daze(s, d, until, events);
       }
       return "bell";
     }
@@ -342,6 +342,9 @@ function makeOffer(s: State, tune: Tune, events: SimEvent[]): boolean {
       knockTick: -1,
       mine: false,
       launchId: -1,
+      heading: 0,
+      v: -1,
+      goneTick: -1,
     };
     s.things.push(d);
     items.push({ kind: "pickup", charm, plate: -1, thingId: d.id });

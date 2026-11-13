@@ -513,3 +513,88 @@ describe("flat scores and blasts (step 4)", () => {
     expect(gums).toBeGreaterThan(3);
   });
 });
+
+describe("the newsletter's bonus (step 5)", () => {
+  const tune = tuned({ ...STILL, envelopeSpeed: 0, envelopeTurnDeg: 0 });
+
+  /** Five envelopes of one V standing in a line straight ahead of him, 26 u apart: one full-power launch pops them all. */
+  function v(s: State, n = 5, x = 180): number {
+    let lead = -1;
+    for (let i = 0; i < n; i++) {
+      const d = put(s, "envelope", x, 374 - 40 - i * 26);
+      if (lead < 0) lead = d.id;
+      d.v = lead;
+    }
+    return lead;
+  }
+
+  it("popping all five of one V in one launch pays 100, flat, at the fifth pop, into the launch's total", () => {
+    expect(tune.vBonus).toBe(100);
+    const s = night(tune);
+    const lead = v(s);
+    const events = fire(s, tune, shot(0, -1), 30);
+    const pops = of(events, "pop");
+    expect(pops.map((e) => e.kind)).toEqual(["envelope", "envelope", "envelope", "envelope", "envelope"]);
+    const popped = pops.reduce((sum, e) => sum + e.points, 0);
+    // 15 × (1 + 2 + 3 + 4 + 5), and the bonus once, flat.
+    expect(popped).toBe(15 * 15);
+    const [bonus] = of(events, "vBonus");
+    expect([bonus.v, bonus.points, bonus.tick]).toEqual([lead, 100, pops[4].tick]);
+    expect(s.score).toBe(popped + 100);
+    expect(s.launch.points).toBe(popped + 100);
+    expect(s.bestShot).toBe(popped + 100);
+    // Flat: it is not a pop, and moves neither the chain nor the pip refund.
+    expect([s.launch.pops, s.launch.bodyPops]).toEqual([5, 5]);
+  });
+
+  it("five over two launches pay no bonus; nor do four of a V the cap has cut; nor five of two Vs", () => {
+    const two = night(tune);
+    v(two);
+    // The first launch is stopped short: half power pops two and lands.
+    fire(two, tune, shot(0, -1, 0.5), 40);
+    expect(two.him.hot).toBe(false);
+    const first = two.score;
+    fire(two, tune, shot(0, -1), 30);
+    expect(two.things.filter((d) => d.kind === "envelope")).toHaveLength(0);
+    expect(two.score - first).toBeLessThan(15 * 15);
+    const cut = night(tune);
+    v(cut, 4);
+    expect(of(fire(cut, tune, shot(0, -1), 30), "vBonus")).toEqual([]);
+    const mixed = night(tune);
+    v(mixed, 3);
+    const other = v(mixed, 2, 180);
+    // The last two belong to another V: put them further up the same line.
+    for (const d of mixed.things.filter((t) => t.v === other)) d.y -= 3 * 26;
+    const events = fire(mixed, tune, shot(0, -1), 30);
+    expect(of(events, "pop")).toHaveLength(5);
+    expect(of(events, "vBonus")).toEqual([]);
+  });
+
+  it("pops by Spark's ring count toward it; blast pops do not", () => {
+    const s = night(tune, { plates: ["", "spark", "", "", "", "", "", "", "", ""] });
+    s.him.y = 60;
+    // Off his line by more than his body and less than the ring: the ring pops all five on the way back down.
+    let lead = -1;
+    for (let i = 0; i < 5; i++) {
+      const d = put(s, "envelope", 180 + 13 + 6 + 9, 120 + i * 30);
+      if (lead < 0) lead = d.id;
+      d.v = lead;
+    }
+    const events = fire(s, tune, shot(0, -1), 40);
+    expect(of(events, "pop").map((e) => e.source)).toEqual(["spark", "spark", "spark", "spark", "spark"]);
+    expect(of(events, "vBonus").map((e) => e.v)).toEqual([lead]);
+    // A blast of his pops five of a V: they are blast pops, and pay no bonus.
+    const b = night(tune);
+    b.him.y = 440;
+    let bl = -1;
+    for (let i = 0; i < 5; i++) {
+      const d = put(b, "envelope", 150 + i * 15, 150);
+      if (bl < 0) bl = d.id;
+      d.v = bl;
+    }
+    put(b, "battery", 180, 150, { mine: true, knockTick: 0, launchId: 1, fuseTick: 1 });
+    const ev = run(b, tune, 2);
+    expect(of(ev, "pop").map((e) => e.source)).toEqual(["blast", "blast", "blast", "blast", "blast"]);
+    expect(of(ev, "vBonus")).toEqual([]);
+  });
+});

@@ -121,7 +121,7 @@ export function knock(s: State, tune: Tune, d: Thing, nx: number, ny: number, ev
 
 /**
  * Step 7's part, after his contacts: a knocked battery bursts on touching
- * a dust bunny, a token or another battery. (It passes over gum, the heart
+ * a dust bunny, a token, an envelope or another battery. (It passes over gum, the heart
  * and pickups; the polisher bursts it when it meets it, in its own push,
  * and a cushion in the battery's move.)
  */
@@ -133,7 +133,7 @@ export function knockedTouches(s: State): void {
     for (let j = 0; j < things.length; j++) {
       const t = things[j];
       if (t === b || t.hp <= 0 || s.tick < t.landTick) continue;
-      if (t.kind !== "bunny" && t.kind !== "token" && t.kind !== "battery") continue;
+      if (t.kind !== "bunny" && t.kind !== "token" && t.kind !== "battery" && t.kind !== "envelope") continue;
       const reach = BATTERY_R + KINDS[t.kind].radius;
       const dx = t.x - b.x;
       const dy = t.y - b.y;
@@ -225,7 +225,8 @@ function blast(s: State, tune: Tune, b: Thing, why: Why, events: SimEvent[]): bo
     if (dx * dx + dy * dy > reachSq) continue;
     switch (d.kind) {
       case "bunny":
-      case "token": {
+      case "token":
+      case "envelope": {
         // His pops it, at twice its points, flat. One not his does nothing to it.
         if (!mine) break;
         d.hp = 0;

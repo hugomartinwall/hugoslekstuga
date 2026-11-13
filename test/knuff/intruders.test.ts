@@ -194,6 +194,98 @@ describe("a runaway token", () => {
   });
 });
 
+describe("an envelope (the newsletter)", () => {
+  const tune = tuned({ bunnySpeed: 0, tokenSpeed: 0 });
+  const DEG = Math.PI / 180;
+
+  it("is a circle of radius 9, one hit, 15 points; it hurts on touch and counts for clear", () => {
+    expect(KINDS.envelope).toEqual({ radius: 9, boxW: 0, boxH: 0, hits: 1, points: 15, hurts: true, clear: true, intruder: true });
+  });
+
+  it("weighs 0.2 of him: a head-on pop takes 14.7% of his closing speed", () => {
+    const still = tuned({ envelopeSpeed: 0 });
+    expect(still.envelopeMass).toBe(0.2);
+    const s = night(still);
+    put(s, "envelope", 180, 374 - 23);
+    const [pop] = of(fire(s, still, shot(0, -1)), "pop");
+    expect([pop.kind, pop.speed]).toEqual(["envelope", 900]);
+    const share = (still.popImpulseScale * (1 + still.bodyRestitution)) / (1 + 1 / still.envelopeMass);
+    expect(share).toBeCloseTo(0.147, 3);
+    const dragged = (v: number) => v * Math.exp(-still.dragK / 60) - still.friction / 60;
+    expect(Math.hypot(s.him.vx, s.him.vy)).toBeCloseTo(dragged(900 * (1 - share)), 9);
+  });
+
+  it("flies at 60 u/s, its heading turned toward him by at most 0.5 degrees a tick", () => {
+    expect([tune.envelopeSpeed, tune.envelopeTurnDeg]).toEqual([60, 0.5]);
+    const s = night(tune);
+    s.him.invulnUntil = 1e9;
+    // Heading straight right, with him below it: it turns toward him, half a degree a tick.
+    const e = put(s, "envelope", 60, 100, { heading: 0 });
+    let last = e.heading;
+    for (let t = 0; t < 30; t++) {
+      tick(s, tune);
+      const bearing = Math.atan2(s.him.y - e.y, s.him.x - e.x);
+      expect(e.heading - last).toBeCloseTo(0.5 * DEG, 12);
+      expect(e.heading).toBeLessThan(bearing);
+      last = e.heading;
+    }
+    expect(Math.hypot(e.wx, e.wy)).toBeCloseTo(60, 9);
+    // Its last tick's flight moved it a sixtieth of that.
+    expect(Math.hypot(e.x - e.px, e.y - e.py)).toBeCloseTo(1, 9);
+    // Pointed at him, it does not turn past him: it flies straight at him.
+    const s2 = night(tune);
+    s2.him.invulnUntil = 1e9;
+    const at = put(s2, "envelope", 180, 100, { heading: Math.PI / 2 });
+    run(s2, tune, 30);
+    expect(at.heading).toBe(Math.PI / 2);
+    expect(at.x).toBeCloseTo(180, 9);
+  });
+
+  it("at a cushion its heading is mirrored; a shove on top bounces as a dummy's does, and dies away", () => {
+    const s = night(tune);
+    s.him.x = 180;
+    s.him.y = 440;
+    // Flying up-left into the top cushion: its heading is mirrored, and it flies down-left.
+    const e = put(s, "envelope", 100, 17.5, { heading: -0.75 * Math.PI });
+    tick(s, tune);
+    expect(e.y).toBe(8 + 9);
+    expect(Math.sin(e.heading)).toBeGreaterThan(0);
+    expect(Math.cos(e.heading)).toBeLessThan(0);
+    for (let t = 0; t < 600; t++) {
+      tick(s, tune);
+      expect(e.x).toBeGreaterThanOrEqual(8 + 9);
+      expect(e.x).toBeLessThanOrEqual(352 - 9);
+      expect(e.y).toBeGreaterThanOrEqual(8 + 9);
+      expect(e.y).toBeLessThanOrEqual(472 - 9);
+    }
+    // A shove dies away as a dummy's does; its flight does not.
+    const s2 = night(tuned({ envelopeSpeed: 0 }));
+    const shoved = put(s2, "envelope", 180, 200, { vx: 200, vy: 0 });
+    run(s2, tuned({ envelopeSpeed: 0 }), 120);
+    expect([shoved.vx, shoved.vy]).toEqual([0, 0]);
+  });
+
+  it("dazed, it stands still and keeps its heading; when the daze ends it flies on as before", () => {
+    const s = night(tune);
+    s.him.invulnUntil = 1e9;
+    const e = put(s, "envelope", 100, 100, { heading: 0.3, dazedUntil: 20 });
+    run(s, tune, 20);
+    expect([e.x, e.y, e.heading, e.wx, e.wy]).toEqual([100, 100, 0.3, 0, 0]);
+    tick(s, tune);
+    expect(e.x).toBeGreaterThan(100);
+    expect(Math.hypot(e.wx, e.wy)).toBeCloseTo(60, 9);
+  });
+
+  it("passes through dust bunnies, tokens and other envelopes", () => {
+    const s = night(tuned({ bunnySpeed: 0, tokenSpeed: 0, envelopeSpeed: 0 }));
+    const a = put(s, "envelope", 100, 100);
+    const b = put(s, "envelope", 104, 100);
+    const d = put(s, "bunny", 100, 106);
+    run(s, tuned({ bunnySpeed: 0, tokenSpeed: 0, envelopeSpeed: 0 }), 10);
+    expect([a.x, a.y, b.x, b.y, d.x, d.y]).toEqual([100, 100, 104, 100, 100, 106]);
+  });
+});
+
 describe("intruders and each other", () => {
   it("dust bunnies are kept from overlapping: pushed apart equally along the line between them", () => {
     const still = tuned({ bunnySpeed: 0, tokenSpeed: 0 });

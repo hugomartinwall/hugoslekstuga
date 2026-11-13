@@ -13,16 +13,14 @@ import { distance, fire, night, of, put, run, shot, speedOf, tick, tuned, until 
  * or cost a heart; its columns are what they meet. A cell that says "—" is
  * a case too: that nothing happens there is a rule.
  *
- * The money bag and the love heart come in step 5, the envelopes with
- * them: their columns, and the envelope among "pops in one hit", are not
- * here yet. "Pops in one hit" is the dust bunny and the token.
+ * "Pops in one hit" is the dust bunny, the token and the envelope (step 5).
  *
  * Every room is set up by hand: nothing walks, drifts or rolls unless a
  * case says so, every plate is dark unless a case lights one, and nothing
  * is offered.
  */
 
-const STILL = { bunnySpeed: 0, batterySpeed: 0, tokenSpeed: 0 };
+const STILL = { bunnySpeed: 0, batterySpeed: 0, tokenSpeed: 0, envelopeSpeed: 0 };
 const T = tuned(STILL);
 const DARK: StartOptions = { plates: DARK_PLATES, offers: false };
 
@@ -108,8 +106,8 @@ function machine(s: State, o: { lane: number; x: number; dir?: 1 | -1; mode?: Bo
 // ── 1. His hot body, no cushion yet this launch ───────────────────────
 
 describe("his hot body, no cushion yet this launch", () => {
-  it("pops in one hit: a dust bunny or a token pops, and he flies on (rule 6)", () => {
-    for (const kind of ["bunny", "token"] as const) {
+  it("pops in one hit: a dust bunny, a token or an envelope pops, and he flies on (rule 6)", () => {
+    for (const kind of ["bunny", "token", "envelope"] as const) {
       const s = room();
       const d = put(s, kind, 180, 300);
       const events = fire(s, T, shot(0, -1), 8);
@@ -285,13 +283,15 @@ describe("his hot body, off a cushion", () => {
   }
 
   it("pops in one hit: the same, and the pop is multiplied by the cushion", () => {
-    const s = banked();
-    put(s, "bunny", 180, 150);
-    const events = fire(s, T, shot(0, -1), 20);
-    expect(of(events, "cushion")).toHaveLength(1);
-    const [pop] = of(events, "pop");
-    expect([pop.source, pop.cushions, pop.points]).toEqual(["body", 2, 20]);
-    expect(s.him.hot).toBe(true);
+    for (const kind of ["bunny", "token", "envelope"] as const) {
+      const s = banked();
+      put(s, kind, 180, 150);
+      const events = fire(s, T, shot(0, -1), 20);
+      expect(of(events, "cushion")).toHaveLength(1);
+      const [pop] = of(events, "pop");
+      expect([pop.kind, pop.source, pop.cushions, pop.points]).toEqual([kind, "body", 2, 2 * KINDS[kind].points]);
+      expect(s.him.hot).toBe(true);
+    }
   });
 
   it("a battery: the same, it is knocked and it is his", () => {
@@ -373,15 +373,17 @@ describe("Spark's ring (it only exists after a cushion)", () => {
   }
 
   it("pops in one hit: it pops and counts in his chain, it is not a body pop, he feels nothing, and it is a contact", () => {
-    const s = sparked();
-    const d = put(s, "bunny", SIDE + 8, 150);
-    const events = fire(s, T, shot(0, -1), 20);
-    const [pop] = of(events, "pop");
-    expect([pop.id, pop.source, pop.n]).toEqual([d.id, "spark", 1]);
-    expect(s.launch.pops).toBe(1);
-    expect(s.launch.bodyPops).toBe(0);
-    expect(s.him.vx).toBe(0);
-    expect(s.him.lastContactTick).toBe(pop.tick);
+    for (const kind of ["bunny", "token", "envelope"] as const) {
+      const s = sparked();
+      const d = put(s, kind, SIDE + KINDS[kind].radius, 150);
+      const events = fire(s, T, shot(0, -1), 20);
+      const [pop] = of(events, "pop");
+      expect([pop.id, pop.source, pop.n]).toEqual([d.id, "spark", 1]);
+      expect(s.launch.pops).toBe(1);
+      expect(s.launch.bodyPops).toBe(0);
+      expect(s.him.vx).toBe(0);
+      expect(s.him.lastContactTick).toBe(pop.tick);
+    }
   });
 
   it("a battery: nothing (the ring does not knock it)", () => {
@@ -446,18 +448,24 @@ describe("the landing thump", () => {
     return { s, events };
   }
 
-  it("dust bunnies within 40 u are dazed 36 ticks; a token is not dazed and not turned", () => {
+  it("dust bunnies within 40 u are dazed 36 ticks; a token or an envelope is not dazed, not turned and not moved", () => {
     let bunny: Thing | null = null;
     let token: Thing | null = null;
+    let envelope: Thing | null = null;
+    let at = { x: 0, y: 0 };
     const { s, events } = landing((s, x, y) => {
       bunny = put(s, "bunny", x + 30, y);
       token = put(s, "token", x - 30, y, { vx: 0, vy: 0 });
+      // Pointed at him, so its heading does not turn.
+      envelope = put(s, "envelope", x, y - 30, { heading: Math.PI / 2 });
+      at = { x, y: y - 30 };
     });
     const [land] = of(events, "land");
     expect(land.dazed).toBe(1);
     expect(bunny!.dazedUntil).toBe(land.tick + 36);
     expect(token!.dazedUntil).toBe(0);
-    expect(s.things.length).toBe(2);
+    expect([envelope!.dazedUntil, envelope!.x, envelope!.y, envelope!.heading, envelope!.vx, envelope!.vy]).toEqual([0, at.x, at.y, Math.PI / 2, 0, 0]);
+    expect(s.things.length).toBe(3);
   });
 
   it("a battery: nothing (not dazed, not moved)", () => {
@@ -516,6 +524,26 @@ describe("the wave of a lost heart", () => {
     expect(d!.vx).toBeCloseTo(260 * Math.exp(-T.lightDragK / 60) - T.lightFriction / 60, 6);
     expect(d!.vy).toBeCloseTo(0, 9);
     expect(t!.vx).toBeCloseTo(-150, 6);
+  });
+
+  it("envelopes within 90 u are thrown straight away at 260 u/s, dazed or not; their heading is kept", () => {
+    let e: Thing | null = null;
+    let dz: Thing | null = null;
+    let far: Thing | null = null;
+    hurt(
+      (s) => {
+        e = put(s, "envelope", 180, 374 + 60, { heading: 2 });
+        dz = put(s, "envelope", 180 - 80, 374, { dazedUntil: 100 });
+        far = put(s, "envelope", 180 + 91, 374);
+      },
+      tuned({ ...STILL, envelopeTurnDeg: 0 }),
+    );
+    expect(e!.vy).toBeCloseTo(260 * Math.exp(-T.lightDragK / 60) - T.lightFriction / 60, 6);
+    expect(e!.vx).toBeCloseTo(0, 9);
+    expect(e!.heading).toBe(2);
+    expect(dz!.vx).toBeLessThan(-200);
+    expect(dz!.dazedUntil).toBe(100);
+    expect([far!.vx, far!.vy]).toEqual([0, 0]);
   });
 
   it("a battery is thrown straight away at 260 u/s; its timers are unchanged and it does not become his", () => {
@@ -578,15 +606,17 @@ describe("Bell", () => {
     return { s, events };
   }
 
-  it("dust bunnies and tokens, all of them in the room: dazed 36 ticks", () => {
+  it("dust bunnies, tokens and envelopes, all of them in the room: dazed 36 ticks", () => {
     let d: Thing | null = null;
     let t: Thing | null = null;
+    let e: Thing | null = null;
     const { events } = rung((s) => {
       d = put(s, "bunny", 40, 440);
       t = put(s, "token", 320, 440);
+      e = put(s, "envelope", 320, 300);
     });
     const [c] = of(events, "cushion");
-    expect([d!.dazedUntil, t!.dazedUntil]).toEqual([c.tick + 36, c.tick + 36]);
+    expect([d!.dazedUntil, t!.dazedUntil, e!.dazedUntil]).toEqual([c.tick + 36, c.tick + 36, c.tick + 36]);
   });
 
   it("a battery and gum: nothing", () => {
@@ -615,18 +645,20 @@ describe("a blast of his (70 u)", () => {
     const { s, b } = his();
     const d = put(s, "bunny", 180 + 50, 150);
     const t = put(s, "token", 180, 150 - 69);
+    const e = put(s, "envelope", 180 - 60, 150 + 30);
     const far = put(s, "bunny", 180 + 71, 150);
     const events = run(s, T, 2);
     const [burst] = of(events, "burst");
-    expect([burst.id, burst.mine, burst.pops]).toEqual([b.id, true, 2]);
+    expect([burst.id, burst.mine, burst.pops]).toEqual([b.id, true, 3]);
     expect(of(events, "pop").map((e) => [e.id, e.source, e.points, e.n, e.chain, e.cushions])).toEqual([
       [d.id, "blast", 20, 0, 1, 1],
       [t.id, "blast", 50, 0, 1, 1],
+      [e.id, "blast", 30, 0, 1, 1],
     ]);
     expect(alive(s, far)).toBe(true);
     // 40 for the battery that went off as his, and the pops.
-    expect(burst.points).toBe(40 + 20 + 50);
-    expect(s.score).toBe(110);
+    expect(burst.points).toBe(40 + 20 + 50 + 30);
+    expect(s.score).toBe(140);
     expect([s.launch.pops, s.launch.bodyPops]).toEqual([0, 0]);
     expect(s.him.lastContactTick).toBe(-1);
     expect(alive(s, b)).toBe(false);
@@ -691,12 +723,13 @@ describe("a blast that is not his (70 u)", () => {
     stand(s, 180, 440);
     const d = put(s, "bunny", 180 + 30, 150);
     const t = put(s, "token", 180 - 30, 150);
+    const e = put(s, "envelope", 180, 150 + 30);
     battery(s, 180, 150, {}, 1);
     const events = run(s, T, 2);
     const [burst] = of(events, "burst");
     expect([burst.mine, burst.pops, burst.points, burst.launchId]).toEqual([false, 0, 0, -1]);
     expect(of(events, "pop")).toEqual([]);
-    expect([alive(s, d), alive(s, t)]).toEqual([true, true]);
+    expect([alive(s, d), alive(s, t), alive(s, e)]).toEqual([true, true, true]);
     expect(s.score).toBe(0);
   });
 
@@ -777,8 +810,8 @@ describe("a knocked battery in flight", () => {
     return { s, b };
   }
 
-  it("bursts the moment it touches a dust bunny, or a token", () => {
-    for (const kind of ["bunny", "token"] as const) {
+  it("bursts the moment it touches a dust bunny, a token or an envelope", () => {
+    for (const kind of ["bunny", "token", "envelope"] as const) {
       const { s, b } = flying();
       const d = put(s, kind, 160, 200);
       const events = toBurst(s, T, 30);
@@ -849,6 +882,22 @@ describe("a cushion", () => {
     expect(d.vx).toBeLessThan(0);
   });
 
+  it("an envelope's heading is mirrored off it; a shoved envelope bounces", () => {
+    const flying = tuned({ ...STILL, envelopeSpeed: 60, envelopeTurnDeg: 0 });
+    const s = room(flying);
+    const e = put(s, "envelope", 340, 100, { heading: 0.2 });
+    run(s, flying, 30);
+    expect(e.x).toBeLessThan(352 - 9);
+    expect(e.heading).toBeCloseTo(Math.PI - 0.2, 12);
+    const still = tuned({ ...STILL, envelopeTurnDeg: 0 });
+    const t = room(still);
+    const shoved = put(t, "envelope", 330, 200, { vx: 260, vy: 0 });
+    run(t, still, 10);
+    expect(shoved.vx).toBeLessThan(0);
+    // Its heading pointed into the cushion too, and was mirrored with it.
+    expect(shoved.heading).toBe(Math.PI);
+  });
+
   it("a knocked battery bursts on it; a shoved one bounces", () => {
     const s = room();
     stand(s, 180, 440);
@@ -897,7 +946,7 @@ describe("a cushion", () => {
 
 describe("touching him while he is landed", () => {
   it("pops in one hit: costs a heart; dazed, or with him invulnerable, it is held at arm's length and a token bounces off", () => {
-    for (const kind of ["bunny", "token"] as const) {
+    for (const kind of ["bunny", "token", "envelope"] as const) {
       const s = room();
       put(s, kind, 180, 374 - 18);
       expect(of(run(s, T, 1), "hurt").map((e) => e.by)).toEqual([kind]);
@@ -967,6 +1016,16 @@ describe("the polisher's pad", () => {
     expect(t.vx).toBeGreaterThan(0);
   });
 
+  it("pushes an envelope aside", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    stand(s, 180, 440);
+    const e = put(s, "envelope", 155, 212);
+    run(s, B, 30);
+    expect(e.x).toBeGreaterThan(boxOf(s.boss).x1);
+    expect(alive(s, e)).toBe(true);
+  });
+
   it("pushes a battery aside", () => {
     const s = fight();
     machine(s, { lane: 3, x: 90, dir: 1 });
@@ -1009,19 +1068,21 @@ describe("the polisher's pad", () => {
 // ── 13. The polisher changing lane, or landing at 06:00 ───────────────
 
 describe("the polisher changing lane, or landing at 06:00", () => {
-  it("dust bunnies, tokens and batteries are pushed, never hurt; gum lies where it lies", () => {
+  it("dust bunnies, tokens, envelopes and batteries are pushed, never hurt; gum lies where it lies", () => {
     const s = fight();
     machine(s, { lane: 2, x: 120, dir: -1, mode: "laneMove", laneStep: 1 });
     stand(s, 300, 440);
     const lower = laneMiddle(s, 3);
     const d = put(s, "bunny", 100, lower + 20);
     const b = battery(s, 140, lower + 20);
+    const e = put(s, "envelope", 80, lower + 10);
     const g = put(s, "gum", 120, lower);
     const events = run(s, B, 70);
     expect(s.boss.lane).toBe(3);
     expect(overlapDepth(s.boss, d.x, d.y, 8)).toBe(0);
     expect(overlapDepth(s.boss, b.x, b.y, 10)).toBe(0);
-    expect([alive(s, d), alive(s, b)]).toEqual([true, true]);
+    expect(overlapDepth(s.boss, e.x, e.y, 9)).toBe(0);
+    expect([alive(s, d), alive(s, b), alive(s, e)]).toEqual([true, true, true]);
     expect(of(events, "burst")).toEqual([]);
     expect([g.x, g.y, g.hp]).toEqual([120, lower, 2]);
   });

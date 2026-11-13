@@ -146,6 +146,22 @@ export type Tune = {
   blastRadius: number;
   /** A battery caught in a blast goes off this much later, ticks. */
   blastChainTicks: number;
+  /** An envelope's flight, u/s. */
+  envelopeSpeed: number;
+  /** How fast an envelope can turn toward him, degrees per tick. */
+  envelopeTurnDeg: number;
+  /** Mass of an envelope. His mass is 1. */
+  envelopeMass: number;
+  /** The money bag's creep toward him, u/s. */
+  bagSpeed: number;
+  /** Hits the money bag takes. */
+  bagHits: number;
+  /** It lets one token out for every this many hit points it loses. */
+  bagTokenEvery: number;
+  /** A token from the bag stops and fades this long after it appeared, ticks. */
+  bagTokenLife: number;
+  /** The love heart leaves this long after it appeared, ticks. */
+  heartLife: number;
 
   // ── Score ───────────────────────────────────────────────────────────
   /** Largest chain multiplier. */
@@ -156,6 +172,8 @@ export type Tune = {
   cushionCap: number;
   /** A cushion touched within this long of the last one does not count again, ticks. */
   cushionMergeTicks: number;
+  /** For popping all five envelopes of one V in one launch, points, flat. */
+  vBonus: number;
 
   // ── Charms and offers ───────────────────────────────────────────────
   /** The offer arms this long after it opens, or sooner if he lands, ticks. */
@@ -306,6 +324,12 @@ export type Thing = {
   mine: boolean;
   /** A battery that is his: the launch its blast belongs to (§5.4); -1 while it is not his. */
   launchId: number;
+  /** An envelope: the way it flies, rad (from +x, y down the room). 0 for every other kind. */
+  heading: number;
+  /** An envelope: the V it came in, as the id of the V's leader (popping all five in one launch pays `vBonus`). -1 for every other kind. */
+  v: number;
+  /** A token the money bag let out, and the love heart: the tick it is gone (it fades, or leaves). -1 for everything else. */
+  goneTick: number;
 };
 
 /** The launch in progress, or the last one. */
@@ -340,6 +364,8 @@ export type LaunchState = {
   points: number;
   /** Things and tiles he overlapped at the release: this launch cannot pop or take one until he has left it. */
   blocked: number[];
+  /** The V of each envelope this launch has popped (by his body or Spark's ring), one entry a pop. */
+  vPops: number[];
   /** Released on a tick after the offer armed: this launch can take what is offered (§6.3). */
   armed: boolean;
   /** It took something. A launch takes one thing at most. */
@@ -401,6 +427,8 @@ export type NightState = {
   settledTick: number;
   /** Offers are made this night. Off (`start.offers` false), each hour is settled the moment its offer would have opened. */
   offers: boolean;
+  /** The love heart has come this night: it comes once at most. */
+  heartSpent: boolean;
 };
 
 /** The lanes the polisher walks, 0 (top) to 7. */
@@ -573,9 +601,9 @@ export type SimEvent =
    */
   | { type: "hurt"; tick: number; x: number; y: number; by: Thing["kind"] | "polisher"; id: number; hearts: number; blast: boolean }
   /**
-   * A counted hit on a thing that takes several: gum, or the polisher's plug
-   * (id 0). `x`, `y` is his centre as he met it (the gum's centre for a
-   * blast's hit); `left` its hits left; `points` what it paid; `two`
+   * A counted hit on a thing that takes several: gum, the money bag, or the
+   * polisher's plug (id 0). `x`, `y` is his centre as he met it (the thing's
+   * centre for a blast's hit); `left` its hits left; `points` what it paid; `two`
    * whether it counted as two (off a cushion, or Spark's ring). `source`:
    * his body, Spark's ring, or a blast of his. `stop`: gum with two left
    * stopped him dead on it, and he lands.
@@ -585,7 +613,7 @@ export type SimEvent =
       tick: number;
       x: number;
       y: number;
-      kind: "polisher" | "gum";
+      kind: "polisher" | "gum" | "bag";
       id: number;
       left: number;
       points: number;
@@ -622,6 +650,22 @@ export type SimEvent =
       set: number;
       hurt: boolean;
     }
+  /**
+   * He bounced off the money bag without a hit: this launch has hit it
+   * already (or he was on it at the release). `x`, `y` is his centre as he
+   * met it; `speed` his speed going in.
+   */
+  | { type: "bounce"; tick: number; x: number; y: number; kind: "bag"; id: number; speed: number }
+  /** All five envelopes of V `v` were popped in one launch: `points` (`vBonus`), flat, at the fifth pop. */
+  | { type: "vBonus"; tick: number; x: number; y: number; v: number; points: number }
+  /** The money bag let out a token, `id`: it appears at `x`, `y`, dazed. */
+  | { type: "bagToken"; tick: number; x: number; y: number; id: number; bag: number }
+  /** A token the money bag let out stopped and faded: it is gone, and was worth nothing. */
+  | { type: "fade"; tick: number; x: number; y: number; id: number }
+  /** The love heart: announced (`landTick` is when its tile lies there), taken (he has `hearts` now), or gone. */
+  | { type: "heartShown"; tick: number; x: number; y: number; id: number; landTick: number }
+  | { type: "heartTaken"; tick: number; x: number; y: number; id: number; hearts: number }
+  | { type: "heartGone"; tick: number; x: number; y: number; id: number }
   /** The polisher lands, at the end of its telegraph. */
   | { type: "bossArrive"; tick: number; x: number; y: number; lane: number; dir: 1 | -1 }
   /** The plug was hit: `left` hits remain; `coughed` dust bunnies came out of it. */

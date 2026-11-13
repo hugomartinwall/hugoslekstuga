@@ -32,7 +32,7 @@ import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
-import { drawBattery, drawBatteryLine, drawBlastRings, drawGum, drawTelegraph, onFloor } from "./intruders";
+import { drawBattery, drawBatteryLine, drawBlastRings, drawEnvelope, drawGum, drawTelegraph, onFloor } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
   DAZE_MARKS,
@@ -419,7 +419,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     for (const d of state.things) {
       if (state.tick >= d.landTick) continue;
       const dr = KINDS[d.kind].radius;
-      if (d.kind === "gum" || d.kind === "battery") {
+      if (d.kind === "gum" || d.kind === "battery" || d.kind === "envelope") {
         drawTelegraph(paint, d);
       } else if (d.kind === "token") {
         paint.ring(X(d.x), Y(d.y), dr * S, C.acid, ringW);
@@ -519,6 +519,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       } else if (d.kind === "battery") {
         // A tall cell with its terminal, flashing.
         drawBattery(paint, state, d, dx, dy, willHit, f.reduced);
+      } else if (d.kind === "envelope") {
+        // A wide rectangle with its flap.
+        drawEnvelope(paint, d, dx, dy, willHit);
       } else {
         // A small round body with two eyes. Dazed, it wears its marks in their place.
         paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.ash, C.ink, 0.45) : C.ash);
@@ -534,11 +537,12 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     // place of its eyes, for exactly as long as it is harmless. In a pass
     // of their own, after every body, so no neighbour is drawn over them.
     const dazeQ = Math.max(2, Math.round(S * 3));
-    ctx.fillStyle = C.ink;
     for (const d of inOrder) {
       if (state.tick >= d.dazedUntil) continue;
       const dx = d.px + (d.x - d.px) * alpha;
       const dy = d.py + (d.y - d.py) * alpha;
+      // On paper white, phosphor would not show: an envelope's marks are room dark (step 6's art settles it).
+      ctx.fillStyle = d.kind === "envelope" ? C.page : C.ink;
       for (const m of DAZE_MARKS) ctx.fillRect(Math.round(X(dx + m.x)), Math.round(Y(dy + m.y)), dazeQ, dazeQ);
     }
 

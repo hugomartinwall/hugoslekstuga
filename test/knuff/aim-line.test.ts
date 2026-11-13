@@ -277,11 +277,14 @@ describe("the line names what the real game touches", () => {
       return seed / 4294967296;
     };
     const ends: Record<string, number> = {};
-    let knocks = 0;
-    let gums = 0;
+    /** What the lines ended on, by kind: a battery is a knock, gum a hit or a stop. */
+    const on: Record<string, number> = {};
     let flying = 0;
     let moving = 0;
-    for (let room = 0; room < 500; room++) {
+    // Five hundred rooms, and then more while a kind that is built has not yet been the first thing of a line:
+    // the later kinds are rarer, and the real game and the line must agree on them too.
+    const wanted = ["battery", "gum", "envelope"];
+    for (let room = 0; room < 500 || (room < 2500 && wanted.some((k) => !on[k])); room++) {
       // A room from the middle of a night, in any of its hours: a scripted
       // player plays for a while, and the line is asked for there.
       const tune = tuned({ hearts: 99, aimCushions: room % 2 === 0 ? 1 : 2, popHotTicks: room % 5 === 0 ? 15 : 0, pace: 1 + (room % 3) });
@@ -303,14 +306,12 @@ describe("the line names what the real game touches", () => {
       expect(line.hitId, `room ${room}`).toBe(real.hitId);
       // The line has a point for where he is now, one for each whole tick before the end, and the end.
       expect(line.pts.length / 2, `room ${room}`).toBe(real.ticks + 2);
-      ends[line.end] = (ends[line.end] ?? 0) + 1;
-      const on = s.things.find((d) => d.id === line.hitId);
-      if (on?.kind === "battery") knocks++;
-      if (on?.kind === "gum") gums++;
+      if (room < 500) ends[line.end] = (ends[line.end] ?? 0) + 1;
+      const hit = s.things.find((d) => d.id === line.hitId);
+      if (hit) on[hit.kind] = (on[hit.kind] ?? 0) + 1;
     }
-    // Gum and batteries were among the first things (step 4): the real game and the line agree on them too.
-    expect(knocks).toBeGreaterThan(0);
-    expect(gums).toBeGreaterThan(0);
+    // Gum and batteries (step 4) and envelopes (step 5) were among the first things: the real game and the line agree on them too.
+    for (const kind of wanted) expect(on[kind] ?? 0, kind).toBeGreaterThan(0);
     // The rooms were of every sort: each way a line can end came up often, bar running out of time, which never does.
     expect(ends.thing).toBeGreaterThan(80);
     expect(ends.cushion).toBeGreaterThan(20);

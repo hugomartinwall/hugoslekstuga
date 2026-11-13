@@ -88,6 +88,7 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
         thrown: false,
         points: 0,
         blocked: overlapped(s),
+        vPops: [],
         // Released on a tick after the offer armed: it can take. (The
         // night's part of this tick comes after the launch, so a launch
         // released on the arming tick itself cannot.)

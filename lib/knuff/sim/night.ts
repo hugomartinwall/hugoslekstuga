@@ -41,6 +41,8 @@ export type Dealt = {
   /** Batteries: how many, and where: alone at a far spot, or beside the blob, on the side facing him. */
   battery: number;
   batteryForm: "alone" | "beside" | "";
+  /** Envelopes: the newsletter's V of five, which comes from the top edge by its own rule. */
+  envelopes: number;
   /** It brings a kind for the first time: it holds the row after it back (the pace's second rule). */
   first: boolean;
 };
@@ -68,6 +70,7 @@ function dealHour(hour: number, kinds: readonly string[]): Dealt[] {
       gumForm: "",
       battery: 0,
       batteryForm: "",
+      envelopes: 0,
       first: r.first !== "",
     };
     let any = false;
@@ -88,6 +91,8 @@ function dealHour(hour: number, kinds: readonly string[]): Dealt[] {
       } else if (p.kind === "battery" && (p.form === "alone" || p.form === "beside")) {
         d.battery += p.n;
         d.batteryForm = p.form;
+      } else if (p.kind === "envelope" && p.form === "V") {
+        d.envelopes += p.n;
       } else {
         // A kind with no rules yet. createState keeps such a kind out of the list.
         continue;
@@ -160,6 +165,7 @@ const BUNNY = KINDS.bunny;
 const TOKEN = KINDS.token;
 const GUM = KINDS.gum;
 const BATTERY = KINDS.battery;
+const ENVELOPE = KINDS.envelope;
 const PICKUP = KINDS.pickup;
 
 /** A thing's row of the kind table. (One comparison: this is asked for every thing on every tick.) */
@@ -173,6 +179,8 @@ function rowOf(d: Thing): (typeof KINDS)[Thing["kind"]] {
       return GUM;
     case "battery":
       return BATTERY;
+    case "envelope":
+      return ENVELOPE;
     case "pickup":
       return PICKUP;
   }
@@ -233,6 +241,9 @@ export function addThing(s: State, kind: Thing["kind"], x: number, y: number, la
     knockTick: -1,
     mine: false,
     launchId: -1,
+    heading: 0,
+    v: -1,
+    goneTick: -1,
   };
   s.things.push(d);
   return d;
@@ -387,6 +398,48 @@ function placeFile(s: State, tune: Tune, n: number, landTick: number, events: Si
   }
 }
 
+/** The V's leader stands this far inside the side cushions at most, u: at 61 and 299 the outer envelopes touch them. */
+const V_SIDE = 53;
+/** The V's three rows, from the leader at its tip to the back: their height under the top cushion, and how far out from the leader they stand, u. */
+const V_ROWS: readonly (readonly [number, number])[] = [
+  [41, 0],
+  [25, 22],
+  [9, 44],
+];
+
+/**
+ * The newsletter: a V of five envelopes just under the top cushion, its tip
+ * toward the room (§5.4). The leader lands at (lx, 49), lx his x at the
+ * announce tick kept between 61 and 299; if that spot is closer to him than
+ * `arriveMinDist`, lx is 61 or 299, whichever is farther from him (61 on a
+ * tie). The others land at (lx ± 22, 33) and (lx ± 44, 17). The room's own
+ * edges place it: those are the numbers in the room as built. `n` of the
+ * five come, counted from the tip: the cap cuts a V from its back. Each
+ * envelope carries the leader's id as its V.
+ */
+function placeV(s: State, tune: Tune, n: number, landTick: number, events: SimEvent[]): void {
+  if (n <= 0) return;
+  const room = s.room;
+  const h = s.him;
+  const lo = room.left + V_SIDE;
+  const hi = room.right - V_SIDE;
+  let lx = Math.min(hi, Math.max(lo, h.x));
+  const ly = room.top + V_ROWS[0][0];
+  if (Math.hypot(lx - h.x, ly - h.y) < tune.arriveMinDist) lx = Math.abs(hi - h.x) > Math.abs(lo - h.x) ? hi : lo;
+  const spots: { x: number; y: number }[] = [{ x: lx, y: ly }];
+  for (let row = 1; row < V_ROWS.length; row++) {
+    const [down, out] = V_ROWS[row];
+    spots.push({ x: lx - out, y: room.top + down }, { x: lx + out, y: room.top + down });
+  }
+  let leader = -1;
+  for (let i = 0; i < n && i < spots.length; i++) {
+    const d = addThing(s, "envelope", spots[i].x, spots[i].y, landTick, 0, 0);
+    if (leader < 0) leader = d.id;
+    d.v = leader;
+    announce(s, d, events);
+  }
+}
+
 export function announce(s: State, d: Thing, events: SimEvent[]): void {
   events.push({ type: "announce", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, landTick: d.landTick });
 }
@@ -415,11 +468,12 @@ function announceRow(s: State, tune: Tune, d: Dealt, how: "tick" | "early" | "cl
     let file = d.file;
     let gum = d.gum;
     let battery = d.battery;
+    let envelopes = d.envelopes;
     // The cap: dust bunnies are cut first, then tokens, then gum, then
-    // batteries. What is cut never arrives.
-    let over = intruders(s) + bunnies + loose + file + gum + battery - tune.roomCap;
+    // batteries, then envelopes (from the back of the V). What is cut never arrives.
+    let over = intruders(s) + bunnies + loose + file + gum + battery + envelopes - tune.roomCap;
     if (over > 0) {
-      cut = Math.min(over, bunnies + loose + file + gum + battery);
+      cut = Math.min(over, bunnies + loose + file + gum + battery + envelopes);
       const fewerBunnies = Math.min(bunnies, over);
       bunnies -= fewerBunnies;
       over -= fewerBunnies;
@@ -432,7 +486,10 @@ function announceRow(s: State, tune: Tune, d: Dealt, how: "tick" | "early" | "cl
       const fewerGum = Math.min(gum, over);
       gum -= fewerGum;
       over -= fewerGum;
-      battery -= Math.min(battery, over);
+      const fewerBatteries = Math.min(battery, over);
+      battery -= fewerBatteries;
+      over -= fewerBatteries;
+      envelopes -= Math.min(envelopes, over);
     }
     // The blob first; then what is placed by it (a battery beside, gum
     // under), or alone; then each token.
@@ -446,6 +503,8 @@ function announceRow(s: State, tune: Tune, d: Dealt, how: "tick" | "early" | "cl
     for (let i = 0; i < gum; i++) placeGum(s, tune, d.gumForm === "under" ? blob : null, lands, events);
     for (let i = 0; i < loose; i++) placeToken(s, tune, d.alone ? 20 : 9, lands, events);
     placeFile(s, tune, file, lands, events);
+    // The V comes from the top edge by its own rule, and draws nothing from the arrivals stream.
+    placeV(s, tune, envelopes, lands, events);
     announced = s.nextId - firstId;
   }
   night.rowTick = s.tick;
@@ -480,6 +539,7 @@ function extraBunch(s: State, tune: Tune): Dealt {
     gumForm: "",
     battery: 0,
     batteryForm: "",
+    envelopes: 0,
     first: false,
   };
 }
@@ -605,6 +665,17 @@ function landArrivals(s: State, tune: Tune, events: SimEvent[]): void {
     const d = s.things[i];
     if (d.landTick !== s.tick) continue;
     const dist = Math.hypot(d.x - h.x, d.y - h.y);
+    if (d.kind === "envelope") {
+      // All five of a V set off with one heading: from the leader toward him, at the landing tick.
+      let lead: Thing = d;
+      for (let k = 0; k < s.things.length; k++) {
+        if (s.things[k].id === d.v) {
+          lead = s.things[k];
+          break;
+        }
+      }
+      d.heading = Math.atan2(h.y - lead.y, h.x - lead.x);
+    }
     // Every kind that can hurt lands dazed close to him; gum hurts nothing and is never dazed.
     const dazed = dist <= tune.arriveDazedWithin && rowOf(d).hurts;
     if (dazed) daze(s, d, s.tick + tune.dazeTicks, events);

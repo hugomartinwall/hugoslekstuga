@@ -1578,3 +1578,147 @@ describe("gum and batteries in the night (step 4)", () => {
     ]);
   });
 });
+
+describe("the newsletter in the night (step 5)", () => {
+  /** The night with the V switched on: every kind built so far but the polisher, the money bag and the heart not yet. */
+  const NOW5 = ["bunny", "token", "gum", "battery", "envelope"];
+  const dealt = dealtRows(NOW5);
+
+  it("23:00 goes back to its written ticks: it opens with the V alone at tick 0", () => {
+    expect(dealt[4].map((d) => [d.row, d.tick, d.bunnies, d.loose, d.file, d.envelopes])).toEqual([
+      [0, 0, 0, 0, 0, 5],
+      [1, 342, 5, 1, 0, 0],
+      [2, 513, 0, 0, 3, 0],
+      [3, 684, 6, 1, 0, 0],
+    ]);
+    expect(dealt[4][0].first).toBe(true);
+  });
+
+  it("every V of the table is dealt, five envelopes in place of five dust bunnies: 25 in all", () => {
+    expect(dealt.flat().reduce((sum, d) => sum + d.envelopes, 0)).toBe(25);
+    // 02:00's second row, 04:00's first two and 05:00's second: a blob of the rest, the V, and the tokens.
+    for (const [hour, row] of [
+      [7, 1],
+      [9, 0],
+      [9, 1],
+      [10, 1],
+    ] as const) {
+      const d = dealt[hour].find((x) => x.row === row)!;
+      expect(d.envelopes, CLOCK[hour]).toBe(5);
+      expect(d.bunnies + d.envelopes, CLOCK[hour]).toBe(BUNCH[hour][0]);
+      expect(d.first).toBe(false);
+    }
+    // An extra bunch never carries one, and the step-1 night none at all.
+    expect(dealtRows(STEP1).flat().some((d) => d.envelopes > 0)).toBe(false);
+  });
+
+  it("the first V comes alone at tick 0 of 23:00, as the only thing the hour has sent, a telegraph before it lands", () => {
+    for (const pace of [1, 2, 3]) {
+      const night = new Night({ pace }, { hour: 4, kinds: NOW5 });
+      night.run(1);
+      expect(night.rows()).toEqual([{ hour: 4, row: 0, how: "tick", at: 0, n: 5, cut: 0 }]);
+      expect(night.s.things.map((d) => d.kind)).toEqual(["envelope", "envelope", "envelope", "envelope", "envelope"]);
+      expect(night.s.things.every((d) => d.landTick === 36)).toBe(true);
+    }
+  });
+
+  it("the leader lands at his x, 49 u down, kept between 61 and 299; the others at ±22, 33 and ±44, 17", () => {
+    const placed = (x: number, y = 374) => {
+      const night = new Night({ pace: 1 }, { hour: 4, kinds: NOW5 });
+      night.s.him.x = x;
+      night.s.him.y = y;
+      night.run(1);
+      return night.s.things.map((d) => [d.x, d.y]);
+    };
+    expect(placed(180)).toEqual([
+      [180, 49],
+      [158, 33],
+      [202, 33],
+      [136, 17],
+      [224, 17],
+    ]);
+    expect(placed(30)[0]).toEqual([61, 49]);
+    expect(placed(340)[0]).toEqual([299, 49]);
+    // Every V is one leader and its four, each carrying the leader's id.
+    const night = new Night({ pace: 1 }, { hour: 4, kinds: NOW5 });
+    night.run(1);
+    const lead = night.s.things[0].id;
+    expect(night.s.things.map((d) => d.v)).toEqual([lead, lead, lead, lead, lead]);
+  });
+
+  it("if that spot is closer to him than 150 u, the leader lands at 61 or 299, whichever is farther from him; on a tie, 61", () => {
+    const leader = (x: number, y: number) => {
+      const night = new Night({ pace: 1 }, { hour: 4, kinds: NOW5 });
+      night.s.him.x = x;
+      night.s.him.y = y;
+      night.run(1);
+      return [night.s.things[0].x, night.s.things[0].y];
+    };
+    // He stands high in the room: his own x would put the leader on him.
+    expect(leader(100, 120)).toEqual([299, 49]);
+    expect(leader(250, 120)).toEqual([61, 49]);
+    expect(leader(180, 120)).toEqual([61, 49]);
+    // 150 u away is far enough.
+    expect(leader(180, 49 + 150)).toEqual([180, 49]);
+    expect(leader(180, 49 + 149.9)).toEqual([61, 49]);
+  });
+
+  it("all five set off with one heading, from the leader toward him at the landing tick, at 60 u/s", () => {
+    const night = new Night({ pace: 1, envelopeTurnDeg: 0, envelopeSpeed: 60 }, { hour: 4, kinds: NOW5 });
+    night.run(1);
+    // He moves before they land: the heading is his bearing from the leader as they land.
+    night.s.him.x = 100;
+    night.s.him.y = 400;
+    night.through(36);
+    const [lead, ...rest] = night.s.things;
+    const heading = Math.atan2(400 - 49, 100 - 180);
+    expect(lead.heading).toBeCloseTo(heading, 12);
+    for (const d of rest) expect(d.heading).toBeCloseTo(heading, 12);
+    night.run(1);
+    for (const d of night.s.things) expect(Math.hypot(d.x - d.px, d.y - d.py)).toBeCloseTo(1, 9);
+  });
+
+  it("an envelope that lands within 60 u of him lands dazed", () => {
+    const night = new Night({ pace: 1 }, { hour: 4, kinds: NOW5 });
+    night.run(1);
+    night.s.him.x = 180;
+    night.s.him.y = 49 + 50;
+    night.through(36);
+    const arrived = of(night.events, "arrive");
+    expect(arrived.map((e) => e.dazed)).toEqual(arrived.map((e) => e.dist <= 60));
+    expect(arrived.some((e) => e.dazed)).toBe(true);
+  });
+
+  it("the cap cuts envelopes after batteries, from the back of the V: the leader goes last", () => {
+    // 02:00's second row: two dust bunnies, the V and two tokens.
+    const cut = (room: number) => {
+      const night = new Night({ pace: 1 }, { hour: 7, kinds: NOW5 });
+      night.run(1);
+      night.empty();
+      for (let i = 0; i < room; i++) put(night.s, "bunny", 20 + (i % 10) * 30, 200 + Math.floor(i / 10) * 30);
+      night.through(342);
+      const row = night.rows(7)[1];
+      const came = night.s.things.slice(room);
+      return { n: row.n, cut: row.cut, came: came.map((d) => d.kind), xs: came.filter((d) => d.kind === "envelope").map((d) => d.x - came.find((e) => e.kind === "envelope")!.x) };
+    };
+    expect(cut(15)).toMatchObject({ n: 9, cut: 0, xs: [0, -22, 22, -44, 44] });
+    expect(cut(18)).toMatchObject({ n: 6, cut: 3, came: ["token", "envelope", "envelope", "envelope", "envelope", "envelope"] });
+    expect(cut(20)).toMatchObject({ n: 4, cut: 5, xs: [0, -22, 22, -44] });
+    expect(cut(23)).toMatchObject({ n: 1, cut: 8, xs: [0] });
+    expect(cut(24)).toMatchObject({ n: 0, cut: 9, came: [] });
+  });
+
+  it("at pace 2 the first V holds the row after it until every envelope is gone, or 342 comes", () => {
+    const night = new Night({}, { hour: 4, kinds: NOW5 });
+    night.through(200);
+    expect(night.rows(4)).toHaveLength(1);
+    // Four popped, one left: still held.
+    night.leave(1).run(1);
+    expect(night.rows(4)).toHaveLength(1);
+    night.empty().run(1);
+    expect(night.rows(4).map((r) => [r.row, r.how])).toEqual([
+      [0, "tick"],
+      [1, "early"],
+    ]);
+  });
+});

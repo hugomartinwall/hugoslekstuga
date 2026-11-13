@@ -67,3 +67,22 @@ export function scorePop(s: State, d: Thing, tune: Tune, body: boolean): PopScor
   if (l.points > s.bestShot) s.bestShot = l.points;
   return { n: l.pops, chain, cushions, coin, points };
 }
+
+/**
+ * An envelope popped by his body or Spark's ring is counted toward its V.
+ * The fifth of one V in one launch pays `vBonus`, flat, into the launch's
+ * total (a blast pop does not count, and a V the cap cut cannot reach
+ * five). Returns what it paid: `vBonus`, or 0.
+ */
+export function scoreV(s: State, d: Thing, tune: Tune): number {
+  if (d.kind !== "envelope" || d.v < 0) return 0;
+  const l = s.launch;
+  l.vPops.push(d.v);
+  let n = 0;
+  for (let i = 0; i < l.vPops.length; i++) if (l.vPops[i] === d.v) n++;
+  if (n !== 5) return 0;
+  l.points += tune.vBonus;
+  s.score += tune.vBonus;
+  if (l.points > s.bestShot) s.bestShot = l.points;
+  return tune.vBonus;
+}

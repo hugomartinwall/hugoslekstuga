@@ -460,6 +460,7 @@ function throwHim(s: State, tune: Tune, vx: number, vy: number, hurt: boolean, m
     thrown: true,
     points: 0,
     blocked: overlapped(s),
+    vPops: [],
     armed: armedLaunch(s),
     took: false,
     popped: false,

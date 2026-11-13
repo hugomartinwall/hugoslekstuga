@@ -67,6 +67,26 @@ export type Effects = {
 };
 
 /** `radiusNow` is his radius after charms in the State the events came from: Wide makes it larger. */
+/** The colour a kind's squares fly in when it pops or lands. */
+function kindColor(kind: string): string {
+  switch (kind) {
+    case "token":
+      return C.acid;
+    case "gum":
+      return C.magenta;
+    case "battery":
+      return C.amber;
+    case "envelope":
+      return C.paper;
+    case "bag":
+      return C.mint;
+    case "heart":
+      return C.coral;
+    default:
+      return C.ash;
+  }
+}
+
 export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () => tuneNow().himRadius): Effects {
   const particles: Particle[] = [];
   const trail: TrailDot[] = [];
@@ -140,7 +160,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           return 0;
         }
         case "pop": {
-          burst(e.x, e.y, 12, 190, e.kind === "token" ? C.acid : C.ash, 3);
+          burst(e.x, e.y, 12, 190, kindColor(e.kind), 3);
           // A blast's pops: no freeze, no multiplier (they are flat), the squares only.
           if (e.source === "blast") return 0;
           burst(e.x, e.y, 5, 110, C.ink, 2);
@@ -185,9 +205,16 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           return 0;
         case "arrive":
           // The outline snaps solid, with four dust squares.
-          burst(e.x, e.y, reduced ? 3 : 4, 70, e.kind === "token" ? C.acid : e.kind === "gum" ? C.magenta : e.kind === "battery" ? C.amber : C.ash, 2);
+          burst(e.x, e.y, reduced ? 3 : 4, 70, kindColor(e.kind), 2);
           return 0;
         case "hit":
+          if (e.kind === "bag") {
+            // The money bag: mint squares, and what the hit paid.
+            burst(e.x, e.y, e.left > 0 ? 10 : 24, 180, C.mint, 3);
+            if (!reduced) fx.shake = Math.max(fx.shake, e.two ? 5 : 3);
+            float(e.x, e.y - 14, String(e.points), e.two);
+            return 0;
+          }
           if (e.kind === "gum") {
             // Gum: magenta squares, and what it paid. A stop is a landing too (its own ring follows).
             burst(e.x, e.y, e.left > 0 ? 8 : 14, 160, C.magenta, 3);
@@ -213,6 +240,29 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           burst(e.x, e.y, 8, 160, C.ink, 2);
           if (!reduced) fx.shake = Math.max(fx.shake, 6);
           if (e.mine && e.points > 0) float(e.x, e.y - 16, String(e.points), e.points >= 100);
+          return 0;
+        case "bounce":
+          // Off the money bag with no hit: it has had this launch's.
+          burst(e.x, e.y, 4, 100, C.mint, 2);
+          if (!reduced) fx.shake = Math.max(fx.shake, 1.5);
+          return 0;
+        case "vBonus":
+          // All five of a V in one launch.
+          burst(e.x, e.y, 16, 220, C.paper, 3);
+          float(e.x, e.y - 18, `V ${e.points}`, true);
+          return 0;
+        case "bagToken":
+          burst(e.x, e.y, 6, 120, C.acid, 2);
+          return 0;
+        case "fade":
+          burst(e.x, e.y, 4, 50, C.acid, 2);
+          return 0;
+        case "heartTaken":
+          burst(e.x, e.y, 16, 200, C.coral, 3);
+          float(e.x, e.y - 18, "+1", true);
+          return 0;
+        case "heartGone":
+          burst(e.x, e.y, 6, 60, C.coral, 2);
           return 0;
         case "bossBounce":
           burst(e.x, e.y, 4, 100, C.inkMuted, 2);

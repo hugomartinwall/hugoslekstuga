@@ -15,6 +15,9 @@ import type { State, Thing, Tune } from "../sim/types";
 import type { Paint } from "./renderer";
 import { C, mix, rgba } from "./palette";
 
+/** An envelope, in units (§5.1): a wide rectangle; it collides as a circle of radius 9. */
+const ENV_W = 20;
+const ENV_H = 14;
 /** Gum's box and a battery's cell, in units (§5.1). The battery collides as a circle of radius 10. */
 const GUM_W = 28;
 const GUM_H = 12;
@@ -65,10 +68,29 @@ function brokenBox(p: Paint, cx: number, cy: number, w: number, h: number, color
   }
 }
 
-/** An announced piece of gum or battery: the broken outline of its footprint, full bright, steady. */
+/** An announced piece of gum, battery or envelope: the broken outline of its footprint, full bright, steady. */
 export function drawTelegraph(p: Paint, d: Thing): void {
   if (d.kind === "gum") brokenBox(p, d.x, d.y, GUM_W, GUM_H, C.magenta);
   else if (d.kind === "battery") brokenBox(p, d.x, d.y + NUB_H / 2, CELL_W, CELL_H, C.amber);
+  else if (d.kind === "envelope") brokenBox(p, d.x, d.y, ENV_W, ENV_H, C.paper);
+}
+
+/**
+ * An envelope: a wide paper-white rectangle with its flap drawn as a dark
+ * V from the top corners to the middle. It does not turn: kind is told by
+ * outline, and a rectangle that turned would read as another shape.
+ */
+export function drawEnvelope(p: Paint, d: Thing, x: number, y: number, willHit: boolean): void {
+  const body = willHit ? mix(C.paper, C.ink, 0.45) : C.paper;
+  const x0 = x - ENV_W / 2;
+  const y0 = y - ENV_H / 2;
+  rect(p, x0, y0, ENV_W, ENV_H, body);
+  // The flap: two runs of 2 u steps from the top corners down to the middle.
+  const dark = rgba(C.page, 0.75);
+  for (let i = 0; i < 5; i++) {
+    rect(p, x0 + 1 + i * 2, y0 + 1 + i, 2, 1.5, dark);
+    rect(p, x0 + ENV_W - 3 - i * 2, y0 + 1 + i, 2, 1.5, dark);
+  }
 }
 
 /**

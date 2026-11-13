@@ -61,6 +61,9 @@ export function put(s: State, kind: Thing["kind"], x: number, y: number, over: P
     knockTick: -1,
     mine: false,
     launchId: -1,
+    heading: 0,
+    v: -1,
+    goneTick: -1,
     ...over,
   };
   s.things.push(d);

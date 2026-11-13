@@ -21,6 +21,8 @@ export const C = {
   /** The darkest the floor gets (03:00), and the warm it turns toward morning. */
   floorNight: "#07080f",
   floorWarm: "#1d1612",
+  /** An envelope: paper white, a shade off phosphor. */
+  paper: "#f6f0dc",
   /** A raised key (--color-panel). */
   panel: "#1e2136",
   /** The polisher's casing, and the grey of its pad while the pad is off: grey boxes until the art comes. */

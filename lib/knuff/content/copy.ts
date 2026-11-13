@@ -65,6 +65,8 @@ export const KIND_NAME: Readonly<Record<string, string>> = {
   bunny: "a dust bunny",
   token: "a runaway token",
   battery: "a battery",
+  envelope: "a newsletter",
+  bag: "venture capital",
   polisher: "the floor polisher",
 };
 
