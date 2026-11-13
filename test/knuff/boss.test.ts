@@ -728,6 +728,31 @@ describe("the aim line on the polisher", () => {
     him(s, 330, 212);
     expect(aimLine(s, { dx: -1, dy: 0, power: 1 }, T).end).toBe("pad");
   });
+
+  it("says when the launch meets the pad after the line has ended, which will cost a heart", () => {
+    const s = landed();
+    // The pad heading right in lane 3, its leading end at 150; a dust bunny between it and him.
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    him(s, 330, 212);
+    const d = put(s, "bunny", 260, 212, { dazedUntil: 1_000_000 });
+    const left = { dx: -1, dy: 0, power: 1 };
+    const line = aimLine(s, left, T);
+    expect([line.end, line.hitId, line.padAfter]).toEqual(["thing", d.id, true]);
+    // The real launch pops it and runs on into the pad.
+    const real = cloneState(s);
+    const ev = launchAnd(real, T, { launch: left, pullHeld: false }, (e) => of(e, "bossThrow").length > 0, 120);
+    expect(of(ev, "pop").map((e) => e.id)).toEqual([d.id]);
+    expect(of(ev, "hurt").map((e) => e.by)).toEqual(["polisher"]);
+    // Not when it would cost nothing: invulnerable, or with padHurtsHot off.
+    s.him.invulnUntil = s.tick + 1000;
+    expect(aimLine(s, left, T).padAfter).toBe(false);
+    s.him.invulnUntil = 0;
+    expect(aimLine(s, left, tuned({ ...QUIET, padHurtsHot: false })).padAfter).toBe(false);
+    // Nor when the line ends on the pad itself: that end is the pad's own.
+    d.hp = 0;
+    s.things.length = 0;
+    expect([aimLine(s, left, T).end, aimLine(s, left, T).padAfter]).toEqual(["pad", false]);
+  });
 });
 
 describe("he is never inside its box", () => {

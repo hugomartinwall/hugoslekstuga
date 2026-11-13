@@ -9,7 +9,12 @@
  *
  * It also says which charm the top bar names while the pull is held
  * (§4.2, §9.3): the offered thing the launch would take, or else the lit
- * plate that is its first cushion.
+ * plate that is its first cushion. The words come before the choice, so
+ * the copy is run on past the line's end to the end of the launch (within
+ * the same 120 ticks): a launch that pops a dust bunny and then takes the
+ * plate behind it is named as well. On that same run it learns whether the
+ * launch meets the polisher's pad after the line has ended, which will
+ * cost a heart: the end is then marked in coral, as the pad's own is.
  */
 import { cloneState } from "./state";
 import { step } from "./step";
@@ -40,6 +45,8 @@ export type AimLine = {
    * the one on the lit plate that is its first cushion; "" for none.
    */
   charm: string;
+  /** The launch meets the pad after the line has ended (within the 120 ticks), and that will cost a heart. */
+  padAfter: boolean;
 };
 
 /** How far ahead the line looks, in ticks. */
@@ -52,13 +59,15 @@ const NO_INPUT: Input = { launch: null, pullHeld: false };
  * cushions and stops at the next. The State is left as it was.
  */
 export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TICKS): AimLine {
-  const out: AimLine = { pts: [s.him.x, s.him.y], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "" };
+  const out: AimLine = { pts: [s.him.x, s.him.y], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "", padAfter: false };
   const copy = cloneState(s);
   // With no pip the real step refuses the launch, and the grey line of an
   // empty hand would have nothing to show: the copy is given one.
   if (copy.pips <= 0) copy.pips = 1;
   const launches = copy.launch.id;
   const events: SimEvent[] = [];
+  /** The line is still being drawn; once it has ended, the copy runs on only to see what the launch takes. */
+  let drawing = true;
   for (let t = 0; t < maxTicks; t++) {
     events.length = 0;
     step(copy, t === 0 ? { launch, pullHeld: false } : NO_INPUT, tune, events);
@@ -69,6 +78,8 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
       if (e.type === "offerTaken") {
         out.takes = e.item;
         out.charm = e.charm;
+      } else if (!drawing) {
+        if (e.type === "bossThrow" && e.hurt) out.padAfter = true;
       } else if (e.type === "cushion") {
         if (out.plate < 0) {
           out.plate = e.plate;
@@ -80,35 +91,37 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
         if (out.cushionPts.length / 2 > tune.aimCushions) {
           out.pts.push(e.x, e.y);
           out.end = "cushion";
-          return out;
+          drawing = false;
         }
       } else if (e.type === "pop") {
         out.pts.push(e.hx, e.hy);
         out.end = "thing";
         out.hitId = e.id;
-        return out;
+        drawing = false;
       } else if (e.type === "hit") {
         out.pts.push(e.x, e.y);
         out.end = "thing";
         out.hitId = e.id;
-        return out;
+        drawing = false;
       } else if (e.type === "bossBounce") {
         out.pts.push(e.x, e.y);
         out.end = "polisher";
-        return out;
+        drawing = false;
       } else if (e.type === "bossThrow") {
         out.pts.push(e.x, e.y);
         out.end = "pad";
-        return out;
+        drawing = false;
       } else if (e.type === "land") {
         out.pts.push(e.x, e.y);
         out.end = "land";
-        return out;
+        drawing = false;
       }
     }
-    out.pts.push(copy.him.x, copy.him.y);
+    if (drawing) out.pts.push(copy.him.x, copy.him.y);
     // The night ended under him (morning came): the line stops where he was.
     if (copy.phase === "over") return out;
+    // The line has ended, and so has the launch (he landed, or the pad threw him: a launch of its own).
+    if (!drawing && (!copy.launch.active || copy.launch.id !== launches + 1)) return out;
   }
   return out;
 }

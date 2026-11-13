@@ -3,7 +3,7 @@ import { AIM_TICKS, aimLine } from "../../lib/knuff/sim/aim";
 import { cloneState, createState, hashState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
 import type { Launch, SimEvent, State, Tune } from "../../lib/knuff/sim/types";
-import { REST, distance, night, put, run, scripted, shot, tick, tuned } from "./room";
+import { REST, distance, night, put, run, scripted, shot, tick, tuned, until } from "./room";
 
 /**
  * The aim line (§4.2) is the real step run on a copy: copy the State,
@@ -129,7 +129,7 @@ describe("the aim line in an empty room", () => {
 
   it("a launch with no direction has no line, and neither has a night that is over", () => {
     const s = night(tune);
-    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "" });
+    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "", padAfter: false });
     s.phase = "over";
     expect(aimLine(s, UP, tune).pts).toEqual([180, 374]);
   });
@@ -355,6 +355,51 @@ describe("the charm the line names (§4.2, §9.3)", () => {
     const o = offered();
     o.plates[1] = { charm: "coin", readyTick: 0 };
     expect(aimLine(o, UP, tune).charm).toBe("heavy");
+  });
+
+  it("names what the launch takes after the line has ended: the words come before the choice", () => {
+    // A dust bunny on his way to the offered plate 9: the line ends on it, and the launch goes on to take the plate.
+    const s = offered();
+    const u = Math.hypot(1, 1.5);
+    const near = put(s, "bunny", 180 - 60 / u, 374 - 90 / u);
+    const left = aimLine(s, { dx: -1, dy: -1.5, power: 1 }, tune);
+    expect([left.end, left.hitId]).toEqual(["thing", near.id]);
+    expect([left.plate, left.takes, left.charm]).toEqual([-1, 0, "spark"]);
+    // And a dust bunny on his way to the pickup: the line ends on it, and the tile behind it is taken.
+    const o = offered();
+    const first = put(o, "bunny", 180, 320);
+    const up = aimLine(o, UP, tune);
+    expect([up.end, up.hitId]).toEqual(["thing", first.id]);
+    expect([up.takes, up.charm]).toEqual([1, "heavy"]);
+    // What the line names is what the real launch takes.
+    tick(o, tune, { launch: UP, pullHeld: false });
+    const ev = until(o, tune, (e) => e.some((x) => x.type === "launchEnd"), AIM_TICKS);
+    expect(ev.filter((e) => e.type === "offerTaken").map((e) => (e.type === "offerTaken" ? e.charm : ""))).toEqual(["heavy"]);
+    // The points drawn are the line's own: they end at the pop.
+    const [x, y] = up.pts.slice(-2);
+    expect(Math.hypot(first.x - x, first.y - y)).toBeLessThan(21);
+  });
+
+  it("names a pickup the launch takes only after the cushion the line stops at", () => {
+    const s = offered();
+    // The offered plate out of the way, on the bottom cushion; the tile where the launch comes down after two cushions.
+    s.offer.items[0] = { ...s.offer.items[0], plate: 6 };
+    const tile = s.things.find((d) => d.kind === "pickup")!;
+    tile.x = tile.px = 149;
+    tile.y = tile.py = 143;
+    // Up and to the left: plate 9, then the top cushion, where the line stops, and back down onto the tile.
+    const launch = { dx: -1, dy: -1.6, power: 1 };
+    const line = aimLine(s, launch, tune);
+    expect(line.end).toBe("cushion");
+    expect([line.takes, line.charm]).toEqual([1, "heavy"]);
+    // The real launch takes it, after its second cushion.
+    const real = cloneState(s);
+    const ev = [...tick(real, tune, { launch, pullHeld: false }), ...until(real, tune, (e) => e.some((x) => x.type === "launchEnd"), AIM_TICKS)];
+    const cushions = ev.filter((e) => e.type === "cushion");
+    const took = ev.filter((e) => e.type === "offerTaken");
+    expect(cushions.length).toBeGreaterThanOrEqual(2);
+    expect(took).toHaveLength(1);
+    expect(took[0].tick).toBeGreaterThan(cushions[1].tick);
   });
 
   it("names nothing a launch released now could not take: an offer that has not armed", () => {
