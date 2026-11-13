@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -79,5 +80,33 @@ describe("room or list: the stylesheet's copy of the question", () => {
       expect(classes, file).not.toMatch(display);
       expect(classes, file).not.toMatch(/(^|\s)not-room:/);
     }
+  });
+});
+
+describe("room or list: the question survives the production build", () => {
+  // Next's minifier once folded ROOM_MEDIA, written as two template
+  // literals joined with `+`, into "(min-height: 35 and (min-width: ...":
+  // "rem)" was lost, matchMedia never matched, and every built page
+  // showed an empty room. The dev server does not minify, so only a run
+  // of the same minifier over the file can catch it.
+  it("Next's SWC minifier keeps ROOM_MEDIA whole", async () => {
+    const require = createRequire(import.meta.url);
+    const swc = require("next/dist/build/swc/index.js") as {
+      loadBindings?: () => Promise<unknown>;
+      transform: (src: string, opts: object) => Promise<{ code: string }>;
+    };
+    await swc.loadBindings?.();
+    const file = join(__dirname, "..", "..", "lib", "home-layout.ts");
+    const { code } = await swc.transform(readFileSync(file, "utf8"), {
+      filename: "home-layout.ts",
+      jsc: {
+        parser: { syntax: "typescript" },
+        target: "es2022",
+        minify: { compress: true, mangle: true },
+      },
+      minify: true,
+      module: { type: "es6" },
+    });
+    expect(code).toContain(ROOM_MEDIA);
   });
 });

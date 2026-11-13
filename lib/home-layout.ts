@@ -67,10 +67,14 @@ const PX_PER_REM = 16;
  * the room in a window the stylesheet was laying out as the list, and
  * written for the width alone it gave the room to windows too short to
  * hold it.
+ *
+ * One template literal, not two joined with `+`: the production
+ * minifier folded the pair into "(min-height: 35 and (min-width: ...",
+ * which never matches, so the built site showed an empty room. The dev
+ * server does not minify and never showed it. test/home/room-media
+ * runs the minifier over this file.
  */
-export const ROOM_MEDIA =
-  `(min-width: ${ROOM_MIN_WIDTH_REM}rem) and (min-height: ${ROOM_MIN_HEIGHT_REM}rem)` +
-  ` and (min-width: ${ROOM_MIN_WIDTH_REM * PX_PER_REM}px) and (min-height: ${ROOM_MIN_HEIGHT_REM * PX_PER_REM}px)`;
+export const ROOM_MEDIA = `(min-width: ${ROOM_MIN_WIDTH_REM}rem) and (min-height: ${ROOM_MIN_HEIGHT_REM}rem) and (min-width: ${ROOM_MIN_WIDTH_REM * PX_PER_REM}px) and (min-height: ${ROOM_MIN_HEIGHT_REM * PX_PER_REM}px)`;
 
 export type CabinetRow = {
   /** Canvas px per cabinet grid unit (3 = 114×126). */
