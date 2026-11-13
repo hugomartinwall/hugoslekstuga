@@ -10,10 +10,14 @@
  *       [--tune='{"popHotTicks":15}']
  *       [--pace=1|2|3]           the same as --tune='{"pace":3}'
  *       [--plates]               the step-1 table with the two starting plates lit (Bumper on 0, Pip on 4)
+ *       [--whole]                both tables of §13.2 on the whole night (from step 5, the one that gates):
+ *                                every kind in its rows, the two starting plates lit, 06:00 with the
+ *                                polisher; nothing offered to the players without charms, and the
+ *                                players who take one (Ordinary and Expert, takes one) with the offers made
  *       [--now]                  the step-1 table on the night as it now stands: the step-1 night with
  *                                every kind built so far but the polisher switched on in its rows (gum
- *                                and batteries since step 4), plates dark, nothing offered; it still ends
- *                                when 05:00 ends, where the table counts to
+ *                                and batteries since step 4; the V, the money bag and the heart since
+ *                                step 5), plates dark, nothing offered; it still ends when 05:00 ends
  *       [--charms]               the charm test of §13.3: 120 nights a charm (--seeds), from 23:00,
  *                                for the Expert and the Ordinary (--player=expert or ordinary);
  *                                --arms=bell,coin runs those charms only, beside the arm without one
@@ -36,7 +40,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BOSS_FIGHTS, BOSS_PLAYERS, fightStart, printFights, sumFights, type FightSum } from "../lib/knuff/bots/boss";
 import { CHARM_ARMS, CHARM_NIGHTS, CHARM_PLAYERS, charmNight, printCharmTest, printOffers, sumCharm, type CharmSum } from "../lib/knuff/bots/charms";
-import { CAST, STEP1_NIGHT, TAKERS, nightSeed, player, runNight, type Night } from "../lib/knuff/bots/driver";
+import { CAST, STEP1_NIGHT, TAKERS, nightSeed, player, runNight, wholeNightFor, type Night } from "../lib/knuff/bots/driver";
 import { printTable, summarise, type Sum } from "../lib/knuff/bots/table";
 import { START_PLATES } from "../lib/knuff/content/charms";
 import { BUILT } from "../lib/knuff/content/kinds";
@@ -61,6 +65,7 @@ const outDir = option("out");
 const tag = option("tag") ?? "table";
 const lit = process.argv.includes("--plates");
 const now = process.argv.includes("--now");
+const whole = process.argv.includes("--whole");
 
 // --from=23 is a clock hour; the State counts hours from 19:00.
 const fromClock = option("from");
@@ -162,6 +167,26 @@ if (process.argv.includes("--offers")) {
   const lines = printOffers(rows, `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; the night as it stands at step 2 (dust bunnies and tokens, the two starting plates lit, offers made)${fromHour ? `, from ${CLOCK[fromHour]}` : ""}; nights ${first} on (half as many for the Expert)`);
   console.log(lines.join("\n"));
   process.exit(0);
+}
+
+if (whole) {
+  // Both tables on the whole night: every player of the cast, and the two who take one charm an offer.
+  const keys = asked ?? [...CAST, ...TAKERS].map((c) => c.key);
+  const wsums = new Map<string, Sum>();
+  for (const key of keys) {
+    const def = player(key);
+    const { nights, secs } = nightsOf(key, nightsFor(key), { ...wholeNightFor(key), hour: fromHour }, fileFor(`whole__${key}`));
+    wsums.set(key, summarise(key, def.label, nights, tune, secs));
+  }
+  const wtitle = `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; the WHOLE NIGHT (every kind in its rows, the two starting plates lit, 06:00 with the polisher; nothing offered to the players without charms, offers made to the two who take one)${fromHour ? `, from ${CLOCK[fromHour]}` : ""}; nights ${first} to ${first + seeds - 1} (half as many for the Expert and the Corner)${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`;
+  const t = printTable(
+    wtitle,
+    [...CAST, ...TAKERS].map((c) => c.key),
+    wsums,
+    tune,
+  );
+  console.log(t.lines.join("\n"));
+  process.exit(t.fails > 0 ? 1 : 0);
 }
 
 const sums = new Map<string, Sum>();

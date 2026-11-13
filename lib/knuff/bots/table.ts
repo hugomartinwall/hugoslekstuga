@@ -10,7 +10,7 @@
  */
 import { CLOCK, HOURS } from "../content/night";
 import type { Tune } from "../sim/types";
-import { realSeconds, type Batteries, type Night } from "./driver";
+import { realSeconds, type Batteries, type Later, type Night } from "./driver";
 
 export function median(xs: readonly number[]): number {
   if (xs.length === 0) return NaN;
@@ -44,17 +44,31 @@ export type Sum = {
   /** Hearts lost to a battery: by its touch, and by a blast. */
   heartsByBattery: number;
   heartsByBlast: number;
+  /** Hearts lost to an envelope, to the money bag, and to the polisher's pad. */
+  heartsByEnvelope: number;
+  heartsByBag: number;
+  heartsByPolisher: number;
   hearts: number;
   nightsWithHeart: number;
   /** Nights with a heart lost within 120 ticks of the first launch. */
   earlyHeartNights: number;
   unfair: number;
-  /** Nights that reached the end of 05:00: simulated seconds. */
+  /** Nights that reached the end of 05:00: simulated seconds to the end of 05:00. */
   doneN: number;
   doneSimMin: number;
   doneSimMedian: number;
   doneSimMax: number;
   doneRealMedian: number;
+  /** Nights that reached morning (the polisher beaten): simulated seconds to the end, and real. */
+  morningN: number;
+  morningSimMin: number;
+  morningSimMedian: number;
+  morningSimMax: number;
+  morningRealMedian: number;
+  /** Nights that reached 06:00, and those that ended there with the lights on (dawn), or on the last heart. */
+  bossN: number;
+  dawnN: number;
+  bossLostN: number;
   /** Share of ticks with nothing alive or announced, all nights pooled: with the pause between hours, and with it taken out. */
   emptyShare: number;
   emptyShareNoPause: number;
@@ -72,10 +86,12 @@ export type Sum = {
   tokenSeen: number;
   tokenAlone: number;
   tokenAloneTicksMedian: number;
-  /** For each kind with a first row: nights it came, nights it came alone at tick 0 of its hour, nights its first row was cut whole. */
-  firsts: Record<string, { seen: number; alone: number; cutWhole: number; aloneTicksMedian: number }>;
+  /** For each kind with a first row: nights it came, nights it came alone at tick 0 of its hour, nights its first row was cut whole, and cut in part (still alone). */
+  firsts: Record<string, { seen: number; alone: number; cutWhole: number; cutPart: number; aloneTicksMedian: number }>;
   /** Batteries and gum, summed over the nights (driver.ts, `Batteries`). */
   batteries: Batteries;
+  /** The newsletter, venture capital and the love heart, summed over the nights (driver.ts, `Later`). */
+  later: Later;
   heartsByHour: number[];
   hourLenMedian: number[];
   launchesPerNight: number;
@@ -88,13 +104,20 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
   const n = nights.length;
   const aliveAt: number[] = [];
   for (let h = 0; h <= HOURS; h++) aliveAt.push(nights.filter((x) => x.hour >= h).length);
-  const done = nights.filter((x) => x.ended === "morning");
+  // Lived to the end of 05:00: on a night with the polisher that is 06:00's first tick, on one without it the end.
+  const done = nights.filter((x) => x.end05 >= 0);
   const sim = (x: Night) => x.ticks / 60;
+  const sim05 = (x: Night) => x.end05 / 60;
+  const morning = nights.filter((x) => x.ended === "morning" && x.fight.began >= 0);
+  const boss = nights.filter((x) => x.fight.began >= 0);
   let hearts = 0;
   let byBunny = 0;
   let byToken = 0;
   let byBattery = 0;
   let byBlast = 0;
+  let byEnvelope = 0;
+  let byBag = 0;
+  let byPolisher = 0;
   let early = 0;
   let unfair = 0;
   let ticks = 0;
@@ -124,6 +147,9 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
       if (l.by === "bunny") byBunny++;
       else if (l.by === "token") byToken++;
       else if (l.by === "battery") byBattery++;
+      else if (l.by === "envelope") byEnvelope++;
+      else if (l.by === "bag") byBag++;
+      else if (l.by === "polisher") byPolisher++;
       if (l.tick <= 120) soon = true;
       if (l.hour < HOURS) heartsByHour[l.hour]++;
     }
@@ -151,14 +177,17 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
   }
   // Blasts are counted by the driver (a battery's touch and its blast are both "battery" in the losses).
   const batteries: Batteries = { knocks: 0, burstsMine: 0, burstsNotMine: 0, blastPops: 0, blastBunnies: 0, touchHearts: 0, blastHearts: 0, mineHearts: 0, knockedHearts: 0, blastWrong: 0, gumHits: 0, gumStops: 0 };
+  const later: Later = { envelopePops: 0, vBonuses: 0, bags: 0, bagHits: 0, bagsBeaten: 0, bagTokens: 0, bagsClose: 0, bagCloseHearts: 0, bagBounces: 0, heartsShown: 0, heartsTaken: 0 };
   const firsts: Sum["firsts"] = {};
   const aloneTicks: Record<string, number[]> = {};
   for (const x of nights) {
     const b = x.batteries;
     for (const k of Object.keys(batteries) as (keyof Batteries)[]) batteries[k] += b[k];
+    for (const k of Object.keys(later) as (keyof Later)[]) later[k] += x.later[k];
     for (const f of x.firsts) {
-      const t = (firsts[f.kind] ??= { seen: 0, alone: 0, cutWhole: 0, aloneTicksMedian: NaN });
+      const t = (firsts[f.kind] ??= { seen: 0, alone: 0, cutWhole: 0, cutPart: 0, aloneTicksMedian: NaN });
       if (f.cutWhole) t.cutWhole++;
+      if (f.cutPart) t.cutPart++;
       if (f.hour < 0) continue;
       t.seen++;
       if (f.alone) t.alone++;
@@ -170,8 +199,10 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
   byBattery -= byBlast;
   const hourLenMedian: number[] = [];
   for (let h = 0; h < HOURS; h++) hourLenMedian.push(median(nights.filter((x) => x.hourLen.length > h).map((x) => x.hourLen[h])));
-  const doneSim = done.map(sim);
+  const doneSim = done.map(sim05);
+  const morningSim = morning.map((x) => x.ticks / 60);
   const div = (a: number, b: number) => (b > 0 ? a / b : 0);
+  const real05 = (x: Night) => x.end05Normal / 60 + x.end05Slowed / (60 * tune.slowShare);
   return {
     key,
     label,
@@ -188,6 +219,9 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     heartsByToken: byToken,
     heartsByBattery: byBattery,
     heartsByBlast: byBlast,
+    heartsByEnvelope: byEnvelope,
+    heartsByBag: byBag,
+    heartsByPolisher: byPolisher,
     hearts,
     nightsWithHeart: nights.filter((x) => x.heartsLost > 0).length,
     earlyHeartNights: early,
@@ -196,7 +230,15 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     doneSimMin: doneSim.length ? Math.min(...doneSim) : NaN,
     doneSimMedian: median(doneSim),
     doneSimMax: doneSim.length ? Math.max(...doneSim) : NaN,
-    doneRealMedian: median(done.map((x) => realSeconds(x, tune))),
+    doneRealMedian: median(done.map(real05)),
+    morningN: morning.length,
+    morningSimMin: morningSim.length ? Math.min(...morningSim) : NaN,
+    morningSimMedian: median(morningSim),
+    morningSimMax: morningSim.length ? Math.max(...morningSim) : NaN,
+    morningRealMedian: median(morning.map((x) => realSeconds(x, tune))),
+    bossN: boss.length,
+    dawnN: boss.filter((x) => x.ended === "dawn").length,
+    bossLostN: boss.filter((x) => x.ended === "hearts").length,
     emptyShare: div(empty, ticks),
     emptyShareNoPause: div(empty - emptyPause, ticks - emptyPause),
     longestEmptyMedian: median(nights.map((x) => x.longestEmpty)),
@@ -215,6 +257,7 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     tokenAloneTicksMedian: median(tokenTicks),
     firsts,
     batteries,
+    later,
     heartsByHour,
     hourLenMedian,
     launchesPerNight: div(launches, n),
@@ -632,13 +675,72 @@ export function boundsFor(row: string, sums: Sums): Bound[] {
   return STEP1_BOUNDS.filter((b) => b.row === row && b.needs.every((k) => sums.has(k)));
 }
 
-/** The full-night table (§13.2). Its rows wait for charms, the later kinds and the boss: printed, not run, before step 5. */
-export const FULL_NIGHT_ROWS: readonly string[] = [
-  "Ordinary, with charms: reaches morning in at least 1 night in 10 and at most 1 in 3",
-  "Expert, with charms: reaches morning in at least 3 nights in 4; loses a heart in more than half its nights",
-  "Every player: the fairness rules, the cap, and every new kind first alone at tick 0 of its hour",
-  "Nights that reach morning: last at least 3.5 minutes of simulated time and at most 7",
+/**
+ * The full-night table (§13.2), run from step 5 on the whole night with
+ * the players who take one charm an offer. Its third row (the fairness
+ * rules, the money bag's 94 u among them, the cap, and every new kind
+ * first alone) is the invariants of the step-1 table and of step 4, which
+ * the driver keeps for every player.
+ */
+export const FULL_BOUNDS: readonly Bound[] = [
+  {
+    row: "ordinary-takes",
+    needs: ["ordinary-takes"],
+    text: "Ordinary, with charms: reaches morning in at least 1 night in 10",
+    check: (m, _t, w) => {
+      const s = get(m, "ordinary-takes");
+      return { ok: share(s.morningN, s.n) >= 0.1 - w.share, measured: `${of(s.morningN, s.n)}; reached 06:00 ${pct(share(s.bossN, s.n))}` };
+    },
+  },
+  {
+    row: "ordinary-takes",
+    needs: ["ordinary-takes"],
+    text: "Ordinary, with charms: reaches morning in at most 1 night in 3 (the aim is about 1 in 5)",
+    check: (m, _t, w) => {
+      const s = get(m, "ordinary-takes");
+      return { ok: share(s.morningN, s.n) <= 1 / 3 + w.share, measured: of(s.morningN, s.n) };
+    },
+  },
+  {
+    row: "expert-takes",
+    needs: ["expert-takes"],
+    text: "Expert, with charms: reaches morning in at least 3 nights in 4",
+    check: (m, _t, w) => {
+      const s = get(m, "expert-takes");
+      return { ok: share(s.morningN, s.n) >= 0.75 - w.share, measured: `${of(s.morningN, s.n)}; reached 06:00 ${pct(share(s.bossN, s.n))}, the lights came on ${s.dawnN}, lost at 06:00 ${s.bossLostN}` };
+    },
+  },
+  {
+    row: "expert-takes",
+    needs: ["expert-takes"],
+    text: "Expert, with charms: does not get through half its nights or more without losing a heart",
+    check: (m, _t, w) => {
+      const s = get(m, "expert-takes");
+      const clean = s.n - s.nightsWithHeart;
+      return { ok: share(clean, s.n) < 0.5 + w.share, measured: `${of(clean, s.n)} without a lost heart; ${s.heartsPerNight.toFixed(2)} hearts a night` };
+    },
+  },
+  {
+    row: "every",
+    needs: [],
+    text: "Nights that reach morning: last at least 3.5 minutes of simulated time and at most 7",
+    check: (m, _t, w) => {
+      let ok = true;
+      const parts: string[] = [];
+      for (const s of m.values()) {
+        if (s.morningN === 0) continue;
+        if (s.morningSimMin < 210 * (1 - w.part) || s.morningSimMax > 420 * (1 + w.part)) ok = false;
+        parts.push(`${s.label} ${f0(s.morningSimMin)}/${f0(s.morningSimMedian)}/${f0(s.morningSimMax)} s (${s.morningN} night${s.morningN === 1 ? "" : "s"})`);
+      }
+      return { ok, measured: parts.length ? `shortest/median/longest: ${parts.join("; ")}` : "no night reached morning" };
+    },
+  },
 ];
+
+/** The bounds of the full-night table that one row can be checked with, with the players at hand. */
+export function fullBoundsFor(row: string, sums: Sums): Bound[] {
+  return FULL_BOUNDS.filter((b) => b.row === row && b.needs.every((k) => sums.has(k)));
+}
 
 // ── The table as text ─────────────────────────────────────────────────
 
@@ -658,10 +760,11 @@ export function printTable(title: string, order: readonly string[], sums: Sums, 
   );
   say("");
   const batteries = rows.some((s) => s.heartsByBattery + s.heartsByBlast > 0 || s.batteries.knocks + s.batteries.burstsNotMine + s.batteries.gumHits > 0);
-  say(`player                        | nights | alive at 20:00 | at 00:00 | when 05:00 ends | median night ends (p10..p90) | median real s | median sim s | median score | hearts lost a night (by dust bunny + by token${batteries ? " + by a battery's touch + by a blast" : ""}) | nights with a lost heart | room empty: with the pause / without | room: mean, most | launches a night | landed with no pip, share of landed ticks | seconds to run`);
+  const step5 = rows.some((s) => s.later.envelopePops + s.later.bags + s.later.heartsShown > 0 || s.bossN > 0);
+  say(`player                        | nights | alive at 20:00 | at 00:00 | when 05:00 ends | median night ends (p10..p90) | median real s | median sim s | median score | hearts lost a night (by dust bunny + by token${batteries ? " + by a battery's touch + by a blast" : ""}${step5 ? " + by an envelope + by the money bag + by the polisher" : ""}) | nights with a lost heart | room empty: with the pause / without | room: mean, most | launches a night | landed with no pip, share of landed ticks | seconds to run`);
   for (const s of rows) {
     say(
-      `${pad(s)} | ${String(s.n).padStart(6)} | ${pc(s.aliveAt[1], s.n).padStart(5)} (${s.aliveAt[1]}) | ${pc(s.aliveAt[5], s.n).padStart(4)} | ${pc(s.aliveAt[END], s.n).padStart(4)} (${s.aliveAt[END]}) | ${clock(s.endHourMedian)} (${clock(s.endHourP10)}..${clock(s.endHourP90)}) | ${f0(s.realMedian).padStart(4)} | ${f0(s.simMedian).padStart(4)} | ${f0(s.scoreMedian).padStart(6)} | ${s.heartsPerNight.toFixed(2)} (${s.heartsByBunny} + ${s.heartsByToken}${batteries ? ` + ${s.heartsByBattery} + ${s.heartsByBlast}` : ""}) | ${pc(s.nightsWithHeart, s.n)} | ${pct(s.emptyShare)} / ${pct(s.emptyShareNoPause)} | ${s.meanRoom.toFixed(1)}, ${s.maxRoom} | ${f0(s.launchesPerNight)} | ${pct(s.landedNoPipShare)} | ${f0(s.secs)}`,
+      `${pad(s)} | ${String(s.n).padStart(6)} | ${pc(s.aliveAt[1], s.n).padStart(5)} (${s.aliveAt[1]}) | ${pc(s.aliveAt[5], s.n).padStart(4)} | ${pc(s.aliveAt[END], s.n).padStart(4)} (${s.aliveAt[END]}) | ${clock(s.endHourMedian)} (${clock(s.endHourP10)}..${clock(s.endHourP90)}) | ${f0(s.realMedian).padStart(4)} | ${f0(s.simMedian).padStart(4)} | ${f0(s.scoreMedian).padStart(6)} | ${s.heartsPerNight.toFixed(2)} (${s.heartsByBunny} + ${s.heartsByToken}${batteries ? ` + ${s.heartsByBattery} + ${s.heartsByBlast}` : ""}${step5 ? ` + ${s.heartsByEnvelope} + ${s.heartsByBag} + ${s.heartsByPolisher}` : ""}) | ${pc(s.nightsWithHeart, s.n)} | ${pct(s.emptyShare)} / ${pct(s.emptyShareNoPause)} | ${s.meanRoom.toFixed(1)}, ${s.maxRoom} | ${f0(s.launchesPerNight)} | ${pct(s.landedNoPipShare)} | ${f0(s.secs)}`,
     );
   }
   say("");
@@ -697,6 +800,22 @@ export function printTable(title: string, order: readonly string[], sums: Sums, 
       say(`${pad(s)} | ${per(b.knocks)} | ${per(b.burstsMine)} / ${per(b.burstsNotMine)} | ${per(b.blastPops)} (${per(b.blastBunnies)}) | ${b.burstsMine ? (b.blastBunnies / b.burstsMine).toFixed(2) : "-"} | ${b.touchHearts} / ${b.blastHearts} | ${per(b.gumHits)}, ${per(b.gumStops)} | ${first("gum")}, ${first("battery")}`);
     }
   }
+  if (step5) {
+    say("");
+    say("THE NEWSLETTER, VENTURE CAPITAL, THE LOVE HEART AND 06:00 (a night, unless it says otherwise)");
+    say("player                        | envelopes popped | V bonuses | money bags that came (landed within 94 u, dazed) | hits on a bag | bags beaten | tokens a bag let out | bounces off a bag with no hit | hearts to an envelope / to a bag (to a bag within a daze of a close landing: never) | love hearts shown / taken (all nights) | first V, first bag: nights alone at tick 0 / nights it came (cut whole; cut in part, still alone) | reached 06:00: nights; morning / the lights came on / lost there | nights that reached morning: shortest/median/longest sim s, median real s");
+    for (const s of rows) {
+      const l = s.later;
+      const per = (x: number) => (s.n ? (x / s.n).toFixed(2) : "-");
+      const first = (k: string) => {
+        const f = s.firsts[k];
+        return f ? `${f.alone} / ${f.seen} (${f.cutWhole}; ${f.cutPart})` : "-";
+      };
+      say(
+        `${pad(s)} | ${per(l.envelopePops)} | ${per(l.vBonuses)} | ${per(l.bags)} (${l.bagsClose}) | ${per(l.bagHits)} | ${per(l.bagsBeaten)} | ${per(l.bagTokens)} | ${per(l.bagBounces)} | ${s.heartsByEnvelope} / ${s.heartsByBag} (${l.bagCloseHearts}) | ${l.heartsShown} / ${l.heartsTaken} | ${first("envelope")}, ${first("bag")} | ${s.bossN}; ${s.morningN} / ${s.dawnN} / ${s.bossLostN} | ${f0(s.morningSimMin)}/${f0(s.morningSimMedian)}/${f0(s.morningSimMax)}, ${f0(s.morningRealMedian)}`,
+      );
+    }
+  }
   say("");
   say("THE BOUNDS OF THE STEP-1 TABLE (13.2), as written");
   say("verdict | bound | measured");
@@ -726,9 +845,23 @@ export function printTable(title: string, order: readonly string[], sums: Sums, 
     say(`${v.ok ? "pass   " : "FAIL   "} | ${b.text} | ${v.measured}`);
   }
   say("");
-  say(`${fails} of ${checked} bounds FAIL${checked < STEP1_BOUNDS.length + STEP4_BOUNDS.length ? `; ${STEP1_BOUNDS.length + STEP4_BOUNDS.length - checked} not run` : ""}.`);
+  say("THE FULL-NIGHT TABLE (13.2): the players who take one charm an offer, on the whole night");
+  let notRun = 0;
+  for (const b of FULL_BOUNDS) {
+    if (b.needs.length === 0 ? sums.size === 0 : !b.needs.every((k) => sums.has(k))) {
+      notRun++;
+      say(`not run | ${b.text} | needs ${b.needs.filter((k) => !sums.has(k)).join(", ")}`);
+      continue;
+    }
+    // A night that does not reach the polisher cannot reach morning: on the step-1 night this row has no case.
+    const v = b.check(sums, tune, AS_WRITTEN);
+    checked++;
+    if (!v.ok) fails++;
+    say(`${v.ok ? "pass   " : "FAIL   "} | ${b.text} | ${v.measured}`);
+  }
+  say("(its third row, every player: the fairness rules with the money bag's 94 u, the cap, and every new kind first alone, is the invariants above)");
   say("");
-  say("THE FULL-NIGHT TABLE (13.2): printed, not required before step 5");
-  for (const r of FULL_NIGHT_ROWS) say(`not run | ${r} | needs charms, the later kinds and the boss (steps 2 to 5)`);
+  const all = STEP1_BOUNDS.length + STEP4_BOUNDS.length + FULL_BOUNDS.length;
+  say(`${fails} of ${checked} bounds FAIL${checked + notRun < all || notRun > 0 ? `; ${all - checked} not run` : ""}.`);
   return { lines, fails, checked };
 }

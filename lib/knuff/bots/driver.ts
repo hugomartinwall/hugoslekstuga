@@ -17,11 +17,12 @@
  */
 import { DARK_PLATES } from "../content/charms";
 import { HOURS, ROWS } from "../content/night";
+import { dazedWithin } from "../sim/bag";
 import { overlapDepth } from "../sim/boss";
 import { intruders } from "../sim/night";
 import { createState, type StartOptions } from "../sim/state";
 import { step } from "../sim/step";
-import type { SimEvent, State, Tune } from "../sim/types";
+import type { SimEvent, State, Thing, Tune } from "../sim/types";
 import { KITER, KITER_RANDOM, flickerBot, kiterBot, onceBot, rhythmBot, spamBot } from "./aimless";
 import { CAUTIOUS, EXPERT, ORDINARY, STRAIGHT, cornerHands, handBot, type Bot, type Now, type Rand } from "./probe";
 
@@ -74,6 +75,20 @@ export function player(key: string): Player {
  * Later steps add what they build to this list of leavings-out.
  */
 export const STEP1_NIGHT: StartOptions = { kinds: ["bunny", "token"], plates: DARK_PLATES, offers: false };
+
+/**
+ * The whole night of §3.4, as both tables are run on it from step 5: every
+ * kind in its rows, the polisher at 06:00, the two starting plates lit.
+ * A player without charms plays it with nothing offered (§13.1); a player
+ * who takes one (`TAKERS`) plays it with the offers made.
+ */
+export const WHOLE_NIGHT: StartOptions = { offers: false };
+export const WHOLE_NIGHT_OFFERS: StartOptions = {};
+
+/** The whole night as player `key` plays it: offers made for a player who takes one. */
+export function wholeNightFor(key: string): StartOptions {
+  return TAKERS.some((t) => t.key === key) ? WHOLE_NIGHT_OFFERS : WHOLE_NIGHT;
+}
 
 /** The seed of night number `i`. */
 export function nightSeed(i: number): number {
@@ -154,6 +169,8 @@ export type FirstSeen = {
   alone: boolean;
   /** Its first row was announced and the cap cut it whole (§3.3): it then first comes later, in a bunch, by the rules. Not a case. */
   cutWhole: boolean;
+  /** Its first row came, alone, but the cap cut part of it (a V of fewer than five). */
+  cutPart: boolean;
   /** Ticks it stood alone before the next row of its hour was announced; -1 if no row followed in its hour. */
   aloneTicks: number;
 };
@@ -187,6 +204,26 @@ export type Batteries = {
   /** Gum: hits, stops, and gum popped. */
   gumHits: number;
   gumStops: number;
+};
+
+/** What the newsletter, venture capital and the love heart did in a night (step 5). */
+export type Later = {
+  /** Envelopes popped (by any source), and V bonuses paid. */
+  envelopePops: number;
+  vBonuses: number;
+  /** Money bags that came (landed), hits on them (counted hits, by any source), bags beaten, and tokens they let out. */
+  bags: number;
+  bagHits: number;
+  bagsBeaten: number;
+  bagTokens: number;
+  /** Bags that landed within 94 u of him (dazed), and hearts lost to one within a daze of such a landing: never allowed. */
+  bagsClose: number;
+  bagCloseHearts: number;
+  /** Bounces off a bag with no hit. */
+  bagBounces: number;
+  /** Love hearts shown, and taken. */
+  heartsShown: number;
+  heartsTaken: number;
 };
 
 /** The boss's part of a night: from the tick 06:00 began. */
@@ -282,6 +319,12 @@ export type Night = {
   plates: string[];
   /** The boss's books: `began` is -1 on a night that never reached 06:00. */
   fight: Fight;
+  /** The newsletter, venture capital and the love heart. */
+  later: Later;
+  /** The tick 05:00 ended (the night's end on a night without the polisher, 06:00's first with it); -1 if he did not live to it. And the real time then: its normal and slowed ticks. */
+  end05: number;
+  end05Normal: number;
+  end05Slowed: number;
 };
 
 /** Called after every tick that was taken, with what it did: for a trace, or a test. */
@@ -331,10 +374,17 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     charms: [],
     plates: [],
     fight: { began: -1, ended: "", ticks: 0, hits: 0, twos: 0, throws: 0, throwsHurt: 0, padLanded: 0, padHot: 0, padUnread: 0, hearts: 0, insideTicks: 0, deepest: 0, bonus: 0, launches: 0 },
+    later: { envelopePops: 0, vBonuses: 0, bags: 0, bagHits: 0, bagsBeaten: 0, bagTokens: 0, bagsClose: 0, bagCloseHearts: 0, bagBounces: 0, heartsShown: 0, heartsTaken: 0 },
+    end05: -1,
+    end05Normal: 0,
+    end05Slowed: 0,
   };
+  const later = n.later;
   const fight = n.fight;
   const announcedAt = new Map<number, number>();
-  const arrivedAt = new Map<number, { tick: number; dist: number }>();
+  const arrivedAt = new Map<number, { tick: number; dist: number; kind: Thing["kind"] }>();
+  /** The first token is a case of the step-1 table only on a night that begins before 20:00 ends. */
+  const tokenOwed = s.night.hour <= 1;
   let hourStart = -1;
   let rowsThisHour = 0;
   let tokenTick = -1;
@@ -346,7 +396,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
   const firstTick = new Map<string, number>();
   // (A night begun after a kind's first hour has no first row for it to keep.)
   for (const r of ROWS) {
-    if (r.first !== "" && r.hour >= s.night.hour && s.night.kinds.includes(r.first)) firstOf.set(r.first, { kind: r.first, hour: -1, alone: false, cutWhole: false, aloneTicks: -1 });
+    if (r.first !== "" && r.hour >= s.night.hour && s.night.kinds.includes(r.first)) firstOf.set(r.first, { kind: r.first, hour: -1, alone: false, cutWhole: false, cutPart: false, aloneTicks: -1 });
   }
   n.firsts = [...firstOf.values()];
   const bat = n.batteries;
@@ -372,8 +422,10 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     mineBefore.clear();
     for (const d of s.things) if (d.kind === "battery" && d.mine) mineBefore.add(d.id);
     burstNow.clear();
-    // The room as the tick finds it: intruders only (an offer's tiles are not).
+    // The room as the tick finds it: intruders only (an offer's tiles and the love heart are not).
     const roomBefore = intruders(s);
+    // From 06:00 the polisher is in the room: a tick with it there is not an empty room.
+    const bossBefore = s.boss.present;
     // Gum is swept away when its hour ends, before the next hour's rows are announced.
     let gumBefore = 0;
     for (const d of s.things) if (d.kind === "gum" && d.hp > 0) gumBefore++;
@@ -388,7 +440,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
       continue;
     }
     // The room as the tick found it: empty is nothing alive and nothing announced.
-    if (roomBefore === 0) {
+    if (roomBefore === 0 && !bossBefore) {
       n.ticksEmpty++;
       if (inPause) n.ticksEmptyPause++;
       if (++emptyRun > n.longestEmpty) n.longestEmpty = emptyRun;
@@ -456,10 +508,26 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           break;
         case "pop":
           n.pops++;
+          if (e.kind === "envelope") later.envelopePops++;
           if (e.source === "blast") {
             bat.blastPops++;
             if (e.kind === "bunny") bat.blastBunnies++;
           }
+          break;
+        case "vBonus":
+          later.vBonuses++;
+          break;
+        case "bounce":
+          later.bagBounces++;
+          break;
+        case "bagToken":
+          later.bagTokens++;
+          break;
+        case "heartShown":
+          later.heartsShown++;
+          break;
+        case "heartTaken":
+          later.heartsTaken++;
           break;
         case "land":
           now.landedTick = e.tick;
@@ -473,6 +541,10 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           if (e.hour >= HOURS) {
             fight.began = e.tick;
             padShownFrom = e.tick;
+            // 05:00 has ended: he lived to the end of it.
+            n.end05 = e.tick;
+            n.end05Normal = s.normalTicks;
+            n.end05Slowed = s.slowedTicks;
           }
           break;
         case "bossStall":
@@ -485,6 +557,9 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           } else if (e.kind === "gum") {
             bat.gumHits++;
             if (e.stop) bat.gumStops++;
+          } else if (e.kind === "bag") {
+            later.bagHits++;
+            if (e.left === 0) later.bagsBeaten++;
           }
           break;
         case "bossThrow":
@@ -511,7 +586,11 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           else bat.burstsNotMine++;
           break;
         case "arrive":
-          arrivedAt.set(e.id, { tick: e.tick, dist: e.dist });
+          arrivedAt.set(e.id, { tick: e.tick, dist: e.dist, kind: e.kind });
+          if (e.kind === "bag") {
+            later.bags++;
+            if (e.dazed) later.bagsClose++;
+          }
           break;
         case "row": {
           n.capRefused += e.cut;
@@ -526,14 +605,17 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
             const f = firstOf.get(kind);
             if (!f || f.hour >= 0) continue;
             f.hour = e.hour;
-            f.alone = firstKind === kind && e.tick === hourStart && rowsThisHour === 0 && e.n === 1 && e.how === "tick";
+            // Alone: its own first row, the hour's first, at tick 0 by its tick, and nothing in it but that kind
+            // (the V is five envelopes; the cap may cut it from its back, and it is still alone).
+            f.alone = firstKind === kind && e.tick === hourStart && rowsThisHour === 0 && e.n >= 1 && rowKinds.size === 1 && e.how === "tick";
+            if (f.alone && e.cut > 0) f.cutPart = true;
             firstTick.set(kind, e.tick);
           }
           for (const f of firstOf.values()) {
             if (f.hour === e.hour && f.aloneTicks < 0 && firstTick.get(f.kind)! < e.tick) f.aloneTicks = e.tick - firstTick.get(f.kind)!;
           }
           rowKinds.clear();
-          if (rowHasToken && n.tokenHour < 0) {
+          if (rowHasToken && n.tokenHour < 0 && tokenOwed) {
             n.tokenHour = e.hour;
             n.tokenAlone = e.hour === 1 && e.tick === hourStart && rowsThisHour === 0 && e.n === 1 && e.how === "tick";
             tokenTick = e.tick;
@@ -583,11 +665,21 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
               n.unfair++;
             }
           } else if (ann !== undefined && loss.sinceAnnounce < tune.telegraphTicks) n.unfair++;
-          else if (arr !== undefined && arr.dist <= tune.arriveDazedWithin && loss.sinceLand < tune.dazeTicks) n.unfair++;
+          else if (arr !== undefined && arr.dist <= dazedWithin(arr.kind, tune) && loss.sinceLand < tune.dazeTicks) {
+            // A close arrival lands dazed: within 60 u, and 94 u for the money bag.
+            n.unfair++;
+            if (arr.kind === "bag") later.bagCloseHearts++;
+          }
           break;
         }
         case "over":
           if (e.how === "morning" && hourStart >= 0) n.hourLen.push(e.tick - hourStart);
+          // A night without the polisher ends when 05:00 ends, as "morning".
+          if (e.how === "morning" && fight.began < 0) {
+            n.end05 = e.tick + 1;
+            n.end05Normal = s.normalTicks;
+            n.end05Slowed = s.slowedTicks;
+          }
           if (fight.began >= 0) {
             fight.ended = e.how;
             fight.ticks = e.tick + 1 - fight.began;
