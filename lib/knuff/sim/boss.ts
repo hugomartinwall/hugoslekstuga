@@ -310,6 +310,23 @@ function landBoss(s: State, events: SimEvent[]): void {
   events.push({ type: "bossArrive", tick: s.tick, x: b.x, y: b.y, lane: b.lane, dir: b.dir });
 }
 
+/**
+ * The hit turn: is he landed in the way of the end that leads, his centre
+ * at or beyond its plane and his circle across the lane, so that the pad
+ * will meet him as it sets off? He hit the plug, which is the end that now
+ * leads, and the launch he would need to get out of its way was spent on
+ * the hit. So he counts as put there by the machine (`shovedTick`): for a
+ * telegraph, until he launches, the pad throws him and takes no heart.
+ * Flying, he is not in its way: his launch decides where he goes.
+ */
+function inTheWay(s: State): boolean {
+  const b = s.boss;
+  const h = s.him;
+  if (h.hot) return false;
+  const lead = b.x + b.dir * HALF_L;
+  return b.dir * (h.x - lead) >= 0 && Math.abs(h.y - b.y) < HALF_W + s.stats.radius;
+}
+
 /** It sped up: after a hit, or after a long gap without one. */
 function faster(s: State, tune: Tune, why: "hit" | "time", events: SimEvent[]): void {
   const b = s.boss;
@@ -341,6 +358,8 @@ export function bossClock(s: State, tune: Tune, events: SimEvent[]): void {
       b.dir = b.dir > 0 ? -1 : 1;
       b.mode = "lane";
       b.modeUntil = -1;
+      // Landed in the way of the end that now leads, he is where the machine put him (the lead's decision 14).
+      if (inTheWay(s)) b.shovedTick = s.tick;
       events.push({ type: "bossTurn", tick: s.tick, x: b.x, y: b.y, dir: b.dir });
       faster(s, tune, "hit", events);
     }
@@ -455,7 +474,9 @@ function throwHim(s: State, tune: Tune, vx: number, vy: number, hurt: boolean, m
  * Nor does it take a heart from him, landed where the machine itself put
  * him less than a telegraph ago, before he has launched: a lane change
  * into an end lane can slide him along the cushion onto the very face that
- * leads when it sets off, and he must have the time to read that.
+ * leads when it sets off, and he must have the time to read that. The turn
+ * after a hit counts as putting him there when he is landed in the way of
+ * the end that now leads (`inTheWay`).
  */
 function padHit(s: State, tune: Tune, box: Box, events: SimEvent[]): boolean {
   const b = s.boss;

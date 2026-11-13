@@ -414,7 +414,11 @@ export type Boss = {
   lastHitTick: number;
   /** The tick the next dust bunny is announced. */
   nextTrickleTick: number;
-  /** The tick it last moved him while he was landed (its landing, a lane change, a push); -1 if it never has. */
+  /**
+   * The tick it last moved him while he was landed (its landing, a lane
+   * change, a push), or turned after a hit with him landed in the way of
+   * the end that then leads; -1 if it never has.
+   */
   shovedTick: number;
 };
 

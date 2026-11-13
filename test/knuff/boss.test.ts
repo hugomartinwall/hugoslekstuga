@@ -664,6 +664,135 @@ describe("where the machine puts him", () => {
   });
 });
 
+describe("the turn after a hit (the lead's decision 14)", () => {
+  /** Nothing walks: the dust bunnies it coughs out stay where they are put. */
+  const HT = tuned({ ...QUIET, bunnySpeed: 0 });
+
+  /**
+   * His last pip on the plug: the machine heading right in lane 3, its box 140 to 260, and he 40 u
+   * behind its trailing end. Half power hits it, and the bounce leaves him too slow to be hot: he
+   * lands against the end he hit, with no pip. Returns the State then, the tick of the hit, and
+   * where that end stands.
+   */
+  function hitAndLand(): { s: State; hitTick: number; end: number } {
+    const s = landed(HT);
+    machine(s, { lane: 3, x: 200, dir: 1 });
+    him(s, 140 - 13 - 40, 212);
+    s.pips = 1;
+    s.pipTimer = HT.pipRefillTicks;
+    const ev = launchAnd(s, HT, shot(1, 0, 0.5), (e) => of(e, "land").length > 0, 60);
+    const [hit] = of(ev, "hit");
+    expect([hit.kind, hit.id]).toEqual(["polisher", 0]);
+    expect(of(ev, "land")[0].tick).toBe(hit.tick);
+    expect([s.boss.mode, s.him.hot, s.pips]).toEqual(["hitStall", false, 0]);
+    const end = boxOf(s.boss).x0;
+    expect(s.him.x).toBeCloseTo(end - 13, 6);
+    return { s, hitTick: hit.tick, end };
+  }
+
+  /**
+   * Step until the pad meets him (a throw, or the heart that ends the night), unless `so` far it has:
+   * the turn, the meeting, and the hearts it took.
+   */
+  function toThePad(s: State, so: SimEvent[] = []): { turn: number; met: number; hearts: number; thrownUnhurt: boolean } {
+    const met = (e: SimEvent[]) => of(e, "bossThrow").length > 0 || of(e, "hurt").length > 0;
+    const ev = met(so) ? so : [...so, ...until(s, HT, met, 200)];
+    const [turn] = of(ev, "bossTurn");
+    const [thrown] = of(ev, "bossThrow");
+    const hurt = of(ev, "hurt");
+    return { turn: turn.tick, met: (thrown ?? hurt[0]).tick, hearts: hurt.length, thrownUnhurt: thrown !== undefined && !thrown.hurt };
+  }
+
+  it("he lands against the end he hit with no pip, and it turns into him: the pad throws him and he keeps his heart", () => {
+    const { s, hitTick, end } = hitAndLand();
+    // Off its middle too, as far as his circle reaches across the lane: by its corner, still clear of the box.
+    const off = cloneState(s);
+    him(off, end - 12, 212 + 36);
+    expect(overlapDepth(off.boss, off.him.x, off.him.y, off.stats.radius)).toBe(0);
+    expect([toThePad(off).hearts, off.hearts]).toEqual([0, 3]);
+    // Behind the end that will trail he is in nobody's way: nothing is counted.
+    const behindIt = cloneState(s);
+    him(behindIt, boxOf(behindIt.boss).x1 + 13 + 1, 212);
+    expect(of(until(behindIt, HT, (e) => of(e, "bossTurn").length > 0, 80), "bossTurn")).toHaveLength(1);
+    expect(behindIt.boss.shovedTick).toBe(-1);
+    const turned = until(s, HT, (e) => of(e, "bossTurn").length > 0, 80);
+    const [turn] = of(turned, "bossTurn");
+    expect(turn.tick).toBe(hitTick + HT.bossStallTicks);
+    expect(of(turned, "bossFaster").map((e) => e.why)).toEqual(["hit"]);
+    // The end he hit now leads, and he is in its way, landed, with no pip: it counts as putting him there.
+    expect([s.boss.dir, s.pips, s.boss.shovedTick]).toEqual([-1, 0, turn.tick]);
+    const met = toThePad(s, turned);
+    expect(met.met - turn.tick).toBeLessThan(HT.telegraphTicks);
+    expect([met.hearts, met.thrownUnhurt, s.hearts]).toEqual([0, true, 3]);
+  });
+
+  it("only for a telegraph after the turn: where the pad reaches him later, it takes its heart", () => {
+    const { s, end } = hitAndLand();
+    // Moved along the lane by hand, still in the way of the end that will lead: the further, the later the pad reaches him.
+    const after = new Map<number, number>();
+    for (let gap = 0; gap <= 70; gap += 0.5) {
+      const c = cloneState(s);
+      him(c, end - 13 - gap, 212);
+      const met = toThePad(c);
+      after.set(met.met - met.turn, met.hearts);
+    }
+    for (const [ticks, hearts] of after) expect(hearts, `met ${ticks} ticks after the turn`).toBe(ticks < HT.telegraphTicks ? 0 : 1);
+    expect(after.get(HT.telegraphTicks - 1)).toBe(0);
+    expect(after.get(HT.telegraphTicks)).toBe(1);
+  });
+
+  it("only until he launches: launched since the turn and down in its way again, the pad takes its heart", () => {
+    const { s, end } = hitAndLand();
+    // 20 u along the lane: the pad reaches him some ticks after the turn.
+    him(s, end - 13 - 20, 212);
+    const turned = until(s, HT, (e) => of(e, "bossTurn").length > 0, 80);
+    const turn = s.boss.shovedTick;
+    expect(turn).toBe(s.tick - 1);
+    expect(of(turned, "bossThrow")).toEqual([]);
+    const stayed = toThePad(cloneState(s), turned);
+    expect([stayed.hearts, stayed.thrownUnhurt]).toEqual([0, true]);
+    // As if he had launched on the tick after the turn and come down in its way again.
+    s.launch.startTick = turn + 1;
+    expect(toThePad(s, turned).hearts).toBe(1);
+  });
+
+  it("not while he is hot: flying into the end he hit as it turns, or sliding when it turns and landing in its way, the pad takes its heart", () => {
+    // He launches into it on the tick it turns (a pip given back by hand).
+    const into = hitAndLand().s;
+    until(into, HT, () => into.boss.modeUntil === into.tick, 80);
+    into.pips = 1;
+    const ev = tick(into, HT, shot(1, 0, 0.5));
+    expect(of(ev, "bossTurn")).toHaveLength(1);
+    expect(into.boss.shovedTick).toBe(-1);
+    expect(of([...ev, ...until(into, HT, (e) => of(e, "hurt").length > 0, 20)], "hurt").map((e) => e.by)).toEqual(["polisher"]);
+    // Sliding away from it as it turns, just fast enough to be hot (as at the end of a launch): he lands at once, in its way.
+    const slide = hitAndLand().s;
+    until(slide, HT, () => slide.boss.modeUntil === slide.tick, 80);
+    slide.launch.active = true;
+    slide.him.vx = -(slide.stats.hotSpeed + 1);
+    slide.him.hot = true;
+    const turned = tick(slide, HT);
+    expect(of(turned, "bossTurn")).toHaveLength(1);
+    expect(of(turned, "land")).toHaveLength(1);
+    expect(slide.boss.shovedTick).toBe(-1);
+    const met = toThePad(slide, turned);
+    expect(met.met - met.turn).toBeLessThan(HT.telegraphTicks);
+    expect(met.hearts).toBe(1);
+  });
+
+  it("the turn at a wall is not a hit's: landed ahead in the next lane, where the lane change did not move him, the pad takes its heart", () => {
+    const s = landed(HT);
+    // Moving down from lane 3 to lane 4 at the right wall; he stands in lane 4, a little way ahead of the end that will lead.
+    machine(s, { lane: 3, x: 352 - 60, dir: 1, mode: "laneMove", laneStep: 1 });
+    him(s, 352 - 120 - 13 - 5, laneMiddle(s, 4));
+    const met = toThePad(s);
+    expect(s.boss.lane).toBe(4);
+    expect(s.boss.shovedTick).toBe(-1);
+    expect(met.met - met.turn).toBeLessThan(HT.telegraphTicks);
+    expect(met.hearts).toBe(1);
+  });
+});
+
 describe("so the fight always ends", () => {
   it("without a hit for 1,500 ticks it speeds up 1.12 times: no stall, no turn, no dust bunnies", () => {
     const tune = tuned(NO_PLUG);
