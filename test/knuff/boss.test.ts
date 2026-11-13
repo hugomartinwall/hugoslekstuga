@@ -19,8 +19,12 @@ import { HOLD, fire, of, put, run, scripted, shot, tick, tuned, until } from "./
  * is put in the room by hand.
  */
 
-/** No trickle: nothing arrives during the fight unless a case says so. */
-const QUIET = { bossTrickleTicks: 1_000_000 };
+/**
+ * No trickle: nothing arrives during the fight unless a case says so. And the
+ * cases are worked at 70 u/s, the spec's draft speed, so their ticks come out
+ * whole: the rules do not depend on the speed (the default is 90: tune.ts).
+ */
+const QUIET = { bossTrickleTicks: 1_000_000, bossSpeed: 70 };
 const T = tuned(QUIET);
 /** And no plug to hit: for the cases that watch the machine walk while the pad throws him about. */
 const NO_PLUG = { ...QUIET, plugWidth: -1 };
@@ -108,6 +112,8 @@ describe("06:00", () => {
     expect(s.phase).toBe("boss");
     expect(s.boss.present).toBe(true);
     expect(s.boss.mode).toBe("arriving");
+    // It starts at `bossSpeed`, with `bossHits` on its plug.
+    expect([s.boss.speed, s.boss.hp]).toEqual([tuned().bossSpeed, tuned().bossHits]);
     expect(s.boss.beganTick).toBe(0);
     expect(s.boss.modeUntil).toBe(BOSS_TELEGRAPH);
   });

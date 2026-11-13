@@ -310,7 +310,7 @@ describe("the State", () => {
     expect([s.score, s.bestShot, s.lastHurtBy, s.lastHurtHour]).toEqual([0, 0, "", -1]);
     // The polisher is not in the room until 06:00.
     expect(s.boss.present).toBe(false);
-    expect([s.boss.hp, s.boss.speed, s.boss.beganTick, s.boss.lastHitTick]).toEqual([6, 70, -1, -1]);
+    expect([s.boss.hp, s.boss.speed, s.boss.beganTick, s.boss.lastHitTick]).toEqual([6, DEFAULT_TUNE.bossSpeed, -1, -1]);
     // Two plates lit from the start: Bumper on plate 0, Pip on plate 4. No charm taken, no offer out.
     expect(s.plates.map((p) => p.charm)).toEqual(["bumper", "", "", "", "pip", "", "", "", "", ""]);
     expect(s.plates.every((p) => p.readyTick === 0)).toBe(true);

@@ -93,7 +93,7 @@ describe("the knob table", () => {
       longBurnHotFrac: 0.27,
       wideRadius: 2,
       wideFactor: 0.85,
-      bossSpeed: 70,
+      bossSpeed: 90,
       bossHits: 6,
       bossStallTicks: 60,
       bossSpeedUp: 1.12,

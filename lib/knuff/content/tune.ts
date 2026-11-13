@@ -156,8 +156,11 @@ export const GAME = {
   wideRadius: 2,
   wideFactor: 0.85,
 
-  // The boss: the floor polisher.
-  bossSpeed: 70,
+  // The boss: the floor polisher. Its speed was 70 in the spec's table (a
+  // draft value); at 70 the Expert won its fights in a median of 1,162 and
+  // 1,177 ticks on two samples of 200, under the 1,200 the step-3 check
+  // asks for, and at 90 in 1,245 and 1,301, winning all of them.
+  bossSpeed: 90,
   bossHits: 6,
   bossStallTicks: 60,
   bossSpeedUp: 1.12,
