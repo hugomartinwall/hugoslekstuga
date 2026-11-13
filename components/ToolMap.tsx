@@ -245,9 +245,14 @@ const ESCORT_V = 2;
  *  as the frames it stands for would have (up to MAX_PACE of them), so
  *  the title is clear as soon on a busy machine as on an idle one. Left
  *  to the frame count it was not: at ten frames a second an orb was
- *  still on the title 11 to 16 seconds after the page had loaded. */
+ *  still on the title 11 to 16 seconds after the page had loaded.
+ *  MAX_PACE is 12, a fifth of a second, so the walk keeps time down to
+ *  five frames a second. At 8 it kept time only down to 7.5, and an
+ *  independent check at 5 to 8 frames a second found an orb on the
+ *  title until about 11 seconds after load. The cap stays so that a
+ *  frame after a long stall (a hidden tab, a debugger) does not jump. */
 const FRAME_MS = 1000 / 60;
-const MAX_PACE = 8;
+const MAX_PACE = 12;
 /** Steps of free flight at the entrance, so the burst plays as before. */
 const ENTRANCE_FREE = 40;
 /** Steps of free flight after the forbidden button. */
