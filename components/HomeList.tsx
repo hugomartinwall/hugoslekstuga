@@ -89,7 +89,7 @@ export default function HomeList({
           48px tall): PixelWordmark stacks the two words in a box narrower
           than 520px (STACK_BELOW_W), and this column's width is that
           box's width. */}
-      <div className="relative mt-12 h-44 [@media(max-height:35rem)]:@min-[520px]:h-28">
+      <div className="relative mt-12 h-44 [@media(height<35rem)]:@min-[520px]:h-28">
         <PixelWordmark powerOn={powerOn} banner />
       </div>
       <div className="relative mt-1">
