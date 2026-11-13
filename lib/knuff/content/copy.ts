@@ -93,11 +93,11 @@ export const CHARM_NAME: Readonly<Record<string, string>> = {
 export const CHARM_LINE: Readonly<Record<string, string>> = {
   bumper: "bounce off: fast again",
   pip: "bounce off: a pip back",
-  spark: "bounce off: wider reach",
+  spark: "bounce off: pops reach wide",
   bell: "bounce off: stuns the room",
   coin: "bounce off: pops pay double",
   heavy: "pops slow him less",
-  longBurn: "a weapon for longer",
+  longBurn: "stays fast for longer",
   fourthPip: "one more launch in hand",
   thickSkin: "one more heart",
   wide: "bigger, and pops slow less",

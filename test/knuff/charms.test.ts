@@ -883,6 +883,10 @@ describe("names, lines and icons (§6.4)", () => {
     }
     expect(CHARM_LINE.coin).toBe("bounce off: pops pay double");
     expect(CHARM_LINE.bumper).toBe("bounce off: fast again");
+    // The lead's decision 17: the game never shows the word "weapon".
+    expect(CHARM_LINE.spark).toBe("bounce off: pops reach wide");
+    expect(CHARM_LINE.longBurn).toBe("stays fast for longer");
+    for (const c of all) expect(CHARM_LINE[c], c).not.toMatch(/weapon/i);
   });
 
   it("every icon is 12 rows of 12, one empty cell all round, and no two are alike", () => {
