@@ -173,6 +173,19 @@ describe("06:00", () => {
     expect(overlapDepth(s.boss, d.x, d.y, 8)).toBe(0);
     expect(s.hearts).toBe(3);
   });
+
+  it("when it lands with its pad's face nearest him, he is put out another way", () => {
+    const s = fight();
+    tick(s, T);
+    run(s, T, BOSS_TELEGRAPH - 2);
+    // 6 u inside the pad's face (x 128), 30 u above its bottom face; its top lies against the cushion.
+    him(s, 122, 38);
+    run(s, T, 2);
+    expect(s.boss.mode).toBe("lane");
+    expect(inside(s)).toBe(0);
+    expect([s.him.x, s.him.y]).toEqual([122, 68 + 13]);
+    expect(s.hearts).toBe(3);
+  });
 });
 
 describe("the walk", () => {
@@ -310,6 +323,24 @@ describe("the pad", () => {
     expect(s.boss.mode).toBe("wallStall");
   });
 
+  it("a cushion 59 u ahead of the pad: thrown along it; 61 u ahead: straight ahead", () => {
+    for (const [ahead, along] of [
+      [59, true],
+      [61, false],
+    ] as const) {
+      const s = landed();
+      // Heading right at 6 u/s, a tenth of a unit a tick, its leading end this far from the right cushion after one more
+      // tick; he stands just clear of it, and that tick it meets him.
+      machine(s, { lane: 3, x: 352 - ahead - 60 - 0.1, dir: 1, speed: 6 });
+      him(s, 352 - ahead - 0.1 + 13 + 0.05, 212);
+      const events = until(s, T, (e) => of(e, "bossThrow").length > 0, 5);
+      const [thrown] = of(events, "bossThrow");
+      // Where its leading end was when the pad met him: the tick of the throw, after the machine's move.
+      expect(352 - (s.boss.x + 60), `${ahead}`).toBeCloseTo(ahead, 6);
+      expect([thrown.vx, thrown.vy], `${ahead}`).toEqual(along ? [0, 450] : [450, 0]);
+    }
+  });
+
   it("pushes intruders aside, and a token bounces off it at its own speed", () => {
     const tune = tuned({ ...QUIET, bunnySpeed: 0 });
     const s = landed(tune);
@@ -348,6 +379,21 @@ describe("the plug", () => {
     expect(s.launch.pops).toBe(0);
     expect(s.him.vx).toBeLessThan(0);
     expect(of(events, "bossHit")[0].left).toBe(5);
+  });
+
+  it("the plug is 24 u wide: a launch 11 u off its middle hits it, one 13 u off bounces off the casing", () => {
+    for (const [off, part] of [
+      [11, "plug"],
+      [-11, "plug"],
+      [13, "casing"],
+      [-13, "casing"],
+    ] as const) {
+      const s = behind();
+      s.him.y = 212 + off;
+      const events = launchAnd(s, T, shot(1, 0), (e) => of(e, "hit").length > 0 || of(e, "bossBounce").length > 0, 60);
+      expect(of(events, "hit").length, `${off}`).toBe(part === "plug" ? 1 : 0);
+      if (part === "casing") expect(of(events, "bossBounce")[0].part, `${off}`).toBe("casing");
+    }
   });
 
   it("off a cushion the hit counts as two and pays 400; on a plug with one left it takes one off and pays 200", () => {
@@ -511,6 +557,20 @@ describe("the casing", () => {
     expect(bounce.vy).toBeGreaterThan(-0.84 * vin);
   });
 
+  it("a moving face along a lane: off its trailing end, moving away at 70 u/s, he comes back slower than off a face at rest", () => {
+    const s = landed();
+    // Heading right at 70 u/s, its box 140 to 260 across, 182 to 242 down; he flies into its trailing end 20 u off the plug.
+    machine(s, { lane: 3, x: 200, dir: 1 });
+    him(s, 60, 232);
+    const events = launchAnd(s, T, shot(1, 0), (e) => of(e, "bossBounce").length > 0, 60);
+    const [bounce] = of(events, "bossBounce");
+    expect(bounce.part).toBe("casing");
+    // Going in at vin, out at 70 - 0.84 (vin - 70).
+    const vin = bounce.speed;
+    expect(bounce.vx).toBeCloseTo(70 - 0.84 * (vin - 70), 6);
+    expect(bounce.vy).toBe(0);
+  });
+
   it("changing lane, it pushes him and never hurts him; squeezed against a cushion he is moved along it, clear of the machine", () => {
     const s = landed();
     // At the right end of lane 6, about to move down into lane 7; he sits in the bottom right corner.
@@ -588,6 +648,22 @@ describe("so the fight always ends", () => {
     expect(faster[1].speed).toBeCloseTo(70 * 1.12 * 1.12, 9);
     expect(of(events, "bossStall").every((e) => e.why === "wall")).toBe(true);
     expect(of(events, "announce")).toEqual([]);
+  });
+
+  it("a hit starts the 1,500 ticks again: the next speed-up without a hit comes 1,500 ticks after it", () => {
+    const s = landed();
+    machine(s, { lane: 3, x: 200, dir: 1 });
+    him(s, 60, 212);
+    s.him.invulnUntil = 1_000_000;
+    const events = launchAnd(s, T, shot(1, 0), (e) => of(e, "hit").length > 0, 60);
+    const hitTick = of(events, "hit")[0].tick;
+    // No more hits after this one: the plug cannot be hit, and the pad throws him about without a heart.
+    events.push(...run(s, tuned(NO_PLUG), 1600));
+    expect(of(events, "hit")).toHaveLength(1);
+    expect(of(events, "bossFaster").map((e) => [e.tick, e.why])).toEqual([
+      [hitTick + 60, "hit"],
+      [hitTick + 1500, "time"],
+    ]);
   });
 
   it("the last hit powers it down: the night ends as morning, with 1,000 and 250 a heart left, outside the launch's total and the best shot", () => {
