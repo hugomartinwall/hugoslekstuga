@@ -119,7 +119,7 @@ describe("the State", () => {
     expect(state.bestShot).toBeGreaterThan(0);
     expect(state.lastHurtBy).not.toBe("");
     expect(state.launch.blocked).toHaveLength(1);
-    expect(state.night.kinds).toEqual(["bunny", "token"]);
+    expect(state.night.kinds).toEqual(["bunny", "token", "polisher"]);
   });
 
   it("is plain data: numbers, booleans and strings, with no undefined and no Infinity", () => {
@@ -296,7 +296,7 @@ describe("the State", () => {
     expect(s.night).toEqual({
       hour: 0,
       hourStart: 0,
-      kinds: ["bunny", "token"],
+      kinds: ["bunny", "token", "polisher"],
       nextRow: 0,
       rowTick: -1,
       rowLandTick: -1,
@@ -308,6 +308,9 @@ describe("the State", () => {
       offers: true,
     });
     expect([s.score, s.bestShot, s.lastHurtBy, s.lastHurtHour]).toEqual([0, 0, "", -1]);
+    // The polisher is not in the room until 06:00.
+    expect(s.boss.present).toBe(false);
+    expect([s.boss.hp, s.boss.speed, s.boss.beganTick, s.boss.lastHitTick]).toEqual([6, 70, -1, -1]);
     // Two plates lit from the start: Bumper on plate 0, Pip on plate 4. No charm taken, no offer out.
     expect(s.plates.map((p) => p.charm)).toEqual(["bumper", "", "", "", "pip", "", "", "", "", ""]);
     expect(s.plates.every((p) => p.readyTick === 0)).toBe(true);

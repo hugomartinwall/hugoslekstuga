@@ -108,11 +108,12 @@ export function givePip(s: State, why: "timer" | "pop" | "plate", events: SimEve
 }
 
 /**
- * A heart is lost to thing `d`. He is invulnerable for `invulnTicks`; a
- * wave goes out; his pips are refilled and the pip timer restarts, so the
- * player always gets one clean shot after a hit.
+ * A heart is lost to `d`: a thing in the room, or the polisher's pad (kind
+ * "polisher", id 0). He is invulnerable for `invulnTicks`; a wave goes out;
+ * his pips are refilled and the pip timer restarts, so the player always
+ * gets one clean shot after a hit.
  */
-export function loseHeart(s: State, tune: Tune, d: Thing, events: SimEvent[]): void {
+export function loseHeart(s: State, tune: Tune, d: { kind: Thing["kind"] | "polisher"; id: number }, events: SimEvent[]): void {
   const h = s.him;
   s.hearts--;
   h.invulnUntil = s.tick + tune.invulnTicks;
@@ -148,9 +149,10 @@ export function loseHeart(s: State, tune: Tune, d: Thing, events: SimEvent[]): v
 
 // ── Slow motion ───────────────────────────────────────────────────────
 
-/** Is there a threat: is the night on, with at least one thing that can hurt him alive or announced? */
+/** Is there a threat: is the night on, with at least one thing that can hurt him alive or announced (the polisher among them)? */
 export function threat(s: State): boolean {
   if (s.phase !== "night" && s.phase !== "boss") return false;
+  if (s.boss.present) return true;
   for (let i = 0; i < s.things.length; i++) {
     const d = s.things[i];
     if (d.hp > 0 && KINDS[d.kind].hurts) return true;

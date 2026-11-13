@@ -306,7 +306,7 @@ describe("the last heart", () => {
     expect(s.phase).toBe("over");
     expect(s.ended).toBe("hearts");
     expect(events.map((e) => e.type)).toEqual(["hurt", "over"]);
-    expect(of(events, "over")).toEqual([{ type: "over", tick: 0, how: "hearts", score: 1230 }]);
+    expect(of(events, "over")).toEqual([{ type: "over", tick: 0, how: "hearts", score: 1230, bonus: 0 }]);
     expect(s.lastHurtBy).toBe("bunny");
     expect(s.lastHurtHour).toBe(5);
     // The tick it ended in is counted, and nothing is added to the score.

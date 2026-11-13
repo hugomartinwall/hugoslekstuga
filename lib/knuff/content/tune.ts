@@ -155,6 +155,21 @@ export const GAME = {
   longBurnHotFrac: 0.27,
   wideRadius: 2,
   wideFactor: 0.85,
+
+  // The boss: the floor polisher.
+  bossSpeed: 70,
+  bossHits: 6,
+  bossStallTicks: 60,
+  bossSpeedUp: 1.12,
+  bossLaneStallTicks: 48,
+  bossNoHitTicks: 1500,
+  bossTrickleTicks: 240,
+  bossCough: 3,
+  plugWidth: 24,
+  padThrowSpeed: 450,
+  bossMaxTicks: 5400,
+  nightBonus: 1000,
+  heartBonus: 250,
 } as const satisfies Partial<Tune>;
 
 export const DEFAULT_TUNE: Tune = { ...TOY, ...GAME };

@@ -62,12 +62,14 @@ describe("determinism", () => {
       expect(a).toEqual(b);
       if (ticks < 25200) expect(a.tick).toBe(ticks);
     }
-    // The longest run plays a whole night: eleven hours, and it is over.
+    // The longest run plays a whole night: eleven hours and the boss, and it is over by 25,200 ticks.
     const whole = run(1234, 25200);
     expect(whole.phase).toBe("over");
     expect(whole.night.hour).toBe(11);
-    expect(whole.tick).toBeGreaterThan(10836);
-    expect(whole.tick).toBeLessThanOrEqual(11 * 1800 + 1);
+    expect(whole.boss.present).toBe(true);
+    expect(whole.boss.beganTick).toBeGreaterThan(10836);
+    expect(whole.boss.beganTick).toBeLessThanOrEqual(11 * 1800);
+    expect(whole.tick).toBeLessThanOrEqual(25200);
     expect(whole.normalTicks + whole.slowedTicks).toBe(whole.tick);
     expect(whole.slowedTicks).toBeGreaterThan(100);
     expect(whole.hearts).toBeLessThan(60);
@@ -249,14 +251,15 @@ describe("determinism", () => {
     expect(events.filter((e) => e.type === "hour")).toEqual([{ type: "hour", tick: 0, hour: 4 }]);
     expect(events.some((e) => e.type === "row" && e.hour === 4)).toBe(true);
     expect(late.night.hourStart).toBe(0);
-    // An hour outside the night is brought inside it.
-    expect(createState(1, DEFAULT_TUNE, { hour: 99 }).night.hour).toBe(10);
+    // An hour outside the night is brought inside it: 06:00 is the last, on a night that has the polisher.
+    expect(createState(1, DEFAULT_TUNE, { hour: 99 }).night.hour).toBe(11);
+    expect(createState(1, DEFAULT_TUNE, { hour: 99, kinds: ["bunny", "token"] }).night.hour).toBe(10);
     expect(createState(1, DEFAULT_TUNE, { hour: -3 }).night.hour).toBe(0);
-    // The kinds: every kind built so far by default; a list is kept in the order the kinds were built;
-    // a kind with no rules yet cannot be asked for.
-    expect(createState(1, DEFAULT_TUNE).night.kinds).toEqual(["bunny", "token"]);
+    // The kinds: every kind built so far by default, the polisher among them; a list is kept in the
+    // order the kinds were built; a kind with no rules yet cannot be asked for.
+    expect(createState(1, DEFAULT_TUNE).night.kinds).toEqual(["bunny", "token", "polisher"]);
     expect(createState(1, DEFAULT_TUNE, { kinds: ["token", "bunny", "token"] }).night.kinds).toEqual(["bunny", "token"]);
-    expect(createState(1, DEFAULT_TUNE, { kinds: ["bunny", "gum", "battery", "polisher", "nonsense"] }).night.kinds).toEqual(["bunny"]);
+    expect(createState(1, DEFAULT_TUNE, { kinds: ["bunny", "gum", "battery", "polisher", "nonsense"] }).night.kinds).toEqual(["bunny", "polisher"]);
     // A night of tokens only has no rack; one that is empty but for its kinds has none either, and its rows still come.
     expect(createState(1, DEFAULT_TUNE, { kinds: ["token"] }).things).toEqual([]);
     const noRack = createState(1, DEFAULT_TUNE, { empty: true, kinds: ["bunny", "token"] });

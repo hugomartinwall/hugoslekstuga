@@ -23,12 +23,13 @@ export type AimLine = {
   /** Where he touched each cushion, as x, y pairs, in order. The last is where the line ends when `end` is "cushion". */
   cushionPts: number[];
   /**
-   * Why it stops: on the first thing he would pop; at the cushion after
-   * the last one it runs through; where he would land; or after
-   * `maxTicks`.
+   * Why it stops: on the first thing he would pop or hit (the polisher's
+   * plug is thing 0); on the polisher, where he would bounce off its casing;
+   * on its pad, which throws him and costs a heart; at the cushion after the
+   * last one it runs through; where he would land; or after `maxTicks`.
    */
-  end: "thing" | "cushion" | "land" | "time";
-  /** The thing he reaches first, or -1. He is always hot when he reaches it. */
+  end: "thing" | "polisher" | "pad" | "cushion" | "land" | "time";
+  /** The thing he reaches first (0 for the polisher's plug), or -1. He is always hot when he reaches it. */
   hitId: number;
   /** The offered thing the launch would take, as its place in `state.offer.items`; -1 for none. */
   takes: number;
@@ -85,6 +86,19 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
         out.pts.push(e.hx, e.hy);
         out.end = "thing";
         out.hitId = e.id;
+        return out;
+      } else if (e.type === "hit") {
+        out.pts.push(e.x, e.y);
+        out.end = "thing";
+        out.hitId = e.id;
+        return out;
+      } else if (e.type === "bossBounce") {
+        out.pts.push(e.x, e.y);
+        out.end = "polisher";
+        return out;
+      } else if (e.type === "bossThrow") {
+        out.pts.push(e.x, e.y);
+        out.end = "pad";
         return out;
       } else if (e.type === "land") {
         out.pts.push(e.x, e.y);

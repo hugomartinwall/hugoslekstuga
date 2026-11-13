@@ -14,6 +14,7 @@
  */
 import { KINDS } from "../content/kinds";
 import { BUNCH, HOURS, RACK_APEX, ROWS } from "../content/night";
+import { bossClock } from "./boss";
 import { closeOffer, offerStep } from "./charms";
 import { rand } from "./rng";
 import type { SimEvent, State, Thing, Tune } from "./types";
@@ -171,7 +172,7 @@ export function threats(s: State): number {
 /** The rack was in the room before the night began: it has no telegraph and no landing. */
 const RACK_LAND_TICK = -1;
 
-function addThing(s: State, kind: Thing["kind"], x: number, y: number, landTick: number, vx: number, vy: number): Thing {
+export function addThing(s: State, kind: Thing["kind"], x: number, y: number, landTick: number, vx: number, vy: number): Thing {
   const r = KINDS[kind].radius;
   const room = s.room;
   const px = Math.min(room.right - r, Math.max(room.left + r, x));
@@ -192,6 +193,7 @@ function addThing(s: State, kind: Thing["kind"], x: number, y: number, landTick:
     dazedUntil: 0,
     // A dust bunny's wobble starts where the behaviour stream says.
     phase: kind === "bunny" ? rand(s.rng, "behaviour") * Math.PI * 2 : 0,
+    worth0: false,
   };
   s.things.push(d);
   return d;
@@ -202,7 +204,7 @@ function addThing(s: State, kind: Thing["kind"], x: number, y: number, landTick:
  * from every cushion. The first that is at least `arriveMinDist` from him;
  * if none is, the farthest of the 24.
  */
-function farSpot(s: State, tune: Tune, inset: number): { x: number; y: number } {
+export function farSpot(s: State, tune: Tune, inset: number): { x: number; y: number } {
   const room = s.room;
   const w = room.right - room.left - 2 * inset;
   const h = room.bottom - room.top - 2 * inset;
@@ -314,7 +316,7 @@ function placeFile(s: State, tune: Tune, n: number, landTick: number, events: Si
   }
 }
 
-function announce(s: State, d: Thing, events: SimEvent[]): void {
+export function announce(s: State, d: Thing, events: SimEvent[]): void {
   events.push({ type: "announce", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, landTick: d.landTick });
 }
 
@@ -434,11 +436,18 @@ function announceDue(s: State, tune: Tune, rows: readonly Dealt[], events: SimEv
  * Step 4 of a tick. In order: the hour changes if it is due (an offer still
  * out is closed); the rows due are announced; the things whose telegraph
  * has ended land, dazed if he is close; the clear test; the offer opens and
- * arms. Returns false when 05:00 has ended and there is no 06:00 to go to:
- * the night is over, and `step` closes it.
+ * arms. In the boss's hour, 06:00, there are no rows, no clear and no offer:
+ * the things land, and then the polisher's clock runs (sim/boss.ts). Returns
+ * false when 05:00 has ended and the night has no 06:00 to go to (its kinds
+ * leave the polisher out): the night is over, and `step` closes it.
  */
 export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
   const night = s.night;
+  if (s.phase === "boss") {
+    landArrivals(s, tune, events);
+    bossClock(s, tune, events);
+    return true;
+  }
 
   // The hour changes first, so a row whose tick is 0 is announced on the hour's tick 0.
   const settled = night.clearTick >= 0 && night.settledTick >= 0;
@@ -458,24 +467,21 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
     night.clearTick = -1;
     night.offerTick = -1;
     night.settledTick = -1;
-    if (night.hour >= HOURS) return false;
+    if (night.hour >= HOURS) {
+      // 05:00 has ended. Without the polisher the night ends here; with it, 06:00 begins.
+      if (!night.kinds.includes("polisher")) return false;
+      s.phase = "boss";
+      events.push({ type: "hour", tick: s.tick, hour: night.hour });
+      landArrivals(s, tune, events);
+      bossClock(s, tune, events);
+      return true;
+    }
     events.push({ type: "hour", tick: s.tick, hour: night.hour });
   }
 
   const rows = dealtRows(night.kinds)[night.hour];
   announceDue(s, tune, rows, events);
-
-  // Landings. An arrival that lands close to him lands dazed: its spot was
-  // chosen a telegraph ago, and he may have flown there since.
-  const h = s.him;
-  for (let i = 0; i < s.things.length; i++) {
-    const d = s.things[i];
-    if (d.landTick !== s.tick) continue;
-    const dist = Math.hypot(d.x - h.x, d.y - h.y);
-    const dazed = dist <= tune.arriveDazedWithin;
-    if (dazed) daze(s, d, s.tick + tune.dazeTicks, events);
-    events.push({ type: "arrive", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, dist, dazed });
-  }
+  landArrivals(s, tune, events);
 
   // Clear: every row has been announced (at pace 2 and 3 that is true only
   // from last call on) and nothing that counts for clear is left.
@@ -493,6 +499,22 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
   // the offer would have opened.
   offerStep(s, tune, into, events);
   return true;
+}
+
+/**
+ * Landings. An arrival that lands close to him lands dazed: its spot was
+ * chosen a telegraph ago, and he may have flown there since.
+ */
+function landArrivals(s: State, tune: Tune, events: SimEvent[]): void {
+  const h = s.him;
+  for (let i = 0; i < s.things.length; i++) {
+    const d = s.things[i];
+    if (d.landTick !== s.tick) continue;
+    const dist = Math.hypot(d.x - h.x, d.y - h.y);
+    const dazed = dist <= tune.arriveDazedWithin;
+    if (dazed) daze(s, d, s.tick + tune.dazeTicks, events);
+    events.push({ type: "arrive", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, dist, dazed });
+  }
 }
 
 /** Daze a thing until `until`. A new daze never shortens one. */

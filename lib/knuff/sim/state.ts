@@ -8,6 +8,8 @@
  */
 import { BODY_CHARMS, DARK, PLATES, START_PLATES, isWallCharm } from "../content/charms";
 import { BUILT, isBuilt } from "../content/kinds";
+import { BOSS_HOUR } from "../content/night";
+import { noBoss } from "./boss";
 import { statsFor } from "./charms";
 import { placeRack } from "./night";
 import { seedStreams } from "./rng";
@@ -34,7 +36,11 @@ export function defaultRoom(): Room {
  * handle all use it (§12.2).
  */
 export type StartOptions = {
-  /** The hour the night begins in: 0 is 19:00, 10 is 05:00. The first launch starts it at its tick 0. */
+  /**
+   * The hour the night begins in: 0 is 19:00, 10 is 05:00, 11 is 06:00 (the
+   * polisher's, on a night whose kinds bring it). The first launch starts it
+   * at its tick 0.
+   */
   hour?: number;
   /**
    * Hearts at the start: brought inside 1 and the most he can have.
@@ -59,7 +65,8 @@ export type StartOptions = {
   /**
    * The kinds the night's rows may bring. By default, every kind built so
    * far. A kind not listed is left out of the rows; a kind not built yet
-   * cannot be asked for.
+   * cannot be asked for. The polisher counts as a kind: a night without it
+   * has no 06:00 and ends when 05:00 ends.
    */
   kinds?: readonly string[];
   /**
@@ -73,7 +80,11 @@ export type StartOptions = {
 
 export function createState(seed: number, tune: Tune, start: StartOptions = {}): State {
   const asked = start.kinds ?? (start.empty ? [] : BUILT);
-  const hour = Math.min(10, Math.max(0, Math.floor(start.hour ?? 0)));
+  // In the order the kinds were built, each once, so two ways of asking for the same night make the same State.
+  const kinds: string[] = BUILT.filter((kind) => asked.includes(kind) && isBuilt(kind));
+  // 06:00 is an hour to begin in only on a night that has it.
+  const lastHour = kinds.includes("polisher") ? BOSS_HOUR : BOSS_HOUR - 1;
+  const hour = Math.min(lastHour, Math.max(0, Math.floor(start.hour ?? 0)));
   // In the order of the asking, each once.
   const charms: string[] = [];
   for (const c of start.charms ?? []) if ((BODY_CHARMS as readonly string[]).includes(c) && !charms.includes(c)) charms.push(c);
@@ -114,6 +125,8 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
       coin: false,
       sparkUntil: -1,
       bumped: [],
+      hit: [],
+      thrown: false,
       points: 0,
       blocked: [],
       armed: false,
@@ -128,8 +141,7 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
     night: {
       hour,
       hourStart: 0,
-      // In the order the kinds were built, each once, so two ways of asking for the same night make the same State.
-      kinds: BUILT.filter((kind) => asked.includes(kind) && isBuilt(kind)),
+      kinds,
       nextRow: 0,
       rowTick: -1,
       rowLandTick: -1,
@@ -141,6 +153,7 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
       offers: start.offers !== false,
     },
     offer: { open: false, openTick: -1, armedTick: -1, items: [] },
+    boss: noBoss(tune),
     score: 0,
     bestShot: 0,
     lastHurtBy: "",

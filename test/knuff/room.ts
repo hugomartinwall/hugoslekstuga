@@ -55,6 +55,7 @@ export function put(s: State, kind: Thing["kind"], x: number, y: number, over: P
     landTick: -1,
     dazedUntil: 0,
     phase: 0,
+    worth0: false,
     ...over,
   };
   s.things.push(d);

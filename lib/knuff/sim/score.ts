@@ -58,7 +58,8 @@ export function scorePop(s: State, d: Thing, tune: Tune, body: boolean): PopScor
   const chain = chainFor(l.pops, l.carry, tune);
   const cushions = cushionsFor(l.cushions, tune);
   const coin = l.coin ? tune.coinFactor : 1;
-  const points = KINDS[d.kind].points * chain * cushions * coin;
+  // A dust bunny of the boss's hour is worth nothing: still a pop, for the chain and the pip.
+  const points = (d.worth0 ? 0 : KINDS[d.kind].points) * chain * cushions * coin;
   l.points += points;
   s.score += points;
   // The best shot is the largest total one launch has made. A total only

@@ -8,8 +8,9 @@
  *
  * Step 1 held the first two minutes: him, dust bunnies and tokens, hearts,
  * pips, the slow-motion meter, the hour clock and the score. Step 2 adds
- * the ten plates, the charms and the offer. The boss and the later kinds
- * join in the steps that build them, under the names the spec gives them.
+ * the ten plates, the charms and the offer. Step 3 adds the boss, the floor
+ * polisher of 06:00. The later kinds join in the steps that build them,
+ * under the names the spec gives them.
  */
 import type { BuiltKind } from "../content/kinds";
 
@@ -175,6 +176,34 @@ export type Tune = {
   wideRadius: number;
   /** Wide: the share of a pop's impulse he still feels. */
   wideFactor: number;
+
+  // ── The boss: the floor polisher (06:00) ────────────────────────────
+  /** Its speed when it lands, u/s. */
+  bossSpeed: number;
+  /** Hits the plug takes. */
+  bossHits: number;
+  /** It stalls this long after a plug hit, ticks. */
+  bossStallTicks: number;
+  /** Its speed is multiplied by this after each hit, and after each long gap without one. */
+  bossSpeedUp: number;
+  /** It stalls this long at a wall before it changes lane, ticks. */
+  bossLaneStallTicks: number;
+  /** Without a hit for this long it speeds up as if hit, ticks. */
+  bossNoHitTicks: number;
+  /** One dust bunny arrives this often while it is in the room, ticks. */
+  bossTrickleTicks: number;
+  /** Dust bunnies it coughs out on each hit. */
+  bossCough: number;
+  /** Width of the plug in the middle of its trailing end, u. */
+  plugWidth: number;
+  /** The speed the pad throws him at, u/s. */
+  padThrowSpeed: number;
+  /** The night ends this long after 06:00 begins, beaten or not, ticks. */
+  bossMaxTicks: number;
+  /** For beating the polisher, points. */
+  nightBonus: number;
+  /** Per heart left when the polisher is beaten, points. */
+  heartBonus: number;
 };
 
 /**
@@ -244,6 +273,8 @@ export type Thing = {
   dazedUntil: number;
   /** A dust bunny's wobble phase, rad. 0 for a token. */
   phase: number;
+  /** A dust bunny of the boss's hour (trickled in, or coughed out): it pops for no points. */
+  worth0: boolean;
 };
 
 /** The launch in progress, or the last one. */
@@ -270,6 +301,10 @@ export type LaunchState = {
   sparkUntil: number;
   /** Bumper plates this launch has already been kicked by: each kicks once a launch. */
   bumped: number[];
+  /** Things that take several hits that this launch has already hit; the polisher's plug is id 0. */
+  hit: number[];
+  /** The polisher's pad threw him: this launch is the throw. It cannot be thrown again by the pad while it lasts. */
+  thrown: boolean;
   /** This launch's total. */
   points: number;
   /** Things and tiles he overlapped at the release: this launch cannot pop or take one until he has left it. */
@@ -337,6 +372,48 @@ export type NightState = {
   offers: boolean;
 };
 
+/** The lanes the polisher walks, 0 (top) to 7. */
+export type BossMode = "arriving" | "lane" | "wallStall" | "laneMove" | "hitStall" | "down";
+
+/**
+ * The floor polisher (§8): a box 120 u long in its direction of travel and
+ * 60 u across, that walks the lanes from side to side. Its leading end is
+ * the pad, the middle of its trailing end the plug, the rest the casing.
+ */
+export type Boss = {
+  /** It has been announced: 06:00 has begun. False all night before that. */
+  present: boolean;
+  /** The centre of its box, and where it was one tick ago. */
+  x: number;
+  y: number;
+  px: number;
+  py: number;
+  /** 1: heading right, the pad on its right end. -1: heading left. */
+  dir: 1 | -1;
+  /** The lane it is in, or is leaving while it changes lane. */
+  lane: number;
+  /** The way it walks the lanes: 1 down the room, -1 up. An end lane is not repeated. */
+  laneStep: 1 | -1;
+  /** u/s. */
+  speed: number;
+  /** Hits the plug has left. */
+  hp: number;
+  /**
+   * "arriving": announced, not landed. "lane": moving along a lane, the pad
+   * on. "wallStall": its leading end at the wall, the pad off. "laneMove":
+   * changing lane. "hitStall": stalled after a plug hit. "down": beaten.
+   */
+  mode: BossMode;
+  /** The tick the mode's time runs out (arriving, wallStall, hitStall); -1 for none. */
+  modeUntil: number;
+  /** The tick 06:00 began: `bossMaxTicks` counts from here. -1 before. */
+  beganTick: number;
+  /** For `bossNoHitTicks`: the tick it landed, was last hit, or last sped up without a hit. -1 before it lands. */
+  lastHitTick: number;
+  /** The tick the next dust bunny is announced. */
+  nextTrickleTick: number;
+};
+
 export type State = {
   v: 1;
   seed: number;
@@ -345,9 +422,13 @@ export type State = {
   /** For real time: normal / 60 + slowed / (60 × the slow share). */
   normalTicks: number;
   slowedTicks: number;
-  /** "boss" is the polisher's hour; nothing sets it before the boss is built. */
+  /** "boss" is the polisher's hour, 06:00. */
   phase: "waiting" | "night" | "boss" | "over";
-  /** How the night ended. "dawn" is the lights coming on at 06:00; nothing sets it before the boss is built. */
+  /**
+   * How the night ended. "morning": the polisher was beaten, or, on a night
+   * that leaves the polisher out, 05:00 ended. "dawn": 06:00 ran out with the
+   * polisher unbeaten (the lights came on).
+   */
   ended: "" | "hearts" | "morning" | "dawn";
   /** mulberry32 states, one per stream (rng.ts). The only source of randomness. */
   rng: { arrivals: number; offers: number; behaviour: number };
@@ -371,6 +452,8 @@ export type State = {
   nextId: number;
   night: NightState;
   offer: Offer;
+  /** The polisher; `present` is false until 06:00. */
+  boss: Boss;
   score: number;
   /** The largest total one launch has made. */
   bestShot: number;
@@ -436,8 +519,40 @@ export type SimEvent =
   | { type: "launchEnd"; tick: number; x: number; y: number; id: number; pops: number; total: number }
   /** A pip came back. `pips` is the count now. */
   | { type: "pip"; tick: number; pips: number; why: "timer" | "pop" | "heart" | "plate" }
-  /** A heart was lost to thing `id`. `x`, `y` is his centre, where the wave goes out from. */
-  | { type: "hurt"; tick: number; x: number; y: number; by: Thing["kind"]; id: number; hearts: number }
+  /** A heart was lost to thing `id` (0 and "polisher": the polisher's pad). `x`, `y` is his centre, where the wave goes out from. */
+  | { type: "hurt"; tick: number; x: number; y: number; by: Thing["kind"] | "polisher"; id: number; hearts: number }
+  /**
+   * A counted hit on a thing that takes several: so far the polisher's plug
+   * (id 0). `x`, `y` is his centre as he met it; `left` its hits left; `points` what
+   * it paid; `two` whether it counted as two (off a cushion).
+   */
+  | { type: "hit"; tick: number; x: number; y: number; kind: "polisher"; id: number; left: number; points: number; two: boolean }
+  /** The polisher lands, at the end of its telegraph. */
+  | { type: "bossArrive"; tick: number; x: number; y: number; lane: number; dir: 1 | -1 }
+  /** The plug was hit: `left` hits remain; `coughed` dust bunnies came out of it. */
+  | { type: "bossHit"; tick: number; x: number; y: number; left: number; coughed: number }
+  /** It stalled: at a wall before a lane change, or after a hit. The pad is off until `until`. */
+  | { type: "bossStall"; tick: number; x: number; y: number; why: "wall" | "hit"; until: number }
+  /** Pad and plug swapped ends: it sets off heading `dir`. */
+  | { type: "bossTurn"; tick: number; x: number; y: number; dir: 1 | -1 }
+  /** It starts to change lane, from `from` to `lane`. */
+  | { type: "bossLane"; tick: number; x: number; y: number; from: number; lane: number }
+  /** It sped up: after a hit, or because `bossNoHitTicks` passed without one. */
+  | { type: "bossFaster"; tick: number; x: number; y: number; speed: number; why: "hit" | "time" }
+  /** The last hit: it powers down. */
+  | { type: "bossDown"; tick: number; x: number; y: number }
+  /**
+   * He bounced off the polisher without a hit: the casing, or the plug when
+   * this launch has hit it already. `x`, `y` is his centre as he met it;
+   * `speed` his speed going in, `vx`, `vy` his velocity coming out.
+   */
+  | { type: "bossBounce"; tick: number; x: number; y: number; part: "casing" | "plug"; speed: number; vx: number; vy: number }
+  /**
+   * The pad threw him, along `vx`, `vy`. `x`, `y` is his centre where the pad
+   * met him; `tx`, `ty` where he was set clear of it and flies from. `hurt`:
+   * it cost a heart (it did not while he was invulnerable).
+   */
+  | { type: "bossThrow"; tick: number; x: number; y: number; tx: number; ty: number; vx: number; vy: number; hurt: boolean }
   /** A thing's telegraph began; it lands at `landTick`. */
   | { type: "announce"; tick: number; x: number; y: number; id: number; kind: Thing["kind"]; landTick: number }
   /** A thing landed, `dist` from his centre; `dazed` if that was close. */
@@ -463,5 +578,5 @@ export type SimEvent =
   | { type: "hour"; tick: number; hour: number }
   /** The hour is clear. */
   | { type: "clear"; tick: number; hour: number }
-  /** The night ended. */
-  | { type: "over"; tick: number; how: "hearts" | "morning" | "dawn"; score: number };
+  /** The night ended. `bonus`: what beating the polisher added to the score (0 for any other end). */
+  | { type: "over"; tick: number; how: "hearts" | "morning" | "dawn"; score: number; bonus: number };

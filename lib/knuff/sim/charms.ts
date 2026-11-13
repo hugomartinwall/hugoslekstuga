@@ -337,6 +337,7 @@ function makeOffer(s: State, tune: Tune, events: SimEvent[]): boolean {
       landTick: s.tick,
       dazedUntil: 0,
       phase: 0,
+      worth0: false,
     };
     s.things.push(d);
     items.push({ kind: "pickup", charm, plate: -1, thingId: d.id });

@@ -93,6 +93,19 @@ describe("the knob table", () => {
       longBurnHotFrac: 0.27,
       wideRadius: 2,
       wideFactor: 0.85,
+      bossSpeed: 70,
+      bossHits: 6,
+      bossStallTicks: 60,
+      bossSpeedUp: 1.12,
+      bossLaneStallTicks: 48,
+      bossNoHitTicks: 1500,
+      bossTrickleTicks: 240,
+      bossCough: 3,
+      plugWidth: 24,
+      padThrowSpeed: 450,
+      bossMaxTicks: 5400,
+      nightBonus: 1000,
+      heartBonus: 250,
     });
   });
 

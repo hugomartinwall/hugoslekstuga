@@ -10,6 +10,8 @@
  * below are its steps. His own motion is the feel toy's, piece for piece:
  * test/knuff/feel-lock.test.ts holds every tick he is hot against the toy.
  */
+import { BOSS_HOUR } from "../content/night";
+import { bossContact, moveBoss, nightBonus } from "./boss";
 import { armedLaunch, bounceOff } from "./charms";
 import { countTick, endLaunch, givePip, isHot, isLaunch, land } from "./hot";
 import { choose, contacts, moveThings, overlapped, slowThings, spreadBunnies, unblock } from "./intruders";
@@ -35,7 +37,8 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
       events.push({ type: "refused", tick: s.tick });
       return;
     }
-    s.phase = "night";
+    // A night begun at 06:00 is the polisher's hour from its first tick.
+    s.phase = s.night.hour >= BOSS_HOUR ? "boss" : "night";
     s.night.hourStart = s.tick;
     events.push({ type: "hour", tick: s.tick, hour: s.night.hour });
   }
@@ -48,6 +51,9 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     d.px = d.x;
     d.py = d.y;
   }
+  const boss = s.boss;
+  boss.px = boss.x;
+  boss.py = boss.y;
 
   // 2. The launch. With a pip in hand: spend it, close the launch before
   // this one and open a new one, and set his velocity. With none: refused.
@@ -74,6 +80,8 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
         coin: false,
         sparkUntil: -1,
         bumped: [],
+        hit: [],
+        thrown: false,
         points: 0,
         blocked: overlapped(s),
         // Released on a tick after the offer armed: it can take. (The
@@ -114,7 +122,9 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     // 7. Move, in substeps small enough that nothing tunnels: the toy's
     // rule, on the fastest mover.
     const speedNow = Math.hypot(h.vx, h.vy);
-    const n = substepsFor(speedNow > fastestThing ? speedNow : fastestThing, tune);
+    let fastest = speedNow > fastestThing ? speedNow : fastestThing;
+    if (boss.present && boss.speed > fastest) fastest = boss.speed;
+    const n = substepsFor(fastest, tune);
     const sub = DT / n;
     const r = s.stats.radius;
     for (let i = 0; i < n && running; i++) {
@@ -141,8 +151,14 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
         }
       }
       moveThings(s, tune, sub);
+      // The polisher moves and pushes the intruders in its way; then he
+      // meets it (its plug is id 0, before every thing), then the things.
+      if (boss.present) {
+        moveBoss(s, tune, sub, events);
+        running = bossContact(s, tune, events);
+      }
       // Contacts in the order of `things`, with the landing test after each.
-      running = contacts(s, tune, events);
+      if (running) running = contacts(s, tune, events);
       if (!running) {
         s.ended = "hearts";
         break;
@@ -179,6 +195,19 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
   // so the State can go through JSON and come back the same.
   h.vx += 0;
   h.vy += 0;
+  // The end of the night: zero hearts comes first, then the beaten
+  // polisher, then the boss's time (90 s after 06:00 began, beaten or not).
+  let bonus = 0;
+  if (s.ended === "" && boss.present) {
+    if (boss.mode === "down") {
+      // Not part of any launch's total, and not of the best shot.
+      bonus = nightBonus(s, tune);
+      s.score += bonus;
+      s.ended = "morning";
+    } else if (s.tick + 1 - boss.beganTick >= tune.bossMaxTicks) {
+      s.ended = "dawn";
+    }
+  }
   if (s.ended !== "") {
     // The night ends where it stands. A launch in flight ends with it.
     endLaunch(s, events);
@@ -186,7 +215,7 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     h.vy = 0;
     h.hot = false;
     s.phase = "over";
-    events.push({ type: "over", tick: s.tick, how: s.ended, score: s.score });
+    events.push({ type: "over", tick: s.tick, how: s.ended, score: s.score, bonus });
   }
   s.tick++;
 }

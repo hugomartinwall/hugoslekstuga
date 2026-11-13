@@ -48,12 +48,23 @@ export const KINDS: Record<Exclude<Kind, "polisher">, KindRow> = {
   pickup: { radius: 0, boxW: 36, boxH: 36, hits: 1, points: 0, hurts: false, clear: false, intruder: false },
 };
 
-/** A kind that has rules so far: a thing in the room is one of these. */
+/** A kind of thing in the room that has rules so far: a thing in the room is one of these. */
 export type BuiltKind = "bunny" | "token";
 
-/** The kinds that have rules so far. A night's rows bring these and no other (State.night.kinds). */
-export const BUILT: readonly BuiltKind[] = ["bunny", "token"];
+/**
+ * The kinds that have rules so far, in the order they were built: what a
+ * night can bring (State.night.kinds). The polisher is one of them: a
+ * night whose kinds leave it out has no 06:00, and ends when 05:00 ends.
+ */
+export const BUILT: readonly (BuiltKind | "polisher")[] = ["bunny", "token", "polisher"];
 
-export function isBuilt(kind: string): kind is BuiltKind {
+export function isBuilt(kind: string): kind is BuiltKind | "polisher" {
   return (BUILT as readonly string[]).includes(kind);
 }
+
+/**
+ * The polisher's row of the kind table (§5.1, §8): a box, 120 u long in its
+ * direction of travel and 60 u across; its plug pays this much for each
+ * hit point it takes off. Its hits are the knob `bossHits`.
+ */
+export const POLISHER = { boxL: 120, boxW: 60, points: 200 } as const;

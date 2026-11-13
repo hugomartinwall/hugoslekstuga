@@ -29,8 +29,10 @@ type Seen = { hour: number; row: number; how: string; at: number; n: number; cut
 /**
  * A night begun by hand in a given hour, and the means to do to its room
  * what a player would. It is the step-1 night, as the bot table keeps it:
- * nothing is offered, so each hour is settled the moment its offer would
- * have opened (§3.2), and the plates are dark. The offer has its own suite
+ * dust bunnies and tokens only, the polisher left out (so the night ends
+ * when 05:00 ends: the boss has its own suite, boss.test.ts); nothing is
+ * offered, so each hour is settled the moment its offer would have opened
+ * (§3.2), and the plates are dark. The offer has its own suite
  * (charms.test.ts).
  */
 class Night {
@@ -42,7 +44,9 @@ class Night {
 
   constructor(over: Partial<Tune> = {}, start: StartOptions = {}, seed = 1) {
     this.tune = tuned({ ...STILL, ...over });
-    this.s = createState(seed, this.tune, { plates: DARK_PLATES, offers: false, ...start });
+    // (An empty room with no kinds named brings nothing, the polisher included.)
+    const kinds = start.empty ? {} : { kinds: STEP1 };
+    this.s = createState(seed, this.tune, { ...kinds, plates: DARK_PLATES, offers: false, ...start });
     this.s.phase = "night";
     this.began[this.s.night.hour] = 0;
   }
@@ -771,7 +775,7 @@ describe("the hour clock", () => {
     expect(night.s.score).toBe(4321);
     expect(night.s.bestShot).toBe(250);
     expect(night.s.hearts).toBe(3);
-    expect(night.events.slice(-1)).toEqual([{ type: "over", tick: 1800, how: "morning", score: 4321 }]);
+    expect(night.events.slice(-1)).toEqual([{ type: "over", tick: 1800, how: "morning", score: 4321, bonus: 0 }]);
     // The tick is counted, and no twelfth hour is announced.
     expect(night.s.tick).toBe(1801);
     expect(of(night.events, "hour")).toEqual([]);

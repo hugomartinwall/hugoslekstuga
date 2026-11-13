@@ -36,6 +36,9 @@ export type Row = {
 /** The eleven hours of the night. The polisher comes at 06:00 and morning is 07:00. */
 export const HOURS = 11;
 
+/** The hour index of 06:00, the polisher's: the hour after the last of the eleven. */
+export const BOSS_HOUR = HOURS;
+
 /** What the clock shows, by hour index; 11 is the boss and 12 is morning. */
 export const CLOCK = ["19:00", "20:00", "21:00", "22:00", "23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00"] as const;
 
