@@ -10,6 +10,10 @@
  *       [--tune='{"popHotTicks":15}']
  *       [--pace=1|2|3]           the same as --tune='{"pace":3}'
  *       [--plates]               the step-1 table with the two starting plates lit (Bumper on 0, Pip on 4)
+ *       [--now]                  the step-1 table on the night as it now stands: the step-1 night with
+ *                                every kind built so far but the polisher switched on in its rows (gum
+ *                                and batteries since step 4), plates dark, nothing offered; it still ends
+ *                                when 05:00 ends, where the table counts to
  *       [--charms]               the charm test of §13.3: 120 nights a charm (--seeds), from 23:00,
  *                                for the Expert and the Ordinary (--player=expert or ordinary);
  *                                --arms=bell,coin runs those charms only, beside the arm without one
@@ -35,6 +39,7 @@ import { CHARM_ARMS, CHARM_NIGHTS, CHARM_PLAYERS, charmNight, printCharmTest, pr
 import { CAST, STEP1_NIGHT, TAKERS, nightSeed, player, runNight, type Night } from "../lib/knuff/bots/driver";
 import { printTable, summarise, type Sum } from "../lib/knuff/bots/table";
 import { START_PLATES } from "../lib/knuff/content/charms";
+import { BUILT } from "../lib/knuff/content/kinds";
 import { CLOCK } from "../lib/knuff/content/night";
 import { DEFAULT_TUNE, mergeTune } from "../lib/knuff/content/tune";
 import type { StartOptions } from "../lib/knuff/sim/state";
@@ -55,6 +60,7 @@ const who = asked ?? CAST.map((c) => c.key);
 const outDir = option("out");
 const tag = option("tag") ?? "table";
 const lit = process.argv.includes("--plates");
+const now = process.argv.includes("--now");
 
 // --from=23 is a clock hour; the State counts hours from 19:00.
 const fromClock = option("from");
@@ -63,8 +69,9 @@ if (!(fromHour >= 0 && fromHour <= 10)) {
   console.error(`--from takes an hour of the night, 19 to 05; got ${fromClock}`);
   process.exit(2);
 }
-/** The step-1 night; with --plates, the two starting plates lit on it. */
-const start: StartOptions = { ...STEP1_NIGHT, hour: fromHour, ...(lit ? { plates: START_PLATES } : {}) };
+/** The step-1 night; with --plates, the two starting plates lit on it; with --now, the kinds built since in its rows. */
+const nowKinds = BUILT.filter((k) => k !== "polisher");
+const start: StartOptions = { ...STEP1_NIGHT, hour: fromHour, ...(lit ? { plates: START_PLATES } : {}), ...(now ? { kinds: nowKinds } : {}) };
 
 /** 200 seeds; 100 for the Expert and the Corner (§13.2). */
 const nightsFor = (key: string) => (key === "expert" || key === "corner" || key === "expert-takes" ? Math.ceil(seeds / 2) : seeds);
@@ -164,7 +171,7 @@ for (const key of who) {
   sums.set(key, summarise(key, def.label, nights, tune, secs));
 }
 
-const title = `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; the step-1 night (eleven hours, dust bunnies and tokens only${lit ? "; the two starting plates LIT: Bumper on plate 0, Pip on plate 4" : ", all plates dark"}, nothing offered)${fromHour ? `, from ${CLOCK[fromHour]}` : ""}; nights ${first} to ${first + seeds - 1} (half as many for the Expert and the Corner)${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`;
+const title = `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; ${now ? `the NIGHT AS IT NOW STANDS (eleven hours; in its rows: ${nowKinds.join(", ")}; no 06:00` : "the step-1 night (eleven hours, dust bunnies and tokens only"}${lit ? "; the two starting plates LIT: Bumper on plate 0, Pip on plate 4" : ", all plates dark"}, nothing offered)${fromHour ? `, from ${CLOCK[fromHour]}` : ""}; nights ${first} to ${first + seeds - 1} (half as many for the Expert and the Corner)${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`;
 const table = printTable(
   title,
   CAST.map((c) => c.key),

@@ -10,7 +10,7 @@
  */
 import { CLOCK, HOURS } from "../content/night";
 import type { Tune } from "../sim/types";
-import { realSeconds, type Night } from "./driver";
+import { realSeconds, type Batteries, type Night } from "./driver";
 
 export function median(xs: readonly number[]): number {
   if (xs.length === 0) return NaN;
@@ -41,6 +41,9 @@ export type Sum = {
   heartsPerNight: number;
   heartsByBunny: number;
   heartsByToken: number;
+  /** Hearts lost to a battery: by its touch, and by a blast. */
+  heartsByBattery: number;
+  heartsByBlast: number;
   hearts: number;
   nightsWithHeart: number;
   /** Nights with a heart lost within 120 ticks of the first launch. */
@@ -69,6 +72,10 @@ export type Sum = {
   tokenSeen: number;
   tokenAlone: number;
   tokenAloneTicksMedian: number;
+  /** For each kind with a first row: nights it came, nights it came alone at tick 0 of its hour, nights its first row was cut whole. */
+  firsts: Record<string, { seen: number; alone: number; cutWhole: number; aloneTicksMedian: number }>;
+  /** Batteries and gum, summed over the nights (driver.ts, `Batteries`). */
+  batteries: Batteries;
   heartsByHour: number[];
   hourLenMedian: number[];
   launchesPerNight: number;
@@ -86,6 +93,8 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
   let hearts = 0;
   let byBunny = 0;
   let byToken = 0;
+  let byBattery = 0;
+  let byBlast = 0;
   let early = 0;
   let unfair = 0;
   let ticks = 0;
@@ -113,7 +122,8 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     let soon = false;
     for (const l of x.losses) {
       if (l.by === "bunny") byBunny++;
-      else byToken++;
+      else if (l.by === "token") byToken++;
+      else if (l.by === "battery") byBattery++;
       if (l.tick <= 120) soon = true;
       if (l.hour < HOURS) heartsByHour[l.hour]++;
     }
@@ -139,6 +149,25 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     landed += x.ticksLanded;
     landedNoPip += x.ticksLandedNoPip;
   }
+  // Blasts are counted by the driver (a battery's touch and its blast are both "battery" in the losses).
+  const batteries: Batteries = { knocks: 0, burstsMine: 0, burstsNotMine: 0, blastPops: 0, blastBunnies: 0, touchHearts: 0, blastHearts: 0, mineHearts: 0, knockedHearts: 0, blastWrong: 0, gumHits: 0, gumStops: 0 };
+  const firsts: Sum["firsts"] = {};
+  const aloneTicks: Record<string, number[]> = {};
+  for (const x of nights) {
+    const b = x.batteries;
+    for (const k of Object.keys(batteries) as (keyof Batteries)[]) batteries[k] += b[k];
+    for (const f of x.firsts) {
+      const t = (firsts[f.kind] ??= { seen: 0, alone: 0, cutWhole: 0, aloneTicksMedian: NaN });
+      if (f.cutWhole) t.cutWhole++;
+      if (f.hour < 0) continue;
+      t.seen++;
+      if (f.alone) t.alone++;
+      if (f.aloneTicks >= 0) (aloneTicks[f.kind] ??= []).push(f.aloneTicks);
+    }
+  }
+  for (const k of Object.keys(firsts)) firsts[k].aloneTicksMedian = median(aloneTicks[k] ?? []);
+  byBlast = batteries.blastHearts;
+  byBattery -= byBlast;
   const hourLenMedian: number[] = [];
   for (let h = 0; h < HOURS; h++) hourLenMedian.push(median(nights.filter((x) => x.hourLen.length > h).map((x) => x.hourLen[h])));
   const doneSim = done.map(sim);
@@ -157,6 +186,8 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     heartsPerNight: div(hearts, n),
     heartsByBunny: byBunny,
     heartsByToken: byToken,
+    heartsByBattery: byBattery,
+    heartsByBlast: byBlast,
     hearts,
     nightsWithHeart: nights.filter((x) => x.heartsLost > 0).length,
     earlyHeartNights: early,
@@ -182,6 +213,8 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     tokenSeen,
     tokenAlone,
     tokenAloneTicksMedian: median(tokenTicks),
+    firsts,
+    batteries,
     heartsByHour,
     hourLenMedian,
     launchesPerNight: div(launches, n),
@@ -528,6 +561,72 @@ export const STEP1_BOUNDS: readonly Bound[] = [
   },
 ];
 
+/**
+ * The invariants that gum and batteries add (step 4), on whatever night is
+ * run: every new kind first alone at tick 0 of its hour (the step-1
+ * table's token row, for every kind with a first row); a battery he has
+ * knocked never costs him a heart; a blast that is not his costs one only
+ * as §5.3 says. One case fails the run.
+ */
+export const STEP4_BOUNDS: readonly Bound[] = [
+  {
+    row: "every",
+    needs: [],
+    text: "Every player: each new kind first comes alone, at tick 0 of its hour, as the only thing that hour has sent (a first row the cap cut whole is counted apart, not a case)",
+    check: (m) => {
+      const by: Record<string, { seen: number; alone: number; cutWhole: number }> = {};
+      for (const s of m.values()) {
+        for (const [kind, f] of Object.entries(s.firsts)) {
+          const t = (by[kind] ??= { seen: 0, alone: 0, cutWhole: 0 });
+          t.seen += f.seen;
+          t.alone += f.alone;
+          t.cutWhole += f.cutWhole;
+        }
+      }
+      // A kind whose first row was cut whole may first come later, in a bunch: those nights are not cases.
+      const ok = Object.values(by).every((t) => t.seen - t.alone <= t.cutWhole);
+      const parts = Object.entries(by).map(([kind, t]) => `${kind} alone in ${t.alone} of ${t.seen} nights it came (first row cut whole: ${t.cutWhole})`);
+      return { ok, measured: parts.length ? parts.join("; ") : "no kind with a first row in this night" };
+    },
+  },
+  {
+    row: "every",
+    needs: [],
+    text: "Every player: a battery he has knocked never costs him a heart, by its touch or its blast (nor one a blast of his set off)",
+    check: (m) => {
+      let mine = 0;
+      let knocked = 0;
+      let knocks = 0;
+      let blasts = 0;
+      let nights = 0;
+      for (const s of m.values()) {
+        mine += s.batteries.mineHearts;
+        knocked += s.batteries.knockedHearts;
+        knocks += s.batteries.knocks;
+        blasts += s.batteries.burstsMine;
+        nights += s.n;
+      }
+      return { ok: mine === 0, measured: `${mine} hearts to a battery of his (${knocked} to one he had knocked), over ${knocks} knocks and ${blasts} blasts of his in ${nights} nights` };
+    },
+  },
+  {
+    row: "every",
+    needs: [],
+    text: "Every player: a blast that is not his costs a heart only while he is landed, not invulnerable, with his centre within 70 u (and the battery not dazed)",
+    check: (m) => {
+      let wrong = 0;
+      let hearts = 0;
+      let blasts = 0;
+      for (const s of m.values()) {
+        wrong += s.batteries.blastWrong;
+        hearts += s.batteries.blastHearts;
+        blasts += s.batteries.burstsNotMine;
+      }
+      return { ok: wrong === 0, measured: `${wrong} of ${hearts} hearts lost to a blast; ${blasts} blasts not his` };
+    },
+  },
+];
+
 /** The bounds of one row that can be checked with the players at hand. */
 export function boundsFor(row: string, sums: Sums): Bound[] {
   return STEP1_BOUNDS.filter((b) => b.row === row && b.needs.every((k) => sums.has(k)));
@@ -558,10 +657,11 @@ export function printTable(title: string, order: readonly string[], sums: Sums, 
     `the knobs the simulation read: pace ${tune.pace}; popHotTicks ${tune.popHotTicks}; pipRefillTicks ${tune.pipRefillTicks}; paceRoom ${tune.paceRoom}; paceEvery ${tune.paceEvery}; paceLastCall ${tune.paceLastCall}, at 19:00 ${tune.paceLastCallFirst}; paceTokens ${tune.paceTokens}; dazeTicks ${tune.dazeTicks}; bunnySpeed ${tune.bunnySpeed}; tokenSpeed ${tune.tokenSpeed}; roomCap ${tune.roomCap}; hourPauseTicks ${tune.hourPauseTicks}${tune.pace === 2 || tune.pace === 3 ? "" : " (at this pace the five pace numbers are not used)"}`,
   );
   say("");
-  say("player                        | nights | alive at 20:00 | at 00:00 | when 05:00 ends | median night ends (p10..p90) | median real s | median sim s | median score | hearts lost a night (by dust bunny + by token) | nights with a lost heart | room empty: with the pause / without | room: mean, most | launches a night | landed with no pip, share of landed ticks | seconds to run");
+  const batteries = rows.some((s) => s.heartsByBattery + s.heartsByBlast > 0 || s.batteries.knocks + s.batteries.burstsNotMine + s.batteries.gumHits > 0);
+  say(`player                        | nights | alive at 20:00 | at 00:00 | when 05:00 ends | median night ends (p10..p90) | median real s | median sim s | median score | hearts lost a night (by dust bunny + by token${batteries ? " + by a battery's touch + by a blast" : ""}) | nights with a lost heart | room empty: with the pause / without | room: mean, most | launches a night | landed with no pip, share of landed ticks | seconds to run`);
   for (const s of rows) {
     say(
-      `${pad(s)} | ${String(s.n).padStart(6)} | ${pc(s.aliveAt[1], s.n).padStart(5)} (${s.aliveAt[1]}) | ${pc(s.aliveAt[5], s.n).padStart(4)} | ${pc(s.aliveAt[END], s.n).padStart(4)} (${s.aliveAt[END]}) | ${clock(s.endHourMedian)} (${clock(s.endHourP10)}..${clock(s.endHourP90)}) | ${f0(s.realMedian).padStart(4)} | ${f0(s.simMedian).padStart(4)} | ${f0(s.scoreMedian).padStart(6)} | ${s.heartsPerNight.toFixed(2)} (${s.heartsByBunny} + ${s.heartsByToken}) | ${pc(s.nightsWithHeart, s.n)} | ${pct(s.emptyShare)} / ${pct(s.emptyShareNoPause)} | ${s.meanRoom.toFixed(1)}, ${s.maxRoom} | ${f0(s.launchesPerNight)} | ${pct(s.landedNoPipShare)} | ${f0(s.secs)}`,
+      `${pad(s)} | ${String(s.n).padStart(6)} | ${pc(s.aliveAt[1], s.n).padStart(5)} (${s.aliveAt[1]}) | ${pc(s.aliveAt[5], s.n).padStart(4)} | ${pc(s.aliveAt[END], s.n).padStart(4)} (${s.aliveAt[END]}) | ${clock(s.endHourMedian)} (${clock(s.endHourP10)}..${clock(s.endHourP90)}) | ${f0(s.realMedian).padStart(4)} | ${f0(s.simMedian).padStart(4)} | ${f0(s.scoreMedian).padStart(6)} | ${s.heartsPerNight.toFixed(2)} (${s.heartsByBunny} + ${s.heartsByToken}${batteries ? ` + ${s.heartsByBattery} + ${s.heartsByBlast}` : ""}) | ${pc(s.nightsWithHeart, s.n)} | ${pct(s.emptyShare)} / ${pct(s.emptyShareNoPause)} | ${s.meanRoom.toFixed(1)}, ${s.maxRoom} | ${f0(s.launchesPerNight)} | ${pct(s.landedNoPipShare)} | ${f0(s.secs)}`,
     );
   }
   say("");
@@ -583,6 +683,20 @@ export function printTable(title: string, order: readonly string[], sums: Sums, 
     say(`${pad(s)} | ${pc(s.near, s.n)} / ${pc(s.nearLanded, s.n)} | ${s.earlyHeartNights} | ${s.unfair} | ${s.maxRoom} | ${s.tokenAlone} / ${s.tokenSeen}; ${f0(s.tokenAloneTicksMedian)} | ${s.heartsByHour.join(" ")}`);
   }
 
+  if (batteries) {
+    say("");
+    say("GUM AND BATTERIES (a night)");
+    say("player                        | knocks | blasts his / not his | things his blasts popped (dust bunnies) | dust bunnies a blast of his popped | hearts to a battery's touch / to a blast | gum: hits, stops | first gum, first battery: nights alone at tick 0 of the hour / nights it came (first row cut whole)");
+    for (const s of rows) {
+      const b = s.batteries;
+      const per = (x: number) => (s.n ? (x / s.n).toFixed(2) : "-");
+      const first = (k: string) => {
+        const f = s.firsts[k];
+        return f ? `${f.alone} / ${f.seen} (${f.cutWhole})` : "-";
+      };
+      say(`${pad(s)} | ${per(b.knocks)} | ${per(b.burstsMine)} / ${per(b.burstsNotMine)} | ${per(b.blastPops)} (${per(b.blastBunnies)}) | ${b.burstsMine ? (b.blastBunnies / b.burstsMine).toFixed(2) : "-"} | ${b.touchHearts} / ${b.blastHearts} | ${per(b.gumHits)}, ${per(b.gumStops)} | ${first("gum")}, ${first("battery")}`);
+    }
+  }
   say("");
   say("THE BOUNDS OF THE STEP-1 TABLE (13.2), as written");
   say("verdict | bound | measured");
@@ -604,7 +718,15 @@ export function printTable(title: string, order: readonly string[], sums: Sums, 
     say(`printed | (no bound) the tie-break studies' kiter, which flings at random | alive when 05:00 ends ${of(rk.aliveAt[END], rk.n)}; score ${f0(rk.scoreMedian)}${o ? ` (${(rk.scoreMedian / o.scoreMedian).toFixed(2)} of the Ordinary's)` : ""}`);
   }
   say("");
-  say(`${fails} of ${checked} bounds FAIL${checked < STEP1_BOUNDS.length ? `; ${STEP1_BOUNDS.length - checked} not run` : ""}.`);
+  say("THE INVARIANTS GUM AND BATTERIES ADD (step 4): one case fails the run");
+  for (const b of STEP4_BOUNDS) {
+    const v = b.check(sums, tune, AS_WRITTEN);
+    checked++;
+    if (!v.ok) fails++;
+    say(`${v.ok ? "pass   " : "FAIL   "} | ${b.text} | ${v.measured}`);
+  }
+  say("");
+  say(`${fails} of ${checked} bounds FAIL${checked < STEP1_BOUNDS.length + STEP4_BOUNDS.length ? `; ${STEP1_BOUNDS.length + STEP4_BOUNDS.length - checked} not run` : ""}.`);
   say("");
   say("THE FULL-NIGHT TABLE (13.2): printed, not required before step 5");
   for (const r of FULL_NIGHT_ROWS) say(`not run | ${r} | needs charms, the later kinds and the boss (steps 2 to 5)`);

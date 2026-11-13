@@ -16,7 +16,7 @@
  * nothing else: what the balance table prints and what its bounds ask.
  */
 import { DARK_PLATES } from "../content/charms";
-import { HOURS } from "../content/night";
+import { HOURS, ROWS } from "../content/night";
 import { overlapDepth } from "../sim/boss";
 import { intruders } from "../sim/night";
 import { createState, type StartOptions } from "../sim/state";
@@ -141,6 +141,54 @@ export type Loss = {
   landDist: number;
 };
 
+/**
+ * How a kind that has a first row (the token, gum, the battery, ...) first
+ * came into a night: in its own first row, alone at tick 0 of its hour as
+ * the only thing that hour had sent, or otherwise.
+ */
+export type FirstSeen = {
+  kind: string;
+  /** The hour it first came in; -1 if it never came. */
+  hour: number;
+  /** It came alone, at tick 0 of its hour, in its first row, as that hour's first row. */
+  alone: boolean;
+  /** Its first row was announced and the cap cut it whole (§3.3): it then first comes later, in a bunch, by the rules. Not a case. */
+  cutWhole: boolean;
+  /** Ticks it stood alone before the next row of its hour was announced; -1 if no row followed in its hour. */
+  aloneTicks: number;
+};
+
+/** What batteries and their blasts did in a night. */
+export type Batteries = {
+  /** Knocks by his hot body. */
+  knocks: number;
+  /** Batteries that went off as his, and not his. */
+  burstsMine: number;
+  burstsNotMine: number;
+  /** Things his blasts popped: dust bunnies among them. */
+  blastPops: number;
+  blastBunnies: number;
+  /** Hearts lost to a battery's touch, and to a blast. */
+  touchHearts: number;
+  blastHearts: number;
+  /**
+   * Hearts lost to a battery that was his at that moment (he knocked it,
+   * or a blast of his had caught it): by its touch or its blast. Never
+   * allowed. `knockedHearts` is those of them to one he had knocked.
+   */
+  mineHearts: number;
+  knockedHearts: number;
+  /**
+   * Hearts lost to a blast that was not his against §5.3: he was not
+   * landed, he was invulnerable, his centre was outside its reach, or the
+   * battery was dazed (§5.2 rule 9). Never allowed.
+   */
+  blastWrong: number;
+  /** Gum: hits, stops, and gum popped. */
+  gumHits: number;
+  gumStops: number;
+};
+
 /** The boss's part of a night: from the tick 06:00 began. */
 export type Fight = {
   /** The tick 06:00 began; -1 if the night never reached it. */
@@ -220,6 +268,10 @@ export type Night = {
   tokenHour: number;
   tokenAlone: boolean;
   tokenAloneTicks: number;
+  /** How each kind with a first row first came: the token, gum and the battery so far. */
+  firsts: FirstSeen[];
+  /** What the batteries, their blasts and gum did. */
+  batteries: Batteries;
   /** Ticks he was landed, and landed with no pip. */
   ticksLanded: number;
   ticksLandedNoPip: number;
@@ -271,6 +323,8 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     tokenHour: -1,
     tokenAlone: false,
     tokenAloneTicks: -1,
+    firsts: [],
+    batteries: { knocks: 0, burstsMine: 0, burstsNotMine: 0, blastPops: 0, blastBunnies: 0, touchHearts: 0, blastHearts: 0, mineHearts: 0, knockedHearts: 0, blastWrong: 0, gumHits: 0, gumStops: 0 },
     ticksLanded: 0,
     ticksLandedNoPip: 0,
     offers: [],
@@ -285,6 +339,23 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
   let rowsThisHour = 0;
   let tokenTick = -1;
   let rowHasToken = false;
+  /** The kinds the announcements since the last row event brought: that row's kinds. */
+  const rowKinds = new Set<string>();
+  /** Each kind with a first row in this night's table, and the tick its first appearance began (for how long it stood alone). */
+  const firstOf = new Map<string, FirstSeen>();
+  const firstTick = new Map<string, number>();
+  // (A night begun after a kind's first hour has no first row for it to keep.)
+  for (const r of ROWS) {
+    if (r.first !== "" && r.hour >= s.night.hour && s.night.kinds.includes(r.first)) firstOf.set(r.first, { kind: r.first, hour: -1, alone: false, cutWhole: false, aloneTicks: -1 });
+  }
+  n.firsts = [...firstOf.values()];
+  const bat = n.batteries;
+  /** Batteries that were his as the tick began; those knocked this tick; the blasts of this tick by battery; daze ends by thing. */
+  const mineBefore = new Set<number>();
+  const knockedEver = new Set<number>();
+  const burstNow = new Map<number, Extract<SimEvent, { type: "burst" }>>();
+  const dazedTill = new Map<number, number>();
+  let lastHurtTick = -1e9;
   let emptyRun = 0;
   let idle = 0;
   const most = HOURS * tune.hourMaxTicks + tune.bossMaxTicks + 400;
@@ -298,8 +369,14 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     now.clock = s.normalTicks + slowedUnits * s.slowedTicks;
     const input = bot.act(s, tune, now);
     const aim = input.launch !== null && bot.aimingAt ? bot.aimingAt() : -1;
+    mineBefore.clear();
+    for (const d of s.things) if (d.kind === "battery" && d.mine) mineBefore.add(d.id);
+    burstNow.clear();
     // The room as the tick finds it: intruders only (an offer's tiles are not).
     const roomBefore = intruders(s);
+    // Gum is swept away when its hour ends, before the next hour's rows are announced.
+    let gumBefore = 0;
+    for (const d of s.things) if (d.kind === "gum" && d.hp > 0) gumBefore++;
     const inPause = s.night.clearTick >= 0;
     /** Is he hot at this point of the tick's events? */
     let hot = s.him.hot;
@@ -318,6 +395,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     } else emptyRun = 0;
 
     let came = 0;
+    let newHour = false;
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       switch (e.type) {
@@ -378,12 +456,17 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           break;
         case "pop":
           n.pops++;
+          if (e.source === "blast") {
+            bat.blastPops++;
+            if (e.kind === "bunny") bat.blastBunnies++;
+          }
           break;
         case "land":
           now.landedTick = e.tick;
           hot = false;
           break;
         case "hour":
+          newHour = true;
           if (hourStart >= 0) n.hourLen.push(e.tick - hourStart);
           hourStart = e.tick;
           rowsThisHour = 0;
@@ -399,6 +482,9 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           if (e.kind === "polisher") {
             fight.hits++;
             if (e.two) fight.twos++;
+          } else if (e.kind === "gum") {
+            bat.gumHits++;
+            if (e.stop) bat.gumStops++;
           }
           break;
         case "bossThrow":
@@ -410,14 +496,43 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           came++;
           announcedAt.set(e.id, e.tick);
           if (e.kind === "token") rowHasToken = true;
+          rowKinds.add(e.kind);
+          break;
+        case "daze":
+          dazedTill.set(e.id, e.until);
+          break;
+        case "knock":
+          bat.knocks++;
+          knockedEver.add(e.id);
+          break;
+        case "burst":
+          burstNow.set(e.id, e);
+          if (e.mine) bat.burstsMine++;
+          else bat.burstsNotMine++;
           break;
         case "arrive":
           arrivedAt.set(e.id, { tick: e.tick, dist: e.dist });
           break;
-        case "row":
+        case "row": {
           n.capRefused += e.cut;
           if (e.row === -1) n.extras++;
           else if (e.how !== "tick") n.early++;
+          // A kind's first row: alone at tick 0 of its hour, as the hour's first row, or cut whole by the cap.
+          const written = e.row >= 0 ? ROWS.filter((r) => r.hour === e.hour)[e.row] : undefined;
+          const firstKind = written ? written.first : "";
+          const owed = firstKind !== "" ? firstOf.get(firstKind) : undefined;
+          if (owed && owed.hour < 0 && !owed.cutWhole && e.n === 0 && e.cut > 0) owed.cutWhole = true;
+          for (const kind of rowKinds) {
+            const f = firstOf.get(kind);
+            if (!f || f.hour >= 0) continue;
+            f.hour = e.hour;
+            f.alone = firstKind === kind && e.tick === hourStart && rowsThisHour === 0 && e.n === 1 && e.how === "tick";
+            firstTick.set(kind, e.tick);
+          }
+          for (const f of firstOf.values()) {
+            if (f.hour === e.hour && f.aloneTicks < 0 && firstTick.get(f.kind)! < e.tick) f.aloneTicks = e.tick - firstTick.get(f.kind)!;
+          }
+          rowKinds.clear();
           if (rowHasToken && n.tokenHour < 0) {
             n.tokenHour = e.hour;
             n.tokenAlone = e.hour === 1 && e.tick === hourStart && rowsThisHour === 0 && e.n === 1 && e.how === "tick";
@@ -428,6 +543,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           rowHasToken = false;
           rowsThisHour++;
           break;
+        }
         case "hurt": {
           const ann = announcedAt.get(e.id);
           const arr = arrivedAt.get(e.id);
@@ -441,6 +557,23 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           };
           n.losses.push(loss);
           n.heartsLost++;
+          if (e.by === "battery") {
+            // A battery that is his never costs him a heart, by touch or by blast.
+            const burst = e.blast ? burstNow.get(e.id) : undefined;
+            const mine = e.blast ? burst !== undefined && burst.mine : mineBefore.has(e.id) || knockedEver.has(e.id);
+            if (mine) {
+              bat.mineHearts++;
+              if (knockedEver.has(e.id)) bat.knockedHearts++;
+            }
+            if (e.blast) {
+              bat.blastHearts++;
+              // One not his: only if he is landed, not invulnerable, inside its reach, and it was not dazed.
+              const inside = burst !== undefined && Math.hypot(e.x - burst.x, e.y - burst.y) <= tune.blastRadius + 1e-9;
+              const dazedThen = (dazedTill.get(e.id) ?? 0) > e.tick;
+              if (!burst || !inside || hot || e.tick < lastHurtTick + tune.invulnTicks || dazedThen) bat.blastWrong++;
+            } else bat.touchHearts++;
+          }
+          lastHurtTick = e.tick;
           if (fight.began >= 0) fight.hearts++;
           if (e.by === "polisher") {
             if (hot) fight.padHot++;
@@ -466,7 +599,8 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
       }
     }
     n.announced += came;
-    const room = roomBefore + came;
+    // The most the room held at once in the tick: what it found, less the gum an hour change swept, and what was announced.
+    const room = roomBefore - (newHour ? gumBefore : 0) + came;
     n.roomSum += room;
     if (room > n.maxRoom) n.maxRoom = room;
 

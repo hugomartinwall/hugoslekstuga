@@ -123,11 +123,11 @@ export type Kite = {
 
 /**
  * The nearest thing that hurts, as the Kiter sees it: the nearest landed
- * intruder, or the polisher's box once it has landed (the nearest point of
+ * intruder that can cost him a heart (not gum, not a battery of his), or the polisher's box once it has landed (the nearest point of
  * it). How far, and which way. Before 06:00 it is `nearestLanded`.
  */
 export function nearestHurt(s: State): { d: number; a: number } | null {
-  const near = nearestLanded(s);
+  const near = nearestLanded(s, true);
   if (!solid(s.boss)) return near;
   const box = boxOf(s.boss);
   const px = Math.min(box.x1, Math.max(box.x0, s.him.x));

@@ -6,7 +6,7 @@ import { BOSS_HOUR } from "../../lib/knuff/content/night";
 import { boxOf, laneMiddle } from "../../lib/knuff/sim/boss";
 import { CAST, STEP1_NIGHT, nightSeed, player, playerStream, runNight, type Night } from "../../lib/knuff/bots/driver";
 import { CAUTIOUS, EXPERT, NO_INPUT, ORDINARY, PROBE, handBot, isDown, ms, probePick, rollout, type Now } from "../../lib/knuff/bots/probe";
-import { AIMLESS, SMOKE, SMOKE_LOOK_AHEAD, STEP1_BOUNDS, boundsFor, summarise, type Sum } from "../../lib/knuff/bots/table";
+import { AIMLESS, AS_WRITTEN, SMOKE, SMOKE_LOOK_AHEAD, STEP1_BOUNDS, STEP4_BOUNDS, boundsFor, summarise, type Sum } from "../../lib/knuff/bots/table";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
 import { createState, hashState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
@@ -110,6 +110,51 @@ describe("the step-1 table, as a smoke check", () => {
     expect(verdicts(short, SMOKE_LOOK_AHEAD)[real]).toBe(true);
     // One night with an early heart fails however much is loosened.
     expect(verdicts(short, SMOKE_LOOK_AHEAD)[early]).toBe(false);
+  });
+});
+
+describe("the night as it now stands (step 4), as a smoke check of its invariants", () => {
+  // The step-1 night with gum and batteries in its rows (the script's --now). Not a bound of the table is asked
+  // here, only the rules that hold for every player in every night: one case fails.
+  const NOW = { ...STEP1_NIGHT, kinds: ["bunny", "token", "gum", "battery"] };
+  const sums = new Map<string, Sum>();
+  beforeAll(() => {
+    for (const [key, count] of [
+      ["spam", 30],
+      ["kiter", 30],
+      ["rhythm", 30],
+      ["ordinary", 6],
+      ["expert", 6],
+    ] as const) {
+      const nights: Night[] = [];
+      for (let i = 0; i < count; i++) nights.push(runNight(nightSeed(i), player(key), tune, NOW));
+      sums.set(key, summarise(key, player(key).label, nights, tune));
+    }
+  }, LONG.timeout);
+
+  it("each new kind first comes alone; a knocked battery never costs him a heart; a blast not his only as §5.3 says", LONG, () => {
+    for (const b of STEP4_BOUNDS) {
+      const v = b.check(sums, tune, AS_WRITTEN);
+      expect(v.ok, `${b.text}: ${v.measured}`).toBe(true);
+    }
+  });
+
+  it("no heart to a thing announced for less than a telegraph, or to a close arrival; never more than the cap", LONG, () => {
+    for (const b of STEP1_BOUNDS.filter((x) => x.row === "every" && !x.text.startsWith("Nights"))) {
+      const v = b.check(sums, tune, AS_WRITTEN);
+      expect(v.ok, `${b.text}: ${v.measured}`).toBe(true);
+    }
+  });
+
+  it("the nights had gum and batteries in them, and the players met them: knocks, blasts both ways, gum hit", LONG, () => {
+    const all = [...sums.values()];
+    const total = (f: (s: Sum) => number) => all.reduce((a, s) => a + f(s), 0);
+    expect(total((s) => s.firsts.gum?.seen ?? 0)).toBeGreaterThan(10);
+    expect(total((s) => s.firsts.battery?.seen ?? 0)).toBeGreaterThan(10);
+    expect(total((s) => s.batteries.knocks)).toBeGreaterThan(10);
+    expect(total((s) => s.batteries.burstsMine)).toBeGreaterThan(5);
+    expect(total((s) => s.batteries.burstsNotMine)).toBeGreaterThan(5);
+    expect(total((s) => s.batteries.gumHits)).toBeGreaterThan(5);
   });
 });
 
@@ -328,6 +373,20 @@ describe("the players", () => {
       expect(off).toBeLessThanOrEqual(0.35 + 1e-9);
       expect(fired!.launch.power).toBe(1);
     }
+  });
+
+  it("the Kiter does not flee what cannot hurt him: gum, or a battery of his", () => {
+    const t = tuned({ bunnySpeed: 0, batterySpeed: 0 });
+    const s = night(t);
+    put(s, "gum", s.him.x + 30, s.him.y);
+    put(s, "battery", s.him.x - 30, s.him.y, { mine: true, knockTick: 0, launchId: 1, fuseTick: 1000, vx: 0, vy: 0 });
+    const bot = kiterBot(playerStream(1, "kiter"), KITER);
+    for (let i = 0; i < 40; i++) expect(bot.act(s, t, now(i)).launch).toBeNull();
+    // A battery that is not his is a thing that hurts.
+    s.things[1].mine = false;
+    let fired = false;
+    for (let i = 40; i < 80 && !fired; i++) fired = bot.act(s, t, now(i)).launch !== null;
+    expect(fired).toBe(true);
   });
 
   it("the Kiter takes the polisher for a thing that hurts, and flees it", () => {

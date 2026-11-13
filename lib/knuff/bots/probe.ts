@@ -26,6 +26,7 @@
  * in sixtieths of a second of real time (a normal tick adds 1, a slowed
  * tick 5), so slow motion gives a player the time it gives a person.
  */
+import { KINDS } from "../content/kinds";
 import { insertCentre } from "../sim/charms";
 import { intruders } from "../sim/night";
 import { cloneState } from "../sim/state";
@@ -77,13 +78,18 @@ export function isDown(s: State, d: { landTick: number }): boolean {
   return d.landTick < s.tick;
 }
 
-/** The nearest landed intruder (an offer's tile is not one): how far, and which way. */
-export function nearestLanded(s: State): { d: number; a: number } | null {
+/**
+ * The nearest landed intruder (an offer's tile is not one): how far, and
+ * which way. `hurts`: only one that can cost him a heart (not gum, and not
+ * a battery that is his).
+ */
+export function nearestLanded(s: State, hurts = false): { d: number; a: number } | null {
   let best = 1e18;
   let angle = 0;
   let any = false;
   for (const d of s.things) {
     if (!isDown(s, d) || d.kind === "pickup") continue;
+    if (hurts && (!KINDS[d.kind].hurts || d.mine)) continue;
     const dd = (d.x - s.him.x) * (d.x - s.him.x) + (d.y - s.him.y) * (d.y - s.him.y);
     if (dd < best) {
       best = dd;
