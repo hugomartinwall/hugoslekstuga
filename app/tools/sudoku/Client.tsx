@@ -1740,7 +1740,9 @@ function NumberPad({
   );
 }
 
-/** The keyboard legend: each key as a small cap, then what it does. */
+/** The keyboard legend: each key as a small cap, then what it does. It
+ *  is help for a keyboard, so where the main pointer is a finger it is
+ *  not shown, as Advice's Space legend and the search palette's are not. */
 const KEY_LEGEND: readonly (readonly [string, string])[] = [
   ["1–9", "place"],
   ["arrow keys", "move"],
@@ -1753,7 +1755,7 @@ const KEY_LEGEND: readonly (readonly [string, string])[] = [
 
 function KeyLegend() {
   return (
-    <p className="text-[11px] leading-6 text-ink-muted">
+    <p className="text-[11px] leading-6 text-ink-muted pointer-coarse:hidden">
       {KEY_LEGEND.map(([key, does], i) => (
         <Fragment key={key}>
           {i > 0 ? " · " : null}

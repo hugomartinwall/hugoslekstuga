@@ -190,6 +190,7 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
             value={favTool ? favTool.title : "—"}
           />
           <Pair
+            keys
             label="Search"
             value={
               // align-top: centred on the text (the class's own setting)
@@ -244,16 +245,21 @@ function Pair({
   label,
   value,
   wide = false,
+  keys = false,
 }: {
   label: string;
   value: ReactNode;
   wide?: boolean;
+  /** A shortcut, not a memory: help for a keyboard, so where the main
+   *  pointer is a finger the row is not shown (as the search palette's
+   *  key legends are not). */
+  keys?: boolean;
 }) {
   return (
     <div
       className={`flex items-center justify-between gap-2 ${
         wide ? "min-[375px]:col-span-2" : ""
-      }`}
+      } ${keys ? "pointer-coarse:hidden" : ""}`}
     >
       <dt className="text-ink-soft">{label}</dt>
       <dd className="text-right font-bold">{value}</dd>
