@@ -4,9 +4,9 @@ import { BOSS_AIMLESS, BOSS_BOUNDS, fightBuild, fightStart, sumFights } from "..
 import { CORNER_MATE } from "../../lib/knuff/content/charms";
 import { BOSS_HOUR } from "../../lib/knuff/content/night";
 import { boxOf, laneMiddle } from "../../lib/knuff/sim/boss";
-import { CAST, STEP1_NIGHT, nightSeed, player, playerStream, runNight, type Night } from "../../lib/knuff/bots/driver";
+import { CAST, STEP1_NIGHT, TAKERS, nightSeed, player, playerStream, runNight, wholeNightFor, type Night } from "../../lib/knuff/bots/driver";
 import { CAUTIOUS, EXPERT, NO_INPUT, ORDINARY, PROBE, handBot, isDown, ms, probePick, rollout, type Now } from "../../lib/knuff/bots/probe";
-import { AIMLESS, AS_WRITTEN, SMOKE, SMOKE_LOOK_AHEAD, STEP1_BOUNDS, STEP4_BOUNDS, boundsFor, summarise, type Sum } from "../../lib/knuff/bots/table";
+import { AIMLESS, AS_WRITTEN, FULL_BOUNDS, SMOKE, SMOKE_LOOK_AHEAD, STEP1_BOUNDS, STEP4_BOUNDS, boundsFor, fullBoundsFor, summarise, type Sum } from "../../lib/knuff/bots/table";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
 import { createState, hashState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
@@ -16,12 +16,17 @@ import { night, put, tuned } from "./room";
 /**
  * The players, and the smoke check of the balance table (§13.5).
  *
- * The table itself is the script's (scripts/knuff-balance.ts: 200 nights a
- * player, half an hour). What runs here is the same list of bounds on few
+ * The table itself is the script's (scripts/knuff-balance.ts --whole: 200
+ * nights a player). What runs here is the same list of bounds on few
  * nights, loosened as §13.5 says: 60 nights and 10 points for the players
- * who do not look ahead, 12 nights and 20 points for the four who do. It
+ * who do not look ahead, 12 nights and 20 points for those who do. It
  * catches a broken build and nothing finer. It runs on the tune as it
- * stands, on the step-1 night.
+ * stands. From step 5 it asks both tables of §13.2 on the whole night:
+ * every kind in its rows, the starting plates lit, 06:00 with the
+ * polisher, nothing offered to the players without charms and the offers
+ * made to the two who take one. (The step-1 night, which gated steps 1 to
+ * 4, is still made for the script's other tables; its rules are held
+ * tick for tick by the other suites.)
  *
  * The fairness rules are not loosened: one case fails.
  */
@@ -30,38 +35,39 @@ const tune = DEFAULT_TUNE;
 const LONG = { timeout: 240_000 };
 
 const batches = new Map<string, Sum>();
-/** A player's batch of nights, run once and shared: a bound measured against another player reads that player's from here. */
+/** A player's batch of whole nights, run once and shared: a bound measured against another player reads that player's from here. */
 function batch(key: string): Sum {
   let sum = batches.get(key);
   if (!sum) {
     const who = player(key);
     const count = who.looksAhead ? 12 : 60;
     const nights: Night[] = [];
-    for (let i = 0; i < count; i++) nights.push(runNight(nightSeed(i), who, tune, STEP1_NIGHT));
+    for (let i = 0; i < count; i++) nights.push(runNight(nightSeed(i), who, tune, wholeNightFor(key)));
     sum = summarise(key, who.label, nights, tune);
     batches.set(key, sum);
   }
   return sum;
 }
 
-/** Assert every bound of one player's row, and the rules that hold for every player, on that player's nights. */
+/** Assert every bound of one player's row in both tables, and the rules that hold for every player, on that player's nights. */
 function holds(key: string, against: readonly string[] = []): void {
   const who = player(key);
   const w = who.looksAhead ? SMOKE_LOOK_AHEAD : SMOKE;
   const sums = new Map<string, Sum>([[key, batch(key)]]);
   for (const other of against) sums.set(other, batch(other));
-  for (const b of boundsFor(key, sums)) {
+  for (const b of [...boundsFor(key, sums), ...fullBoundsFor(key, sums)]) {
     const v = b.check(sums, tune, w);
     expect(v.ok, `${b.text}: ${v.measured}`).toBe(true);
   }
   const own = new Map<string, Sum>([[key, batch(key)]]);
-  for (const b of boundsFor("every", own)) {
-    const v = b.check(own, tune, w);
+  // The rules for every player: the step-1 table's, the invariants of step 4, and the full-night table's length of a morning.
+  for (const b of [...boundsFor("every", own), ...STEP4_BOUNDS, ...fullBoundsFor("every", own)]) {
+    const v = b.check(own, tune, b.text.startsWith("Nights") ? w : AS_WRITTEN);
     expect(v.ok, `${who.label}. ${b.text}: ${v.measured}`).toBe(true);
   }
 }
 
-describe("the step-1 table, as a smoke check", () => {
+describe("both tables on the whole night, as a smoke check", () => {
   // The two players other rows are measured against, and the five Straight must outscore.
   beforeAll(() => {
     batch("expert");
@@ -71,6 +77,7 @@ describe("the step-1 table, as a smoke check", () => {
 
   it("every bound belongs to a player of the cast, and every player of the table has a row", () => {
     const keys = CAST.map((c) => c.key);
+    const takers = TAKERS.map((c) => c.key);
     for (const b of STEP1_BOUNDS) {
       if (b.row !== "every") expect(keys).toContain(b.row);
       for (const k of b.needs) expect(keys).toContain(k);
@@ -78,6 +85,12 @@ describe("the step-1 table, as a smoke check", () => {
     // The studies' random kiter is printed beside the table and has no bound.
     for (const k of keys) expect(STEP1_BOUNDS.some((b) => b.row === k), k).toBe(k !== "kiter-random");
     expect(STEP1_BOUNDS.filter((b) => b.row === "every")).toHaveLength(4);
+    // The full-night table: the two who take one charm, and the length of a night that reaches morning.
+    for (const b of FULL_BOUNDS) {
+      if (b.row !== "every") expect(takers).toContain(b.row);
+      for (const k of b.needs) expect(takers).toContain(k);
+    }
+    for (const k of takers) expect(FULL_BOUNDS.filter((b) => b.row === k).length, k).toBe(2);
   });
 
   it("Once", () => holds("once"));
@@ -91,6 +104,21 @@ describe("the step-1 table, as a smoke check", () => {
   it("Cautious", LONG, () => holds("cautious"));
   it("Ordinary", LONG, () => holds("ordinary"));
   it("Expert", LONG, () => holds("expert"));
+  it("Ordinary, takes one", LONG, () => holds("ordinary-takes"));
+  it("Expert, takes one", LONG, () => holds("expert-takes"));
+
+  it("the whole night had every kind in it, and the players met them all", LONG, () => {
+    const all = [...batches.values()];
+    const total = (f: (s: Sum) => number) => all.reduce((a, s) => a + f(s), 0);
+    for (const kind of ["token", "gum", "battery", "envelope", "bag"]) expect(total((s) => s.firsts[kind]?.seen ?? 0), kind).toBeGreaterThan(5);
+    expect(total((s) => s.later.envelopePops)).toBeGreaterThan(50);
+    expect(total((s) => s.later.bagHits)).toBeGreaterThan(10);
+    expect(total((s) => s.later.bagTokens)).toBeGreaterThan(5);
+    expect(total((s) => s.later.heartsShown)).toBeGreaterThan(3);
+    expect(total((s) => s.bossN)).toBeGreaterThan(5);
+    // The money bag's 94 u: it landed dazed close to him, and no heart was lost to it inside that daze.
+    expect(total((s) => s.later.bagCloseHearts)).toBe(0);
+  });
 
   it("loosens a share by points, another bound by a part of itself, and a rule for every night not at all", () => {
     const one = batch("once");
