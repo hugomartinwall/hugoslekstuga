@@ -23,6 +23,9 @@ export const C = {
   floorWarm: "#1d1612",
   /** A raised key (--color-panel). */
   panel: "#1e2136",
+  /** The polisher's casing, and the grey of its pad while the pad is off: grey boxes until the art comes. */
+  casing: "#5b6172",
+  casingDark: "#3b3f4c",
   magenta: COLOR_HEX.pink,
   mint: COLOR_HEX.green,
   acid: COLOR_HEX.yellow,

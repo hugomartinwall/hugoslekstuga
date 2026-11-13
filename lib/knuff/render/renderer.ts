@@ -29,6 +29,7 @@ import { KINDS } from "../content/kinds";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
+import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
@@ -430,6 +431,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
         paint.ring(X(d.x), Y(d.y), dr * S, C.ash, ringW);
       }
     }
+    // The polisher's telegraph: its outline where it will land, and the way it will head.
+    drawBossTelegraph(paint, state);
 
     // The aim: the band behind him and a dotted line ahead.
     if (aim) {
@@ -460,11 +463,11 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
         const pts = f.line.pts;
         const ex = pts[pts.length - 2];
         const ey = pts[pts.length - 1];
-        if (f.line.end === "thing") {
-          // A cross on the thing he reaches.
+        if (f.line.end === "thing" || f.line.end === "polisher" || f.line.end === "pad") {
+          // A cross on the thing he reaches: coral on the polisher's pad, which will cost a heart.
           const arm = Math.round(r * S * 0.9);
           const tw = Math.max(2, Math.round(dpr * 2.6));
-          ctx.fillStyle = col;
+          ctx.fillStyle = f.line.end === "pad" ? C.coral : col;
           ctx.fillRect(Math.round(X(ex) - arm), Math.round(Y(ey) - tw / 2), arm * 2, tw);
           ctx.fillRect(Math.round(X(ex) - tw / 2), Math.round(Y(ey) - arm), tw, arm * 2);
         } else if (f.line.end === "land") {
@@ -524,6 +527,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       const dy = d.py + (d.y - d.py) * alpha;
       for (const m of DAZE_MARKS) ctx.fillRect(Math.round(X(dx + m.x)), Math.round(Y(dy + m.y)), dazeQ, dazeQ);
     }
+
+    // The polisher, over the intruders.
+    drawBoss(paint, state, tune, alpha);
 
     // Spark's ring, under his pips, him and the hot ring.
     drawSparkRing(paint, state, hx, hy, tune.sparkReach);

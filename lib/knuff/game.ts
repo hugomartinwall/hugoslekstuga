@@ -42,13 +42,13 @@ export type KnuffKnobs = { pace: number; popHotTicks: number; aimCushions: numbe
 /** What the end panel shows. */
 export type KnuffOver = {
   score: number;
-  /** What the panel calls the night: the hour he fell in, or MORNING. */
+  /** What the panel calls the night: the hour he fell in, 06:00 when the lights came on, or MORNING. */
   night: string;
   bestShot: number;
   /** The best score since the page opened, under these rules. Nothing is stored yet. */
   best: number;
   newBest: boolean;
-  /** What took the last heart ("lost to a runaway token"); empty when morning came. */
+  /** What took the last heart ("lost to a runaway token"), or "the lights came on"; empty when morning came. */
   line: string;
 };
 
@@ -246,7 +246,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   const over = (): KnuffOver | null => {
     if (state.phase !== "over") return null;
     const morning = state.ended === "morning";
-    const hour = state.lastHurtHour >= 0 ? state.lastHurtHour : state.night.hour;
+    // 06:00 ran out with the polisher unbeaten: the night is called 06:00, and the lights came on.
+    const dawn = state.ended === "dawn";
+    const hour = dawn ? state.night.hour : state.lastHurtHour >= 0 ? state.lastHurtHour : state.night.hour;
     const by = KIND_NAME[state.lastHurtBy];
     return {
       score: state.score,
@@ -254,7 +256,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       bestShot: state.bestShot,
       best,
       newBest,
-      line: morning || !by ? "" : `${END.lostTo} ${by}`,
+      line: morning ? "" : dawn ? END.dawn : by ? `${END.lostTo} ${by}` : "",
     };
   };
 

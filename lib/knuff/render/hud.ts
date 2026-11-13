@@ -82,7 +82,8 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = "
   // The clock, in the middle.
   // When 05:00 ends with no 06:00 to go to, the State's hour is one past
   // the last: the clock stays on the hour that ended.
-  const hour = s.ended === "morning" && s.night.hour === HOURS ? HOURS - 1 : Math.min(s.night.hour, CLOCK.length - 1);
+  // (On a night with the polisher the State's hour is 06:00's, and the clock shows it, beaten or not.)
+  const hour = s.ended === "morning" && s.night.hour === HOURS && !s.boss.present ? HOURS - 1 : Math.min(s.night.hour, CLOCK.length - 1);
   p.text(CLOCK[hour], bx + B / 2, by + 20 * dpr, 24, C.ink, "display");
 
   // The night: twelve steps of 6 × 4 px, 2 px apart.

@@ -56,12 +56,15 @@ export const END = {
   morning: "MORNING",
   /** The start of the line that says what took the last heart: "lost to a runaway token". */
   lostTo: "lost to",
+  /** The line of a night that 06:00 ran out on, with the polisher unbeaten. */
+  dawn: "the lights came on",
 } as const;
 
 /** What the end panel's line calls the kind that took the last heart. */
 export const KIND_NAME: Readonly<Record<string, string>> = {
   bunny: "a dust bunny",
   token: "a runaway token",
+  polisher: "the floor polisher",
 };
 
 /**

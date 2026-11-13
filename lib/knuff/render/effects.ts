@@ -178,6 +178,27 @@ export function createEffects(tuneNow: () => Tune): Effects {
           // The outline snaps solid, with four dust squares.
           burst(e.x, e.y, reduced ? 3 : 4, 70, e.kind === "token" ? C.acid : C.ash, 2);
           return 0;
+        case "hit":
+          // A hit on the plug: what it paid floats where he met it.
+          burst(e.x, e.y, 16, 220, C.ink, 3);
+          if (!reduced) fx.shake = Math.max(fx.shake, e.two ? 6 : 4);
+          float(e.x, e.y - 14, String(e.points), e.two);
+          return 0;
+        case "bossBounce":
+          burst(e.x, e.y, 4, 100, C.inkMuted, 2);
+          if (!reduced) fx.shake = Math.max(fx.shake, 1.5);
+          return 0;
+        case "bossThrow":
+          burst(e.x, e.y, 10, 200, C.coral, 3);
+          return 0;
+        case "bossArrive":
+          burst(e.x, e.y, reduced ? 4 : 12, 140, C.casing, 3);
+          if (!reduced) fx.shake = Math.max(fx.shake, 3);
+          return 0;
+        case "bossDown":
+          burst(e.x, e.y, 30, 260, C.ink, 3);
+          if (!reduced) fx.shake = Math.max(fx.shake, 8);
+          return 0;
         default:
           return 0;
       }

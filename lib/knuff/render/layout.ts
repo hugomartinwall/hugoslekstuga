@@ -159,13 +159,15 @@ export function pauseKeyRect(bar: Rect): Rect {
 
 /**
  * The `i`th of the night's twelve steps in the top bar (§9.2): an hour
- * done, the hour now (lit magenta), or an hour to come. No hour is in
- * progress before the first launch, or once morning has come: the State's
- * hour is then one past the last, which in step 1 is the twelfth step,
- * the boss's, and that hour never began.
+ * done, the hour now (lit magenta), or an hour to come. The twelfth is the
+ * boss's. No hour is in progress before the first launch, or once morning
+ * has come. On a night without the polisher morning comes when 05:00 ends:
+ * the State's hour is then one past the last, the twelfth step, and that
+ * hour never began. When the polisher is beaten, its step is done.
  */
 export function hourStep(s: State, i: number): "done" | "now" | "to come" {
   if (i < s.night.hour) return "done";
+  if (i === s.night.hour && s.ended === "morning" && s.boss.present) return "done";
   if (i === s.night.hour && s.phase !== "waiting" && s.ended !== "morning") return "now";
   return "to come";
 }
