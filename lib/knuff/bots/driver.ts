@@ -125,6 +125,8 @@ export type OfferSeen = {
   wantedKind: string;
   tries: number;
   hits: number;
+  /** Launches released while it was armed: those that could take something, aimed at it or not. */
+  armedLaunches: number;
 };
 
 /** One lost heart. */
@@ -153,6 +155,7 @@ export type Fight = {
   /** The pad's throws, and those that cost a heart. */
   throws: number;
   throwsHurt: number;
+
   /** Hearts lost from 06:00 on, to anything. */
   hearts: number;
   /** Ticks at whose end his circle overlapped the machine's box, and the deepest overlap at the end of a tick, u. */
@@ -304,6 +307,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
         case "launch":
           n.launches++;
           if (fight.began >= 0) fight.launches++;
+          if (offer && s.launch.armed) offer.armedLaunches++;
           launchAim = aim;
           if (offer && aim >= 0) {
             if (offer.wanted < 0) {
@@ -332,6 +336,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
             wantedKind: "",
             tries: 0,
             hits: 0,
+            armedLaunches: 0,
           };
           n.offers.push(offer);
           break;

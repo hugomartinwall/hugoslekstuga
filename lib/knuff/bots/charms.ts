@@ -180,7 +180,7 @@ export function printOffers(rows: readonly { label: string; nights: readonly Nig
   const pct = (x: number, n: number) => (n ? `${((100 * x) / n).toFixed(1)}%` : "-");
   say(`THE OFFERS: ${title}`);
   say("");
-  say("player                 | nights | offers | at clear | at tick 1,320 (of them with intruders in the room; intruders there, median) | taken | taken by accident (by a launch aimed at the room) | taken wrong (aimed at another) | the named one: offers it was got in / named; launches aimed at it that took it / launches aimed");
+  say("player                 | nights | offers | at clear | at tick 1,320 (of them with intruders in the room; intruders there, median) | taken | taken by accident (by a launch aimed at the room) | of the offers in which it released an armed launch, taken by accident | taken wrong (aimed at another) | the named one: offers it was got in / named; launches aimed at it that took it / launches aimed");
   for (const row of rows) {
     const all: OfferSeen[] = row.nights.flatMap((n) => n.offers);
     const atClear = all.filter((o) => o.clear).length;
@@ -188,13 +188,16 @@ export function printOffers(rows: readonly { label: string; nights: readonly Nig
     const crowded = late.filter((o) => o.crowd > 0);
     const taken = all.filter((o) => o.taken >= 0).length;
     const accident = all.filter((o) => o.takenBy === "accident").length;
+    // An offer nobody launched at while it was armed could not be taken by accident: an empty room, where a player who ignores offers does not launch.
+    const exposed = all.filter((o) => o.armedLaunches > 0);
+    const exposedAccident = exposed.filter((o) => o.takenBy === "accident").length;
     const wrong = all.filter((o) => o.takenBy === "wrong").length;
     const named = all.filter((o) => o.wanted >= 0);
     const got = named.filter((o) => o.taken === o.wanted).length;
     const tries = named.reduce((a, o) => a + o.tries, 0);
     const hits = named.reduce((a, o) => a + o.hits, 0);
     say(
-      `${row.label.padEnd(22)} | ${String(row.nights.length).padStart(4)} | ${String(all.length).padStart(4)} | ${atClear} | ${late.length} (${crowded.length}; ${f0(median(crowded.map((o) => o.crowd)))}) | ${taken} (${pct(taken, all.length)}) | ${accident} (${pct(accident, all.length)} of offers) | ${wrong} | ${row.takes ? `${got} / ${named.length} (${pct(got, named.length)}); ${hits} / ${tries} (${pct(hits, tries)})` : "-"}`,
+      `${row.label.padEnd(22)} | ${String(row.nights.length).padStart(4)} | ${String(all.length).padStart(4)} | ${atClear} | ${late.length} (${crowded.length}; ${f0(median(crowded.map((o) => o.crowd)))}) | ${taken} (${pct(taken, all.length)}) | ${accident} (${pct(accident, all.length)} of offers) | ${exposedAccident} of ${exposed.length} (${pct(exposedAccident, exposed.length)}) | ${wrong} | ${row.takes ? `${got} / ${named.length} (${pct(got, named.length)}); ${hits} / ${tries} (${pct(hits, tries)})` : "-"}`,
     );
   }
   say("");
