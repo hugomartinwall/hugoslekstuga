@@ -578,7 +578,7 @@ export default function RollPage() {
             >
               {spinning ? "Spinning…" : "Spin!"}
             </Keycap>
-            <span className="hidden items-center gap-1.5 text-xs text-ink-muted sm:inline-flex">
+            <span className="hidden items-center gap-1.5 text-xs text-ink-muted sm:inline-flex pointer-coarse:hidden">
               or press
               <kbd className="kbd-chunk">Space</kbd>
             </span>
