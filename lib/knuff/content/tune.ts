@@ -135,6 +135,26 @@ export const GAME = {
   carryMax: 3,
   cushionCap: 3,
   cushionMergeTicks: 9,
+
+  // Charms and offers.
+  offerArmTicks: 60,
+  pickupMinDist: 80,
+  bumperSpeed: 0.8,
+  pipPlateCooldown: 240,
+  sparkTicks: 48,
+  sparkReach: 12,
+  bellDazeTicks: 36,
+  bellCooldown: 240,
+  coinFactor: 2,
+  capBumper: 2,
+  capPip: 2,
+  capSpark: 2,
+  capBell: 1,
+  capCoin: 2,
+  heavyFactor: 0.7,
+  longBurnHotFrac: 0.27,
+  wideRadius: 2,
+  wideFactor: 0.85,
 } as const satisfies Partial<Tune>;
 
 export const DEFAULT_TUNE: Tune = { ...TOY, ...GAME };

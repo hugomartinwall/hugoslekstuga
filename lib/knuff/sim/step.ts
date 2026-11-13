@@ -10,6 +10,7 @@
  * below are its steps. His own motion is the feel toy's, piece for piece:
  * test/knuff/feel-lock.test.ts holds every tick he is hot against the toy.
  */
+import { armedLaunch, bounceOff } from "./charms";
 import { countTick, endLaunch, givePip, isHot, isLaunch, land } from "./hot";
 import { choose, contacts, moveThings, overlapped, slowThings, spreadBunnies, unblock } from "./intruders";
 import { nightStep } from "./night";
@@ -56,7 +57,7 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
       endLaunch(s, events);
       // The pip timer runs only while he is below the maximum, and starts
       // again when a launch takes him from full.
-      if (s.pips >= tune.pipMax) s.pipTimer = tune.pipRefillTicks;
+      if (s.pips >= s.stats.pipMax) s.pipTimer = tune.pipRefillTicks;
       s.pips--;
       // No launch is softer than the minimum.
       const power = applyLaunch(h, { dx: asked.dx, dy: asked.dy, power: Math.max(tune.minPower, asked.power) }, tune);
@@ -70,8 +71,16 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
         refunded: false,
         cushions: 0,
         lastCushionTick: -1,
+        coin: false,
+        sparkUntil: -1,
+        bumped: [],
         points: 0,
-        blocked: overlapped(s, tune),
+        blocked: overlapped(s),
+        // Released on a tick after the offer armed: it can take. (The
+        // night's part of this tick comes after the launch, so a launch
+        // released on the arming tick itself cannot.)
+        armed: armedLaunch(s),
+        took: false,
         popped: false,
       };
       h.hot = isHot(s, tune, Math.hypot(h.vx, h.vy));
@@ -91,11 +100,11 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     s.ended = "morning";
   } else {
     // 5. Timers. One pip comes back every `pipRefillTicks` while he is below the maximum.
-    if (s.pips < tune.pipMax) {
+    if (s.pips < s.stats.pipMax) {
       s.pipTimer--;
       if (s.pipTimer <= 0) {
         s.pipTimer = tune.pipRefillTicks;
-        givePip(s, tune, "timer", events);
+        givePip(s, "timer", events);
       }
     }
 
@@ -107,9 +116,11 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     const speedNow = Math.hypot(h.vx, h.vy);
     const n = substepsFor(speedNow > fastestThing ? speedNow : fastestThing, tune);
     const sub = DT / n;
-    const r = tune.himRadius;
+    const r = s.stats.radius;
     for (let i = 0; i < n && running; i++) {
-      // He moves and bounces off cushions. He never moves while he is not hot.
+      // He moves and bounces off cushions. He never moves while he is not
+      // hot. At each bounce an offered plate is taken (if this is an armed
+      // launch's first cushion), then the plate fires, then the landing test.
       if (h.hot) {
         h.x += h.vx * sub;
         h.y += h.vy * sub;
@@ -123,6 +134,7 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
           if (walls & RIGHT) cushion(s, tune, events, "right", speedIn);
           if (walls & TOP) cushion(s, tune, events, "top", speedIn);
           if (walls & BOTTOM) cushion(s, tune, events, "bottom", speedIn);
+          // (A Bumper plate set his speed; the test reads the speed he leaves with.)
           // The landing test, after a cushion bounce.
           h.hot = isHot(s, tune, Math.hypot(h.vx, h.vy));
           if (!h.hot) land(s, tune, events);
@@ -135,7 +147,7 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
         s.ended = "hearts";
         break;
       }
-      if (s.launch.blocked.length > 0) unblock(s, tune);
+      if (s.launch.blocked.length > 0) unblock(s);
       spreadBunnies(s);
     }
 
@@ -180,6 +192,8 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
 }
 
 function cushion(s: State, tune: Tune, events: SimEvent[], side: Side, speed: number): void {
+  // The launch's first cushion: there is none before it, counted or not.
+  const first = s.launch.lastCushionTick < 0;
   countCushion(s, tune);
-  events.push({ type: "cushion", tick: s.tick, x: s.him.x, y: s.him.y, side, speed });
+  bounceOff(s, tune, side, first, speed, events);
 }

@@ -148,11 +148,35 @@ describe("determinism", () => {
     const made = createState(31337, TUNE);
     expect(made.rng.arrivals).toBe(fresh.arrivals);
     expect(made.rng.behaviour).not.toBe(fresh.behaviour);
-    const s = run(31337, 3600);
+    // Each stream moves only on a tick its own system drew from: the offers
+    // stream when an offer is made, the arrivals stream when something is
+    // announced, the behaviour stream when a dust bunny is placed (its wobble).
+    let offersMoved = 0;
+    let arrivalsMoved = 0;
+    let before = { ...made.rng };
+    const s = run(31337, 25200, (now, events) => {
+      const has = (type: SimEvent["type"]) => events.some((e) => e.type === type);
+      if (now.rng.offers !== before.offers) {
+        offersMoved++;
+        if (!has("offerOpen")) expect.fail(`the offers stream moved at tick ${now.tick - 1} with no offer made`);
+      }
+      if (now.rng.arrivals !== before.arrivals) {
+        arrivalsMoved++;
+        if (!has("announce")) expect.fail(`the arrivals stream moved at tick ${now.tick - 1} with nothing announced`);
+      }
+      if (now.rng.behaviour !== before.behaviour && !events.some((e) => e.type === "announce" && e.kind === "bunny"))
+        expect.fail(`the behaviour stream moved at tick ${now.tick - 1} with no dust bunny placed`);
+      before = { ...now.rng };
+    });
     expect(s.rng.arrivals).not.toBe(fresh.arrivals);
     expect(s.rng.behaviour).not.toBe(made.rng.behaviour);
-    // Nothing reshuffles this one until the system it belongs to exists.
-    expect(s.rng.offers).toBe(fresh.offers);
+    expect(offersMoved).toBeGreaterThan(0);
+    expect(arrivalsMoved).toBeGreaterThan(10);
+    // With offers off nothing ever draws from it.
+    const off = createState(31337, TUNE, { offers: false });
+    const input = scriptedInputs(99);
+    for (let t = 0; t < 25200; t++) step(off, input(t), TUNE, []);
+    expect(off.rng.offers).toBe(fresh.offers);
   });
 
   it("he and everything else stay on the floor, their radius inside its edges", () => {
@@ -198,7 +222,8 @@ describe("determinism", () => {
 
   it("the start options: the toy's room, and an empty one", () => {
     const toyRoom = { left: 0, top: 0, right: 360, bottom: 480 };
-    const s = createState(1, DEFAULT_TUNE, { room: toyRoom, empty: true });
+    // With offers off: an offer's pickups would lie in the room, and an hour whose offer nobody takes runs to 1,800.
+    const s = createState(1, DEFAULT_TUNE, { room: toyRoom, empty: true, offers: false });
     expect(s.room).toEqual(toyRoom);
     expect(s.room).not.toBe(toyRoom);
     expect(s.things).toEqual([]);

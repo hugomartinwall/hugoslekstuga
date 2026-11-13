@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as toy from "../fixtures/knuff/toy-sim";
+import { DARK_PLATES } from "../../lib/knuff/content/charms";
 import { KINDS } from "../../lib/knuff/content/kinds";
 import { DEFAULT_TUNE, TOY, TOY_SETTINGS } from "../../lib/knuff/content/tune";
 import { hotSpeed } from "../../lib/knuff/sim/physics";
@@ -21,8 +22,12 @@ import type { Launch, SimEvent, State, Tune } from "../../lib/knuff/sim/types";
  * where the game's stands, and the next flight is held to the toy again.
  *
  * How the two are set side by side, as the spec has it: an empty room
- * (`start.empty`: nothing arrives), the room's edges set to the toy's
- * (`start.room`: 0, 0, 360, 480; the toy has no cushion thickness), the toy
+ * (`start.empty`: nothing arrives) with all ten plates dark
+ * (`start.plates`: with the starting plates lit, the Bumper on plate 0
+ * would kick him where the toy does nothing) and nothing offered
+ * (`start.offers`: an offer's tiles would lie on the floor, and a charm
+ * taken would change him), the room's edges set to the
+ * toy's (`start.room`: 0, 0, 360, 480; the toy has no cushion thickness), the toy
  * run with the tune its shell hands it (pips off), and the toy's mascot
  * moved to the game's start, (180, 374), before the first launch (the
  * toy's own is (180, 374.4)).
@@ -308,7 +313,7 @@ function follow(sc: Scenario, engineTune: Tune): Outcome {
   const tune: Tune = { ...engineTune, ...sc.game, ...speed };
 
   const t = toy.createState(20261111, toyTune);
-  const e = createState(20261111, tune, { room: TOY_ROOM, empty: true });
+  const e = createState(20261111, tune, { room: TOY_ROOM, empty: true, plates: DARK_PLATES, offers: false });
   // The toy's mascot is moved to the game's start (or both to the script's).
   if (sc.him) [e.him.x, e.him.y] = sc.him;
   t.hugo.x = e.him.x;
@@ -491,7 +496,7 @@ describe("feel lock: while he is hot the game moves as the toy moves", () => {
   }
 
   it("both start where the game starts: (180, 374), not the toy's (180, 374.4)", () => {
-    const e = createState(1, DEFAULT_TUNE, { room: TOY_ROOM, empty: true });
+    const e = createState(1, DEFAULT_TUNE, { room: TOY_ROOM, empty: true, plates: DARK_PLATES, offers: false });
     expect([e.him.x, e.him.y]).toEqual([180, 374]);
     expect(e.things).toEqual([]);
     const t = toy.createState(1, TOY_TUNE);

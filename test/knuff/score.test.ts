@@ -360,8 +360,8 @@ describe("a launch's total, the score and the best shot", () => {
     const pops = of(events, "pop");
     expect(pops.length).toBeGreaterThan(80);
     expect(s.score).toBe(pops.reduce((sum, e) => sum + e.points, 0));
-    // Every pop is its kind's points times its two multipliers.
-    for (const e of pops) expect(e.points).toBe(KINDS[e.kind].points * e.chain * e.cushions);
+    // Every pop is its kind's points times its three multipliers (the coin is 1 without a Coin slot).
+    for (const e of pops) expect(e.points).toBe(KINDS[e.kind].points * e.chain * e.cushions * e.coin);
     // Every launch that began also ended, once, and their totals add up to the score.
     const ends = of(events, "launchEnd");
     const begun = of(events, "launch").length;

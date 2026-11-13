@@ -6,10 +6,10 @@
  * Infinity (-1 means "never"). So one generic walk can copy it, fingerprint
  * it and store it as JSON (see state.ts).
  *
- * Step 1 holds the first two minutes: him, dust bunnies and tokens, hearts,
- * pips, the slow-motion meter, the hour clock and the score. Plates,
- * charms, the offer, the boss and the later kinds join in the steps that
- * build them, under the names the spec gives them.
+ * Step 1 held the first two minutes: him, dust bunnies and tokens, hearts,
+ * pips, the slow-motion meter, the hour clock and the score. Step 2 adds
+ * the ten plates, the charms and the offer. The boss and the later kinds
+ * join in the steps that build them, under the names the spec gives them.
  */
 import type { BuiltKind } from "../content/kinds";
 
@@ -141,6 +141,57 @@ export type Tune = {
   cushionCap: number;
   /** A cushion touched within this long of the last one does not count again, ticks. */
   cushionMergeTicks: number;
+
+  // ── Charms and offers ───────────────────────────────────────────────
+  /** The offer arms this long after it opens, or sooner if he lands, ticks. */
+  offerArmTicks: number;
+  /** A floor pickup never appears closer to him than this, u. */
+  pickupMinDist: number;
+  /** Bumper: the speed he leaves the plate with, as a share of launch speed. */
+  bumperSpeed: number;
+  /** Pip: a Pip plate gives one pip at most this often, ticks. */
+  pipPlateCooldown: number;
+  /** Spark: how long its ring lasts after the bounce, ticks. */
+  sparkTicks: number;
+  /** Spark: how far past his edge the ring reaches, u. */
+  sparkReach: number;
+  /** Bell: how long it dazes, ticks. */
+  bellDazeTicks: number;
+  /** Bell: a Bell plate rings at most this often, ticks. */
+  bellCooldown: number;
+  /** Coin slot: its multiplier on pops for the rest of the launch. */
+  coinFactor: number;
+  /** At most this many plates carry each wall charm. */
+  capBumper: number;
+  capPip: number;
+  capSpark: number;
+  capBell: number;
+  capCoin: number;
+  /** Heavy: the share of a pop's impulse he still feels. */
+  heavyFactor: number;
+  /** Long burn: the hot line moves down to this share of launch speed. */
+  longBurnHotFrac: number;
+  /** Wide: added to his radius, u. */
+  wideRadius: number;
+  /** Wide: the share of a pop's impulse he still feels. */
+  wideFactor: number;
+};
+
+/**
+ * His numbers after charms: what `statsFor(charms, tune)` makes (sim/charms.ts).
+ * `step`, the aim line and the bots read these and never a charm.
+ */
+export type Stats = {
+  /** His radius, u: 13, or 15 with Wide. */
+  radius: number;
+  /** The speed at or above which he is hot, u/s: lower with Long burn. */
+  hotSpeed: number;
+  /** The share of a collision's impulse he feels when the thing he hit pops: less with Heavy and with Wide. */
+  popImpulse: number;
+  /** Pips in hand at most: 4 with Fourth pip. */
+  pipMax: number;
+  /** Hearts at most: 4 with Thick skin. */
+  maxHearts: number;
 };
 
 export type Room = { left: number; top: number; right: number; bottom: number };
@@ -156,20 +207,25 @@ export type Him = {
   vy: number;
   /** He is flying: a weapon. When this is false he is landed: at rest, and a target. */
   hot: boolean;
-  /** The tick of his last pop, for `popHotTicks`; -1 = never. */
+  /** The tick of his last contact (a pop, by his body or by Spark's ring), for `popHotTicks`; -1 = never. */
   lastContactTick: number;
   /** Nothing can cost a heart while `tick` is under this. 0 = not invulnerable. */
   invulnUntil: number;
 };
 
+/** What can be in the room: the intruders built so far, and an offer's pickups. */
+export type ThingKind = BuiltKind | "pickup";
+
 /**
- * A thing in the room: a dust bunny or a token. Everything in `things` is
- * alive (a popped thing is gone by the end of its tick); it is announced
- * until `landTick` and landed from then on.
+ * A thing in the room: a dust bunny, a token, or a charm's pickup tile.
+ * Everything in `things` is alive (a popped thing, and a pickup whose
+ * offer is over, is gone by the end of its tick); it is announced until
+ * `landTick` and landed from then on. A pickup is never announced: it
+ * lies there from the tick its offer opens.
  */
 export type Thing = {
   id: number;
-  kind: BuiltKind;
+  kind: ThingKind;
   x: number;
   y: number;
   px: number;
@@ -199,7 +255,7 @@ export type LaunchState = {
   active: boolean;
   /** Steps the chain was carried in from the launch before (§7). */
   carry: number;
-  /** Pops so far, and those made by his body (in step 1 every pop is one). */
+  /** Pops so far, and those made by his body (a pop by Spark's ring is not one). */
   pops: number;
   bodyPops: number;
   /** It has given its pip back. */
@@ -208,12 +264,51 @@ export type LaunchState = {
   cushions: number;
   /** The last cushion touched in this launch, counted or not; -1 = none yet. */
   lastCushionTick: number;
+  /** A Coin slot plate fired in this launch: its pops score `coinFactor` times. */
+  coin: boolean;
+  /** Spark's ring reaches past his edge while `tick` is under this and he is hot; -1 = never. */
+  sparkUntil: number;
+  /** Bumper plates this launch has already been kicked by: each kicks once a launch. */
+  bumped: number[];
   /** This launch's total. */
   points: number;
-  /** Things he overlapped at the release: this launch cannot pop one until he has left it. */
+  /** Things and tiles he overlapped at the release: this launch cannot pop or take one until he has left it. */
   blocked: number[];
+  /** Released on a tick after the offer armed: this launch can take what is offered (§6.3). */
+  armed: boolean;
+  /** It took something. A launch takes one thing at most. */
+  took: boolean;
   /** Did it pop anything (for the next launch's carry). */
   popped: boolean;
+};
+
+/** One plate of the ten. */
+export type Plate = {
+  /** The wall charm it carries; "" = dark. */
+  charm: string;
+  /** Its charm cannot fire again before this tick (Pip, Bell); 0 = ready. */
+  readyTick: number;
+};
+
+/** One thing an offer holds: a plate to light, or a body charm lying on the floor as a tile. */
+export type OfferItem = {
+  kind: "plate" | "pickup";
+  charm: string;
+  /** The plate it would light; -1 for a pickup. */
+  plate: number;
+  /** The pickup's tile in `things`; -1 for a plate. */
+  thingId: number;
+};
+
+/** The offer of the hour (§6.3). There is never more than one. */
+export type Offer = {
+  /** It is out: made, not yet taken, not yet closed. */
+  open: boolean;
+  /** The tick it opened; -1 = none this hour. */
+  openTick: number;
+  /** The tick it armed; -1 = not yet. A launch released on a later tick can take. */
+  armedTick: number;
+  items: OfferItem[];
 };
 
 export type NightState = {
@@ -236,8 +331,10 @@ export type NightState = {
   clearTick: number;
   /** -1 until the offer opened, or would have. */
   offerTick: number;
-  /** -1 until the offer is settled. Until there are charms, that is the tick it would have opened. */
+  /** -1 until the offer is settled: a charm was taken, or nothing could be offered (then it is the tick the offer would have opened). */
   settledTick: number;
+  /** Offers are made this night. Off (`start.offers` false), each hour is settled the moment its offer would have opened. */
+  offers: boolean;
 };
 
 export type State = {
@@ -264,9 +361,16 @@ export type State = {
   /** The slow-motion meter, in slowed ticks, and the count toward its next refill. */
   slow: { meter: number; refill: number };
   launch: LaunchState;
+  /** Body charms taken, in order. */
+  charms: string[];
+  /** His numbers after charms: statsFor(charms, tune). */
+  stats: Stats;
+  /** The ten plates, numbered clockwise from the top left. */
+  plates: Plate[];
   things: Thing[];
   nextId: number;
   night: NightState;
+  offer: Offer;
   score: number;
   /** The largest total one launch has made. */
   bestShot: number;
@@ -296,13 +400,18 @@ export type SimEvent =
   | { type: "launch"; tick: number; x: number; y: number; power: number; carry: number }
   /** A release with no pip in hand. Nothing else happened. */
   | { type: "refused"; tick: number }
-  /** One per cushion touched; `speed` is his speed going in. */
-  | { type: "cushion"; tick: number; x: number; y: number; side: Side; speed: number }
+  /**
+   * One per cushion touched; `speed` is his speed going in. `plate` is the
+   * plate he bounced off; `charm` the charm that fired there, "" if none
+   * did (a dark plate, a Bumper that already kicked this launch, a Pip at
+   * the maximum or in its cooldown, a Bell in its cooldown).
+   */
+  | { type: "cushion"; tick: number; x: number; y: number; side: Side; speed: number; plate: number; charm: string }
   /**
    * `x`, `y` is the thing; `hx`, `hy` is his centre at the contact. `n`
-   * counts the pops of this launch from 1; `chain` and `cushions` are the
-   * two multipliers and `points` what the pop scored. `speed` is his speed
-   * going in.
+   * counts the pops of this launch from 1; `chain`, `cushions` and `coin`
+   * are the three multipliers and `points` what the pop scored. `source`:
+   * his body, or Spark's ring. `speed` is his speed going in.
    */
   | {
       type: "pop";
@@ -316,8 +425,9 @@ export type SimEvent =
       n: number;
       chain: number;
       cushions: number;
+      coin: number;
       points: number;
-      source: "body";
+      source: "body" | "spark";
       speed: number;
     }
   /** He landed. `dazed` is how many dust bunnies the thump dazed. */
@@ -325,7 +435,7 @@ export type SimEvent =
   /** A launch ended: on a landing, at the next release, or with the night. `x`, `y` is where he was. */
   | { type: "launchEnd"; tick: number; x: number; y: number; id: number; pops: number; total: number }
   /** A pip came back. `pips` is the count now. */
-  | { type: "pip"; tick: number; pips: number; why: "timer" | "pop" | "heart" }
+  | { type: "pip"; tick: number; pips: number; why: "timer" | "pop" | "heart" | "plate" }
   /** A heart was lost to thing `id`. `x`, `y` is his centre, where the wave goes out from. */
   | { type: "hurt"; tick: number; x: number; y: number; by: Thing["kind"]; id: number; hearts: number }
   /** A thing's telegraph began; it lands at `landTick`. */
@@ -339,8 +449,16 @@ export type SimEvent =
    * were announced and `cut` more were refused by the room's cap.
    */
   | { type: "row"; tick: number; hour: number; row: number; how: "tick" | "early" | "clock"; n: number; cut: number }
-  /** A thing was dazed, by a thump or by landing close. */
+  /** A thing was dazed: by a thump, by landing close, or by a Bell. */
   | { type: "daze"; tick: number; id: number; until: number }
+  /** The hour's offer opened with these things. */
+  | { type: "offerOpen"; tick: number; items: OfferItem[] }
+  /** It armed: a launch released from the next tick on can take. */
+  | { type: "offerArmed"; tick: number }
+  /** `item` (its place in `items`) was taken; the rest went away. */
+  | { type: "offerTaken"; tick: number; item: number; kind: OfferItem["kind"]; charm: string; plate: number; items: OfferItem[] }
+  /** The next hour began, or the night ended, with the offer still out: it is lost. */
+  | { type: "offerClosed"; tick: number; items: OfferItem[] }
   /** An hour began. */
   | { type: "hour"; tick: number; hour: number }
   /** The hour is clear. */

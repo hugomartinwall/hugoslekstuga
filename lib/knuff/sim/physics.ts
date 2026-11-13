@@ -111,16 +111,18 @@ export function applyLaunch(h: Him, l: Launch, tune: Tune): number {
 }
 
 /**
- * What he feels when the thing he hit pops: part of the knock a body of
- * mass `m` would have given him. `nx, ny` points from him to the thing.
- * A grazing pass can already be receding when it is sampled; it still
- * pops, it just costs him nothing.
+ * What he feels when the thing he hit pops: the share `scale` of the knock
+ * a body of mass `m` would have given him. `scale` is the toy's
+ * `popImpulseScale`, times Heavy's and Wide's factors when he has them
+ * (state.stats.popImpulse). `nx, ny` points from him to the thing. A
+ * grazing pass can already be receding when it is sampled; it still pops,
+ * it just costs him nothing.
  */
-export function popImpulse(h: Him, nx: number, ny: number, closing: number, m: number, tune: Tune): void {
+export function popImpulse(h: Him, nx: number, ny: number, closing: number, m: number, tune: Tune, scale: number): void {
   if (closing > 0) {
     const j = ((1 + tune.bodyRestitution) * closing) / (1 / HIM_MASS + 1 / m);
-    h.vx -= (j / HIM_MASS) * nx * tune.popImpulseScale;
-    h.vy -= (j / HIM_MASS) * ny * tune.popImpulseScale;
+    h.vx -= (j / HIM_MASS) * nx * scale;
+    h.vy -= (j / HIM_MASS) * ny * scale;
   }
 }
 

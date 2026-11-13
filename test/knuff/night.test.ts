@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DARK_PLATES } from "../../lib/knuff/content/charms";
 import { KINDS, type Kind } from "../../lib/knuff/content/kinds";
 import { BUNCH, CLOCK, HOURS, ROWS, SIX, type Row } from "../../lib/knuff/content/night";
 import { PACE } from "../../lib/knuff/content/tune";
@@ -25,7 +26,13 @@ const STEP1 = ["bunny", "token"];
 
 type Seen = { hour: number; row: number; how: string; at: number; n: number; cut: number };
 
-/** A night begun by hand in a given hour, and the means to do to its room what a player would. */
+/**
+ * A night begun by hand in a given hour, and the means to do to its room
+ * what a player would. It is the step-1 night, as the bot table keeps it:
+ * nothing is offered, so each hour is settled the moment its offer would
+ * have opened (§3.2), and the plates are dark. The offer has its own suite
+ * (charms.test.ts).
+ */
 class Night {
   readonly tune: Tune;
   readonly s: State;
@@ -35,7 +42,7 @@ class Night {
 
   constructor(over: Partial<Tune> = {}, start: StartOptions = {}, seed = 1) {
     this.tune = tuned({ ...STILL, ...over });
-    this.s = createState(seed, this.tune, start);
+    this.s = createState(seed, this.tune, { plates: DARK_PLATES, offers: false, ...start });
     this.s.phase = "night";
     this.began[this.s.night.hour] = 0;
   }
@@ -689,7 +696,7 @@ describe("the hour clock", () => {
     expect(night.rows(7)).toEqual([{ hour: 7, row: 0, how: "tick", at: 0, n: 8, cut: 0 }]);
   });
 
-  it("an hour not clear by tick 1,320 gets its offer then; with nothing to offer it is settled at once", () => {
+  it("an hour not clear by tick 1,320 gets its offer then; with offers off it is settled at once", () => {
     const night = new Night({ pace: 1 }, { hour: 6 });
     night.through(1319);
     expect([night.s.night.clearTick, night.s.night.offerTick, night.s.night.settledTick]).toEqual([-1, -1, -1]);

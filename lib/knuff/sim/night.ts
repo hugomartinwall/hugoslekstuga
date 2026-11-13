@@ -14,6 +14,7 @@
  */
 import { KINDS } from "../content/kinds";
 import { BUNCH, HOURS, RACK_APEX, ROWS } from "../content/night";
+import { closeOffer, offerStep } from "./charms";
 import { rand } from "./rng";
 import type { SimEvent, State, Thing, Tune } from "./types";
 
@@ -131,6 +132,7 @@ export function lastCall(hour: number, tune: Tune): number {
 
 const BUNNY = KINDS.bunny;
 const TOKEN = KINDS.token;
+const PICKUP = KINDS.pickup;
 
 /** A thing's row of the kind table. (One comparison: this is asked for every thing on every tick.) */
 function rowOf(d: Thing): (typeof KINDS)[Thing["kind"]] {
@@ -139,6 +141,8 @@ function rowOf(d: Thing): (typeof KINDS)[Thing["kind"]] {
       return BUNNY;
     case "token":
       return TOKEN;
+    case "pickup":
+      return PICKUP;
   }
 }
 
@@ -427,10 +431,11 @@ function announceDue(s: State, tune: Tune, rows: readonly Dealt[], events: SimEv
 // ── The night's part of a tick ────────────────────────────────────────
 
 /**
- * Step 4 of a tick. In order: the hour changes if it is due; the rows due
- * are announced; the things whose telegraph has ended land, dazed if he is
- * close; the clear test; the offer. Returns false when 05:00 has ended and
- * there is no 06:00 to go to: the night is over, and `step` closes it.
+ * Step 4 of a tick. In order: the hour changes if it is due (an offer still
+ * out is closed); the rows due are announced; the things whose telegraph
+ * has ended land, dazed if he is close; the clear test; the offer opens and
+ * arms. Returns false when 05:00 has ended and there is no 06:00 to go to:
+ * the night is over, and `step` closes it.
  */
 export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
   const night = s.night;
@@ -441,6 +446,8 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
     (settled && s.tick >= Math.max(night.clearTick, night.settledTick) + tune.hourPauseTicks) ||
     s.tick - night.hourStart >= tune.hourMaxTicks
   ) {
+    // An offer nobody took is lost.
+    closeOffer(s, events);
     night.hour++;
     night.hourStart = s.tick;
     night.nextRow = 0;
@@ -481,12 +488,10 @@ export function nightStep(s: State, tune: Tune, events: SimEvent[]): boolean {
     }
   }
   // The offer opens when the hour is clear, or at `offerLatestTick` if it
-  // is not. Until there are charms nothing can be offered, and the hour
-  // counts as settled the moment the offer would have opened.
-  if (night.offerTick < 0 && (night.clearTick >= 0 || into >= tune.offerLatestTick)) {
-    night.offerTick = s.tick;
-    night.settledTick = s.tick;
-  }
+  // is not, and arms when he lands or `offerArmTicks` later. If nothing can
+  // be offered, or offers are off, the hour counts as settled the moment
+  // the offer would have opened.
+  offerStep(s, tune, into, events);
   return true;
 }
 

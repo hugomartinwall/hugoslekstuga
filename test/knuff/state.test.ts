@@ -305,8 +305,15 @@ describe("the State", () => {
       clearTick: -1,
       offerTick: -1,
       settledTick: -1,
+      offers: true,
     });
     expect([s.score, s.bestShot, s.lastHurtBy, s.lastHurtHour]).toEqual([0, 0, "", -1]);
+    // Two plates lit from the start: Bumper on plate 0, Pip on plate 4. No charm taken, no offer out.
+    expect(s.plates.map((p) => p.charm)).toEqual(["bumper", "", "", "", "pip", "", "", "", "", ""]);
+    expect(s.plates.every((p) => p.readyTick === 0)).toBe(true);
+    expect(s.charms).toEqual([]);
+    expect(s.stats).toEqual({ radius: 13, hotSpeed: 0.33 * 900, popImpulse: 0.55, pipMax: 3, maxHearts: 3 });
+    expect(s.offer).toEqual({ open: false, openTick: -1, armedTick: -1, items: [] });
     // The 19:00 rack: rows of 1, 2 and then the one that is left, centred; apex at (180, 163), toward him.
     expect(s.things.map((d) => [d.kind, d.x, d.y, d.landTick, d.hp])).toEqual([
       ["bunny", 180, 163, -1, 1],

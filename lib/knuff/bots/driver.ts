@@ -15,6 +15,7 @@
  * And it keeps the night's books, from the State and the events and from
  * nothing else: what the balance table prints and what its bounds ask.
  */
+import { DARK_PLATES } from "../content/charms";
 import { HOURS } from "../content/night";
 import { createState, type StartOptions } from "../sim/state";
 import { step } from "../sim/step";
@@ -52,8 +53,12 @@ export function player(key: string): Player {
   return p;
 }
 
-/** The step-1 night (§13.2): dust bunnies and tokens only. Later steps add what they build to this list of leavings-out. */
-export const STEP1_NIGHT: StartOptions = { kinds: ["bunny", "token"] };
+/**
+ * The step-1 night (§13.2), which the step-1 table keeps until step 5:
+ * dust bunnies and tokens only, all ten plates dark, nothing offered.
+ * Later steps add what they build to this list of leavings-out.
+ */
+export const STEP1_NIGHT: StartOptions = { kinds: ["bunny", "token"], plates: DARK_PLATES, offers: false };
 
 /** The seed of night number `i`. */
 export function nightSeed(i: number): number {

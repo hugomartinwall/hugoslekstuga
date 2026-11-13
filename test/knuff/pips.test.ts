@@ -154,13 +154,15 @@ describe("the pip timer", () => {
     for (let t = 0; t < 8000 && s.phase !== "over"; t++) {
       step(s, input(), long, events);
       seen.add(s.pips);
-      if (s.pips < 0 || s.pips > long.pipMax) expect.fail(`${s.pips} pips at tick ${t}`);
+      // The most is his, after charms: a Fourth pip taken from an offer makes it 4.
+      if (s.pips < 0 || s.pips > s.stats.pipMax) expect.fail(`${s.pips} pips at tick ${t}`);
       if (s.pipTimer < 1 || s.pipTimer > long.pipRefillTicks) expect.fail(`the pip timer reads ${s.pipTimer} at tick ${t}`);
     }
-    expect([...seen].sort()).toEqual([0, 1, 2, 3]);
+    expect([...seen].sort()).toEqual(s.stats.pipMax === 4 ? [0, 1, 2, 3, 4] : [0, 1, 2, 3]);
     expect(of(events, "refused").length).toBeGreaterThan(0);
+    // The night as it starts has a Pip plate lit (plate 4): it gives pips too.
     const why = new Set(of(events, "pip").map((e) => e.why));
-    expect([...why].sort()).toEqual(["heart", "pop", "timer"]);
+    expect([...why].sort()).toEqual(["heart", "plate", "pop", "timer"]);
   });
 });
 

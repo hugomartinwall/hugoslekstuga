@@ -6,10 +6,12 @@
  * list of fields written by hand, so a field added to the State in a later
  * step is copied and fingerprinted without anyone remembering to.
  */
+import { BODY_CHARMS, DARK, PLATES, START_PLATES, isWallCharm } from "../content/charms";
 import { BUILT, isBuilt } from "../content/kinds";
+import { statsFor } from "./charms";
 import { placeRack } from "./night";
 import { seedStreams } from "./rng";
-import type { Room, State, Tune } from "./types";
+import type { Plate, Room, State, Tune } from "./types";
 
 /** The room is 360 × 480 u on every device. It is never stretched. */
 export const ROOM_W = 360;
@@ -26,12 +28,34 @@ export function defaultRoom(): Room {
 }
 
 /**
- * How a State may begin other than the default. The rest of the spec's
- * list (hearts, charms, plates, offers) joins with the things it sets.
+ * How a State may begin other than the default: a night at a given hour
+ * with a given build. The owner's checks, the charm test, the feel lock,
+ * the players without charms, the bot table's step-1 night and the dev
+ * handle all use it (§12.2).
  */
 export type StartOptions = {
   /** The hour the night begins in: 0 is 19:00, 10 is 05:00. The first launch starts it at its tick 0. */
   hour?: number;
+  /**
+   * Hearts at the start: brought inside 1 and the most he can have.
+   * Default: `tune.hearts`, and one more with Thick skin.
+   */
+  hearts?: number;
+  /**
+   * Body charms already taken, in order. A name that is not a body charm,
+   * and a second copy of one, are left out. Fourth pip starts him with its
+   * pip filled, Thick skin with its heart.
+   */
+  charms?: readonly string[];
+  /**
+   * The charm on each plate, by number: a wall charm's name, or "" for a
+   * dark plate. A missing entry, and a name that is not a wall charm, is
+   * dark. Default: the two starting plates, Bumper on 0 and Pip on 4. No
+   * cap is held here: a case may light what an offer never would.
+   */
+  plates?: readonly string[];
+  /** Offers are made. Off, each hour is settled the moment its offer would have opened (the players without charms). Default: on. */
+  offers?: boolean;
   /**
    * The kinds the night's rows may bring. By default, every kind built so
    * far. A kind not listed is left out of the rows; a kind not built yet
@@ -50,6 +74,17 @@ export type StartOptions = {
 export function createState(seed: number, tune: Tune, start: StartOptions = {}): State {
   const asked = start.kinds ?? (start.empty ? [] : BUILT);
   const hour = Math.min(10, Math.max(0, Math.floor(start.hour ?? 0)));
+  // In the order of the asking, each once.
+  const charms: string[] = [];
+  for (const c of start.charms ?? []) if ((BODY_CHARMS as readonly string[]).includes(c) && !charms.includes(c)) charms.push(c);
+  const stats = statsFor(charms, tune);
+  const platesAsked = start.plates ?? START_PLATES;
+  const plates: Plate[] = [];
+  for (let p = 0; p < PLATES; p++) {
+    const c = platesAsked[p] ?? DARK;
+    plates.push({ charm: isWallCharm(c) ? c : DARK, readyTick: 0 });
+  }
+  const hearts = Math.min(stats.maxHearts, Math.max(1, Math.floor(start.hearts ?? stats.maxHearts)));
   const s: State = {
     v: 1,
     seed: seed >>> 0,
@@ -61,8 +96,8 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
     rng: seedStreams(seed >>> 0),
     room: start.room ? { ...start.room } : defaultRoom(),
     him: { x: START_X, y: START_Y, px: START_X, py: START_Y, vx: 0, vy: 0, hot: false, lastContactTick: -1, invulnUntil: 0 },
-    hearts: tune.hearts,
-    pips: tune.pipMax,
+    hearts,
+    pips: stats.pipMax,
     pipTimer: tune.pipRefillTicks,
     // The meter starts the night full.
     slow: { meter: tune.slowMeterMax, refill: 0 },
@@ -76,10 +111,18 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
       refunded: false,
       cushions: 0,
       lastCushionTick: -1,
+      coin: false,
+      sparkUntil: -1,
+      bumped: [],
       points: 0,
       blocked: [],
+      armed: false,
+      took: false,
       popped: false,
     },
+    charms,
+    stats,
+    plates,
     things: [],
     nextId: 1,
     night: {
@@ -95,7 +138,9 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
       clearTick: -1,
       offerTick: -1,
       settledTick: -1,
+      offers: start.offers !== false,
     },
+    offer: { open: false, openTick: -1, armedTick: -1, items: [] },
     score: 0,
     bestShot: 0,
     lastHurtBy: "",

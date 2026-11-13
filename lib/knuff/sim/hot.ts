@@ -9,18 +9,19 @@
  * Everything here that changes a State is called from `step` only.
  */
 import { KINDS } from "../content/kinds";
+import { takeUnderHim } from "./charms";
 import { daze } from "./night";
-import { hotSpeed } from "./physics";
 import type { Input, SimEvent, State, Thing, Tune } from "./types";
 
 /**
  * Is he hot at `speed`? He is when he is moving and either his speed is at
- * or above the hot speed, or a pop keeps him hot: he has made one and it
- * is less than `popHotTicks` old. With that knob at 0 only speed counts.
+ * or above the hot speed (his, after charms: lower with Long burn), or a
+ * contact keeps him hot: he has made one and it is less than `popHotTicks`
+ * old. With that knob at 0 only speed counts.
  */
 export function isHot(s: State, tune: Tune, speed: number): boolean {
   if (!(speed > 0)) return false;
-  if (speed >= hotSpeed(tune)) return true;
+  if (speed >= s.stats.hotSpeed) return true;
   const last = s.him.lastContactTick;
   return last >= 0 && s.tick - last < tune.popHotTicks;
 }
@@ -41,9 +42,13 @@ export function keepInside(s: State, d: Thing): void {
  * thump moves nothing: a dust bunny overlapping him is only set down
  * touching him. A landing also tops up the slow-motion meter and ends the
  * launch.
+ *
+ * The tick he lands is still part of the launch: an armed launch that sets
+ * him down on a pickup's tile takes it, before he lands.
  */
 export function land(s: State, tune: Tune, events: SimEvent[]): void {
   const h = s.him;
+  takeUnderHim(s, tune, events);
   h.vx = 0;
   h.vy = 0;
   h.hot = false;
@@ -61,7 +66,7 @@ export function land(s: State, tune: Tune, events: SimEvent[]): void {
     if (d.kind === "bunny") {
       daze(s, d, until, events);
       dazed++;
-      const touch = tune.himRadius + KINDS.bunny.radius;
+      const touch = s.stats.radius + KINDS.bunny.radius;
       if (distSq < touch * touch) {
         // Out along the line between the two centres; straight up the room if they coincide.
         const dist = Math.sqrt(distSq);
@@ -71,7 +76,7 @@ export function land(s: State, tune: Tune, events: SimEvent[]): void {
         d.y = h.y + ny * touch;
         keepInside(s, d);
       }
-    } else if (tune.thumpTurnsTokens) {
+    } else if (d.kind === "token" && tune.thumpTurnsTokens) {
       // The fallback: a token inside the ring is turned to roll straight away.
       const dist = Math.sqrt(distSq);
       const nx = dist > 1e-6 ? dx / dist : 0;
@@ -94,9 +99,9 @@ export function endLaunch(s: State, events: SimEvent[]): void {
   events.push({ type: "launchEnd", tick: s.tick, x: s.him.x, y: s.him.y, id: l.id, pops: l.pops, total: l.points });
 }
 
-/** One pip back, unless he is at the maximum: a pip that would take him over it is lost. */
-export function givePip(s: State, tune: Tune, why: "timer" | "pop", events: SimEvent[]): boolean {
-  if (s.pips >= tune.pipMax) return false;
+/** One pip back, unless he is at the maximum (his, after charms): a pip that would take him over it is lost. */
+export function givePip(s: State, why: "timer" | "pop" | "plate", events: SimEvent[]): boolean {
+  if (s.pips >= s.stats.pipMax) return false;
   s.pips++;
   events.push({ type: "pip", tick: s.tick, pips: s.pips, why });
   return true;
@@ -121,7 +126,8 @@ export function loseHeart(s: State, tune: Tune, d: Thing, events: SimEvent[]): v
   const reachSq = tune.hitWaveRadius * tune.hitWaveRadius;
   for (let i = 0; i < s.things.length; i++) {
     const o = s.things[i];
-    if (o.hp <= 0 || s.tick < o.landTick) continue;
+    // The wave moves intruders; a pickup's tile lies where it lies.
+    if (o.hp <= 0 || s.tick < o.landTick || o.kind === "pickup") continue;
     const dx = o.x - h.x;
     const dy = o.y - h.y;
     const distSq = dx * dx + dy * dy;
@@ -135,7 +141,7 @@ export function loseHeart(s: State, tune: Tune, d: Thing, events: SimEvent[]): v
   }
 
   const had = s.pips;
-  s.pips = tune.pipMax;
+  s.pips = s.stats.pipMax;
   s.pipTimer = tune.pipRefillTicks;
   if (s.pips > had) events.push({ type: "pip", tick: s.tick, pips: s.pips, why: "heart" });
 }

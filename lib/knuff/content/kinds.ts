@@ -11,8 +11,11 @@
  * What the end panel calls a kind is in content/copy.ts.
  */
 
-/** Every kind the timetable names. The polisher is the boss; it is here so 06:00's lines can name it. */
-export type Kind = "bunny" | "token" | "gum" | "battery" | "envelope" | "bag" | "heart" | "polisher";
+/**
+ * Every kind the timetable names, and the offer's pickup tile. The
+ * polisher is the boss; it is here so 06:00's lines can name it.
+ */
+export type Kind = "bunny" | "token" | "gum" | "battery" | "envelope" | "bag" | "heart" | "pickup" | "polisher";
 
 export type KindRow = {
   /** It collides as a circle of this radius, u. 0 for a box. */
@@ -40,6 +43,9 @@ export const KINDS: Record<Exclude<Kind, "polisher">, KindRow> = {
   envelope: { radius: 9, boxW: 0, boxH: 0, hits: 1, points: 15, hurts: true, clear: true, intruder: true },
   bag: { radius: 34, boxW: 0, boxH: 0, hits: 8, points: 40, hurts: true, clear: true, intruder: true },
   heart: { radius: 0, boxW: 28, boxH: 28, hits: 0, points: 0, hurts: false, clear: false, intruder: false },
+  // A charm on a square tile (§6.3). Nothing hits it: it is taken. Its one
+  // "hit" keeps it alive in the room until its offer is settled or closed.
+  pickup: { radius: 0, boxW: 36, boxH: 36, hits: 1, points: 0, hurts: false, clear: false, intruder: false },
 };
 
 /** A kind that has rules so far: a thing in the room is one of these. */
