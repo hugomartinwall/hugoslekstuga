@@ -62,7 +62,8 @@ export type Effects = {
   reset(): void;
 };
 
-export function createEffects(tuneNow: () => Tune): Effects {
+/** `radiusNow` is his radius after charms in the State the events came from: Wide makes it larger. */
+export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () => tuneNow().himRadius): Effects {
   const particles: Particle[] = [];
   const trail: TrailDot[] = [];
   const thumps: Thump[] = [];
@@ -144,9 +145,9 @@ export function createEffects(tuneNow: () => Tune): Effects {
         case "land": {
           thumps.push({ x: e.x, y: e.y, tick: e.tick });
           if (thumps.length > 4) thumps.shift();
-          // The ring breaks into eight squares that fly off.
+          // The ring breaks into eight squares that fly off, from where it is drawn: 4 u outside his circle.
           if (!reduced) {
-            const ringR = tune.himRadius + 4;
+            const ringR = radiusNow() + 4;
             for (let i = 0; i < 8; i++) {
               const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
               particles.push({

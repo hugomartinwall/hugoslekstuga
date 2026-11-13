@@ -175,7 +175,10 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   const playable = opts.playable === true;
   // First, and before anything is registered: this is the one call that can throw.
   const renderer = createRenderer(root, canvas, opts.fonts);
-  const fx = createEffects(() => tune);
+  const fx = createEffects(
+    () => tune,
+    () => state.stats.radius,
+  );
 
   const disposers: Array<() => void> = [];
   const listen = <E extends Event>(
