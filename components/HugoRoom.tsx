@@ -5,8 +5,9 @@ import PixelIcon from "@/components/PixelIcon";
 import Dialog from "@/components/ui/Dialog";
 import Keycap from "@/components/ui/Keycap";
 import ScrollRegion from "@/components/ui/ScrollRegion";
+import { accentVars } from "@/lib/colors";
 import { clamp } from "@/lib/math";
-import { findTool } from "@/lib/tools";
+import { findTool, type ToolColor } from "@/lib/tools";
 import {
   getEnergyHistory,
   type HugoMood,
@@ -39,9 +40,9 @@ const MOOD_LABEL: Record<HugoMood, string> = {
 };
 
 /**
- * The room takes the colour of his mood: `--accent-soft` fills the panel
- * and `--accent` draws the chart. Calm is the plain raised panel with
- * phosphor on it; the other four are an accent and its dark tint.
+ * The room takes the colour of his mood: `--accent-soft` fills the panel.
+ * Calm is the plain raised panel; the other four are an accent's dark
+ * tint. (The chart is drawn in his own colour, not his mood's.)
  */
 const MOOD_SKIN: Record<HugoMood, string> = {
   sleepy: "[--accent:var(--color-blue)] [--accent-soft:var(--color-blue-soft)]",
@@ -86,7 +87,14 @@ function formatDate(epoch: number): string {
   });
 }
 
-export function HugoRoom({ onClose }: { onClose: () => void }) {
+export function HugoRoom({
+  color,
+  onClose,
+}: {
+  /** His own colour, the one he wears in the corner (BrandDot's). */
+  color: ToolColor;
+  onClose: () => void;
+}) {
   const bpm = useHugoState((s) => s.bpm);
   const mood = useHugoState((s) => s.mood);
   const energy = useHugoState((s) => s.energy);
@@ -168,10 +176,17 @@ export function HugoRoom({ onClose }: { onClose: () => void }) {
           <Stat label="Energy" value={`${Math.round(energy)}`} unit="%" />
         </section>
 
-        {/* Energy chart */}
+        {/* Energy chart. He is sampled once a minute from the page's
+            first moment, so a first visit has one sample at most: no
+            line yet, and the label says so instead of a flat line that
+            would read as data. */}
         <section className="plate-chunk mt-2 bg-cream-deep px-2.5 py-2.5 sm:px-3">
-          <p className="label-pixel">Energy — last hour</p>
-          <EnergyChart history={history} />
+          <p className="label-pixel">
+            {history.length < 2
+              ? "Energy — no history yet"
+              : "Energy — last hour"}
+          </p>
+          <EnergyChart history={history} color={color} />
         </section>
 
         {/* Memory counters. Two across (one, where a column could not
@@ -280,23 +295,24 @@ const cells = (x: number, y: number, w: number, h: number) =>
 
 function EnergyChart({
   history,
+  color,
 }: {
   history: { t: number; energy: number }[];
+  color: ToolColor;
 }) {
   // What it plots is what it always plotted: the samples spread from
   // edge to edge and joined by straight lines, 100 at the top and 0 on
-  // the floor. With fewer than two samples, a flat line at half height
-  // so the chart doesn't collapse. The line is read off at each column
+  // the floor. With fewer than two samples there is nothing to join:
+  // the plot stays empty (and keeps its height, so the room does not
+  // jump when the line arrives). The line is read off at each column
   // and dropped onto the grid, so it moves in steps instead of curving.
+  const empty = history.length < 2;
   const rowAt = (col: number): number => {
-    let energy = 50;
-    if (history.length >= 2) {
-      const at = (col / (COLS - 1)) * (history.length - 1);
-      const i = Math.min(history.length - 2, Math.floor(at));
-      const from = history[i].energy;
-      const to = history[i + 1].energy;
-      energy = from + (to - from) * (at - i);
-    }
+    const at = (col / (COLS - 1)) * (history.length - 1);
+    const i = Math.min(history.length - 2, Math.floor(at));
+    const from = history[i].energy;
+    const to = history[i + 1].energy;
+    const energy = from + (to - from) * (at - i);
     return Math.round(((100 - clamp(energy, 0, 100)) / 100) * (ROWS - 1));
   };
 
@@ -306,8 +322,8 @@ function EnergyChart({
   let line = "";
   let area = "";
   let start = 0;
-  let level = rowAt(0);
-  for (let col = 1; col <= COLS; col++) {
+  let level = empty ? 0 : rowAt(0);
+  for (let col = 1; !empty && col <= COLS; col++) {
     const next = col < COLS ? rowAt(col) : -1;
     if (next === level) continue;
     line += cells(start, level, col - start, 1);
@@ -323,19 +339,26 @@ function EnergyChart({
     level = next;
   }
 
+  // His colour draws the line and its dark tint (the kit's soft variant
+  // of it) fills the area under it.
   return (
     <svg
       viewBox={`0 0 ${COLS} ${ROWS}`}
       preserveAspectRatio="none"
       shapeRendering="crispEdges"
-      role="img"
-      aria-label="Hugo's energy over the past hour"
+      role={empty ? undefined : "img"}
+      aria-label={empty ? undefined : "Hugo's energy over the past hour"}
+      aria-hidden={empty ? true : undefined}
+      style={accentVars(color)}
       // In forced colours an SVG keeps the fills it is given, and a
       // phosphor line on a white page is no line at all: take the
       // system's text colour there, as the kit's frames do.
       className="mt-1.5 block h-16 w-full fill-(--accent) forced-colors:fill-[CanvasText]"
     >
-      <path d={area} fillOpacity={0.14} />
+      <path
+        d={area}
+        className="fill-(--accent-soft) forced-colors:fill-[CanvasText] forced-colors:[fill-opacity:0.14]"
+      />
       <path d={line} />
     </svg>
   );

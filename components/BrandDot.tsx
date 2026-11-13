@@ -1477,7 +1477,12 @@ export default function BrandDot({
     {/* Hugo's room — shift+click the dot opens it. Rendered via a
         portal so it sits at the body level above the rest of the
         UI. Closes on Esc or click-outside (handled inside). */}
-    {roomOpen && <HugoRoom onClose={() => setRoomOpen(false)} />}
+    {roomOpen && (
+      <HugoRoom
+        color={COLOR_ORDER[safeIdx]}
+        onClose={() => setRoomOpen(false)}
+      />
+    )}
     </>
   );
 }
