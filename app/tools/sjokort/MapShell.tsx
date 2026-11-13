@@ -170,6 +170,16 @@ export function MapShell({
       )) {
         key.classList.add(...ZOOM_KEY);
       }
+      // The attribution (the library builds it with the map) becomes a
+      // kit plate and its fold toggle a small kit key; chart.css dresses
+      // them. Only classes are added: the words, the toggle and the
+      // corner are the library's.
+      container
+        .querySelector(".maplibregl-ctrl-attrib")
+        ?.classList.add("plate-chunk");
+      container
+        .querySelector(".maplibregl-ctrl-attrib-button")
+        ?.classList.add("btn-chunk");
       map.on("click", (e) => {
         onMapClickRef.current([e.lngLat.lng, e.lngLat.lat]);
       });
