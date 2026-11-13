@@ -32,7 +32,7 @@ import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
-import { drawBattery, drawBatteryLine, drawBlastRings, drawGum, drawTelegraph } from "./intruders";
+import { drawBattery, drawBatteryLine, drawBlastRings, drawGum, drawTelegraph, onFloor } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
   DAZE_MARKS,
@@ -441,10 +441,12 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     drawBossTelegraph(paint, state);
     // A battery's blast: its reach, for its last 60 ticks and from the moment it is knocked; and the blasts going off.
     drawBlastRings(paint, state, tune, alpha);
-    for (const b of fx.blasts) {
-      const k = 1 - b.life / b.max;
-      paint.ring(X(b.x), Y(b.y), (10 + (tune.blastRadius - 10) * (f.reduced ? 1 : k)) * S, rgba(b.mine ? C.amber : C.coral, 1 - 0.7 * k), Math.max(3, Math.round(S * 4)));
-    }
+    onFloor(paint, state, () => {
+      for (const b of fx.blasts) {
+        const k = 1 - b.life / b.max;
+        paint.ring(X(b.x), Y(b.y), (10 + (tune.blastRadius - 10) * (f.reduced ? 1 : k)) * S, rgba(b.mine ? C.amber : C.coral, 1 - 0.7 * k), Math.max(3, Math.round(S * 4)));
+      }
+    });
 
     // Shorter than a shot, or no pip in hand: grey, to show that letting go here does nothing.
     // Otherwise phosphor at every power. (The toy went mint, acid, coral
@@ -473,7 +475,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       if (f.line && f.line.pts.length >= 4) {
         aimDots(f.line, col);
         // A battery first: its own line, and the ring where it bursts.
-        drawBatteryLine(paint, f.line, tune, col);
+        drawBatteryLine(paint, state, f.line, tune, col);
         // Where it ends it says what will happen. (A cross waits for its own pass, over the polisher.)
         const pts = f.line.pts;
         const ex = pts[pts.length - 2];

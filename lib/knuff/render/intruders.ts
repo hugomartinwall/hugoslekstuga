@@ -24,6 +24,22 @@ const CELL_H = 22;
 const NUB_W = 6;
 const NUB_H = 3;
 
+/**
+ * Draw with the floor as the clip: a blast's ring of 70 u round a battery
+ * by a cushion would otherwise spill over the rail and out of the room,
+ * where nothing can be reached.
+ */
+export function onFloor(p: Paint, s: State, draw: () => void): void {
+  const x0 = Math.round(p.X(s.room.left));
+  const y0 = Math.round(p.Y(s.room.top));
+  p.ctx.save();
+  p.ctx.beginPath();
+  p.ctx.rect(x0, y0, Math.round(p.X(s.room.right)) - x0, Math.round(p.Y(s.room.bottom)) - y0);
+  p.ctx.clip();
+  draw();
+  p.ctx.restore();
+}
+
 /** A rectangle in units, snapped to device pixels. */
 function rect(p: Paint, x: number, y: number, w: number, h: number, color: string): void {
   const x0 = Math.round(p.X(x));
@@ -105,17 +121,19 @@ export function drawBattery(p: Paint, s: State, d: Thing, x: number, y: number, 
 /** Its blast's reach: drawn for its last 60 ticks, and from the moment he knocks it. */
 export function drawBlastRings(p: Paint, s: State, tune: Tune, alpha: number): void {
   const w = Math.max(2, Math.round(p.S * 2));
-  for (const d of s.things) {
-    if (d.kind !== "battery" || d.hp <= 0 || s.tick < d.landTick) continue;
-    if (d.knockTick < 0 && d.fuseTick - s.tick > 60) continue;
-    const x = d.px + (d.x - d.px) * alpha;
-    const y = d.py + (d.y - d.py) * alpha;
-    p.ring(p.X(x), p.Y(y), tune.blastRadius * p.S, rgba(C.amber, 0.8), w);
-  }
+  onFloor(p, s, () => {
+    for (const d of s.things) {
+      if (d.kind !== "battery" || d.hp <= 0 || s.tick < d.landTick) continue;
+      if (d.knockTick < 0 && d.fuseTick - s.tick > 60) continue;
+      const x = d.px + (d.x - d.px) * alpha;
+      const y = d.py + (d.y - d.py) * alpha;
+      p.ring(p.X(x), p.Y(y), tune.blastRadius * p.S, rgba(C.amber, 0.8), w);
+    }
+  });
 }
 
 /** The battery's second line on the aim line (§4.2): its path from the knock, dotted, and the broken ring of its blast where it bursts. */
-export function drawBatteryLine(p: Paint, line: AimLine, tune: Tune, col: string): void {
+export function drawBatteryLine(p: Paint, s: State, line: AimLine, tune: Tune, col: string): void {
   const pts = line.battery;
   if (pts.length < 2) return;
   const q = Math.max(2, Math.round(p.dpr * 2.6));
@@ -136,6 +154,6 @@ export function drawBatteryLine(p: Paint, line: AimLine, tune: Tune, col: string
   }
   if (line.burst.length === 2) {
     const w = Math.max(2, Math.round(p.S * 2));
-    p.ring(p.X(line.burst[0]), p.Y(line.burst[1]), tune.blastRadius * p.S, col === C.ink ? C.amber : col, w);
+    onFloor(p, s, () => p.ring(p.X(line.burst[0]), p.Y(line.burst[1]), tune.blastRadius * p.S, col === C.ink ? C.amber : col, w));
   }
 }
