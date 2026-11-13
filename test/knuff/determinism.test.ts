@@ -257,9 +257,9 @@ describe("determinism", () => {
     expect(createState(1, DEFAULT_TUNE, { hour: -3 }).night.hour).toBe(0);
     // The kinds: every kind built so far by default, the polisher among them; a list is kept in the
     // order the kinds were built; a kind with no rules yet cannot be asked for.
-    expect(createState(1, DEFAULT_TUNE).night.kinds).toEqual(["bunny", "token", "polisher", "gum", "battery", "envelope"]);
+    expect(createState(1, DEFAULT_TUNE).night.kinds).toEqual(["bunny", "token", "polisher", "gum", "battery", "envelope", "bag"]);
     expect(createState(1, DEFAULT_TUNE, { kinds: ["token", "bunny", "token"] }).night.kinds).toEqual(["bunny", "token"]);
-    expect(createState(1, DEFAULT_TUNE, { kinds: ["bunny", "envelope", "bag", "gum", "polisher", "nonsense"] }).night.kinds).toEqual(["bunny", "polisher", "gum", "envelope"]);
+    expect(createState(1, DEFAULT_TUNE, { kinds: ["bunny", "envelope", "bag", "gum", "polisher", "nonsense"] }).night.kinds).toEqual(["bunny", "polisher", "gum", "envelope", "bag"]);
     // A night of tokens only has no rack; one that is empty but for its kinds has none either, and its rows still come.
     expect(createState(1, DEFAULT_TUNE, { kinds: ["token"] }).things).toEqual([]);
     const noRack = createState(1, DEFAULT_TUNE, { empty: true, kinds: ["bunny", "token"] });

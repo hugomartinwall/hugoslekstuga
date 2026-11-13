@@ -14,6 +14,7 @@
  */
 import { KINDS } from "../content/kinds";
 import { BUNCH, HOURS, RACK_APEX, ROWS } from "../content/night";
+import { bagTelegraph, dazedWithin } from "./bag";
 import { bossClock } from "./boss";
 import { closeOffer, offerStep } from "./charms";
 import { rand } from "./rng";
@@ -43,6 +44,8 @@ export type Dealt = {
   batteryForm: "alone" | "beside" | "";
   /** Envelopes: the newsletter's V of five, which comes from the top edge by its own rule. */
   envelopes: number;
+  /** The money bag: alone at a far spot, 60 u in; its telegraph is twice an arrival's. */
+  bag: number;
   /** It brings a kind for the first time: it holds the row after it back (the pace's second rule). */
   first: boolean;
 };
@@ -71,6 +74,7 @@ function dealHour(hour: number, kinds: readonly string[]): Dealt[] {
       battery: 0,
       batteryForm: "",
       envelopes: 0,
+      bag: 0,
       first: r.first !== "",
     };
     let any = false;
@@ -93,6 +97,8 @@ function dealHour(hour: number, kinds: readonly string[]): Dealt[] {
         d.batteryForm = p.form;
       } else if (p.kind === "envelope" && p.form === "V") {
         d.envelopes += p.n;
+      } else if (p.kind === "bag" && p.form === "alone") {
+        d.bag += p.n;
       } else {
         // A kind with no rules yet. createState keeps such a kind out of the list.
         continue;
@@ -166,6 +172,7 @@ const TOKEN = KINDS.token;
 const GUM = KINDS.gum;
 const BATTERY = KINDS.battery;
 const ENVELOPE = KINDS.envelope;
+const BAG = KINDS.bag;
 const PICKUP = KINDS.pickup;
 
 /** A thing's row of the kind table. (One comparison: this is asked for every thing on every tick.) */
@@ -181,6 +188,8 @@ function rowOf(d: Thing): (typeof KINDS)[Thing["kind"]] {
       return BATTERY;
     case "envelope":
       return ENVELOPE;
+    case "bag":
+      return BAG;
     case "pickup":
       return PICKUP;
   }
@@ -398,6 +407,9 @@ function placeFile(s: State, tune: Tune, n: number, landTick: number, events: Si
   }
 }
 
+/** The money bag stands at a far spot this far in from every cushion, u (§3.3, "alone"). */
+const BAG_INSET = 60;
+
 /** The V's leader stands this far inside the side cushions at most, u: at 61 and 299 the outer envelopes touch them. */
 const V_SIDE = 53;
 /** The V's three rows, from the leader at its tip to the back: their height under the top cushion, and how far out from the leader they stand, u. */
@@ -469,11 +481,13 @@ function announceRow(s: State, tune: Tune, d: Dealt, how: "tick" | "early" | "cl
     let gum = d.gum;
     let battery = d.battery;
     let envelopes = d.envelopes;
+    let bag = d.bag;
     // The cap: dust bunnies are cut first, then tokens, then gum, then
-    // batteries, then envelopes (from the back of the V). What is cut never arrives.
-    let over = intruders(s) + bunnies + loose + file + gum + battery + envelopes - tune.roomCap;
+    // batteries, then envelopes (from the back of the V), and last the
+    // money bag. What is cut never arrives.
+    let over = intruders(s) + bunnies + loose + file + gum + battery + envelopes + bag - tune.roomCap;
     if (over > 0) {
-      cut = Math.min(over, bunnies + loose + file + gum + battery + envelopes);
+      cut = Math.min(over, bunnies + loose + file + gum + battery + envelopes + bag);
       const fewerBunnies = Math.min(bunnies, over);
       bunnies -= fewerBunnies;
       over -= fewerBunnies;
@@ -489,8 +503,13 @@ function announceRow(s: State, tune: Tune, d: Dealt, how: "tick" | "early" | "cl
       const fewerBatteries = Math.min(battery, over);
       battery -= fewerBatteries;
       over -= fewerBatteries;
-      envelopes -= Math.min(envelopes, over);
+      const fewerEnvelopes = Math.min(envelopes, over);
+      envelopes -= fewerEnvelopes;
+      over -= fewerEnvelopes;
+      bag -= Math.min(bag, over);
     }
+    // The money bag's telegraph is twice an arrival's: a row that brings it lands that much later.
+    if (d.bag > 0) lands = s.tick + bagTelegraph(tune);
     // The blob first; then what is placed by it (a battery beside, gum
     // under), or alone; then each token.
     let blob = placeBlob(s, tune, bunnies, lands, events);
@@ -505,6 +524,11 @@ function announceRow(s: State, tune: Tune, d: Dealt, how: "tick" | "early" | "cl
     placeFile(s, tune, file, lands, events);
     // The V comes from the top edge by its own rule, and draws nothing from the arrivals stream.
     placeV(s, tune, envelopes, lands, events);
+    // The money bag: alone, at a far spot 60 u in.
+    for (let i = 0; i < bag; i++) {
+      const p = farSpot(s, tune, BAG_INSET);
+      announce(s, addThing(s, "bag", p.x, p.y, lands, 0, 0), events);
+    }
     announced = s.nextId - firstId;
   }
   night.rowTick = s.tick;
@@ -540,6 +564,7 @@ function extraBunch(s: State, tune: Tune): Dealt {
     battery: 0,
     batteryForm: "",
     envelopes: 0,
+    bag: 0,
     first: false,
   };
 }
@@ -676,8 +701,8 @@ function landArrivals(s: State, tune: Tune, events: SimEvent[]): void {
       }
       d.heading = Math.atan2(h.y - lead.y, h.x - lead.x);
     }
-    // Every kind that can hurt lands dazed close to him; gum hurts nothing and is never dazed.
-    const dazed = dist <= tune.arriveDazedWithin && rowOf(d).hurts;
+    // Every kind that can hurt lands dazed close to him (the money bag within 94 u); gum hurts nothing and is never dazed.
+    const dazed = dist <= dazedWithin(d.kind, tune) && rowOf(d).hurts;
     if (dazed) daze(s, d, s.tick + tune.dazeTicks, events);
     events.push({ type: "arrive", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, dist, dazed });
   }

@@ -118,6 +118,36 @@ export function drawGum(p: Paint, s: State, willHit: number): void {
   }
 }
 
+/**
+ * The money bag: a large mint sack with a knot on top. Across its middle a
+ * row of eight squares counts its hits: solid for each one left, hollow
+ * for each taken off. `x`, `y` is its centre as drawn.
+ */
+export function drawBag(p: Paint, s: State, d: Thing, x: number, y: number, hits: number, willHit: boolean, cell: number): void {
+  const body = willHit ? mix(C.mint, C.ink, 0.45) : C.mint;
+  const R = 34;
+  p.disc(p.X(x), p.Y(y), R * p.S, cell, body);
+  // The knot: a tie and two ears above the sack.
+  rect(p, x - 5, y - R - 1, 10, 4, body);
+  rect(p, x - 9, y - R - 5, 6, 4, body);
+  rect(p, x + 3, y - R - 5, 6, 4, body);
+  rect(p, x - 6, y - R + 3, 12, 2, rgba(C.page, 0.7));
+  // Its hits: eight squares of 4 u, 2 u apart, centred under the middle row (the daze marks sit on that row).
+  const n = Math.max(1, hits);
+  const w = n * 4 + (n - 1) * 2;
+  for (let i = 0; i < n; i++) {
+    const qx = x - w / 2 + i * 6;
+    const qy = y + 8;
+    if (i < d.hp) rect(p, qx, qy, 4, 4, C.page);
+    else {
+      rect(p, qx, qy, 4, 1, C.page);
+      rect(p, qx, qy + 3, 4, 1, C.page);
+      rect(p, qx, qy, 1, 4, C.page);
+      rect(p, qx + 3, qy, 1, 4, C.page);
+    }
+  }
+}
+
 /** Is a battery showing phosphor rather than amber on this tick? Every 20 ticks at first, every 6 in its last 120. */
 function flashOn(s: State, d: Thing, reduced: boolean): boolean {
   if (reduced || d.fuseTick < 0) return false;

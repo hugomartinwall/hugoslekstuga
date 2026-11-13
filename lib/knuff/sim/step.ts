@@ -11,6 +11,7 @@
  * test/knuff/feel-lock.test.ts holds every tick he is hot against the toy.
  */
 import { BOSS_HOUR } from "../content/night";
+import { fades } from "./bag";
 import { clearQueue, fuses, knockedTouches, resolveBlasts } from "./battery";
 import { bossContact, moveBoss, nightBonus } from "./boss";
 import { armedLaunch, bounceOff } from "./charms";
@@ -122,6 +123,8 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
     }
     // Fuses and knock timers: a battery whose time has come is queued.
     fuses(s, tune);
+    // Things that fade: a token the money bag let out.
+    fades(s, events);
 
     // 6. Choose: each intruder sets its velocity for this tick.
     const fastestThing = choose(s, tune);

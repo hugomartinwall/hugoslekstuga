@@ -32,8 +32,8 @@ export type AimLine = {
   /** Where he touched each cushion, as x, y pairs, in order. The last is where the line ends when `end` is "cushion". */
   cushionPts: number[];
   /**
-   * Why it stops: on the first thing he would pop or hit (the polisher's
-   * plug is thing 0); on the polisher, where he would bounce off its casing;
+   * Why it stops: on the first thing he would pop, hit, knock, be stopped
+   * by or bounce off (the money bag; the polisher's plug is thing 0); on the polisher, where he would bounce off its casing;
    * on its pad, which costs a heart and throws him (on his last heart the
    * night ends there, and nothing throws him); at the cushion after the
    * last one it runs through; where he would land; or after `maxTicks`.
@@ -152,6 +152,12 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
         drawing = false;
         following = e.id;
         out.battery.push(e.x, e.y);
+      } else if (e.type === "bounce") {
+        // Off the money bag with no hit (this launch has hit it already): he bounces off a thing, and the line ends on it.
+        out.pts.push(e.x, e.y);
+        out.end = "thing";
+        out.hitId = e.id;
+        drawing = false;
       } else if (e.type === "bossBounce") {
         out.pts.push(e.x, e.y);
         out.end = "polisher";

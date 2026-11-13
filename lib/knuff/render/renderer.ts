@@ -32,7 +32,7 @@ import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
-import { drawBattery, drawBatteryLine, drawBlastRings, drawEnvelope, drawGum, drawTelegraph, onFloor } from "./intruders";
+import { drawBag, drawBattery, drawBatteryLine, drawBlastRings, drawEnvelope, drawGum, drawTelegraph, onFloor } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
   DAZE_MARKS,
@@ -421,6 +421,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       const dr = KINDS[d.kind].radius;
       if (d.kind === "gum" || d.kind === "battery" || d.kind === "envelope") {
         drawTelegraph(paint, d);
+      } else if (d.kind === "bag") {
+        // The money bag's outline, for its longer telegraph.
+        paint.ring(X(d.x), Y(d.y), dr * S, C.mint, ringW);
       } else if (d.kind === "token") {
         paint.ring(X(d.x), Y(d.y), dr * S, C.acid, ringW);
         // Which way it will roll: three squares, stepping off along its roll.
@@ -522,6 +525,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       } else if (d.kind === "envelope") {
         // A wide rectangle with its flap.
         drawEnvelope(paint, d, dx, dy, willHit);
+      } else if (d.kind === "bag") {
+        // A large sack with a knot, and its hits left.
+        drawBag(paint, state, d, dx, dy, tune.bagHits, willHit, cellFx);
       } else {
         // A small round body with two eyes. Dazed, it wears its marks in their place.
         paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.ash, C.ink, 0.45) : C.ash);

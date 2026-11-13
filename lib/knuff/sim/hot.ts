@@ -124,15 +124,15 @@ export function loseHeart(s: State, tune: Tune, d: { kind: Thing["kind"] | "poli
   s.lastHurtHour = s.night.hour;
   events.push({ type: "hurt", tick: s.tick, x: h.x, y: h.y, by: d.kind, id: d.id, hearts: s.hearts, blast });
 
-  // The wave. It throws every dust bunny and battery within reach straight
+  // The wave. It throws every dust bunny, envelope and battery within reach straight
   // away from him and turns every token to roll straight away. It pops
   // nothing and dazes nothing, it throws dazed things too, and it changes
   // no battery's timers or owner.
   const reachSq = tune.hitWaveRadius * tune.hitWaveRadius;
   for (let i = 0; i < s.things.length; i++) {
     const o = s.things[i];
-    // The wave moves intruders; a pickup's tile lies where it lies, and gum ignores it.
-    if (o.hp <= 0 || s.tick < o.landTick || o.kind === "pickup" || o.kind === "gum") continue;
+    // The wave moves intruders; a pickup's tile lies where it lies, and gum and the money bag ignore it.
+    if (o.hp <= 0 || s.tick < o.landTick || o.kind === "pickup" || o.kind === "gum" || o.kind === "bag") continue;
     const dx = o.x - h.x;
     const dy = o.y - h.y;
     const distSq = dx * dx + dy * dy;

@@ -261,7 +261,7 @@ describe("the line names what the real game touches", () => {
       for (const e of events) {
         // What he pops or hits, or a battery he knocks; not what a blast pops or hits.
         if ((e.type === "pop" || e.type === "hit") && e.source !== "blast") return { end: "thing", hitId: e.id, ticks: t };
-        if (e.type === "knock") return { end: "thing", hitId: e.id, ticks: t };
+        if (e.type === "knock" || e.type === "bounce") return { end: "thing", hitId: e.id, ticks: t };
         if (e.type === "cushion" && ++cushions > tune.aimCushions) return { end: "cushion", hitId: -1, ticks: t };
         if (e.type === "land") return { end: "land", hitId: -1, ticks: t };
       }
@@ -283,7 +283,7 @@ describe("the line names what the real game touches", () => {
     let moving = 0;
     // Five hundred rooms, and then more while a kind that is built has not yet been the first thing of a line:
     // the later kinds are rarer, and the real game and the line must agree on them too.
-    const wanted = ["battery", "gum", "envelope"];
+    const wanted = ["battery", "gum", "envelope", "bag"];
     for (let room = 0; room < 500 || (room < 2500 && wanted.some((k) => !on[k])); room++) {
       // A room from the middle of a night, in any of its hours: a scripted
       // player plays for a while, and the line is asked for there.
@@ -310,7 +310,7 @@ describe("the line names what the real game touches", () => {
       const hit = s.things.find((d) => d.id === line.hitId);
       if (hit) on[hit.kind] = (on[hit.kind] ?? 0) + 1;
     }
-    // Gum and batteries (step 4) and envelopes (step 5) were among the first things: the real game and the line agree on them too.
+    // Gum and batteries (step 4), envelopes and the money bag (step 5) were among the first things: the real game and the line agree on them too.
     for (const kind of wanted) expect(on[kind] ?? 0, kind).toBeGreaterThan(0);
     // The rooms were of every sort: each way a line can end came up often, bar running out of time, which never does.
     expect(ends.thing).toBeGreaterThan(80);

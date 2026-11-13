@@ -286,6 +286,109 @@ describe("an envelope (the newsletter)", () => {
   });
 });
 
+describe("the money bag (venture capital)", () => {
+  const tune = tuned({ bunnySpeed: 0, tokenSpeed: 0, envelopeSpeed: 0 });
+
+  it("is a circle of radius 34 that takes 8 hits at 40 a hit point; it hurts on touch and counts for clear", () => {
+    expect(KINDS.bag).toEqual({ radius: 34, boxW: 0, boxH: 0, hits: 8, points: 40, hurts: true, clear: true, intruder: true });
+    expect([tune.bagSpeed, tune.bagHits, tune.bagTokenEvery, tune.bagTokenLife]).toEqual([10, 8, 2, 480]);
+  });
+
+  it("creeps straight toward him at 10 u/s; dazed, it stands still", () => {
+    const s = night(tune);
+    s.him.invulnUntil = 1e9;
+    const bag = put(s, "bag", 180, 100);
+    run(s, tune, 60);
+    expect(bag.x).toBeCloseTo(180, 9);
+    expect(bag.y).toBeCloseTo(110, 9);
+    const t = night(tune);
+    const dazed = put(t, "bag", 180, 100, { dazedUntil: 30 });
+    run(t, tune, 30);
+    expect([dazed.x, dazed.y]).toEqual([180, 100]);
+  });
+
+  it("takes at most one hit a launch, two off a cushion: four bank shots end it", () => {
+    const s = night(tuned({ bunnySpeed: 0, tokenSpeed: 0, bagSpeed: 0 }), { plates: ["", "", "", "", "", "", "", "", "", ""], offers: false });
+    s.hearts = 99;
+    const bag = put(s, "bag", 180, 200);
+    const left: number[] = [];
+    for (let shotN = 0; shotN < 4; shotN++) {
+      // Up under the top cushion, then straight up: off the cushion and back down into it.
+      s.him.x = 180;
+      s.him.y = 60;
+      s.him.vx = 0;
+      s.him.vy = 0;
+      s.him.hot = false;
+      s.pips = 3;
+      const events = fire(s, tuned({ bunnySpeed: 0, tokenSpeed: 0, bagSpeed: 0 }), shot(0, -1), 30);
+      for (const e of of(events, "hit")) left.push(e.left);
+      // The tokens it lets out are taken out of the room: this case is about its hits.
+      s.things = s.things.filter((d) => d.kind === "bag");
+    }
+    expect(left).toEqual([6, 4, 2, 0]);
+    expect(s.things.includes(bag)).toBe(false);
+    expect(s.score).toBe(8 * 40);
+  });
+
+  it("for every second hit point it loses it lets out a token at its rim, away from him, dazed 36 ticks, then rolling away from it", () => {
+    const rolling = tuned({ bunnySpeed: 0, bagSpeed: 0 });
+    const s = night(rolling);
+    const bag = put(s, "bag", 180, 250);
+    // A blast of his takes one hit point at a time.
+    const lost: number[] = [];
+    for (const hp of [8, 7, 6, 5, 4, 3, 2, 1]) {
+      bag.hp = hp;
+      put(s, "battery", 180 + 50, 250 - 40, { mine: true, knockTick: s.tick, launchId: 1, fuseTick: s.tick + 1 });
+      const events = run(s, rolling, 2);
+      lost.push(of(events, "bagToken").length);
+    }
+    expect(lost).toEqual([0, 1, 0, 1, 0, 1, 0, 1]);
+    const tokens = s.things.filter((d) => d.kind === "token");
+    // The last came out as the bag went: it is at the rim, away from him, dazed, its roll pointing away.
+    const last = tokens[tokens.length - 1];
+    expect(last.y).toBeCloseTo(250 - 34 - 7, 9);
+    expect(last.x).toBeCloseTo(180, 9);
+    expect([last.vx, last.vy]).toEqual([0, -150]);
+    expect(last.dazedUntil).toBe(last.landTick + 36);
+    expect(last.goneTick).toBe(last.landTick + 480);
+  });
+
+  it("a token from the bag stops and fades 480 ticks after it appeared: gone, harmless, worth nothing; popped before that it is an ordinary token", () => {
+    const still = tuned({ bunnySpeed: 0, tokenSpeed: 0, bagSpeed: 0 });
+    const s = night(still);
+    s.him.x = 40;
+    s.him.y = 440;
+    const t = put(s, "token", 300, 100, { landTick: 0, goneTick: 480, dazedUntil: 36 });
+    s.tick = 470;
+    const events = run(s, still, 15);
+    expect(of(events, "fade").map((e) => [e.id, e.tick])).toEqual([[t.id, 480]]);
+    expect(s.things.includes(t)).toBe(false);
+    expect(s.score).toBe(0);
+    const p = night(still);
+    put(p, "token", 180, 374 - 40, { landTick: 0, goneTick: 480 });
+    const [pop] = of(fire(p, still, shot(0, -1), 4), "pop");
+    expect(pop.points).toBe(25);
+  });
+
+  it("does not let a token out while the room is at the cap", () => {
+    const rolling = tuned({ bunnySpeed: 0, bagSpeed: 0 });
+    const s = night(rolling);
+    s.him.x = 40;
+    s.him.y = 440;
+    put(s, "bag", 180, 250, { hp: 7 });
+    for (let i = 0; i < 22; i++) put(s, "bunny", 20 + (i % 11) * 30, 400 + Math.floor(i / 11) * 20, { dazedUntil: 1e9 });
+    put(s, "battery", 180 + 50, 250 - 40, { mine: true, knockTick: 0, launchId: 1, fuseTick: 1 });
+    // 22 dust bunnies, the bag and the battery: 24. The battery goes, the bag drops to 6 with 23 in the room: it comes.
+    let events = run(s, rolling, 2);
+    expect(of(events, "bagToken")).toHaveLength(1);
+    put(s, "battery", 180 - 50, 250 - 40, { mine: true, knockTick: s.tick, launchId: 1, fuseTick: s.tick + 1 });
+    s.things.find((d) => d.kind === "bag")!.hp = 5;
+    // 22 + the bag + the token + the battery = 25 is over by one already; at 24 after the burst, no token.
+    events = run(s, rolling, 2);
+    expect(of(events, "bagToken")).toEqual([]);
+  });
+});
+
 describe("intruders and each other", () => {
   it("dust bunnies are kept from overlapping: pushed apart equally along the line between them", () => {
     const still = tuned({ bunnySpeed: 0, tokenSpeed: 0 });

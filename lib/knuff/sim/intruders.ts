@@ -16,6 +16,7 @@
  * Everything here that changes a State is called from `step` only.
  */
 import { KINDS } from "../content/kinds";
+import { BAG_R, bagContact } from "./bag";
 import { BATTERY_R, bursting, gapToGum, gumContact, knock, queueBurst } from "./battery";
 import { canTake, overlapsTile, takePickup } from "./charms";
 import { givePip, isHot, keepInside, land, loseHeart } from "./hot";
@@ -45,6 +46,8 @@ function radiusOf(d: Thing): number {
       return BATTERY_R;
     case "envelope":
       return ENVELOPE_R;
+    case "bag":
+      return BAG_R;
     case "gum":
     case "pickup":
       return 0;
@@ -102,6 +105,24 @@ export function choose(s: State, tune: Tune): number {
         fastestSq = sq;
         fx = sx;
         fy = sy;
+      }
+    } else if (d.kind === "bag") {
+      // It creeps toward him at `bagSpeed`; dazed, it stands still. Nothing shoves it.
+      if (s.tick < d.dazedUntil) {
+        d.wx = 0;
+        d.wy = 0;
+      } else {
+        const dx = h.x - d.x;
+        const dy = h.y - d.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        d.wx = (dx / dist) * tune.bagSpeed + 0;
+        d.wy = (dy / dist) * tune.bagSpeed + 0;
+      }
+      const sq = d.wx * d.wx + d.wy * d.wy;
+      if (sq > fastestSq) {
+        fastestSq = sq;
+        fx = d.wx;
+        fy = d.wy;
       }
     } else if (d.kind === "envelope") {
       // It flies at `envelopeSpeed`, its heading turned toward him by at most
@@ -191,6 +212,11 @@ export function moveThings(s: State, tune: Tune, sub: number): void {
       d.y += d.vy * sub;
       // It mirrors off cushions with no loss.
       collideWalls(d, TOKEN_R, room, 1);
+    } else if (d.kind === "bag") {
+      // Its creep. It is kept on the floor; nothing bounces it.
+      d.x += d.wx * sub;
+      d.y += d.wy * sub;
+      collideWalls(d, BAG_R, room, 0);
     } else if (d.kind === "envelope") {
       // Its flight, and a shove on top. A shove bounces off a cushion as a
       // dummy's does; its heading is mirrored off a cushion it flies into.
@@ -245,6 +271,11 @@ export function contacts(s: State, tune: Tune, events: SimEvent[]): boolean {
     if (d.kind === "gum") {
       // Gum lies flat: his hot body or Spark's ring hits it, and he may stop on it.
       if (h.hot) gumContact(s, tune, d, events);
+      continue;
+    }
+    if (d.kind === "bag") {
+      // The money bag: he bounces off it, hits it at most once a launch, and it costs a heart when it touches him landed.
+      if (!bagContact(s, tune, d, events)) return false;
       continue;
     }
     // A battery going off this tick no longer touches anything.

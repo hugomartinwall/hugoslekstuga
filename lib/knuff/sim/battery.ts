@@ -25,6 +25,7 @@
  * Everything here that changes a State is called from `step` only.
  */
 import { KINDS } from "../content/kinds";
+import { takeOff } from "./bag";
 import { givePip, isHot, land, loseHeart } from "./hot";
 import { popImpulse } from "./physics";
 import type { PastShot, SimEvent, State, Thing, Tune } from "./types";
@@ -121,7 +122,7 @@ export function knock(s: State, tune: Tune, d: Thing, nx: number, ny: number, ev
 
 /**
  * Step 7's part, after his contacts: a knocked battery bursts on touching
- * a dust bunny, a token, an envelope or another battery. (It passes over gum, the heart
+ * a dust bunny, a token, an envelope, another battery or the money bag. (It passes over gum, the heart
  * and pickups; the polisher bursts it when it meets it, in its own push,
  * and a cushion in the battery's move.)
  */
@@ -133,7 +134,7 @@ export function knockedTouches(s: State): void {
     for (let j = 0; j < things.length; j++) {
       const t = things[j];
       if (t === b || t.hp <= 0 || s.tick < t.landTick) continue;
-      if (t.kind !== "bunny" && t.kind !== "token" && t.kind !== "battery" && t.kind !== "envelope") continue;
+      if (t.kind !== "bunny" && t.kind !== "token" && t.kind !== "battery" && t.kind !== "envelope" && t.kind !== "bag") continue;
       const reach = BATTERY_R + KINDS[t.kind].radius;
       const dx = t.x - b.x;
       const dy = t.y - b.y;
@@ -217,7 +218,9 @@ function blast(s: State, tune: Tune, b: Thing, why: Why, events: SimEvent[]): bo
   events.push(e);
   // Every battery that goes off as his pays 40, flat.
   let points = mine ? KINDS.battery.points : 0;
-  for (let i = 0; i < s.things.length; i++) {
+  // What it reaches is what was there as it went off: a token the money bag lets out under it is not.
+  const count = s.things.length;
+  for (let i = 0; i < count; i++) {
     const d = s.things[i];
     if (d === b || d.hp <= 0 || s.tick < d.landTick) continue;
     const dx = d.x - b.x;
@@ -268,6 +271,14 @@ function blast(s: State, tune: Tune, b: Thing, why: Why, events: SimEvent[]): bo
           d.fuseTick = chain;
           if (mine) d.launchId = launchId;
         }
+        break;
+      }
+      case "bag": {
+        // His takes one hit off it (never two), 40, and the tokens that hit lets out. One not his does nothing to it.
+        if (!mine) break;
+        const p = takeOff(s, tune, d, 1, events);
+        points += p;
+        events.push({ type: "hit", tick: s.tick, x: d.x, y: d.y, kind: "bag", id: d.id, left: d.hp, points: p, two: false, source: "blast", stop: false });
         break;
       }
       case "gum": {

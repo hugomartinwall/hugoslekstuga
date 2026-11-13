@@ -3,6 +3,7 @@ import { DARK_PLATES } from "../../lib/knuff/content/charms";
 import { KINDS } from "../../lib/knuff/content/kinds";
 import { BOSS_HOUR } from "../../lib/knuff/content/night";
 import { BOSS_TELEGRAPH, boxOf, laneMiddle, overlapDepth } from "../../lib/knuff/sim/boss";
+import { land } from "../../lib/knuff/sim/hot";
 import { createState, type StartOptions } from "../../lib/knuff/sim/state";
 import type { BossMode, SimEvent, State, Thing, Tune } from "../../lib/knuff/sim/types";
 import { distance, fire, night, of, put, run, shot, speedOf, tick, tuned, until } from "./room";
@@ -20,7 +21,7 @@ import { distance, fire, night, of, put, run, shot, speedOf, tick, tuned, until 
  * is offered.
  */
 
-const STILL = { bunnySpeed: 0, batterySpeed: 0, tokenSpeed: 0, envelopeSpeed: 0 };
+const STILL = { bunnySpeed: 0, batterySpeed: 0, tokenSpeed: 0, envelopeSpeed: 0, bagSpeed: 0 };
 const T = tuned(STILL);
 const DARK: StartOptions = { plates: DARK_PLATES, offers: false };
 
@@ -219,6 +220,45 @@ describe("his hot body, no cushion yet this launch", () => {
     expect(s.him.lastContactTick).toBe(hitTick);
   });
 
+  it("the money bag: one hit, 40, flat, and he bounces off (bodyRestitution); met again in that launch, a bounce and no hit", () => {
+    const s = room();
+    stand(s, 180, 440);
+    const bag = put(s, "bag", 180, 380);
+    // Up into it, down off it to the bottom cushion, and back up into it.
+    const events = fire(s, T, shot(0, -1), 40);
+    const hits = of(events, "hit");
+    expect(hits.map((e) => [e.kind, e.id, e.left, e.points, e.two, e.source])).toEqual([["bag", bag.id, 7, 40, false, "body"]]);
+    expect(bag.hp).toBe(7);
+    expect(s.score).toBe(40);
+    const bounces = of(events, "bounce");
+    expect(bounces.map((e) => [e.kind, e.id])).toEqual([["bag", bag.id]]);
+    expect(bounces[0].tick).toBeGreaterThan(hits[0].tick);
+    // He cannot move it.
+    expect([bag.x, bag.y, bag.vx, bag.vy]).toEqual([180, 380, 0, 0]);
+    // The first meeting sent him back down: 0.6 of his speed into it.
+    const after = of(events, "cushion")[0];
+    expect(after.side).toBe("bottom");
+    expect(s.him.lastContactTick).toBe(bounces[0].tick);
+  });
+
+  it("the money bag, head on: his speed along the line between the centres comes back at 0.6 of itself", () => {
+    const s = room();
+    stand(s, 180, 440);
+    put(s, "bag", 180, 300);
+    tick(s, T, shot(0, -1));
+    let speedIn = speedOf(s);
+    let events = tick(s, T);
+    for (let i = 0; i < 20 && of(events, "hit").length === 0; i++) {
+      speedIn = speedOf(s);
+      events = tick(s, T);
+    }
+    expect(of(events, "hit")).toHaveLength(1);
+    // Straight down at 0.6 of what he came in with, less the tick's drag.
+    expect(s.him.vx).toBeCloseTo(0, 9);
+    expect(s.him.vy).toBeGreaterThan(0.6 * speedIn * 0.9);
+    expect(s.him.vy).toBeLessThan(0.6 * speedIn);
+  });
+
   it("a pickup is taken, if the offer allows, and he is not slowed", () => {
     const s = room();
     run(s, T, 2);
@@ -326,6 +366,17 @@ describe("his hot body, off a cushion", () => {
     expect([hit.left, hit.points, hit.two]).toEqual([0, 15, true]);
   });
 
+  it("the money bag: two hits, 80, and it lets out its first token at 6 left", () => {
+    const s = banked();
+    const bag = put(s, "bag", 180, 200);
+    const events = fire(s, T, shot(0, -1), 20);
+    expect(of(events, "cushion")).toHaveLength(1);
+    const [hit] = of(events, "hit");
+    expect([hit.kind, hit.left, hit.points, hit.two, hit.source]).toEqual(["bag", 6, 80, true, "body"]);
+    expect(bag.hp).toBe(6);
+    expect(of(events, "bagToken")).toHaveLength(1);
+  });
+
   it("a pickup: the same, it is taken", () => {
     const s = banked();
     run(s, T, 2);
@@ -409,6 +460,23 @@ describe("Spark's ring (it only exists after a cushion)", () => {
     expect(s.him.hot).toBe(true);
   });
 
+  it("the money bag: one hit that counts as two, if the bag has not been hit this launch", () => {
+    const s = sparked();
+    const bag = put(s, "bag", SIDE + 34, 150);
+    const events = fire(s, T, shot(0, -1), 20);
+    const hits = of(events, "hit");
+    expect(hits.map((e) => [e.id, e.source, e.two, e.left, e.points])).toEqual([[bag.id, "spark", true, 6, 80]]);
+    expect(of(events, "bounce")).toEqual([]);
+    expect(s.him.lastContactTick).toBe(hits[0].tick);
+    // In his path: the ring reaches it first and takes the launch's one hit; his body then only bounces off it.
+    const t = sparked();
+    const inPath = put(t, "bag", 180, 200);
+    const ev = fire(t, T, shot(0, -1), 20);
+    expect(of(ev, "hit").map((e) => [e.id, e.source, e.two])).toEqual([[inPath.id, "spark", true]]);
+    expect(of(ev, "bounce").map((e) => e.id)).toEqual([inPath.id]);
+    expect(inPath.hp).toBe(6);
+  });
+
   it("a pickup: nothing (only his body takes one)", () => {
     const s = sparked();
     run(s, T, 2);
@@ -475,6 +543,16 @@ describe("the landing thump", () => {
     });
     expect(b!.dazedUntil).toBe(0);
     expect([b!.vx, b!.vy]).toEqual([0, 0]);
+  });
+
+  it("the money bag: nothing (not dazed, not moved), even with its centre inside the ring", () => {
+    const s = room();
+    // He lands where he stands, the bag's centre 38 u from his (it is dazed, so it costs no heart).
+    const bag = put(s, "bag", 180 + 38, 374, { dazedUntil: 5 });
+    const events: SimEvent[] = [];
+    land(s, T, events);
+    expect(of(events, "land")[0].dazed).toBe(0);
+    expect([bag.x, bag.y, bag.dazedUntil]).toEqual([180 + 38, 374, 5]);
   });
 
   it("gum: nothing", () => {
@@ -562,6 +640,14 @@ describe("the wave of a lost heart", () => {
     expect(b!.vy).toBeLessThan(0);
   });
 
+  it("the money bag: nothing (it ignores the wave)", () => {
+    let bag: Thing | null = null;
+    hurt((s) => {
+      bag = put(s, "bag", 180 + 60, 374 + 20);
+    });
+    expect([bag!.x, bag!.y, bag!.vx, bag!.vy, bag!.hp, bag!.dazedUntil]).toEqual([240, 394, 0, 0, 8, 0]);
+  });
+
   it("gum: nothing", () => {
     let g: Thing | null = null;
     hurt((s) => {
@@ -619,14 +705,16 @@ describe("Bell", () => {
     expect([d!.dazedUntil, t!.dazedUntil, e!.dazedUntil]).toEqual([c.tick + 36, c.tick + 36, c.tick + 36]);
   });
 
-  it("a battery and gum: nothing", () => {
+  it("a battery, gum and the money bag: nothing", () => {
     let b: Thing | null = null;
     let g: Thing | null = null;
+    let bag: Thing | null = null;
     rung((s) => {
       b = battery(s, 40, 440);
       g = put(s, "gum", 320, 440);
+      bag = put(s, "bag", 300, 300);
     });
-    expect([b!.dazedUntil, g!.dazedUntil, g!.hp]).toEqual([0, 0, 2]);
+    expect([b!.dazedUntil, g!.dazedUntil, g!.hp, bag!.dazedUntil, bag!.hp]).toEqual([0, 0, 2, 0, 8]);
   });
 });
 
@@ -676,6 +764,26 @@ describe("a blast of his (70 u)", () => {
     expect([second.id, second.tick, second.mine, second.why, second.launchId]).toEqual([other.id, burst.tick + 12, true, "chain", 1]);
     // Each battery that goes off as his pays 40.
     expect(s.score).toBe(80);
+  });
+
+  it("the money bag: one hit, never two, 40; its seventh hit point lost lets out no token, its eighth... at 6 left one comes", () => {
+    const { s, b } = his();
+    const bag = put(s, "bag", 180 + 60, 150);
+    const events = run(s, T, 2);
+    const [burst] = of(events, "burst");
+    expect(of(events, "hit").map((e) => [e.kind, e.id, e.left, e.points, e.two, e.source])).toEqual([["bag", bag.id, 7, 40, false, "blast"]]);
+    expect(burst.points).toBe(40 + 40);
+    expect(of(events, "bagToken")).toEqual([]);
+    // He cannot move it, and neither can a blast.
+    expect([bag.x, bag.y, bag.vx, bag.vy]).toEqual([240, 150, 0, 0]);
+    expect(alive(s, b)).toBe(false);
+    // A blast that takes it from 7 to 6 lets a token out: one that is not caught in the blast that let it out.
+    const t = his();
+    const seven = put(t.s, "bag", 180 + 60, 150, { hp: 7 });
+    const ev = run(t.s, T, 2);
+    expect(of(ev, "bagToken").map((e) => e.bag)).toEqual([seven.id]);
+    expect(of(ev, "pop")).toEqual([]);
+    expect(t.s.things.filter((d) => d.kind === "token")).toHaveLength(1);
   });
 
   it("gum: one hit, never two (off a cushion or not), 15 points", () => {
@@ -744,6 +852,16 @@ describe("a blast that is not his (70 u)", () => {
     expect(burst.set).toBe(2);
     expect([notHis.fuseTick, notHis.mine, notHis.launchId]).toEqual([burst.tick + 12, false, -1]);
     expect([hisToo.fuseTick, hisToo.mine, hisToo.launchId]).toEqual([burst.tick + 12, true, 7]);
+  });
+
+  it("the money bag: nothing", () => {
+    const s = room();
+    stand(s, 180, 440);
+    const bag = put(s, "bag", 180 + 40, 150);
+    battery(s, 180, 150, {}, 1);
+    const events = run(s, T, 2);
+    expect(of(events, "hit")).toEqual([]);
+    expect([bag.hp, bag.x, bag.y]).toEqual([8, 220, 150]);
   });
 
   it("gum and a pickup: nothing", () => {
@@ -822,6 +940,16 @@ describe("a knocked battery in flight", () => {
       expect(Math.hypot(burst.x - d.x, burst.y - d.y)).toBeGreaterThan(10 + KINDS[kind].radius - 400 / 60);
       expect(of(events, "pop").map((e) => [e.id, e.source])).toEqual([[d.id, "blast"]]);
     }
+  });
+
+  it("bursts on touching the money bag, and its blast takes one hit off it", () => {
+    const { s, b } = flying();
+    const bag = put(s, "bag", 200, 200);
+    const events = toBurst(s, T, 30);
+    const [burst] = of(events, "burst");
+    expect([burst.id, burst.why]).toEqual([b.id, "touch"]);
+    expect(Math.hypot(burst.x - bag.x, burst.y - bag.y)).toBeLessThan(10 + 34);
+    expect(of(events, "hit").map((e) => [e.id, e.source, e.left])).toEqual([[bag.id, "blast", 7]]);
   });
 
   it("bursts on touching another battery, which is set off 12 ticks later and becomes his", () => {
@@ -920,6 +1048,19 @@ describe("a cushion", () => {
     expect([g.x, g.y, g.hp]).toEqual([338, 200, 2]);
   });
 
+  it("the money bag: nothing (it creeps along it, kept on the floor, and nothing bounces it)", () => {
+    const creep = tuned({ ...STILL, bagSpeed: 10 });
+    const s = room(creep);
+    stand(s, 352 - 13, 200);
+    s.him.invulnUntil = 1e9;
+    // Him in the corner beyond it: it creeps into the cushion and along it.
+    const bag = put(s, "bag", 352 - 34, 100);
+    run(s, creep, 120);
+    expect(bag.x).toBe(352 - 34);
+    expect(bag.y).toBeGreaterThan(100);
+    expect([bag.vx, bag.vy]).toEqual([0, 0]);
+  });
+
   it("the polisher stalls at it and changes lane", () => {
     const s = fight();
     machine(s, { lane: 3, x: 352 - 60 - 1, dir: 1 });
@@ -983,6 +1124,20 @@ describe("touching him while he is landed", () => {
     expect(of(run(safe, T, 1), "hurt")).toEqual([]);
   });
 
+  it("the money bag: costs a heart, unless it is dazed or he is invulnerable; then it is held at arm's length", () => {
+    const s = room();
+    const bag = put(s, "bag", 180, 374 - 46);
+    expect(of(run(s, T, 1), "hurt").map((e) => [e.by, e.id])).toEqual([["bag", bag.id]]);
+    for (const over of [{ dazed: true }, { invulnerable: true }]) {
+      const t = room();
+      const b = put(t, "bag", 180, 374 - 46, { dazedUntil: over.dazed ? 10 : 0 });
+      if (over.invulnerable) t.him.invulnUntil = 10;
+      expect(of(run(t, T, 1), "hurt")).toEqual([]);
+      expect(distance(t, b)).toBeCloseTo(13 + 34, 9);
+      expect([t.him.x, t.him.y]).toEqual([180, 374]);
+    }
+  });
+
   it("gum and a pickup: nothing", () => {
     const s = room();
     put(s, "gum", 180, 374);
@@ -1024,6 +1179,16 @@ describe("the polisher's pad", () => {
     run(s, B, 30);
     expect(e.x).toBeGreaterThan(boxOf(s.boss).x1);
     expect(alive(s, e)).toBe(true);
+  });
+
+  it("pushes the money bag aside", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    stand(s, 180, 440);
+    const bag = put(s, "bag", 175, 212);
+    run(s, B, 40);
+    expect(overlapDepth(s.boss, bag.x, bag.y, 34)).toBe(0);
+    expect([alive(s, bag), bag.hp]).toEqual([true, 8]);
   });
 
   it("pushes a battery aside", () => {
@@ -1085,6 +1250,17 @@ describe("the polisher changing lane, or landing at 06:00", () => {
     expect([alive(s, d), alive(s, b), alive(s, e)]).toEqual([true, true, true]);
     expect(of(events, "burst")).toEqual([]);
     expect([g.x, g.y, g.hp]).toEqual([120, lower, 2]);
+  });
+
+  it("the money bag is pushed, never hurt", () => {
+    const s = fight();
+    machine(s, { lane: 2, x: 120, dir: -1, mode: "laneMove", laneStep: 1 });
+    stand(s, 300, 440);
+    const bag = put(s, "bag", 110, laneMiddle(s, 3) + 10);
+    run(s, B, 70);
+    expect(s.boss.lane).toBe(3);
+    expect(overlapDepth(s.boss, bag.x, bag.y, 34)).toBe(0);
+    expect([alive(s, bag), bag.hp]).toEqual([true, 8]);
   });
 
   it("its landing pushes what is under it out, never hurt, a battery too", () => {

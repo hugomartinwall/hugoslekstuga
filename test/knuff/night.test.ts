@@ -1722,3 +1722,100 @@ describe("the newsletter in the night (step 5)", () => {
     ]);
   });
 });
+
+describe("venture capital in the night (step 5)", () => {
+  /** The night with the money bag switched on: every kind built so far but the polisher and the heart. */
+  const NOW6 = ["bunny", "token", "gum", "battery", "envelope", "bag"];
+  const dealt = dealtRows(NOW6);
+
+  it("00:00 goes back to its written ticks: it opens with the money bag alone at tick 0", () => {
+    expect(dealt[5].map((d) => [d.row, d.tick, d.bunnies, d.loose, d.file, d.bag])).toEqual([
+      [0, 0, 0, 0, 0, 1],
+      [1, 342, 6, 2, 0, 0],
+      [2, 513, 0, 0, 3, 0],
+      [3, 684, 6, 2, 0, 0],
+    ]);
+    expect(dealt[5][0].first).toBe(true);
+    // It is the table's one bag: no other row and no extra bunch brings one.
+    expect(dealt.flat().reduce((sum, d) => sum + d.bag, 0)).toBe(1);
+  });
+
+  it("the money bag comes alone at tick 0 of 00:00, at a far spot 60 u in, and lands 72 ticks later", () => {
+    for (const pace of [1, 2, 3]) {
+      const night = new Night({ pace }, { hour: 5, kinds: NOW6 });
+      night.run(1);
+      expect(night.rows()).toEqual([{ hour: 5, row: 0, how: "tick", at: 0, n: 1, cut: 0 }]);
+      const [bag] = night.s.things;
+      expect([bag.kind, bag.landTick, bag.hp]).toEqual(["bag", 72, 8]);
+      expect(distance(night.s, bag)).toBeGreaterThanOrEqual(150);
+      expect(Math.min(bag.x - 8, 352 - bag.x, bag.y - 8, 472 - bag.y)).toBeGreaterThanOrEqual(60);
+      expect(of(night.events, "announce").map((e) => e.landTick)).toEqual([72]);
+    }
+  });
+
+  it("it lands dazed within 94 u of him; at 94.01 it does not", () => {
+    for (const [gap, dazed] of [
+      [94, true],
+      [94.01, false],
+    ] as const) {
+      const night = new Night({ pace: 1, bagSpeed: 0 }, { hour: 5, kinds: NOW6 });
+      night.run(1);
+      const bag = night.s.things[0];
+      night.s.him.x = bag.x;
+      night.s.him.y = bag.y + gap;
+      night.through(72);
+      const [arrive] = of(night.events, "arrive");
+      expect(arrive.dist).toBeCloseTo(gap, 9);
+      expect(arrive.dazed).toBe(dazed);
+      expect(bag.dazedUntil).toBe(dazed ? 72 + 36 : 0);
+    }
+  });
+
+  it("at pace 2 it holds the row after it until it is gone, or 342 comes; then the hour is dealt by the three moments, the bag one intruder among them", () => {
+    const night = new Night({ bagSpeed: 0 }, { hour: 5, kinds: NOW6 });
+    night.s.him.invulnUntil = 1e9;
+    night.through(341);
+    expect(night.rows(5)).toHaveLength(1);
+    night.run(1);
+    expect(night.rows(5).map((r) => [r.row, r.how, r.at])).toEqual([
+      [0, "tick", 0],
+      [1, "tick", 342],
+    ]);
+    // With the bunch gone and the bag left, the file is called early once the bunch has landed: one intruder is under six.
+    night.through(342 + 36);
+    night.s.things = night.s.things.filter((d) => d.kind === "bag");
+    night.run(1);
+    expect(night.rows(5).map((r) => [r.row, r.how])).toEqual([
+      [0, "tick"],
+      [1, "tick"],
+      [2, "early"],
+    ]);
+    // Gone sooner, the bag's hold ends with it.
+    const quick = new Night({}, { hour: 5, kinds: NOW6 });
+    quick.through(100);
+    quick.empty().run(1);
+    expect(quick.rows(5).map((r) => r.how)).toEqual(["tick", "early"]);
+  });
+
+  it("the cap cuts the money bag last; a room at 24 when 00:00 begins cuts its row whole, and it does not come that night", () => {
+    const night = new Night({ pace: 1 }, { hour: 5, kinds: NOW6 });
+    for (let i = 0; i < 24; i++) put(night.s, "bunny", 20 + (i % 10) * 30, 300 + Math.floor(i / 10) * 30);
+    night.run(1);
+    expect(night.rows(5)).toEqual([{ hour: 5, row: 0, how: "tick", at: 0, n: 0, cut: 1 }]);
+    night.empty().through(1799);
+    expect(night.s.things.some((d) => d.kind === "bag")).toBe(false);
+  });
+
+  it("still alive when 00:00 ends it stays, like anything else, and does not grow", () => {
+    const night = new Night({ pace: 1, bagSpeed: 0 }, { hour: 5, kinds: NOW6 });
+    night.s.him.invulnUntil = 1e9;
+    night.run(1);
+    const bag = night.s.things[0];
+    night.run(1900, () => {
+      night.s.things = night.s.things.filter((d) => d.kind === "bag");
+    });
+    expect(night.s.night.hour).toBe(6);
+    expect(night.s.things).toEqual([bag]);
+    expect([bag.hp, KINDS.bag.radius]).toEqual([8, 34]);
+  });
+});

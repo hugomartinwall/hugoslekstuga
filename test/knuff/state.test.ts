@@ -119,7 +119,7 @@ describe("the State", () => {
     expect(state.bestShot).toBeGreaterThan(0);
     expect(state.lastHurtBy).not.toBe("");
     expect(state.launch.blocked).toHaveLength(1);
-    expect(state.night.kinds).toEqual(["bunny", "token", "polisher", "gum", "battery", "envelope"]);
+    expect(state.night.kinds).toEqual(["bunny", "token", "polisher", "gum", "battery", "envelope", "bag"]);
   });
 
   it("is plain data: numbers, booleans and strings, with no undefined and no Infinity", () => {
@@ -296,7 +296,7 @@ describe("the State", () => {
     expect(s.night).toEqual({
       hour: 0,
       hourStart: 0,
-      kinds: ["bunny", "token", "polisher", "gum", "battery", "envelope"],
+      kinds: ["bunny", "token", "polisher", "gum", "battery", "envelope", "bag"],
       nextRow: 0,
       rowTick: -1,
       rowLandTick: -1,
