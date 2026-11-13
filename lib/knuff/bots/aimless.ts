@@ -75,7 +75,7 @@ export function rhythmBot(r: Rand, period = 42, power = 1): Bot {
 export function tokenOnCourse(s: State, tune: Tune, ticks: number): boolean {
   const room = s.room;
   const r = KINDS.token.radius;
-  const reach = tune.himRadius + r;
+  const reach = s.stats.radius + r;
   for (const d of s.things) {
     if (d.kind !== "token" || !isDown(s, d)) continue;
     let x = d.x;

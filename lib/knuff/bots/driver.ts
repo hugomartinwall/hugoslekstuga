@@ -17,6 +17,7 @@
  */
 import { DARK_PLATES } from "../content/charms";
 import { HOURS } from "../content/night";
+import { intruders } from "../sim/night";
 import { createState, type StartOptions } from "../sim/state";
 import { step } from "../sim/step";
 import type { SimEvent, State, Tune } from "../sim/types";
@@ -47,8 +48,20 @@ export const CAST: readonly Player[] = [
   { key: "expert", label: "Expert, no charms", looksAhead: true, make: (r) => handBot(r, EXPERT) },
 ];
 
+/**
+ * The players who take what is offered ("takes one", §13.1): the Ordinary's
+ * and the Expert's hands, going after one offered thing picked at random
+ * once an offer is armed. They are not rows of the step-1 table, which is
+ * played with nothing offered; the offer checks of step 2 and the
+ * full-night table use them.
+ */
+export const TAKERS: readonly Player[] = [
+  { key: "ordinary-takes", label: "Ordinary, takes one", looksAhead: true, make: (r) => handBot(r, { ...ORDINARY, takes: true }) },
+  { key: "expert-takes", label: "Expert, takes one", looksAhead: true, make: (r) => handBot(r, { ...EXPERT, takes: true }) },
+];
+
 export function player(key: string): Player {
-  const p = CAST.find((c) => c.key === key);
+  const p = CAST.find((c) => c.key === key) ?? TAKERS.find((c) => c.key === key);
   if (!p) throw new Error(`no player "${key}"`);
   return p;
 }
@@ -83,6 +96,34 @@ export function playerStream(seed: number, name: string): Rand {
 }
 
 // ── One night's books ─────────────────────────────────────────────────
+
+/** One offer of the night, and what became of it. */
+export type OfferSeen = {
+  hour: number;
+  /** The tick of its hour it opened at. */
+  into: number;
+  /** It opened because the hour was clear; false: at `offerLatestTick`, with the hour not clear. */
+  clear: boolean;
+  /** Intruders alive or announced when it opened. */
+  crowd: number;
+  /** Things offered: plates, and pickups. */
+  plates: number;
+  pickups: number;
+  /** Ticks from opening to arming; -1 if it never armed. */
+  armedAfter: number;
+  /** What was taken: its place in the offer, its kind and charm, the tick of the hour; -1, "", "" and -1 if nothing. */
+  taken: number;
+  takenKind: string;
+  takenCharm: string;
+  takenInto: number;
+  /** The launch that took it: aimed at it, aimed at another offered thing, or aimed at the room (an accident). */
+  takenBy: "" | "aimed" | "wrong" | "accident";
+  /** The offered thing the player went after (-1 if none), and its launches aimed at it, and those that took it. */
+  wanted: number;
+  wantedKind: string;
+  tries: number;
+  hits: number;
+};
 
 /** One lost heart. */
 export type Loss = {
@@ -139,6 +180,11 @@ export type Night = {
   /** Ticks he was landed, and landed with no pip. */
   ticksLanded: number;
   ticksLandedNoPip: number;
+  /** Every offer the night made (none when offers are off). */
+  offers: OfferSeen[];
+  /** What he had at the end: body charms taken, and the plates (one charm name or "" each). */
+  charms: string[];
+  plates: string[];
 };
 
 /** Called after every tick that was taken, with what it did: for a trace, or a test. */
@@ -182,6 +228,9 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     tokenAloneTicks: -1,
     ticksLanded: 0,
     ticksLandedNoPip: 0,
+    offers: [],
+    charms: [],
+    plates: [],
   };
   const announcedAt = new Map<number, number>();
   const arrivedAt = new Map<number, { tick: number; dist: number }>();
@@ -193,10 +242,15 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
   let idle = 0;
   const most = HOURS * tune.hourMaxTicks + 400;
 
+  /** The offer out now, and what the launch in flight was aimed at. */
+  let offer: OfferSeen | null = null;
+  let launchAim = -1;
   for (let guard = 0; s.phase !== "over" && guard < most; guard++) {
     now.clock = s.normalTicks + slowedUnits * s.slowedTicks;
     const input = bot.act(s, tune, now);
-    const roomBefore = s.things.length;
+    const aim = input.launch !== null && bot.aimingAt ? bot.aimingAt() : -1;
+    // The room as the tick finds it: intruders only (an offer's tiles are not).
+    const roomBefore = intruders(s);
     const inPause = s.night.clearTick >= 0;
     events.length = 0;
     step(s, input, tune, events);
@@ -218,6 +272,54 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
       switch (e.type) {
         case "launch":
           n.launches++;
+          launchAim = aim;
+          if (offer && aim >= 0) {
+            if (offer.wanted < 0) {
+              offer.wanted = aim;
+              offer.wantedKind = s.offer.items[aim]?.kind ?? "";
+            }
+            if (aim === offer.wanted) offer.tries++;
+          }
+          break;
+        case "offerOpen": {
+          const into = e.tick - s.night.hourStart;
+          offer = {
+            hour: s.night.hour,
+            into,
+            clear: s.night.clearTick >= 0,
+            crowd: intruders(s),
+            plates: e.items.filter((i) => i.kind === "plate").length,
+            pickups: e.items.filter((i) => i.kind === "pickup").length,
+            armedAfter: -1,
+            taken: -1,
+            takenKind: "",
+            takenCharm: "",
+            takenInto: -1,
+            takenBy: "",
+            wanted: -1,
+            wantedKind: "",
+            tries: 0,
+            hits: 0,
+          };
+          n.offers.push(offer);
+          break;
+        }
+        case "offerArmed":
+          if (offer) offer.armedAfter = e.tick - s.night.hourStart - offer.into;
+          break;
+        case "offerTaken":
+          if (offer) {
+            offer.taken = e.item;
+            offer.takenKind = e.kind;
+            offer.takenCharm = e.charm;
+            offer.takenInto = e.tick - s.night.hourStart;
+            offer.takenBy = launchAim === e.item ? "aimed" : launchAim >= 0 ? "wrong" : "accident";
+            if (launchAim === e.item && e.item === offer.wanted) offer.hits++;
+            offer = null;
+          }
+          break;
+        case "offerClosed":
+          offer = null;
           break;
         case "pop":
           n.pops++;
@@ -286,7 +388,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     if (taken <= 600 && !n.nearLanded) {
       let best = 1e18;
       for (const d of s.things) {
-        if (d.landTick > taken || taken < d.dazedUntil) continue;
+        if (d.landTick > taken || taken < d.dazedUntil || d.kind === "pickup") continue;
         const dd = (d.x - s.him.x) * (d.x - s.him.x) + (d.y - s.him.y) * (d.y - s.him.y);
         if (dd < best) best = dd;
       }
@@ -309,6 +411,8 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
   n.slowedTicks = s.slowedTicks;
   n.score = s.score;
   n.bestShot = s.bestShot;
+  n.charms = s.charms.slice();
+  n.plates = s.plates.map((p) => p.charm);
   return n;
 }
 

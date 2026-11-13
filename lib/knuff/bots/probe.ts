@@ -26,6 +26,8 @@
  * in sixtieths of a second of real time (a normal tick adds 1, a slowed
  * tick 5), so slow motion gives a player the time it gives a person.
  */
+import { insertCentre } from "../sim/charms";
+import { intruders } from "../sim/night";
 import { cloneState } from "../sim/state";
 import { step } from "../sim/step";
 import type { Input, Launch, SimEvent, State, Tune } from "../sim/types";
@@ -41,8 +43,12 @@ export type Now = {
   landedTick: number;
 };
 
-/** A player: asked once before every tick. */
-export type Bot = { act(s: State, tune: Tune, now: Now): Input };
+/**
+ * A player: asked once before every tick. `aimingAt`, if it has one, says
+ * which offered thing (its place in `state.offer.items`) the launch it has
+ * just handed over was aimed at; -1 for a launch aimed at the room.
+ */
+export type Bot = { act(s: State, tune: Tune, now: Now): Input; aimingAt?: () => number };
 
 export const NO_INPUT: Input = { launch: null, pullHeld: false };
 export const HOLD: Input = { launch: null, pullHeld: true };
@@ -71,13 +77,13 @@ export function isDown(s: State, d: { landTick: number }): boolean {
   return d.landTick < s.tick;
 }
 
-/** The nearest landed thing: how far, and which way. */
+/** The nearest landed intruder (an offer's tile is not one): how far, and which way. */
 export function nearestLanded(s: State): { d: number; a: number } | null {
   let best = 1e18;
   let angle = 0;
   let any = false;
   for (const d of s.things) {
-    if (!isDown(s, d)) continue;
+    if (!isDown(s, d) || d.kind === "pickup") continue;
     const dd = (d.x - s.him.x) * (d.x - s.him.x) + (d.y - s.him.y) * (d.y - s.him.y);
     if (dd < best) {
       best = dd;
@@ -90,20 +96,54 @@ export function nearestLanded(s: State): { d: number; a: number } | null {
 
 // ── Look-ahead: the real step on a copy ───────────────────────────────
 
-export type Outcome = { points: number; hearts: number; x: number; y: number };
+/** `took`: the offered thing the launch took, as its place in the offer's items; -1 for none. */
+export type Outcome = { points: number; hearts: number; x: number; y: number; took: number };
 
-/** Copy the State, give it `launch` (or none), and run the real step `ticks` ticks with no further input. */
-export function rollout(s: State, tune: Tune, launch: Launch | null, ticks: number): Outcome {
+/**
+ * The copy a player looks ahead on. A player plays the room as if nothing
+ * were offered unless `offer` says otherwise: its look-ahead does not see
+ * the offer at all, so it never values a charm (Coin slot's points, Thick
+ * skin's heart) and never takes one on purpose. What it takes, it takes by
+ * accident. Only the search for a named offered thing sees the offer.
+ */
+function lookAheadCopy(s: State, offer: boolean): State {
   const c = cloneState(s);
+  if (!offer && c.offer.open) {
+    c.offer = { open: false, openTick: -1, armedTick: -1, items: [] };
+    c.things = c.things.filter((d) => d.kind !== "pickup");
+  }
+  return c;
+}
+
+/** Which of `s`'s offered things the copy `c`, a launch later, has taken; -1 for none. */
+function takenIn(s: State, c: State): number {
+  if (!s.offer.open || c.offer.open) return -1;
+  const items = s.offer.items;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === "plate" ? c.plates[it.plate].charm === it.charm : c.charms.length > s.charms.length && c.charms[s.charms.length] === it.charm) return i;
+  }
+  return -1;
+}
+
+/**
+ * Copy the State, give it `launch` (or none), and run the real step `ticks`
+ * ticks with no further input. Hearts lost are counted as hearts gone, and
+ * a heart a charm healed (Thick skin) is not counted as one won back.
+ */
+export function rollout(s: State, tune: Tune, launch: Launch | null, ticks: number, offer = false): Outcome {
+  const c = lookAheadCopy(s, offer);
   const events: SimEvent[] = [];
   step(c, { launch, pullHeld: false }, tune, events);
   for (let i = 1; i < ticks && c.phase === "night"; i++) {
-    // Landed in an empty room: nothing announced from now on can land and reach him inside the horizon.
-    if (!c.him.hot && c.things.length === 0) break;
+    // Landed in a room with no intruder: nothing announced from now on can land and reach him inside the horizon.
+    // (While no offer is out there is no tile in the room, and every thing is an intruder.)
+    if (!c.him.hot && (c.things.length === 0 || (c.offer.open && intruders(c) === 0))) break;
     events.length = 0;
     step(c, NO_INPUT, tune, events);
   }
-  return { points: c.score - s.score, hearts: s.hearts - c.hearts, x: c.him.x, y: c.him.y };
+  const healed = c.stats.maxHearts - s.stats.maxHearts;
+  return { points: c.score - s.score, hearts: s.hearts - c.hearts + healed, x: c.him.x, y: c.him.y, took: offer ? takenIn(s, c) : -1 };
 }
 
 /** Ticks until he lands if no input arrives. 0 if he is landed. */
@@ -167,6 +207,53 @@ export function probePick(s: State, tune: Tune, e: ProbeEval, r: Rand): Pick {
   return { launch: worth ? aimed(pick.a, pick.p) : null, angle: pick.a, power: pick.p };
 }
 
+/** Where an offered thing is: a pickup's tile, or the middle of a plate's insert. */
+function offeredAt(s: State, item: number): { x: number; y: number } | null {
+  const it = s.offer.items[item];
+  if (!it) return null;
+  if (it.kind === "plate") return insertCentre(s, it.plate);
+  const d = s.things.find((t) => t.id === it.thingId);
+  return d ? { x: d.x, y: d.y } : null;
+}
+
+/**
+ * "Takes one" (§13.1): the same look-ahead, asked for a launch that takes
+ * offered thing `item`. The probe's 36 directions, and one more straight
+ * at it (a tile far across the room can fall between two of the 36), all
+ * at full power. Of those that take it, the best: fewest hearts lost, then
+ * most points. It is taken only if that costs no more hearts than the
+ * player's best shot would; null when no launch takes it, or taking it
+ * would cost a heart the room can be spared.
+ */
+export function takePick(s: State, tune: Tune, e: ProbeEval, item: number, r: Rand): Pick | null {
+  const at = offeredAt(s, item);
+  if (!at) return null;
+  const angles: number[] = [];
+  for (let k = 0; k < e.dirs; k++) angles.push((k / e.dirs) * Math.PI * 2);
+  angles.push(Math.atan2(at.y - s.him.y, at.x - s.him.x));
+  let best = -Infinity;
+  let bestHearts = Infinity;
+  let safest = Infinity;
+  const ties: number[] = [];
+  const stayed = rollout(s, tune, null, e.horizon);
+  safest = stayed.hearts;
+  for (const a of angles) {
+    const o = rollout(s, tune, aimed(a, 1), e.horizon, true);
+    if (o.hearts < safest) safest = o.hearts;
+    if (o.took !== item) continue;
+    const v = o.points - e.heartWeight * o.hearts;
+    if (v > best + 1e-9) {
+      best = v;
+      bestHearts = o.hearts;
+      ties.length = 0;
+      ties.push(a);
+    } else if (v > best - 1e-9) ties.push(a);
+  }
+  if (ties.length === 0 || bestHearts > safest) return null;
+  const a = ties[Math.floor(r() * ties.length)];
+  return { launch: aimed(a, 1), angle: a, power: 1 };
+}
+
 // ── The five settings ─────────────────────────────────────────────────
 
 export type Hands = {
@@ -179,6 +266,12 @@ export type Hands = {
   hold: number;
   /** Aim error, degrees: the standard deviation. */
   errDeg: number;
+  /**
+   * "Takes one": when an offer is armed it picks one offered thing evenly
+   * at random, once for that offer, and goes after it. Otherwise it plays
+   * the room as if nothing were offered.
+   */
+  takes?: boolean;
   /** Aims straight at the nearest thing and never looks ahead. */
   straight: boolean;
   /** Having waited for a pip, it starts its pull this much later. Clock units. */
@@ -221,7 +314,7 @@ export function cornerHands(zone = 110, radius = 13, base: Hands = ORDINARY): Ha
 /** How many ticks a hold of `units` will take, by the meter: a slowed tick is 5 units of the clock, a normal one 1. */
 function holdTicks(s: State, tune: Tune, units: number): number {
   const slowed = 1 / tune.slowShare;
-  let meter = s.things.length > 0 ? s.slow.meter : 0;
+  let meter = intruders(s) > 0 ? s.slow.meter : 0;
   let u = 0;
   let n = 0;
   while (u < units) {
@@ -245,10 +338,32 @@ export function handBot(r: Rand, o: Hands): Bot {
   let predictedFor = -1;
   let predictedLanding = 0;
   let gaveUpFlight = -1;
+  /** The offer it is after (by the tick it opened), the thing in it, and what the last launch was aimed at. */
+  let wantFor = -1;
+  let want = -1;
+  let aimingAt = -1;
+
+  /** The offered thing it is after, if it takes one and an offer is armed; -1 otherwise. */
+  const wanted = (s: State): number => {
+    if (!o.takes || !s.offer.open || s.offer.armedTick < 0) return -1;
+    if (wantFor !== s.offer.openTick) {
+      wantFor = s.offer.openTick;
+      want = Math.floor(r() * s.offer.items.length);
+    }
+    return want;
+  };
 
   const choose = (s: State, tune: Tune): Launch | null => {
     let a: number;
     let p: number;
+    aimingAt = -1;
+    const item = o.straight ? -1 : wanted(s);
+    const taking = item >= 0 ? takePick(s, tune, o.eval, item, r) : null;
+    if (taking) {
+      aimingAt = item;
+      a = taking.angle + gauss(r) * ((o.errDeg * Math.PI) / 180);
+      return aimed(a, taking.power);
+    }
     if (o.straight) {
       const near = nearestLanded(s);
       if (near === null) return null;
@@ -265,6 +380,7 @@ export function handBot(r: Rand, o: Hands): Bot {
   };
 
   return {
+    aimingAt: () => aimingAt,
     act(s, tune, now) {
       const clock = now.clock;
       if (s.phase === "waiting") {
@@ -297,7 +413,8 @@ export function handBot(r: Rand, o: Hands): Bot {
         }
         return HOLD;
       }
-      if (s.things.length === 0) return NO_INPUT;
+      // Nothing to hit, and nothing it is after: it waits.
+      if (intruders(s) === 0 && wanted(s) < 0) return NO_INPUT;
       if (clock < retryAt || clock < pipClock + o.pipWait) return NO_INPUT;
       if (s.him.hot) {
         if (o.timing !== "before" || gaveUpFlight === s.launch.id) return NO_INPUT;

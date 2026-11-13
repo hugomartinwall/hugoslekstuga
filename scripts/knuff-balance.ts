@@ -9,7 +9,12 @@
  *       [--from=23]              start every night at an hour (19 to 05)
  *       [--tune='{"popHotTicks":15}']
  *       [--pace=1|2|3]           the same as --tune='{"pace":3}'
- *       [--charms]               the charm test of §13.3 (there are no charms before step 2)
+ *       [--plates]               the step-1 table with the two starting plates lit (Bumper on 0, Pip on 4)
+ *       [--charms]               the charm test of §13.3: 120 nights a charm (--seeds), from 23:00,
+ *                                for the Expert and the Ordinary (--player=expert or ordinary)
+ *       [--offers]               the offer checks of step 2 (§14): offers made, how they opened,
+ *                                taken by accident by a player who ignores them, and the named one
+ *                                got by a player who takes one; on the night as it stands
  *       [--out=<dir> --tag=<name>]  keep every night as JSON, one file a player; a run with the
  *                                same tag, tune and seeds reads a stored player and does not run it
  *                                again, so a table can be run in pieces, side by side, and printed
@@ -21,30 +26,30 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CAST, STEP1_NIGHT, nightSeed, player, runNight, type Night } from "../lib/knuff/bots/driver";
+import { CHARM_ARMS, CHARM_NIGHTS, CHARM_PLAYERS, charmNight, printCharmTest, printOffers, sumCharm, type CharmSum } from "../lib/knuff/bots/charms";
+import { CAST, STEP1_NIGHT, TAKERS, nightSeed, player, runNight, type Night } from "../lib/knuff/bots/driver";
 import { printTable, summarise, type Sum } from "../lib/knuff/bots/table";
+import { START_PLATES } from "../lib/knuff/content/charms";
 import { CLOCK } from "../lib/knuff/content/night";
 import { DEFAULT_TUNE, mergeTune } from "../lib/knuff/content/tune";
-import type { Tune } from "../lib/knuff/sim/types";
+import type { StartOptions } from "../lib/knuff/sim/state";
+import type { SimEvent, Tune } from "../lib/knuff/sim/types";
 
 const option = (name: string): string | undefined => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit === undefined ? undefined : hit.slice(name.length + 3);
 };
 
-if (process.argv.includes("--charms")) {
-  console.log("The charm test (13.3) needs charms. They are built in step 2; nothing was run.");
-  process.exit(0);
-}
-
 const seeds = Number(option("seeds") ?? 200);
 const first = Number(option("first") ?? 0);
 const named: Partial<Tune> = { ...(JSON.parse(option("tune") ?? "{}") as Partial<Tune>) };
 if (option("pace") !== undefined) named.pace = Number(option("pace"));
 const tune = mergeTune(DEFAULT_TUNE, named);
-const who = option("player")?.split(",") ?? CAST.map((c) => c.key);
+const asked = option("player")?.split(",");
+const who = asked ?? CAST.map((c) => c.key);
 const outDir = option("out");
 const tag = option("tag") ?? "table";
+const lit = process.argv.includes("--plates");
 
 // --from=23 is a clock hour; the State counts hours from 19:00.
 const fromClock = option("from");
@@ -53,45 +58,86 @@ if (!(fromHour >= 0 && fromHour <= 10)) {
   console.error(`--from takes an hour of the night, 19 to 05; got ${fromClock}`);
   process.exit(2);
 }
-const start = { ...STEP1_NIGHT, hour: fromHour };
+/** The step-1 night; with --plates, the two starting plates lit on it. */
+const start: StartOptions = { ...STEP1_NIGHT, hour: fromHour, ...(lit ? { plates: START_PLATES } : {}) };
 
 /** 200 seeds; 100 for the Expert and the Corner (§13.2). */
-const nightsFor = (key: string) => (key === "expert" || key === "corner" ? Math.ceil(seeds / 2) : seeds);
+const nightsFor = (key: string) => (key === "expert" || key === "corner" || key === "expert-takes" ? Math.ceil(seeds / 2) : seeds);
 
-type Stored = { key: string; tune: Tune; first: number; fromHour: number; secs: number; nights: Night[] };
+type Stored = { key: string; tune: Tune; first: number; fromHour: number; night: string; secs: number; fired: number; nights: Night[] };
 
-function nightsOf(key: string): { nights: Night[]; secs: number } {
-  const count = nightsFor(key);
-  const file = outDir ? join(outDir, `${tag}__${key}.json`) : "";
+/**
+ * One player's nights on one night's start, read from `--out` if a run with
+ * the same tag, tune, seeds and start is stored there. `fired` counts the
+ * cushion events on which `charm` fired (the charm test's plates).
+ */
+function nightsOf(key: string, count: number, on: StartOptions, file: string, charm = ""): { nights: Night[]; secs: number; fired: number } {
+  const night = JSON.stringify(on);
   if (file && existsSync(file)) {
     const st = JSON.parse(readFileSync(file, "utf8")) as Stored;
-    if (JSON.stringify(st.tune) === JSON.stringify(tune) && st.first === first && st.fromHour === fromHour && st.nights.length === count) {
+    if (JSON.stringify(st.tune) === JSON.stringify(tune) && st.first === first && st.night === night && st.nights.length === count) {
       console.error(`${key.padEnd(13)} read from ${file}`);
-      return { nights: st.nights, secs: st.secs };
+      return { nights: st.nights, secs: st.secs, fired: st.fired ?? 0 };
     }
   }
   const who1 = player(key);
   const t0 = Date.now();
   const nights: Night[] = [];
-  for (let i = first; i < first + count; i++) nights.push(runNight(nightSeed(i), who1, tune, start));
+  let fired = 0;
+  const watch = charm === "" ? undefined : (events: readonly SimEvent[]) => {
+    for (const e of events) if (e.type === "cushion" && e.charm === charm) fired++;
+  };
+  for (let i = first; i < first + count; i++) nights.push(runNight(nightSeed(i), who1, tune, on, watch));
   const secs = (Date.now() - t0) / 1000;
-  console.error(`${key.padEnd(13)} nights ${first}..${first + count - 1} in ${secs.toFixed(0)} s (${(secs / count).toFixed(2)} s a night); alive at the end ${nights.filter((n) => n.ended === "morning").length} of ${count}`);
+  console.error(`${`${key}${charm ? ` + ${charm}` : ""}`.padEnd(24)} nights ${first}..${first + count - 1} in ${secs.toFixed(0)} s (${(secs / count).toFixed(2)} s a night); alive at the end ${nights.filter((n) => n.ended === "morning").length} of ${count}`);
   if (file) {
     mkdirSync(outDir!, { recursive: true });
-    const st: Stored = { key, tune, first, fromHour, secs, nights };
+    const st: Stored = { key, tune, first, fromHour, night, secs, fired, nights };
     writeFileSync(file, JSON.stringify(st));
   }
-  return { nights, secs };
+  return { nights, secs, fired };
+}
+
+const fileFor = (name: string) => (outDir ? join(outDir, `${tag}__${name}.json`) : "");
+
+if (process.argv.includes("--charms")) {
+  // The charm test: every arm for each player asked for (both by default), on the same seeds.
+  const count = option("seeds") === undefined ? CHARM_NIGHTS : seeds;
+  const players = (asked ?? [...CHARM_PLAYERS]).filter((k): k is (typeof CHARM_PLAYERS)[number] => (CHARM_PLAYERS as readonly string[]).includes(k));
+  const sums = new Map<string, CharmSum>();
+  for (const key of players) {
+    for (const charm of CHARM_ARMS) {
+      const { nights, fired } = nightsOf(key, count, charmNight(charm), fileFor(`${key}__${charm || "none"}`), charm);
+      sums.set(`${key}|${charm}`, sumCharm(key, charm, nights, fired));
+    }
+  }
+  const t = printCharmTest(sums, `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; nights ${first} to ${first + count - 1}${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`);
+  console.log(t.lines.join("\n"));
+  process.exit(t.fails > 0 ? 1 : 0);
+}
+
+if (process.argv.includes("--offers")) {
+  // The night as it stands: the starting plates lit, offers made. Players who ignore them, and players who take one.
+  const keys = asked ?? ["ordinary", "expert", "ordinary-takes", "expert-takes"];
+  const night: StartOptions = { hour: fromHour };
+  const rows = keys.map((key) => ({
+    label: player(key).label.replace(", no charms", ", ignores offers"),
+    nights: nightsOf(key, nightsFor(key), night, fileFor(`offers__${key}`)).nights,
+    takes: TAKERS.some((t) => t.key === key),
+  }));
+  const lines = printOffers(rows, `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; the night as it stands at step 2 (dust bunnies and tokens, the two starting plates lit, offers made)${fromHour ? `, from ${CLOCK[fromHour]}` : ""}; nights ${first} on (half as many for the Expert)`);
+  console.log(lines.join("\n"));
+  process.exit(0);
 }
 
 const sums = new Map<string, Sum>();
 for (const key of who) {
   const def = player(key);
-  const { nights, secs } = nightsOf(key);
+  const { nights, secs } = nightsOf(key, nightsFor(key), start, fileFor(key));
   sums.set(key, summarise(key, def.label, nights, tune, secs));
 }
 
-const title = `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; the step-1 night (eleven hours, dust bunnies and tokens only)${fromHour ? `, from ${CLOCK[fromHour]}` : ""}; nights ${first} to ${first + seeds - 1} (half as many for the Expert and the Corner)${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`;
+const title = `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; the step-1 night (eleven hours, dust bunnies and tokens only${lit ? "; the two starting plates LIT: Bumper on plate 0, Pip on plate 4" : ", all plates dark"}, nothing offered)${fromHour ? `, from ${CLOCK[fromHour]}` : ""}; nights ${first} to ${first + seeds - 1} (half as many for the Expert and the Corner)${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`;
 const table = printTable(
   title,
   CAST.map((c) => c.key),
