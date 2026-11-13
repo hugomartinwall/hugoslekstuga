@@ -131,6 +131,16 @@ describe("his numbers after charms: statsFor", () => {
     expect(b).toBeGreaterThan(a);
   });
 
+  it("Wide's radius is the one his body pops with: a dust bunny 22 u off his path pops with Wide (reach 23), and not without (21)", () => {
+    const pops = (charms: string[]) => {
+      const s = night(still, { charms, plates: DARK_PLATES, offers: false });
+      put(s, "bunny", 180 + 22, 374 - 100);
+      return of(fire(s, still, shot(0, -1), 30), "pop").length;
+    };
+    expect(pops(["wide"])).toBe(1);
+    expect(pops([])).toBe(0);
+  });
+
   it("Heavy and Wide: the impulse he feels from a pop is 0.7, 0.85 and 0.595 of what it was", () => {
     /** His speed after `ticks` ticks of a launch straight up, a still dust bunny 60 u ahead or not, and the tick of its pop. */
     const after = (charms: string[], bunny: boolean, ticks: number) => {
@@ -256,6 +266,27 @@ describe("the wall charms", () => {
     expect(full.plates[4].readyTick).toBe(0);
   });
 
+  it("Pip's cooldown is 240 ticks to the tick: a bounce 240 ticks after the gift gives a pip, one 239 after does not", () => {
+    for (const [after, gives] of [
+      [240, 1],
+      [239, 0],
+    ] as const) {
+      const s = lit({ 4: "pip" });
+      standAt(s, 300, 400);
+      const first = fire(s, still, shot(1, 0), 1);
+      first.push(...until(s, still, (e) => e.some((x) => x.type === "cushion"), 60));
+      const gift = of(first, "pip").filter((e) => e.why === "plate");
+      expect(gift, `${after}`).toHaveLength(1);
+      // The same launch from the same spot, released `after` ticks after the first: it reaches the plate `after` ticks after the gift.
+      run(s, still, after - s.tick);
+      standAt(s, 300, 400);
+      const again = fire(s, still, shot(1, 0), 1);
+      again.push(...until(s, still, (e) => e.some((x) => x.type === "cushion"), 60));
+      expect(of(again, "cushion")[0].tick - gift[0].tick, `${after}`).toBe(after);
+      expect(of(again, "pip").filter((e) => e.why === "plate"), `${after}`).toHaveLength(gives);
+    }
+  });
+
   it("Spark: for 48 ticks after the bounce a ring reaches 12 u past his edge and pops in one hit; not a body pop, no impulse", () => {
     const s = lit({ 1: "spark" });
     standAt(s, 180, 150);
@@ -282,6 +313,23 @@ describe("the wall charms", () => {
     // A pop by the ring is a contact.
     expect(s.him.lastContactTick).toBe(pops[1].tick);
     expect([still.sparkTicks, still.sparkReach]).toEqual([48, 12]);
+  });
+
+  it("Spark's reach is 12 u past his edge, to the unit: a dust bunny 32.9 u off his path pops, one 33.1 u off does not", () => {
+    const s = lit({ 1: "spark" });
+    standAt(s, 180, 150);
+    // Both passed on his way down, while the ring lasts: his edge at 13, the ring's at 25, a dust bunny's 8 more.
+    const inside = put(s, "bunny", 180 + 32.9, 220);
+    const outside = put(s, "bunny", 180 - 33.1, 220);
+    const events = fire(s, still, shot(0, -1), 1);
+    events.push(...toLanding(s, still));
+    const cushion = of(events, "cushion")[0];
+    expect(cushion).toMatchObject({ plate: 1, charm: "spark" });
+    expect(of(events, "pop").map((p) => [p.id, p.source])).toEqual([[inside.id, "spark"]]);
+    expect(outside.hp).toBe(1);
+    // He passed both while the ring lasted, at x 180.
+    expect(s.him.x).toBe(180);
+    expect(of(events, "pop")[0].tick).toBeLessThan(cushion.tick + still.sparkTicks);
   });
 
   it("Spark's ring ends after 48 ticks, when he lands, and when a new launch is released", () => {
@@ -364,6 +412,20 @@ describe("the wall charms", () => {
     };
     expect(once({}).map((p) => [p.coin, p.points])).toEqual([[1, 20]]);
     expect(once({ 1: "coin" }).map((p) => [p.coin, p.points])).toEqual([[2, 40]]);
+    // A pop by Spark's ring pays twice too: Spark and Coin slot in the top left corner (plates 9 and 0), one bounce off both,
+    // and a dust bunny 27 u off his way back out, beyond his body's reach and inside the ring's.
+    const ring = lit({ 9: "spark", 0: "coin" });
+    standAt(ring, 100, 100);
+    const off = 27 / Math.SQRT2;
+    const aside = put(ring, "bunny", 21 + 100 + off, 21 + 100 - off);
+    const back = fire(ring, still, shot(-1, -1), 1);
+    back.push(...toLanding(ring, still));
+    expect(of(back, "cushion").map((e) => [e.plate, e.charm])).toEqual([
+      [9, "spark"],
+      [0, "coin"],
+    ]);
+    const [byRing] = of(back, "pop");
+    expect([byRing.id, byRing.source, byRing.coin]).toEqual([aside.id, "spark", 2]);
     // Two Coin slots in one launch, the two of the top right corner: still two times.
     const s = lit({ 1: "coin", 2: "coin" });
     standAt(s, 250, 100);
@@ -739,6 +801,22 @@ describe("the offer, as it is taken", () => {
     ev.push(...toLanding(t, still));
     expect(of(ev, "offerTaken")).toEqual([]);
     expect(t.launch.armed).toBe(false);
+  });
+
+  it("with Fourth pip, a lost heart fills four pips, and the pip timer brings them back to four", () => {
+    const walk = tuned({ bunnySpeed: 22 });
+    const s = night(walk, { charms: ["fourthPip"], plates: DARK_PLATES, offers: false });
+    s.pips = 1;
+    put(s, "bunny", s.him.x + 30, s.him.y);
+    const hurt = until(s, walk, (e) => e.some((x) => x.type === "hurt"), 200);
+    expect(of(hurt, "hurt")).toHaveLength(1);
+    expect(s.pips).toBe(4);
+    const t = night(still, { charms: ["fourthPip"], plates: DARK_PLATES, offers: false });
+    t.pips = 2;
+    t.pipTimer = still.pipRefillTicks;
+    const back = run(t, still, 2 * still.pipRefillTicks + 1);
+    expect(of(back, "pip").filter((e) => e.why === "timer")).toHaveLength(2);
+    expect(t.pips).toBe(4);
   });
 
   it("Fourth pip and Thick skin apply at once: the new pip filled, one heart healed", () => {
