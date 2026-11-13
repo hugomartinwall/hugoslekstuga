@@ -19,7 +19,7 @@
  * sets of rules: a change of rules makes the night again.
  */
 import { readAccent, subscribeAccent } from "@/lib/hugo/sprite";
-import { END, KIND_NAME } from "./content/copy";
+import { CHARM_NAME, END, KIND_NAME } from "./content/copy";
 import { CLOCK } from "./content/night";
 import { DEFAULT_TUNE, mergeTune } from "./content/tune";
 import { DEV_HANDLES } from "./dev";
@@ -64,6 +64,8 @@ export type KnuffView = {
   /** Every knob that is not at its starting value, as JSON: what MORE prints. */
   named: string;
   over: KnuffOver | null;
+  /** The body charms taken this night, by name, in the order they were taken: the pause panel lists them. */
+  charms: string[];
 };
 
 /** The view before the game has said anything. */
@@ -77,6 +79,7 @@ export const FIRST_VIEW: KnuffView = {
   },
   named: "{}",
   over: null,
+  charms: [],
 };
 
 export type KnuffOptions = {
@@ -272,6 +275,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     knobs,
     named: namedJson,
     over: overShown ? over() : null,
+    charms: state.charms.map((c) => CHARM_NAME[c] ?? c),
   });
   let told = "";
   const tell = () => {

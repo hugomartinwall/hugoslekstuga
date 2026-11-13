@@ -9,7 +9,7 @@ import Keycap from "@/components/ui/Keycap";
 import ScrollRegion from "@/components/ui/ScrollRegion";
 import Tag from "@/components/ui/Tag";
 import { CREAM_HEX, accentVars } from "@/lib/colors";
-import { END, KEYS, PANEL_LABEL, ROOT_LABEL } from "@/lib/knuff/content/copy";
+import { CHARMS_TAKEN, END, KEYS, PANEL_LABEL, ROOT_LABEL } from "@/lib/knuff/content/copy";
 import { DEFAULT_TUNE } from "@/lib/knuff/content/tune";
 import { resolveKnuffFonts } from "@/lib/knuff/fonts";
 import { FIRST_VIEW, createKnuff, type KnuffHandle, type KnuffKnobs, type KnuffView } from "@/lib/knuff/game";
@@ -165,6 +165,7 @@ export default function Client({ standalone = false }: { standalone?: boolean })
   const [draft, setDraft] = useState("");
   const [fault, setFault] = useState("");
   const pipsId = useId();
+  const charmsId = useId();
 
   // One effect, and everything it does is undone by its clean-up, so
   // StrictMode's mount, clean-up and second mount end with one game, one
@@ -315,6 +316,21 @@ export default function Client({ standalone = false }: { standalone?: boolean })
                 MORE
               </Keycap>
             </div>
+            {/* The body charms taken this night, by name: they are not on the play screen. */}
+            {view.charms.length > 0 && (
+              <div data-charms="pause" className="flex flex-col gap-2">
+                <span id={charmsId} className="label-pixel">
+                  {CHARMS_TAKEN}
+                </span>
+                <ul aria-labelledby={charmsId} className="flex flex-wrap gap-1.5">
+                  {view.charms.map((name) => (
+                    <li key={name}>
+                      <Tag>{name}</Tag>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {!standalone && (
               <Keycap href="/" tone="neutral" block onClick={leave}>
                 {KEYS.back}
