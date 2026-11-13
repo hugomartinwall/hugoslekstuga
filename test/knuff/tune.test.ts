@@ -11,10 +11,11 @@ import type { SimEvent, Tune } from "../../lib/knuff/sim/types";
  */
 
 describe("the knob table", () => {
-  it("is plain: every knob a finite number, but the pull's direction and one switch", () => {
+  it("is plain: every knob a finite number, but the pull's direction and two switches", () => {
     for (const [knob, value] of Object.entries(DEFAULT_TUNE)) {
       if (knob === "pullDir") expect(["back", "push"]).toContain(value);
       else if (knob === "thumpTurnsTokens") expect(value).toBe(false);
+      else if (knob === "padHurtsHot") expect(value).toBe(true);
       else expect(typeof value === "number" && Number.isFinite(value), knob).toBe(true);
     }
     expect(JSON.parse(JSON.stringify(DEFAULT_TUNE))).toEqual(DEFAULT_TUNE);
@@ -103,6 +104,7 @@ describe("the knob table", () => {
       bossCough: 3,
       plugWidth: 24,
       padThrowSpeed: 450,
+      padHurtsHot: true,
       bossMaxTicks: 5400,
       nightBonus: 1000,
       heartBonus: 250,
@@ -248,12 +250,12 @@ describe("laying a partial table over it", () => {
 
   it("every knob can be turned from a link", () => {
     // A knob must be in the default table before a link or a key can turn it.
-    for (const knob of ["pace", "popHotTicks", "aimCushions", "pipRefillTicks", "paceTokens", "paceLastCall", "pipRefundPop", "slowMeterMax", "slowRefillTicks", "slowLandingFloor", "thumpTurnsTokens"]) {
+    for (const knob of ["pace", "popHotTicks", "aimCushions", "pipRefillTicks", "paceTokens", "paceLastCall", "pipRefundPop", "slowMeterMax", "slowRefillTicks", "slowLandingFloor", "thumpTurnsTokens", "padHurtsHot"]) {
       expect(Object.prototype.hasOwnProperty.call(DEFAULT_TUNE, knob), knob).toBe(true);
     }
-    const typed = JSON.parse('{"popHotTicks":15,"aimCushions":2,"pace":1,"slowMeterMax":10,"thumpTurnsTokens":true}') as Partial<Tune>;
+    const typed = JSON.parse('{"popHotTicks":15,"aimCushions":2,"pace":1,"slowMeterMax":10,"thumpTurnsTokens":true,"padHurtsHot":false}') as Partial<Tune>;
     const tune = mergeTune(DEFAULT_TUNE, typed);
-    expect([tune.popHotTicks, tune.aimCushions, tune.pace, tune.slowMeterMax, tune.thumpTurnsTokens]).toEqual([15, 2, 1, 10, true]);
+    expect([tune.popHotTicks, tune.aimCushions, tune.pace, tune.slowMeterMax, tune.thumpTurnsTokens, tune.padHurtsHot]).toEqual([15, 2, 1, 10, true, false]);
   });
 });
 

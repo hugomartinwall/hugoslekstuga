@@ -444,13 +444,13 @@ function throwHim(s: State, tune: Tune, vx: number, vy: number, hurt: boolean, m
 }
 
 /**
- * The pad. It costs a heart whether he is hot or landed, unless he is
- * invulnerable, and either way it throws him: straight ahead of the pad,
- * or, with a cushion within 60 u ahead, along that cushion toward the side
- * with more room. So the pad cannot pin him: thrown along the cushion, he
- * sets off from the nearest spot on that side clear of the machine, as a
- * lane change moves him when it would squeeze him. Returns false if that
- * was his last heart.
+ * The pad. It costs a heart whether he is hot or landed (`padHurtsHot`
+ * off: only landed), unless he is invulnerable, and either way it throws
+ * him: straight ahead of the pad, or, with a cushion within 60 u ahead,
+ * along that cushion toward the side with more room. So the pad cannot pin
+ * him: thrown along the cushion, he sets off from the nearest spot on that
+ * side clear of the machine, as a lane change moves him when it would
+ * squeeze him. Returns false if that was his last heart.
  *
  * Nor does it take a heart from him, landed where the machine itself put
  * him less than a telegraph ago, before he has launched: a lane change
@@ -465,7 +465,7 @@ function padHit(s: State, tune: Tune, box: Box, events: SimEvent[]): boolean {
   const metY = h.y;
   const putThere = !h.hot && b.shovedTick >= 0 && s.tick - b.shovedTick < tune.telegraphTicks && s.launch.startTick <= b.shovedTick;
   let hurt = false;
-  if (s.tick >= h.invulnUntil && !putThere) {
+  if (s.tick >= h.invulnUntil && !putThere && (tune.padHurtsHot || !h.hot)) {
     loseHeart(s, tune, { kind: "polisher", id: 0 }, events);
     hurt = true;
     if (s.hearts <= 0) {

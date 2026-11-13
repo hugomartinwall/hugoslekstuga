@@ -257,6 +257,22 @@ describe("the pad", () => {
     expect(s.hearts).toBe(2);
   });
 
+  it("with padHurtsHot off (decision 3 turned over) it takes a heart only while he is landed; hot, he is thrown all the same", () => {
+    const soft = tuned({ ...QUIET, padHurtsHot: false });
+    const s = landed(soft);
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    him(s, 300, 212);
+    const events = launchAnd(s, soft, shot(-1, 0), (e) => of(e, "bossThrow").length > 0, 60);
+    expect(of(events, "hurt")).toEqual([]);
+    expect([of(events, "bossThrow")[0].vx, of(events, "bossThrow")[0].hurt]).toEqual([450, false]);
+    expect(s.hearts).toBe(3);
+    const still = landed(soft);
+    machine(still, { lane: 3, x: 90, dir: 1 });
+    him(still, 150 + 13 + 0.5, 212);
+    expect(of(run(still, soft, 3), "hurt").map((e) => e.by)).toEqual(["polisher"]);
+    expect(T.padHurtsHot).toBe(true);
+  });
+
   it("throws an invulnerable mascot and takes no heart", () => {
     const s = landed();
     // Heading left: the pad is the left end, at x 190.

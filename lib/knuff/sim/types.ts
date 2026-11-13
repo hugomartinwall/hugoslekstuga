@@ -198,6 +198,8 @@ export type Tune = {
   plugWidth: number;
   /** The speed the pad throws him at, u/s. */
   padThrowSpeed: number;
+  /** The pad costs a heart while he is hot too (decision 3). Off: hot, he is only thrown. */
+  padHurtsHot: boolean;
   /** The night ends this long after 06:00 begins, beaten or not, ticks. */
   bossMaxTicks: number;
   /** For beating the polisher, points. */

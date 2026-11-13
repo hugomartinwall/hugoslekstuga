@@ -170,6 +170,9 @@ export const GAME = {
   bossCough: 3,
   plugWidth: 24,
   padThrowSpeed: 450,
+  // Not in the spec's table: decision 3 (the pad hurts him hot or landed)
+  // as a switch, so the fight can be measured, and felt, both ways.
+  padHurtsHot: true,
   bossMaxTicks: 5400,
   nightBonus: 1000,
   heartBonus: 250,
