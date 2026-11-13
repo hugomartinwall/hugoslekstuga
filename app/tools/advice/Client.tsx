@@ -181,7 +181,7 @@ export default function AdvicePage() {
         : null;
 
   return (
-    <ToolFrame tool={tool}>
+    <ToolFrame tool={tool} hugoOnStage>
       <div className="flex flex-col items-center gap-8 pb-4 text-center">
         {/* The character. Tap him — he's the other button. */}
         <HugoStage

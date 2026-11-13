@@ -35,9 +35,13 @@ import { keycapClass } from "@/components/ui/Keycap";
  */
 export default function ToolFrame({
   tool,
+  hugoOnStage = false,
   children,
 }: {
   tool: Tool;
+  /** The page puts its own Hugo on the stage (Advice), so the corner one
+   *  yields and the row has no slot to keep for him. */
+  hugoOnStage?: boolean;
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -101,9 +105,15 @@ export default function ToolFrame({
       }`}
     >
       {/* Below `lg` the column reaches the corner where Hugo lives, so the
-          row starts to his right. */}
+          row starts to his right. Where the page has its own Hugo the
+          corner is empty and the row starts at the margin, over the
+          tagline, as the column does from `lg` up. */}
       <header className="mb-7 sm:mb-9">
-        <div className="flex min-h-11 items-center gap-3 pl-14 lg:pl-0">
+        <div
+          className={`flex min-h-11 items-center gap-3 ${
+            hugoOnStage ? "" : "pl-14 lg:pl-0"
+          }`}
+        >
           <Link
             href="/"
             aria-label="Back to playhouse"

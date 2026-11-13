@@ -1250,7 +1250,8 @@ export default function BrandDot({
         // the wordmark. Em-based so it scales with font size.
         marginLeft: "0.16em",
         opacity: traveling || stagePresent ? 0 : 1,
-        pointerEvents: traveling || stagePresent ? "none" : undefined,
+        // "auto", not unset: BrandCorner's box is pointer-transparent.
+        pointerEvents: traveling || stagePresent ? "none" : "auto",
         transform,
         transition: `${transformTransition}, opacity 60ms linear`,
         // Idle breathing pauses during any active animation (drag,

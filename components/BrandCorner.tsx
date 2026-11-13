@@ -30,6 +30,11 @@ export default function BrandCorner() {
         top: 16,
         left: 18,
         zIndex: 40,
+        // The box is the mascot's line, and it stays on the page while he
+        // is hidden (a page-level Hugo has the stage): there it lay over
+        // the back key, which Advice starts at the margin, and took its
+        // presses. Only the mascot himself takes the pointer.
+        pointerEvents: "none",
         // The wrapper's font-size controls BrandDot's rendered size
         // (it's authored as 0.7em). 52px gives a ~36px sprite — the
         // 16×16 pixel body needs a little more room than the old disc
