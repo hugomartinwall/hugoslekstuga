@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { KITER, kiterBot, onceBot } from "../../lib/knuff/bots/aimless";
+import { BOSS_AIMLESS, BOSS_BOUNDS, fightBuild, fightStart, sumFights } from "../../lib/knuff/bots/boss";
+import { CORNER_MATE } from "../../lib/knuff/content/charms";
+import { BOSS_HOUR } from "../../lib/knuff/content/night";
+import { boxOf, laneMiddle } from "../../lib/knuff/sim/boss";
 import { CAST, STEP1_NIGHT, nightSeed, player, playerStream, runNight, type Night } from "../../lib/knuff/bots/driver";
 import { CAUTIOUS, EXPERT, NO_INPUT, ORDINARY, PROBE, handBot, isDown, ms, probePick, rollout, type Now } from "../../lib/knuff/bots/probe";
 import { AIMLESS, SMOKE, SMOKE_LOOK_AHEAD, STEP1_BOUNDS, boundsFor, summarise, type Sum } from "../../lib/knuff/bots/table";
@@ -106,6 +110,51 @@ describe("the step-1 table, as a smoke check", () => {
     expect(verdicts(short, SMOKE_LOOK_AHEAD)[real]).toBe(true);
     // One night with an early heart fails however much is loosened.
     expect(verdicts(short, SMOKE_LOOK_AHEAD)[early]).toBe(false);
+  });
+});
+
+describe("the boss check, as a smoke check", () => {
+  // §14 step 3, loosened as §13.5 loosens the table: 12 fights and 20 points (or a fifth) for the Expert, 60 fights
+  // and 10 points for the players who do not aim. He is never inside the machine's box: that is not loosened.
+  const fights = (key: string, count: number) => {
+    const nights: Night[] = [];
+    for (let i = 0; i < count; i++) nights.push(runNight(nightSeed(i), player(key), tune, fightStart(nightSeed(i))));
+    return sumFights(key, nights, tune);
+  };
+
+  it("a fight's build: three hearts at 06:00, two wall charms on two dark plates (Pip never beside a Bumper), two body charms", () => {
+    for (let i = 0; i < 200; i++) {
+      const b = fightBuild(nightSeed(i));
+      const lit = b.plates.map((c, p) => [c, p] as const).filter(([c]) => c !== "");
+      expect(lit).toHaveLength(2);
+      expect(new Set(lit.map(([c]) => c)).size).toBe(2);
+      for (const [c, p] of lit) {
+        const mate = CORNER_MATE[p] >= 0 ? b.plates[CORNER_MATE[p]] : "";
+        if (c === "pip") expect(mate).not.toBe("bumper");
+        if (c === "bumper") expect(mate).not.toBe("pip");
+      }
+      expect(new Set(b.charms).size).toBe(2);
+      const s = createState(nightSeed(i), tune, fightStart(nightSeed(i)));
+      expect([s.night.hour, s.hearts, s.charms.length]).toEqual([BOSS_HOUR, 3, 2]);
+      expect(s.plates.map((p) => p.charm)).toEqual(b.plates);
+    }
+    expect(fightBuild(nightSeed(1))).toEqual(fightBuild(nightSeed(1)));
+  });
+
+  it("the Expert wins, in a median of 1,200 to 3,600 ticks, and is never inside the box", LONG, () => {
+    const e = fights("expert", 12);
+    expect(e.wins, `${e.wins} of ${e.n}`).toBeGreaterThanOrEqual((BOSS_BOUNDS.expertWins - 0.2) * e.n);
+    expect(e.winTicksMedian).toBeGreaterThanOrEqual(BOSS_BOUNDS.expertTicksLo * 0.8);
+    expect(e.winTicksMedian).toBeLessThanOrEqual(BOSS_BOUNDS.expertTicksHi * 1.2);
+    expect(e.insideTicks).toBe(0);
+  });
+
+  it("a player who does not aim wins fewer than 1 in 10, and is never inside the box", LONG, () => {
+    for (const key of BOSS_AIMLESS) {
+      const a = fights(key, 60);
+      expect(a.wins, `${key}: ${a.wins} of ${a.n}`).toBeLessThan((BOSS_BOUNDS.aimlessWins + 0.1) * a.n);
+      expect(a.insideTicks, key).toBe(0);
+    }
   });
 });
 
@@ -279,5 +328,31 @@ describe("the players", () => {
       expect(off).toBeLessThanOrEqual(0.35 + 1e-9);
       expect(fired!.launch.power).toBe(1);
     }
+  });
+
+  it("the Kiter takes the polisher for a thing that hurts, and flees it", () => {
+    const t = tuned({ bossTrickleTicks: 1_000_000 });
+    const s = createState(1, t, { hour: BOSS_HOUR, empty: true, kinds: ["polisher"] });
+    s.phase = "boss";
+    step(s, NO_INPUT, t, []);
+    s.him.y = 300;
+    for (let i = 0; i < 120; i++) step(s, NO_INPUT, t, []);
+    // Stalled in lane 3, its top face 40 u below his centre.
+    s.boss.mode = "hitStall";
+    s.boss.modeUntil = s.tick + 1000;
+    s.boss.y = laneMiddle(s, 3);
+    s.boss.x = 180;
+    s.him.x = 180;
+    s.him.y = boxOf(s.boss).y0 - 40;
+    const bot = kiterBot(playerStream(1, "kiter"), KITER);
+    let fired = null;
+    for (let i = 0; i < 40 && fired === null; i++) {
+      const input = bot.act(s, t, now(i));
+      if (input.launch) fired = { at: i, launch: input.launch };
+    }
+    expect(fired).not.toBeNull();
+    expect(fired!.at).toBe(15);
+    // Away from it: up the room, within 20 degrees.
+    expect(fired!.launch.dy).toBeLessThan(-Math.cos(0.35) + 1e-9);
   });
 });

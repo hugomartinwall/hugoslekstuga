@@ -10,6 +10,7 @@
  * script prints it beside the other, with no bound.
  */
 import { KINDS } from "../content/kinds";
+import { boxOf, solid } from "../sim/boss";
 import { DT } from "../sim/physics";
 import { cloneState } from "../sim/state";
 import { step } from "../sim/step";
@@ -120,6 +121,24 @@ export type Kite = {
   mode: "random" | "away";
 };
 
+/**
+ * The nearest thing that hurts, as the Kiter sees it: the nearest landed
+ * intruder, or the polisher's box once it has landed (the nearest point of
+ * it). How far, and which way. Before 06:00 it is `nearestLanded`.
+ */
+export function nearestHurt(s: State): { d: number; a: number } | null {
+  const near = nearestLanded(s);
+  if (!solid(s.boss)) return near;
+  const box = boxOf(s.boss);
+  const px = Math.min(box.x1, Math.max(box.x0, s.him.x));
+  const py = Math.min(box.y1, Math.max(box.y0, s.him.y));
+  const d = Math.hypot(px - s.him.x, py - s.him.y);
+  if (near && near.d <= d) return near;
+  // Inside the box (never, at the end of a tick) or touching it: away from its middle.
+  const a = d > 1e-6 ? Math.atan2(py - s.him.y, px - s.him.x) : Math.atan2(s.boss.y - s.him.y, s.boss.x - s.him.x);
+  return { d, a };
+}
+
 /** The table's Kiter. */
 export const KITER: Kite = { trigger: 55, tokenTicks: 48, react: 15, power: 1, mode: "away" };
 /** The tie-break studies' kiter. */
@@ -127,8 +146,8 @@ export const KITER_RANDOM: Kite = { ...KITER, mode: "random" };
 
 /**
  * One launch to start, in a random direction. Then it sits until
- * something that hurts is within 55 u, or a token is 48 ticks from hitting
- * him, and 250 ms later launches.
+ * something that hurts is within 55 u (the polisher too, from 06:00), or a
+ * token is 48 ticks from hitting him, and 250 ms later launches.
  */
 export function kiterBot(r: Rand, o: Kite = KITER): Bot {
   let fireAt = -1;
@@ -140,14 +159,14 @@ export function kiterBot(r: Rand, o: Kite = KITER): Bot {
         fireAt = -1;
         let a = r() * Math.PI * 2;
         if (o.mode === "away") {
-          const near = nearestLanded(s);
+          const near = nearestHurt(s);
           // 0.7 rad across: 20 degrees either side of straight away.
           if (near) a = near.a + Math.PI + (r() - 0.5) * 0.7;
         }
         return { launch: aimed(a, o.power), pullHeld: false };
       }
       if (s.him.hot) return NO_INPUT;
-      const near = nearestLanded(s);
+      const near = nearestHurt(s);
       if ((near && near.d <= o.trigger) || tokenOnCourse(s, tune, o.tokenTicks)) fireAt = now.clock + o.react;
       return NO_INPUT;
     },

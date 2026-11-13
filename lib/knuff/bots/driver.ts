@@ -17,6 +17,7 @@
  */
 import { DARK_PLATES } from "../content/charms";
 import { HOURS } from "../content/night";
+import { overlapDepth } from "../sim/boss";
 import { intruders } from "../sim/night";
 import { createState, type StartOptions } from "../sim/state";
 import { step } from "../sim/step";
@@ -68,7 +69,8 @@ export function player(key: string): Player {
 
 /**
  * The step-1 night (§13.2), which the step-1 table keeps until step 5:
- * dust bunnies and tokens only, all ten plates dark, nothing offered.
+ * dust bunnies and tokens only (so no 06:00: the polisher is left out and
+ * the night ends when 05:00 ends), all ten plates dark, nothing offered.
  * Later steps add what they build to this list of leavings-out.
  */
 export const STEP1_NIGHT: StartOptions = { kinds: ["bunny", "token"], plates: DARK_PLATES, offers: false };
@@ -137,10 +139,35 @@ export type Loss = {
   landDist: number;
 };
 
+/** The boss's part of a night: from the tick 06:00 began. */
+export type Fight = {
+  /** The tick 06:00 began; -1 if the night never reached it. */
+  began: number;
+  /** How the night ended once it had: the polisher beaten, the lights came on, or the last heart. "" before 06:00. */
+  ended: "" | "morning" | "dawn" | "hearts";
+  /** Ticks from 06:00's first to the night's end (its last tick counted). */
+  ticks: number;
+  /** Counted plug hits, and those of them that counted as two. */
+  hits: number;
+  twos: number;
+  /** The pad's throws, and those that cost a heart. */
+  throws: number;
+  throwsHurt: number;
+  /** Hearts lost from 06:00 on, to anything. */
+  hearts: number;
+  /** Ticks at whose end his circle overlapped the machine's box, and the deepest overlap at the end of a tick, u. */
+  insideTicks: number;
+  deepest: number;
+  /** What beating the polisher added to the score. */
+  bonus: number;
+  /** Launches from 06:00 on (the pad's throws not counted). */
+  launches: number;
+};
+
 export type Night = {
   seed: number;
-  ended: "hearts" | "morning" | "";
-  /** The hour the night ended in, 0 = 19:00; 11 if he was alive when 05:00 ended. */
+  ended: "hearts" | "morning" | "dawn" | "";
+  /** The hour the night ended in, 0 = 19:00; 11 if he was alive when 05:00 ended (and in the boss's hour, 06:00). */
   hour: number;
   ticks: number;
   normalTicks: number;
@@ -185,6 +212,8 @@ export type Night = {
   /** What he had at the end: body charms taken, and the plates (one charm name or "" each). */
   charms: string[];
   plates: string[];
+  /** The boss's books: `began` is -1 on a night that never reached 06:00. */
+  fight: Fight;
 };
 
 /** Called after every tick that was taken, with what it did: for a trace, or a test. */
@@ -231,7 +260,9 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     offers: [],
     charms: [],
     plates: [],
+    fight: { began: -1, ended: "", ticks: 0, hits: 0, twos: 0, throws: 0, throwsHurt: 0, hearts: 0, insideTicks: 0, deepest: 0, bonus: 0, launches: 0 },
   };
+  const fight = n.fight;
   const announcedAt = new Map<number, number>();
   const arrivedAt = new Map<number, { tick: number; dist: number }>();
   let hourStart = -1;
@@ -240,7 +271,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
   let rowHasToken = false;
   let emptyRun = 0;
   let idle = 0;
-  const most = HOURS * tune.hourMaxTicks + 400;
+  const most = HOURS * tune.hourMaxTicks + tune.bossMaxTicks + 400;
 
   /** The offer out now, and what the launch in flight was aimed at. */
   let offer: OfferSeen | null = null;
@@ -272,6 +303,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
       switch (e.type) {
         case "launch":
           n.launches++;
+          if (fight.began >= 0) fight.launches++;
           launchAim = aim;
           if (offer && aim >= 0) {
             if (offer.wanted < 0) {
@@ -331,6 +363,17 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           if (hourStart >= 0) n.hourLen.push(e.tick - hourStart);
           hourStart = e.tick;
           rowsThisHour = 0;
+          if (e.hour >= HOURS) fight.began = e.tick;
+          break;
+        case "hit":
+          if (e.kind === "polisher") {
+            fight.hits++;
+            if (e.two) fight.twos++;
+          }
+          break;
+        case "bossThrow":
+          fight.throws++;
+          if (e.hurt) fight.throwsHurt++;
           break;
         case "announce":
           came++;
@@ -367,12 +410,18 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
           };
           n.losses.push(loss);
           n.heartsLost++;
+          if (fight.began >= 0) fight.hearts++;
           if (ann !== undefined && loss.sinceAnnounce < tune.telegraphTicks) n.unfair++;
           else if (arr !== undefined && arr.dist <= tune.arriveDazedWithin && loss.sinceLand < tune.dazeTicks) n.unfair++;
           break;
         }
         case "over":
           if (e.how === "morning" && hourStart >= 0) n.hourLen.push(e.tick - hourStart);
+          if (fight.began >= 0) {
+            fight.ended = e.how;
+            fight.ticks = e.tick + 1 - fight.began;
+            fight.bonus = e.bonus;
+          }
           break;
         default:
           break;
@@ -401,10 +450,16 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
       n.ticksLanded++;
       if (s.pips === 0) n.ticksLandedNoPip++;
     }
+    // At the end of no tick is he inside the machine's box.
+    if (s.boss.present) {
+      const deep = overlapDepth(s.boss, s.him.x, s.him.y, s.stats.radius);
+      if (deep > 1e-6) fight.insideTicks++;
+      if (deep > fight.deepest) fight.deepest = deep;
+    }
     if (watch) watch(events, s);
   }
 
-  n.ended = s.ended === "hearts" || s.ended === "morning" ? s.ended : "";
+  n.ended = s.ended;
   n.hour = s.night.hour;
   n.ticks = s.tick;
   n.normalTicks = s.normalTicks;

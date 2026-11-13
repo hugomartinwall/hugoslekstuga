@@ -135,10 +135,10 @@ export function rollout(s: State, tune: Tune, launch: Launch | null, ticks: numb
   const c = lookAheadCopy(s, offer);
   const events: SimEvent[] = [];
   step(c, { launch, pullHeld: false }, tune, events);
-  for (let i = 1; i < ticks && c.phase === "night"; i++) {
+  for (let i = 1; i < ticks && (c.phase === "night" || c.phase === "boss"); i++) {
     // Landed in a room with no intruder: nothing announced from now on can land and reach him inside the horizon.
-    // (While no offer is out there is no tile in the room, and every thing is an intruder.)
-    if (!c.him.hot && (c.things.length === 0 || (c.offer.open && intruders(c) === 0))) break;
+    // (While no offer is out there is no tile in the room, and every thing is an intruder.) The polisher can.
+    if (!c.him.hot && !c.boss.present && (c.things.length === 0 || (c.offer.open && intruders(c) === 0))) break;
     events.length = 0;
     step(c, NO_INPUT, tune, events);
   }
@@ -152,7 +152,7 @@ export function ticksToLanding(s: State, tune: Tune): number {
   const c = cloneState(s);
   const events: SimEvent[] = [];
   let n = 0;
-  while (c.him.hot && c.phase === "night" && n < 200) {
+  while (c.him.hot && (c.phase === "night" || c.phase === "boss") && n < 200) {
     events.length = 0;
     step(c, NO_INPUT, tune, events);
     n++;
@@ -314,7 +314,8 @@ export function cornerHands(zone = 110, radius = 13, base: Hands = ORDINARY): Ha
 /** How many ticks a hold of `units` will take, by the meter: a slowed tick is 5 units of the clock, a normal one 1. */
 function holdTicks(s: State, tune: Tune, units: number): number {
   const slowed = 1 / tune.slowShare;
-  let meter = intruders(s) > 0 ? s.slow.meter : 0;
+  // The room slows while something can hurt him: an intruder, or the polisher.
+  let meter = intruders(s) > 0 || s.boss.present ? s.slow.meter : 0;
   let u = 0;
   let n = 0;
   while (u < units) {
@@ -413,8 +414,8 @@ export function handBot(r: Rand, o: Hands): Bot {
         }
         return HOLD;
       }
-      // Nothing to hit, and nothing it is after: it waits.
-      if (intruders(s) === 0 && wanted(s) < 0) return NO_INPUT;
+      // Nothing to hit, and nothing it is after: it waits. (While the polisher is in the room there is always something.)
+      if (intruders(s) === 0 && !s.boss.present && wanted(s) < 0) return NO_INPUT;
       if (clock < retryAt || clock < pipClock + o.pipWait) return NO_INPUT;
       if (s.him.hot) {
         if (o.timing !== "before" || gaveUpFlight === s.launch.id) return NO_INPUT;

@@ -13,6 +13,9 @@
  *       [--charms]               the charm test of §13.3: 120 nights a charm (--seeds), from 23:00,
  *                                for the Expert and the Ordinary (--player=expert or ordinary);
  *                                --arms=bell,coin runs those charms only, beside the arm without one
+ *       [--boss]                 the boss check of step 3 (§14): fights begun at 06:00 with three hearts,
+ *                                two wall charms and two body charms at random, 200 a player (--seeds),
+ *                                for the Expert, the Ordinary and the players who do not aim (--player)
  *       [--offers]               the offer checks of step 2 (§14): offers made, how they opened,
  *                                taken by accident by a player who ignores them, and the named one
  *                                got by a player who takes one; on the night as it stands
@@ -27,6 +30,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { BOSS_FIGHTS, BOSS_PLAYERS, fightStart, printFights, sumFights, type FightSum } from "../lib/knuff/bots/boss";
 import { CHARM_ARMS, CHARM_NIGHTS, CHARM_PLAYERS, charmNight, printCharmTest, printOffers, sumCharm, type CharmSum } from "../lib/knuff/bots/charms";
 import { CAST, STEP1_NIGHT, TAKERS, nightSeed, player, runNight, type Night } from "../lib/knuff/bots/driver";
 import { printTable, summarise, type Sum } from "../lib/knuff/bots/table";
@@ -72,8 +76,16 @@ type Stored = { key: string; tune: Tune; first: number; fromHour: number; night:
  * the same tag, tune, seeds and start is stored there. `fired` counts the
  * cushion events on which `charm` fired (the charm test's plates).
  */
-function nightsOf(key: string, count: number, on: StartOptions, file: string, charm = ""): { nights: Night[]; secs: number; fired: number } {
-  const night = JSON.stringify(on);
+function nightsOf(
+  key: string,
+  count: number,
+  on: StartOptions | ((seed: number) => StartOptions),
+  file: string,
+  charm = "",
+): { nights: Night[]; secs: number; fired: number } {
+  // A start made afresh for each seed (the boss check's builds) is stored by its first night's.
+  const startFor = typeof on === "function" ? on : () => on;
+  const night = JSON.stringify(typeof on === "function" ? { perSeed: on(nightSeed(first)) } : on);
   if (file && existsSync(file)) {
     const st = JSON.parse(readFileSync(file, "utf8")) as Stored;
     if (JSON.stringify(st.tune) === JSON.stringify(tune) && st.first === first && st.night === night && st.nights.length === count) {
@@ -88,7 +100,7 @@ function nightsOf(key: string, count: number, on: StartOptions, file: string, ch
   const watch = charm === "" ? undefined : (events: readonly SimEvent[]) => {
     for (const e of events) if (e.type === "cushion" && e.charm === charm) fired++;
   };
-  for (let i = first; i < first + count; i++) nights.push(runNight(nightSeed(i), who1, tune, on, watch));
+  for (let i = first; i < first + count; i++) nights.push(runNight(nightSeed(i), who1, tune, startFor(nightSeed(i)), watch));
   const secs = (Date.now() - t0) / 1000;
   console.error(`${`${key}${charm ? ` + ${charm}` : ""}`.padEnd(24)} nights ${first}..${first + count - 1} in ${secs.toFixed(0)} s (${(secs / count).toFixed(2)} s a night); alive at the end ${nights.filter((n) => n.ended === "morning").length} of ${count}`);
   if (file) {
@@ -116,6 +128,17 @@ if (process.argv.includes("--charms")) {
     }
   }
   const t = printCharmTest(sums, `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; nights ${first} to ${first + count - 1}${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`);
+  console.log(t.lines.join("\n"));
+  process.exit(t.fails > 0 ? 1 : 0);
+}
+
+if (process.argv.includes("--boss")) {
+  // The boss check: every player asked for on the same fights, each begun at 06:00 with its seed's build.
+  const count = option("seeds") === undefined ? BOSS_FIGHTS : seeds;
+  const keys = asked ?? [...BOSS_PLAYERS];
+  const sums = new Map<string, FightSum>();
+  for (const key of keys) sums.set(key, sumFights(key, nightsOf(key, count, fightStart, fileFor(`boss__${key}`)).nights, tune));
+  const t = printFights(sums, `pace ${tune.pace}, popHotTicks ${tune.popHotTicks}; fights ${first} to ${first + count - 1}${Object.keys(named).length ? `; named: ${JSON.stringify(named)}` : ""}`);
   console.log(t.lines.join("\n"));
   process.exit(t.fails > 0 ? 1 : 0);
 }
