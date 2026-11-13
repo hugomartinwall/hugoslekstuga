@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BODY_CHARMS, CORNER_MATE, DARK, DARK_PLATES, PLATES, START_PLATES, WALL_CHARMS, type WallCharm } from "../../lib/knuff/content/charms";
+import { CHARM_LINE, CHARM_NAME } from "../../lib/knuff/content/copy";
 import { KINDS } from "../../lib/knuff/content/kinds";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
 import { capOf, insertCentre, plateAt, statsFor } from "../../lib/knuff/sim/charms";
@@ -7,6 +8,7 @@ import { isHot, land } from "../../lib/knuff/sim/hot";
 import { DT } from "../../lib/knuff/sim/physics";
 import { createState, type StartOptions } from "../../lib/knuff/sim/state";
 import type { OfferItem, SimEvent, State, Thing, Tune } from "../../lib/knuff/sim/types";
+import { CHARM_ICON } from "../../lib/knuff/render/sprites";
 import { REST, fire, night, of, put, run, shot, speedOf, tick, tuned, until } from "./room";
 
 /**
@@ -790,5 +792,33 @@ describe("the offer, as it is taken", () => {
     expect(s.plates.map((p) => p.charm)).toEqual(["spark", DARK, DARK, DARK, DARK, DARK, DARK, DARK, DARK, DARK]);
     expect(s.night.offers).toBe(false);
     expect(createState(1, DEFAULT_TUNE).night.offers).toBe(true);
+  });
+});
+
+describe("names, lines and icons (§6.4)", () => {
+  const all = [...WALL_CHARMS, ...BODY_CHARMS];
+
+  it("every charm has a name and one line of at most 27 characters", () => {
+    for (const c of all) {
+      expect(CHARM_NAME[c], c).toMatch(/^[A-Z ]+$/);
+      expect(CHARM_LINE[c].length, c).toBeLessThanOrEqual(27);
+    }
+    expect(CHARM_LINE.coin).toBe("bounce off: pops pay double");
+    expect(CHARM_LINE.bumper).toBe("bounce off: fast again");
+  });
+
+  it("every icon is 12 rows of 12, one empty cell all round, and no two are alike", () => {
+    const seen = new Set<string>();
+    for (const c of all) {
+      const rows = CHARM_ICON[c];
+      expect(rows, c).toHaveLength(12);
+      for (const row of rows) expect(row, c).toMatch(/^[.X]{12}$/);
+      expect(rows[0], c).toBe("............");
+      expect(rows[11], c).toBe("............");
+      expect(rows.every((row) => row[0] === "." && row[11] === "."), c).toBe(true);
+      expect(rows.join("").includes("X"), c).toBe(true);
+      seen.add(rows.join("/"));
+    }
+    expect(seen.size).toBe(all.length);
   });
 });

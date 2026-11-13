@@ -63,3 +63,42 @@ export const KIND_NAME: Readonly<Record<string, string>> = {
   bunny: "a dust bunny",
   token: "a runaway token",
 };
+
+/**
+ * What the charms are called (§6.4), in Silkscreen: on an offered plate's
+ * insert, under a pickup's tile, in the top bar while the aim would take
+ * one, and in the pause panel.
+ */
+export const CHARM_NAME: Readonly<Record<string, string>> = {
+  bumper: "BUMPER",
+  pip: "PIP",
+  spark: "SPARK",
+  bell: "BELL",
+  coin: "COIN SLOT",
+  heavy: "HEAVY",
+  longBurn: "LONG BURN",
+  fourthPip: "FOURTH PIP",
+  thickSkin: "THICK SKIN",
+  wide: "WIDE",
+};
+
+/**
+ * Each charm's one line (§6.4), at most 27 characters: the top bar shows it
+ * under the name while the aim line would take the charm, or bounce off a
+ * plate that carries it. It is the only explanation a charm gets.
+ */
+export const CHARM_LINE: Readonly<Record<string, string>> = {
+  bumper: "bounce off: fast again",
+  pip: "bounce off: a pip back",
+  spark: "bounce off: wider reach",
+  bell: "bounce off: stuns the room",
+  coin: "bounce off: pops pay double",
+  heavy: "pops slow him less",
+  longBurn: "a weapon for longer",
+  fourthPip: "one more launch in hand",
+  thickSkin: "one more heart",
+  wide: "bigger, and pops slow less",
+};
+
+/** The pause panel's heading over the body charms taken. */
+export const CHARMS_TAKEN = "CHARMS";

@@ -27,7 +27,26 @@ export const C = {
   mint: COLOR_HEX.green,
   acid: COLOR_HEX.yellow,
   coral: COLOR_HEX.tomato,
+  amber: COLOR_HEX.orange,
+  violet: COLOR_HEX.purple,
 } as const;
+
+/**
+ * Each wall charm's colour (§6.1): on its plate, its insert and its name.
+ * Body charms are drawn in phosphor.
+ */
+export const CHARM_COLOR: Readonly<Record<string, string>> = {
+  bumper: C.coral,
+  pip: C.mint,
+  spark: C.amber,
+  bell: C.violet,
+  coin: C.acid,
+};
+
+/** The colour a charm is drawn and named in: its own for a wall charm, phosphor for a body charm. */
+export function charmColor(charm: string): string {
+  return CHARM_COLOR[charm] ?? C.ink;
+}
 
 export function rgba(color: string, a: number): string {
   const [r, g, b] = hexRgb(color);

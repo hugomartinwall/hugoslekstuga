@@ -8,7 +8,7 @@
  */
 import { hotSpeed } from "../sim/physics";
 import type { Side, SimEvent, State, Tune } from "../sim/types";
-import { C } from "./palette";
+import { C, charmColor } from "./palette";
 
 export type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number };
 export type TrailDot = { x: number; y: number; hot: boolean };
@@ -121,6 +121,8 @@ export function createEffects(tuneNow: () => Tune): Effects {
             burst(e.x, e.y, 4, 90 + 160 * s01, C.ink, 2);
             if (!reduced) fx.shake = Math.max(fx.shake, 1.2 + 2.2 * s01);
           }
+          // A plate that fired says so in its colour.
+          if (e.charm !== "") burst(e.x, e.y, 10, 170, charmColor(e.charm), 3);
           // Squash against the cushion he hit.
           if (!reduced) {
             const side = e.side === "left" || e.side === "right";
@@ -134,7 +136,7 @@ export function createEffects(tuneNow: () => Tune): Effects {
           burst(e.x, e.y, 12, 190, e.kind === "token" ? C.acid : C.ash, 3);
           burst(e.x, e.y, 5, 110, C.ink, 2);
           if (!reduced) fx.shake = Math.max(fx.shake, 2.5 + Math.min(4, e.n));
-          const times = e.chain * e.cushions;
+          const times = e.chain * e.cushions * e.coin;
           if (times > 1) float(e.x, e.y - 10, `x${times}`, false);
           // Reduced motion keeps the freeze: it is a pause, not motion.
           return e.n === 1 ? FREEZE_FIRST_POP_S : e.n === 5 ? FREEZE_FIFTH_POP_S : 0;

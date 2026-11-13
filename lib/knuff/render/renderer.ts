@@ -10,12 +10,13 @@
  * announced is a broken outline of the same shape. Only he ever wears a
  * white ring: it means he is a weapon.
  *
- * Bottom to top: the page; the cushions; the floor and its dither; the
- * start hint where it is drawn on the floor; the thump ring, the wave and
- * the telegraph outlines; the aim band and line; his trail; the things in
- * the room; his pips; him; the hot ring; the slow-motion bar; particles;
- * floating numbers; the top bar; the start hint where it is drawn in the
- * deck; the mark where the pull began.
+ * Bottom to top: the page; the cushions and their lit plates; the floor
+ * and its dither; the offer's inserts and tiles; the start hint where it is
+ * drawn on the floor; the thump ring, the wave and the telegraph outlines;
+ * the aim band and line; his trail; the things in the room; Spark's ring;
+ * his pips; him; the hot ring; the slow-motion bar; particles; floating
+ * numbers; the top bar; the start hint where it is drawn in the deck; the
+ * mark where the pull began.
  *
  * Art is on a 1 u grid and every rectangle is snapped to whole device
  * pixels when it is drawn.
@@ -28,6 +29,7 @@ import { KINDS } from "../content/kinds";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
 import type { Effects } from "./effects";
+import { drawOffer, drawPlates, drawSparkRing } from "./charms";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
   DAZE_MARKS,
@@ -94,6 +96,8 @@ export type Frame = {
 /** What a drawing helper is handed: the context, the layout, and a few ways to put pixels down. */
 export type Paint = {
   ctx: CanvasRenderingContext2D;
+  /** The three families, resolved off the page (fonts.ts). */
+  fonts: KnuffFonts;
   layout: Layout;
   /** Device pixels per CSS px. */
   dpr: number;
@@ -108,7 +112,7 @@ export type Paint = {
   ring(cx: number, cy: number, radius: number, color: string, w: number): void;
   /** A whole stepped ring, `w` thick, made of cells `cell` across. All in device px. */
   band(cx: number, cy: number, radius: number, w: number, cell: number, color: string): void;
-  /** One run of text, centred on (x, y) in device px (or ending at x); the size is CSS px. */
+  /** One run of text, centred on (x, y) in device px (or ending at x, or starting there); the size is CSS px. */
   text(
     str: string,
     x: number,
@@ -116,7 +120,7 @@ export type Paint = {
     sizeCss: number,
     color: string,
     face: keyof KnuffFonts,
-    align?: "center" | "right",
+    align?: "center" | "right" | "left",
   ): void;
   /** A sentence in the body face at 15 px, one character per 9 px cell, centred on (cx, y). */
   sentence(str: string, cx: number, y: number, color: string): void;
@@ -163,6 +167,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
   const paint: Paint = {
     ctx,
+    fonts,
     layout,
     dpr: 1,
     S: 1,
@@ -352,7 +357,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     const h = state.him;
     const hx = h.px + (h.x - h.px) * alpha;
     const hy = h.py + (h.y - h.py) * alpha;
-    const r = tune.himRadius;
+    // His radius after charms: Wide makes him bigger, and the ring, the pips and the meter take their distances from it.
+    const r = state.stats.radius;
     const hair = Math.max(1, Math.round(dpr));
     const cellFx = Math.max(2, Math.round(S * 1.5));
     const aim = f.pull?.aim ?? null;
@@ -374,12 +380,16 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     const ft = Math.round(Y(state.room.top));
     const fw = Math.round(X(state.room.right)) - fl;
     const fh = Math.round(Y(state.room.bottom)) - ft;
+    // Lit plates, and offered ones, in their charm's colour on the rail.
+    drawPlates(paint, state);
     ctx.fillStyle = floor;
     ctx.fillRect(fl, ft, fw, fh);
     if (dither) {
       ctx.fillStyle = dither;
       ctx.fillRect(fl, ft, fw, fh);
     }
+    // The offer: each offered plate's insert, each pickup's tile, and their names.
+    drawOffer(paint, state);
 
     // The hint on the floor, under everything that moves. Its hand is in
     // the way of a pull, so it stands back while one is held or he flies.
@@ -515,6 +525,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       for (const m of DAZE_MARKS) ctx.fillRect(Math.round(X(dx + m.x)), Math.round(Y(dy + m.y)), dazeQ, dazeQ);
     }
 
+    // Spark's ring, under his pips, him and the hot ring.
+    drawSparkRing(paint, state, hx, hy, tune.sparkReach);
+
     // His pips, above the things in the room and under him.
     const carried = carriedAt(state, tune, hy);
     const refused = fx.refused > 0;
@@ -543,16 +556,20 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       dx: Math.abs(lookX) > 0.35 ? 1 : 0,
       dy: lookY > 0.4 ? 1 : lookY < -0.4 ? -1 : 0,
     };
-    const sx = f.reduced ? 1 : fx.squashX;
-    const sy = f.reduced ? 1 : fx.squashY;
+    // Wide: drawn bigger, in step with his circle.
+    const grow = r / tune.himRadius;
+    const sqx = f.reduced ? 1 : fx.squashX;
+    const sqy = f.reduced ? 1 : fx.squashY;
+    const sx = sqx * grow;
+    const sy = sqy * grow;
     // The painter scales about the middle of its grid, and his body's
     // middle is one cell under that. A squash is anchored at the cushion.
     let px = Math.round(X(hx));
-    let py = Math.round(Y(hy)) - cell;
-    if (fx.squashSide === "left") px -= Math.round((1 - sx) * 7 * cell);
-    else if (fx.squashSide === "right") px += Math.round((1 - sx) * 7 * cell);
-    else if (fx.squashSide === "top") py -= Math.round((1 - sy) * 6 * cell);
-    else if (fx.squashSide === "bottom") py += Math.round((1 - sy) * 6 * cell);
+    let py = Math.round(Y(hy) - cell * grow);
+    if (fx.squashSide === "left") px -= Math.round((1 - sqx) * 7 * cell * grow);
+    else if (fx.squashSide === "right") px += Math.round((1 - sqx) * 7 * cell * grow);
+    else if (fx.squashSide === "top") py -= Math.round((1 - sqy) * 6 * cell * grow);
+    else if (fx.squashSide === "bottom") py += Math.round((1 - sqy) * 6 * cell * grow);
     drawHugoSprite(ctx, {
       x: px,
       y: py,
@@ -571,7 +588,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     // circle: then the ring moves out to one cell beyond the body.
     if (h.hot) {
       const w = Math.max(2, Math.round(2 * S));
-      const inner = Math.max((r + 3) * S, 8 * cell);
+      const inner = Math.max((r + 3) * S, 8 * cell * grow);
       paint.band(X(hx), Y(hy), inner + w / 2, w, Math.max(1, Math.round(S)), C.ink);
     }
 
@@ -595,7 +612,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    drawBar(paint, state, tune, f.live);
+    // While the aim would take an offered thing, or bounce off a lit plate first, the bar names that charm.
+    drawBar(paint, state, tune, f.live, f.line ? f.line.charm : "");
 
     // The hint in the thumb deck.
     if (hintInDeck && (hint.hand || hint.words !== "")) drawDeckHint(paint, hint, tune.pullDir, now, f.reduced);

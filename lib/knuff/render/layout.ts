@@ -187,7 +187,8 @@ export function hintFor(s: State): { hand: boolean; words: "first" | "again" | "
  * above them. So neither leaves the floor.
  */
 export function carriedAt(s: State, tune: Tune, y: number): { pips: number; meter: number } {
-  const r = tune.himRadius;
+  // His radius after charms (Wide): the distances are from his circle.
+  const r = s.stats.radius;
   if (y - s.room.top <= r + 15) return { pips: r + 10, meter: r + 20 };
   if (s.room.bottom - y <= r + 15) return { pips: -(r + 10), meter: -(r + 20) };
   return { pips: r + 10, meter: -(r + 11) };
@@ -212,7 +213,8 @@ export const DAZE_MARKS: readonly Rect[] = [
 
 /**
  * The order the bodies in the room are drawn in, into `out`: the live
- * ones, then the dazed ones. Announced things are left out. Dust bunnies
+ * ones, then the dazed ones. Announced things are left out, and so are an
+ * offer's tiles, which lie on the floor under everything that moves. Dust bunnies
  * are kept apart, but a token rolls through anything and a dust bunny
  * walks through a dazed token: drawn over the live thing it overlaps, a
  * dazed thing's marks lie on its own body, never on one that can cost a
@@ -220,7 +222,7 @@ export const DAZE_MARKS: readonly Rect[] = [
  */
 export function bodyOrder(s: State, out: Thing[]): Thing[] {
   out.length = 0;
-  for (const d of s.things) if (s.tick >= d.landTick && s.tick >= d.dazedUntil) out.push(d);
-  for (const d of s.things) if (s.tick >= d.landTick && s.tick < d.dazedUntil) out.push(d);
+  for (const d of s.things) if (d.kind !== "pickup" && s.tick >= d.landTick && s.tick >= d.dazedUntil) out.push(d);
+  for (const d of s.things) if (d.kind !== "pickup" && s.tick >= d.landTick && s.tick < d.dazedUntil) out.push(d);
   return out;
 }

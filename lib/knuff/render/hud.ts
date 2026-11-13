@@ -1,18 +1,19 @@
 /**
  * What is drawn for reading rather than for playing: the top bar (hearts,
- * the clock, the night's twelve steps, the score, the pause key), the pips
- * and the slow-motion meter he carries, the two start hints, and the one
- * line a page too small to play shows.
+ * the clock, the night's twelve steps, the score, the pause key; while the
+ * aim would take a charm, that charm's name and line), the pips and the
+ * slow-motion meter he carries, the two start hints, and the one line a
+ * page too small to play shows.
  *
  * Drawn plainly: the shapes say what they are, and their art comes with
  * the step that draws everything else. Sizes given in px do not scale
  * with the room; sizes given in units do.
  */
-import { HINT, HINT_AGAIN, TOO_SMALL } from "../content/copy";
+import { CHARM_LINE, CHARM_NAME, HINT, HINT_AGAIN, TOO_SMALL } from "../content/copy";
 import { CLOCK, HOURS } from "../content/night";
 import type { State, Tune } from "../sim/types";
 import { hourStep, pauseKeyRect } from "./layout";
-import { C, rgba } from "./palette";
+import { C, charmColor, rgba } from "./palette";
 import type { Paint } from "./renderer";
 
 /** Seconds for one pull-and-let-go of the ghost hand. */
@@ -39,20 +40,44 @@ function drawHeart(p: Paint, x: number, y: number, full: boolean): void {
   }
 }
 
+/** The span the charm's words are centred in starts this far into the bar, px, and ends this far from its right edge. */
+const NAME_FROM_PX = 88;
+const NAME_TO_PX = 60;
+/** The span must hold this much for the hearts to stay: a line of 27 cells of 9 px, less the half pixel each side the spec allows. */
+const NAME_SPAN_PX = 242;
+
 /**
  * The bar above the room. `live` says a night is in progress: the pause
  * key is drawn at full strength only then, because only then does it act.
+ * `named` is the charm the aim line names (§9.3), or "": while there is
+ * one, its name and line take the place of the clock, the night's steps
+ * and the score, and on a bar too narrow for the line the hearts give way
+ * too.
  */
-export function drawBar(p: Paint, s: State, tune: Tune, live: boolean): void {
+export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = ""): void {
   const { ctx, dpr } = p;
   const bar = p.layout.bar;
   const bx = bar.x * dpr;
   const by = bar.y * dpr;
   const B = bar.w * dpr;
+  const naming = named !== "" && CHARM_NAME[named] !== undefined;
+  const wide = bar.w - NAME_FROM_PX - NAME_TO_PX >= NAME_SPAN_PX;
 
-  // Hearts: the first at x 12, y 18 to 30, one every 18 px.
-  const most = Math.max(tune.hearts, s.hearts);
-  for (let i = 0; i < most; i++) drawHeart(p, bx + (12 + 18 * i) * dpr, by + 18 * dpr, i < s.hearts);
+  // Hearts: the first at x 12, y 18 to 30, one every 18 px. Four at most, with Thick skin.
+  if (!naming || wide) {
+    const most = Math.max(s.stats.maxHearts, s.hearts);
+    for (let i = 0; i < most; i++) drawHeart(p, bx + (12 + 18 * i) * dpr, by + 18 * dpr, i < s.hearts);
+  }
+
+  if (naming) {
+    // Its name in its colour, its line in phosphor, centred in the span.
+    const from = wide ? NAME_FROM_PX : 12;
+    const mid = bx + ((from + bar.w - NAME_TO_PX) / 2) * dpr;
+    p.text(CHARM_NAME[named], mid, by + 16 * dpr, 16, charmColor(named), "pixel");
+    p.sentence(CHARM_LINE[named] ?? "", mid, by + 34 * dpr, C.ink);
+    drawPauseKey(p, live);
+    return;
+  }
 
   // The clock, in the middle.
   // When 05:00 ends with no 06:00 to go to, the State's hour is one past
@@ -87,7 +112,14 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean): void {
   // The score: its right edge 64 px from the bar's.
   p.text(String(s.score), bx + B - 64 * dpr, by + 20 * dpr, 24, C.ink, "display", "right");
 
-  // The pause key: a stepped keycap with two bars.
+  drawPauseKey(p, live);
+}
+
+/** The pause key: a stepped keycap with two bars, in the bar's right corner. */
+function drawPauseKey(p: Paint, live: boolean): void {
+  const { ctx, dpr } = p;
+  const bar = p.layout.bar;
+  const hair = Math.max(1, Math.round(dpr));
   const k = pauseKeyRect(bar);
   const kx = Math.round(k.x * dpr);
   const ky = Math.round(k.y * dpr);
@@ -127,13 +159,14 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean): void {
  */
 export function drawPips(p: Paint, s: State, tune: Tune, cx: number, cy: number, refused: boolean, shakeU: number): void {
   const { ctx, S } = p;
-  const n = Math.max(1, tune.pipMax);
+  // His most after charms: four with Fourth pip.
+  const n = Math.max(1, s.stats.pipMax);
   const side = Math.max(3, Math.round(6 * S));
   const gap = 9 * S;
   const edge = Math.max(1, Math.round(S));
   const color = refused ? C.coral : C.ink;
   const y = Math.round(p.Y(cy) - side / 2);
-  const coming = s.pips < tune.pipMax ? 1 - s.pipTimer / Math.max(1, tune.pipRefillTicks) : 0;
+  const coming = s.pips < s.stats.pipMax ? 1 - s.pipTimer / Math.max(1, tune.pipRefillTicks) : 0;
   for (let i = 0; i < n; i++) {
     const x = Math.round(p.X(cx + shakeU) + (i - (n - 1) / 2) * gap - side / 2);
     // What is under a pip must not show inside a hollow one.
