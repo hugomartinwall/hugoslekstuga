@@ -614,6 +614,33 @@ describe("around it", () => {
     }
   });
 
+  it("stalled at a wall or after a hit it is as solid as when it moves: a dust bunny walking into it is pushed out, and a token bounces off it", () => {
+    const walk = tuned({ ...QUIET, bunnySpeed: 22 });
+    for (const mode of ["wallStall", "hitStall"] as const) {
+      // Stalled in lane 3 (182 to 242), its box 140 to 260 across; he stands above it, out of its way.
+      const s = landed(walk);
+      machine(s, { lane: 3, x: 200, dir: 1, mode, until: s.tick + 1000 });
+      him(s, 200, 100);
+      // A dust bunny under it, walking up toward him, into its bottom face.
+      const d = put(s, "bunny", 200, 290);
+      // A token under it too, rolling straight up at its bottom face.
+      const t = put(s, "token", 160, 300, { vx: 0, vy: -120 });
+      let deepest = 0;
+      let bounced = false;
+      for (let i = 0; i < 200; i++) {
+        tick(s, walk);
+        deepest = Math.max(deepest, overlapDepth(s.boss, d.x, d.y, 8), overlapDepth(s.boss, t.x, t.y, 7));
+        if (t.vy > 0) bounced = true;
+      }
+      expect(s.boss.mode, mode).toBe(mode);
+      expect(deepest, mode).toBeLessThanOrEqual(1e-9);
+      // Never through it, never under it: both stayed below its bottom face.
+      expect(d.y, mode).toBeGreaterThanOrEqual(242 + 8 - 1e-9);
+      expect(bounced, mode).toBe(true);
+      expect(Math.hypot(t.vx, t.vy), mode).toBeCloseTo(120, 9);
+    }
+  });
+
   it("no dust bunny trickles in while the room is full", () => {
     const tune = tuned({ bunnySpeed: 0, roomCap: 2 });
     const s = fight(tune);

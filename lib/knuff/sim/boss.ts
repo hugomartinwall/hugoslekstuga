@@ -365,12 +365,15 @@ function wallStall(s: State, tune: Tune, events: SimEvent[]): void {
 
 /**
  * One substep of its motion: along the lane, or across to the next one.
- * Then the intruders in its way are pushed out of its body. He is met in
- * `bossContact`, which `step` calls next.
+ * Then the intruders that meet it are pushed out of its body, whether it
+ * moved or not: stalled at a wall or after a hit it is as solid as when it
+ * moves, so a dust bunny cannot walk in under it and a token cannot roll
+ * through it. He is met in `bossContact`, which `step` calls next.
  */
 export function moveBoss(s: State, tune: Tune, sub: number, events: SimEvent[]): void {
   const b = s.boss;
   const room = s.room;
+  if (!solid(b)) return;
   if (b.mode === "lane") {
     b.x += b.dir * b.speed * sub;
     if (b.dir > 0 ? b.x + HALF_L >= room.right : b.x - HALF_L <= room.left) {
@@ -391,8 +394,6 @@ export function moveBoss(s: State, tune: Tune, sub: number, events: SimEvent[]):
     } else {
       b.y += target > b.y ? by : -by;
     }
-  } else {
-    return;
   }
   pushThings(s);
 }
