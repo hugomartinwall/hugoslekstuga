@@ -30,7 +30,8 @@ export type AimLine = {
   /**
    * Why it stops: on the first thing he would pop or hit (the polisher's
    * plug is thing 0); on the polisher, where he would bounce off its casing;
-   * on its pad, which throws him and costs a heart; at the cushion after the
+   * on its pad, which costs a heart and throws him (on his last heart the
+   * night ends there, and nothing throws him); at the cushion after the
    * last one it runs through; where he would land; or after `maxTicks`.
    */
   end: "thing" | "polisher" | "pad" | "cushion" | "land" | "time";
@@ -45,7 +46,7 @@ export type AimLine = {
    * the one on the lit plate that is its first cushion; "" for none.
    */
   charm: string;
-  /** The launch meets the pad after the line has ended (within the 120 ticks), and that will cost a heart. */
+  /** The launch meets the pad after the line has ended (within the 120 ticks), and that will cost a heart: his last one too. */
   padAfter: boolean;
 };
 
@@ -78,8 +79,16 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
       if (e.type === "offerTaken") {
         out.takes = e.item;
         out.charm = e.charm;
+      } else if (e.type === "hurt" && e.by === "polisher") {
+        // The pad takes a heart. It is read here and not off the throw, because on his last heart
+        // the night ends where he stands and nothing throws him: the heart that ends the night is shown too.
+        if (drawing) {
+          out.pts.push(e.x, e.y);
+          out.end = "pad";
+          drawing = false;
+        } else out.padAfter = true;
       } else if (!drawing) {
-        if (e.type === "bossThrow" && e.hurt) out.padAfter = true;
+        // The line has ended: the copy runs on only to see what the launch takes, and whether the pad takes a heart.
       } else if (e.type === "cushion") {
         if (out.plate < 0) {
           out.plate = e.plate;
@@ -108,6 +117,7 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
         out.end = "polisher";
         drawing = false;
       } else if (e.type === "bossThrow") {
+        // The pad throws him and takes no heart: he is invulnerable, hot with padHurtsHot off, or landed where the machine has just put him.
         out.pts.push(e.x, e.y);
         out.end = "pad";
         drawing = false;

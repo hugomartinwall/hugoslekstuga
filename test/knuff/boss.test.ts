@@ -829,6 +829,36 @@ describe("the aim line on the polisher", () => {
     s.things.length = 0;
     expect([aimLine(s, left, T).end, aimLine(s, left, T).padAfter]).toEqual(["pad", false]);
   });
+
+  it("warns of the pad on his last heart too, where the night ends and nothing throws him", () => {
+    // As above, with one heart left: the pad heading right in lane 3, its leading end at 150.
+    const s = landed();
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    him(s, 330, 212);
+    s.hearts = 1;
+    const left = { dx: -1, dy: 0, power: 1 };
+    // Straight at the pad: the line ends on it, where the real launch loses the heart that ends the night.
+    const line = aimLine(s, left, T);
+    expect([line.end, line.padAfter]).toEqual(["pad", false]);
+    const real = cloneState(s);
+    const ev = launchAnd(real, T, { launch: left, pullHeld: false }, () => real.phase === "over", 120);
+    const [hurt] = of(ev, "hurt");
+    expect([hurt.by, hurt.hearts, real.ended]).toEqual(["polisher", 0, "hearts"]);
+    expect(of(ev, "bossThrow")).toEqual([]);
+    expect(line.pts.slice(-2)).toEqual([hurt.x, hurt.y]);
+    // Through a dazed dust bunny and on into the pad: the line ends on the bunny, and says the pad comes after.
+    const d = put(s, "bunny", 260, 212, { dazedUntil: 1_000_000 });
+    const through = aimLine(s, left, T);
+    expect([through.end, through.hitId, through.padAfter]).toEqual(["thing", d.id, true]);
+    const real2 = cloneState(s);
+    const ev2 = launchAnd(real2, T, { launch: left, pullHeld: false }, () => real2.phase === "over", 120);
+    expect(of(ev2, "pop").map((e) => e.id)).toEqual([d.id]);
+    expect(of(ev2, "hurt").map((e) => [e.by, e.hearts])).toEqual([["polisher", 0]]);
+    expect(real2.ended).toBe("hearts");
+    // Invulnerable, the pad costs nothing and throws him: no warning.
+    s.him.invulnUntil = s.tick + 1000;
+    expect(aimLine(s, left, T).padAfter).toBe(false);
+  });
 });
 
 describe("he is never inside its box", () => {
