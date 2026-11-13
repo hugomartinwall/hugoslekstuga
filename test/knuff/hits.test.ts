@@ -1,0 +1,1034 @@
+import { describe, expect, it } from "vitest";
+import { DARK_PLATES } from "../../lib/knuff/content/charms";
+import { KINDS } from "../../lib/knuff/content/kinds";
+import { BOSS_HOUR } from "../../lib/knuff/content/night";
+import { BOSS_TELEGRAPH, boxOf, laneMiddle, overlapDepth } from "../../lib/knuff/sim/boss";
+import { createState, type StartOptions } from "../../lib/knuff/sim/state";
+import type { BossMode, SimEvent, State, Thing, Tune } from "../../lib/knuff/sim/types";
+import { distance, fire, night, of, put, run, shot, speedOf, tick, tuned, until } from "./room";
+
+/**
+ * What hits what (§5.3): one case for every cell of the table that can
+ * happen by now. The table's rows are the things that can hit, shove, daze
+ * or cost a heart; its columns are what they meet. A cell that says "—" is
+ * a case too: that nothing happens there is a rule.
+ *
+ * The money bag and the love heart come in step 5, the envelopes with
+ * them: their columns, and the envelope among "pops in one hit", are not
+ * here yet. "Pops in one hit" is the dust bunny and the token.
+ *
+ * Every room is set up by hand: nothing walks, drifts or rolls unless a
+ * case says so, every plate is dark unless a case lights one, and nothing
+ * is offered.
+ */
+
+const STILL = { bunnySpeed: 0, batterySpeed: 0, tokenSpeed: 0 };
+const T = tuned(STILL);
+const DARK: StartOptions = { plates: DARK_PLATES, offers: false };
+
+/** A night begun by hand in an empty room, him at the start, landed. */
+function room(tune: Tune = T, start: StartOptions = {}): State {
+  return night(tune, { ...DARK, ...start });
+}
+
+/** Put him somewhere, landed. */
+function stand(s: State, x: number, y: number): void {
+  const h = s.him;
+  h.x = x;
+  h.y = y;
+  h.px = x;
+  h.py = y;
+  h.vx = 0;
+  h.vy = 0;
+  h.hot = false;
+}
+
+/** A battery, landed, its fuse running out `fuse` ticks from now. */
+function battery(s: State, x: number, y: number, over: Partial<Thing> = {}, fuse = 300): Thing {
+  return put(s, "battery", x, y, { fuseTick: s.tick + fuse, ...over });
+}
+
+/** A battery he has knocked and that is flying, by hand: his, its blast this launch's. */
+function knocked(s: State, x: number, y: number, vx: number, vy: number, over: Partial<Thing> = {}): Thing {
+  return battery(s, x, y, { mine: true, knockTick: s.tick, launchId: Math.max(1, s.launch.id), fuseTick: s.tick + 48, vx, vy, ...over });
+}
+
+/** Light one plate with a wall charm. */
+function light(s: State, plate: number, charm: string): void {
+  s.plates[plate] = { charm, readyTick: 0 };
+}
+
+/** Is it still in the room? */
+const alive = (s: State, d: Thing) => s.things.includes(d) && d.hp > 0;
+
+/** Ticks until a battery bursts (at most `most`), and what happened. */
+function toBurst(s: State, tune: Tune, most = 400): SimEvent[] {
+  return until(s, tune, (e) => of(e, "burst").length > 0, most);
+}
+
+/** The tick a heart is lost in a one-tick blast, with him landed at `dist` u from a battery not his that goes off on the next tick. */
+function blastAt(dist: number, over: (s: State) => void = () => {}): { s: State; events: SimEvent[] } {
+  const s = room();
+  const b = battery(s, 180, 374 - dist, {}, 1);
+  over(s);
+  const events = run(s, T, 2);
+  expect(of(events, "burst").map((e) => e.id)).toEqual([b.id]);
+  return { s, events };
+}
+
+// ── The polisher, begun by hand as the boss suite begins it ───────────
+
+const QUIET = { ...STILL, bossTrickleTicks: 1_000_000, bossSpeed: 70 };
+const B = tuned(QUIET);
+
+/** 06:00 begun by hand, the machine landed, him out of its way. */
+function fight(tune: Tune = B): State {
+  const s = createState(1, tune, { hour: BOSS_HOUR, empty: true, kinds: ["polisher"], ...DARK });
+  s.phase = "boss";
+  tick(s, tune);
+  stand(s, 180, 300);
+  run(s, tune, BOSS_TELEGRAPH);
+  expect(s.boss.mode).toBe("lane");
+  return s;
+}
+
+function machine(s: State, o: { lane: number; x: number; dir?: 1 | -1; mode?: BossMode; until?: number; laneStep?: 1 | -1 }): void {
+  const b = s.boss;
+  b.lane = o.lane;
+  b.y = laneMiddle(s, o.lane);
+  b.x = o.x;
+  if (o.dir !== undefined) b.dir = o.dir;
+  if (o.mode !== undefined) b.mode = o.mode;
+  if (o.until !== undefined) b.modeUntil = o.until;
+  if (o.laneStep !== undefined) b.laneStep = o.laneStep;
+  b.px = b.x;
+  b.py = b.y;
+}
+
+// ── 1. His hot body, no cushion yet this launch ───────────────────────
+
+describe("his hot body, no cushion yet this launch", () => {
+  it("pops in one hit: a dust bunny or a token pops, and he flies on (rule 6)", () => {
+    for (const kind of ["bunny", "token"] as const) {
+      const s = room();
+      const d = put(s, kind, 180, 300);
+      const events = fire(s, T, shot(0, -1), 8);
+      const [pop] = of(events, "pop");
+      expect([pop.id, pop.source, pop.cushions, pop.points]).toEqual([d.id, "body", 1, KINDS[kind].points]);
+      expect(alive(s, d)).toBe(false);
+      expect(s.him.hot).toBe(true);
+      expect(s.him.vy).toBeLessThan(0);
+    }
+  });
+
+  it("a battery is knocked: it flies off along the line between the two centres at 0.9 of his speed along it, and it is his", () => {
+    const s = room();
+    // A little off his line, so the line between the centres is not his heading.
+    const b = battery(s, 186, 300);
+    const events = fire(s, T, shot(0, -1), 6);
+    const [k] = of(events, "knock");
+    expect(k.id).toBe(b.id);
+    const nx = (k.x - k.hx) / Math.hypot(k.x - k.hx, k.y - k.hy);
+    const ny = (k.y - k.hy) / Math.hypot(k.x - k.hx, k.y - k.hy);
+    // His velocity going in was straight up at `k.speed`: along the line, that is -ny of it.
+    const along = -k.speed * ny;
+    expect(k.vx).toBeCloseTo(0.9 * along * nx, 6);
+    expect(k.vy).toBeCloseTo(0.9 * along * ny, 6);
+    expect([b.mine, b.launchId, b.knockTick]).toEqual([true, s.launch.id, k.tick]);
+    // It bursts 48 ticks after the knock at the latest.
+    expect(b.fuseTick).toBe(k.tick + 48);
+    expect(k.until).toBe(k.tick + 48);
+    // It stopped drifting.
+    expect([b.wx, b.wy]).toEqual([0, 0]);
+    // He felt a light body's pop and flies on; a knock is a contact.
+    expect(s.him.hot).toBe(true);
+    expect(s.him.lastContactTick).toBe(k.tick);
+    expect(of(events, "pop")).toEqual([]);
+  });
+
+  it("gum with two hits left: one hit, 15 points, and he stops dead on it and lands, with the thump", () => {
+    const s = room();
+    const g = put(s, "gum", 180, 280);
+    const bunny = put(s, "bunny", 180 + 30, 296);
+    const events = fire(s, T, shot(0, -1), 20);
+    const [hit] = of(events, "hit");
+    expect([hit.kind, hit.id, hit.left, hit.points, hit.two, hit.source, hit.stop]).toEqual(["gum", g.id, 1, 15, false, "body", true]);
+    const [land] = of(events, "land");
+    expect(land.tick).toBe(hit.tick);
+    expect([land.x, land.y]).toEqual([hit.x, hit.y]);
+    expect(s.him.hot).toBe(false);
+    expect([s.him.vx, s.him.vy]).toEqual([0, 0]);
+    // On it: his circle overlaps its box.
+    expect(Math.abs(s.him.y - g.y)).toBeLessThan(13 + 6);
+    expect(g.hp).toBe(1);
+    expect(s.score).toBe(15);
+    // The thump dazed the dust bunny beside him.
+    expect(s.tick < bunny.dazedUntil).toBe(true);
+    // The hit that stops him is not a contact.
+    expect(s.him.lastContactTick).toBe(-1);
+  });
+
+  it("a gum stop leaves him at least one pip: with none, he is given one", () => {
+    const s = room();
+    put(s, "gum", 180, 280);
+    s.pips = 1;
+    const events = fire(s, T, shot(0, -1), 20);
+    expect(of(events, "pip").map((e) => [e.why, e.pips])).toEqual([["gum", 1]]);
+    expect(s.pips).toBe(1);
+    // With a pip in hand, nothing is given.
+    const t = room();
+    put(t, "gum", 180, 280);
+    t.pips = 2;
+    expect(of(fire(t, T, shot(0, -1), 12), "pip")).toEqual([]);
+    expect(t.pips).toBe(1);
+  });
+
+  it("gum with one hit left: it pops, 15 points, and he flies on unslowed", () => {
+    const s = room();
+    const g = put(s, "gum", 180, 280, { hp: 1 });
+    const events = tick(s, T, shot(0, -1));
+    let before = speedOf(s);
+    let hitTick = -1;
+    for (let i = 0; i < 10 && hitTick < 0; i++) {
+      before = speedOf(s);
+      const e = tick(s, T);
+      events.push(...e);
+      if (of(e, "hit").length > 0) hitTick = s.tick - 1;
+    }
+    const [hit] = of(events, "hit");
+    expect([hit.left, hit.points, hit.two, hit.stop]).toEqual([0, 15, false, false]);
+    expect(alive(s, g)).toBe(false);
+    // Unslowed: the tick's drag alone.
+    expect(speedOf(s)).toBeCloseTo(before * Math.exp(-T.dragK / 60) - T.friction / 60, 6);
+    expect(s.him.hot).toBe(true);
+    expect(s.him.lastContactTick).toBe(hitTick);
+  });
+
+  it("a pickup is taken, if the offer allows, and he is not slowed", () => {
+    const s = room();
+    run(s, T, 2);
+    const tile = put(s, "pickup", 180, 280, { landTick: 0 });
+    s.offer = { open: true, openTick: 1, armedTick: 1, items: [{ kind: "pickup", charm: "heavy", plate: -1, thingId: tile.id }] };
+    const events = fire(s, T, shot(0, -1), 10);
+    expect(of(events, "offerTaken").map((e) => e.charm)).toEqual(["heavy"]);
+    expect(s.charms).toEqual(["heavy"]);
+    expect(of(events, "pop")).toEqual([]);
+    // Not slowed: his speed is the open floor's.
+    const free = room();
+    fire(free, T, shot(0, -1), 10);
+    expect(speedOf(s)).toBeCloseTo(speedOf(free), 9);
+  });
+
+  it("the polisher's plug: one hit, only while it moves along a lane, and he bounces off", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 200, dir: 1 });
+    stand(s, 60, 212);
+    const events = tick(s, B, shot(1, 0));
+    events.push(...until(s, B, (e) => of(e, "hit").length > 0, 30));
+    const [hit] = of(events, "hit");
+    expect([hit.kind, hit.left, hit.points, hit.two]).toEqual(["polisher", 5, 200, false]);
+    expect(s.him.vx).toBeLessThan(0);
+    // Stalled, the same launch is a bounce off the casing.
+    const t = fight();
+    machine(t, { lane: 3, x: 200, dir: 1, mode: "hitStall", until: t.tick + 200 });
+    stand(t, 60, 212);
+    const ev = fire(t, B, shot(1, 0), 30);
+    expect(of(ev, "hit")).toEqual([]);
+    expect(of(ev, "bossBounce").map((e) => e.part)).toEqual(["casing"]);
+  });
+
+  it("the polisher's casing: he bounces as off a cushion, and it never counts as one", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 180, dir: 1, mode: "hitStall", until: s.tick + 200 });
+    stand(s, 180, 120);
+    const events = tick(s, B, shot(0, 1));
+    events.push(...until(s, B, (e) => of(e, "bossBounce").length > 0, 20));
+    const [bounce] = of(events, "bossBounce");
+    expect(bounce.part).toBe("casing");
+    expect(bounce.vy).toBeCloseTo(-0.84 * bounce.speed, 6);
+    expect(of(events, "cushion")).toEqual([]);
+    expect(s.launch.cushions).toBe(0);
+  });
+
+  it("him: nothing (his body does not meet itself)", () => {
+    const s = room();
+    const events = fire(s, T, shot(0, -1), 20);
+    expect(events.filter((e) => e.type === "hurt" || e.type === "pop" || e.type === "hit" || e.type === "knock")).toEqual([]);
+  });
+});
+
+// ── 2. His hot body, off a cushion ────────────────────────────────────
+
+describe("his hot body, off a cushion", () => {
+  /** He stands under the top cushion; a launch straight up bounces off plate 1 and comes back down the room. */
+  function banked(): State {
+    const s = room();
+    stand(s, 180, 60);
+    return s;
+  }
+
+  it("pops in one hit: the same, and the pop is multiplied by the cushion", () => {
+    const s = banked();
+    put(s, "bunny", 180, 150);
+    const events = fire(s, T, shot(0, -1), 20);
+    expect(of(events, "cushion")).toHaveLength(1);
+    const [pop] = of(events, "pop");
+    expect([pop.source, pop.cushions, pop.points]).toEqual(["body", 2, 20]);
+    expect(s.him.hot).toBe(true);
+  });
+
+  it("a battery: the same, it is knocked and it is his", () => {
+    const s = banked();
+    const b = battery(s, 180, 150);
+    const events = fire(s, T, shot(0, -1), 20);
+    expect(of(events, "cushion")).toHaveLength(1);
+    expect(of(events, "knock").map((e) => e.id)).toEqual([b.id]);
+    expect(b.mine).toBe(true);
+    // Straight down the room, at 0.9 of his speed going in.
+    const [k] = of(events, "knock");
+    expect(k.vx).toBeCloseTo(0, 9);
+    expect(k.vy).toBeCloseTo(0.9 * k.speed, 6);
+  });
+
+  it("gum with two left: the hit counts as two, it pops at once, 30 points, and he flies on", () => {
+    const s = banked();
+    const g = put(s, "gum", 180, 150);
+    const events = fire(s, T, shot(0, -1), 20);
+    const [hit] = of(events, "hit");
+    expect([hit.left, hit.points, hit.two, hit.stop, hit.source]).toEqual([0, 30, true, false, "body"]);
+    expect(alive(s, g)).toBe(false);
+    expect(of(events, "land")).toEqual([]);
+    expect(s.him.hot).toBe(true);
+    expect(s.score).toBe(30);
+  });
+
+  it("gum with one left: off a cushion it takes the one hit point there is, and pays once", () => {
+    const s = banked();
+    put(s, "gum", 180, 150, { hp: 1 });
+    const [hit] = of(fire(s, T, shot(0, -1), 20), "hit");
+    expect([hit.left, hit.points, hit.two]).toEqual([0, 15, true]);
+  });
+
+  it("a pickup: the same, it is taken", () => {
+    const s = banked();
+    run(s, T, 2);
+    const tile = put(s, "pickup", 180, 150, { landTick: 0 });
+    s.offer = { open: true, openTick: 1, armedTick: 1, items: [{ kind: "pickup", charm: "wide", plate: -1, thingId: tile.id }] };
+    const events = fire(s, T, shot(0, -1), 20);
+    expect(of(events, "cushion")).toHaveLength(1);
+    expect(of(events, "offerTaken").map((e) => e.charm)).toEqual(["wide"]);
+  });
+
+  it("the polisher's plug: two hits", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 220, dir: 1 });
+    // Against the left cushion, he bounces off it first and then meets the plug.
+    stand(s, 60, 212);
+    const events = fire(s, B, shot(-1, 0), 40);
+    expect(of(events, "cushion").map((e) => e.side)).toEqual(["left"]);
+    const [hit] = of(events, "hit");
+    expect([hit.left, hit.points, hit.two]).toEqual([4, 400, true]);
+  });
+});
+
+// ── 3. Spark's ring ───────────────────────────────────────────────────
+
+describe("Spark's ring (it only exists after a cushion)", () => {
+  /** Spark on plate 1: a launch straight up from under it bounces off it and comes back down with the ring on. */
+  function sparked(): State {
+    const s = room();
+    light(s, 1, "spark");
+    stand(s, 180, 60);
+    return s;
+  }
+  /** Off his line by more than his body and less than the ring: 13 u + 6 u. */
+  const SIDE = 180 + 13 + 6;
+
+  /** The launch, a tick at a time: how near his edge came to `gap(s)`'s thing while the ring was on. */
+  function nearest(s: State, gap: (s: State) => number, ticks = 20): { events: SimEvent[]; closest: number } {
+    const events = tick(s, T, shot(0, -1));
+    let closest = Infinity;
+    for (let i = 0; i < ticks; i++) {
+      events.push(...tick(s, T));
+      if (s.him.hot && s.tick < s.launch.sparkUntil) closest = Math.min(closest, gap(s));
+    }
+    return { events, closest };
+  }
+
+  it("pops in one hit: it pops and counts in his chain, it is not a body pop, he feels nothing, and it is a contact", () => {
+    const s = sparked();
+    const d = put(s, "bunny", SIDE + 8, 150);
+    const events = fire(s, T, shot(0, -1), 20);
+    const [pop] = of(events, "pop");
+    expect([pop.id, pop.source, pop.n]).toEqual([d.id, "spark", 1]);
+    expect(s.launch.pops).toBe(1);
+    expect(s.launch.bodyPops).toBe(0);
+    expect(s.him.vx).toBe(0);
+    expect(s.him.lastContactTick).toBe(pop.tick);
+  });
+
+  it("a battery: nothing (the ring does not knock it)", () => {
+    const s = sparked();
+    const b = battery(s, SIDE + 10, 150);
+    const { events, closest } = nearest(s, (s) => distance(s, b) - 13 - 10);
+    // The ring passed over it: it came within the ring's reach and stayed out of his body's.
+    expect(closest).toBeGreaterThan(0);
+    expect(closest).toBeLessThan(12);
+    expect(of(events, "knock")).toEqual([]);
+    expect(b.mine).toBe(false);
+    expect([b.vx, b.vy]).toEqual([0, 0]);
+  });
+
+  it("gum: one hit that counts as two, and it pops", () => {
+    const s = sparked();
+    // The box's near edge 6 u past his edge.
+    const g = put(s, "gum", SIDE + 14, 150);
+    const events = fire(s, T, shot(0, -1), 20);
+    const [hit] = of(events, "hit");
+    expect([hit.id, hit.source, hit.two, hit.left, hit.points, hit.stop]).toEqual([g.id, "spark", true, 0, 30, false]);
+    expect(alive(s, g)).toBe(false);
+    expect(s.him.hot).toBe(true);
+  });
+
+  it("a pickup: nothing (only his body takes one)", () => {
+    const s = sparked();
+    run(s, T, 2);
+    const tile = put(s, "pickup", SIDE + 18, 150, { landTick: 0 });
+    s.offer = { open: true, openTick: 1, armedTick: 1, items: [{ kind: "pickup", charm: "heavy", plate: -1, thingId: tile.id }] };
+    // His edge to the tile's near side.
+    const { events, closest } = nearest(s, (s) => tile.x - 18 - s.him.x - 13);
+    expect(closest).toBeGreaterThan(0);
+    expect(closest).toBeLessThan(12);
+    expect(of(events, "offerTaken")).toEqual([]);
+    expect(s.offer.open).toBe(true);
+  });
+
+  it("the polisher: nothing (the ring is never a plug hit)", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 200, dir: 1 });
+    stand(s, 140 - 15.3, 260);
+    const events = tick(s, B, shot(0, -1));
+    s.launch.sparkUntil = s.tick + 48;
+    events.push(...run(s, B, 12));
+    expect(of(events, "hit")).toEqual([]);
+    expect(s.boss.hp).toBe(B.bossHits);
+  });
+});
+
+// ── 4. The landing thump ──────────────────────────────────────────────
+
+describe("the landing thump", () => {
+  /** A half-power launch straight up lands him after a short flight; things are put round where he lands. */
+  function landing(put: (s: State, x: number, y: number) => void): { s: State; events: SimEvent[] } {
+    const probe = room();
+    fire(probe, T, shot(0, -1, 0.5), 40);
+    const s = room();
+    put(s, probe.him.x, probe.him.y);
+    const events = fire(s, T, shot(0, -1, 0.5), 40);
+    expect([s.him.x, s.him.y]).toEqual([probe.him.x, probe.him.y]);
+    return { s, events };
+  }
+
+  it("dust bunnies within 40 u are dazed 36 ticks; a token is not dazed and not turned", () => {
+    let bunny: Thing | null = null;
+    let token: Thing | null = null;
+    const { s, events } = landing((s, x, y) => {
+      bunny = put(s, "bunny", x + 30, y);
+      token = put(s, "token", x - 30, y, { vx: 0, vy: 0 });
+    });
+    const [land] = of(events, "land");
+    expect(land.dazed).toBe(1);
+    expect(bunny!.dazedUntil).toBe(land.tick + 36);
+    expect(token!.dazedUntil).toBe(0);
+    expect(s.things.length).toBe(2);
+  });
+
+  it("a battery: nothing (not dazed, not moved)", () => {
+    let b: Thing | null = null;
+    landing((s, x, y) => {
+      b = battery(s, x + 30, y);
+    });
+    expect(b!.dazedUntil).toBe(0);
+    expect([b!.vx, b!.vy]).toEqual([0, 0]);
+  });
+
+  it("gum: nothing", () => {
+    let g: Thing | null = null;
+    landing((s, x, y) => {
+      g = put(s, "gum", x + 30, y);
+    });
+    expect([g!.hp, g!.dazedUntil]).toEqual([2, 0]);
+  });
+
+  it("the polisher: nothing, and him: he has landed", () => {
+    const s = fight();
+    machine(s, { lane: 1, x: 180, dir: 1, mode: "hitStall", until: s.tick + 200 });
+    stand(s, 180, 400);
+    const before = { ...s.boss };
+    const events = fire(s, B, shot(0, -1, 0.5), 40);
+    expect(of(events, "land")).toHaveLength(1);
+    expect(s.him.hot).toBe(false);
+    expect([s.boss.x, s.boss.y, s.boss.hp]).toEqual([before.x, before.y, before.hp]);
+  });
+});
+
+// ── 5. The wave of a lost heart ───────────────────────────────────────
+
+describe("the wave of a lost heart", () => {
+  /** A dust bunny touching him while he is landed costs a heart on the first tick; the wave goes out from him. */
+  function hurt(over: (s: State) => void, tune: Tune = T): { s: State; events: SimEvent[] } {
+    const s = room(tune);
+    put(s, "bunny", 180, 374 - 20);
+    over(s);
+    const events = run(s, tune, 1);
+    expect(of(events, "hurt")).toHaveLength(1);
+    return { s, events };
+  }
+
+  it("dust bunnies within 90 u are thrown straight away at 260 u/s; tokens are turned to roll straight away", () => {
+    let d: Thing | null = null;
+    let t: Thing | null = null;
+    hurt(
+      (s) => {
+        d = put(s, "bunny", 180 + 60, 374);
+        t = put(s, "token", 180 - 60, 374, { vx: 150, vy: 0 });
+      },
+      tuned({ ...STILL, tokenSpeed: 150 }),
+    );
+    // Thrown at 260 u/s, and slowed by the tick's own drag as a knocked thing is.
+    expect(d!.vx).toBeCloseTo(260 * Math.exp(-T.lightDragK / 60) - T.lightFriction / 60, 6);
+    expect(d!.vy).toBeCloseTo(0, 9);
+    expect(t!.vx).toBeCloseTo(-150, 6);
+  });
+
+  it("a battery is thrown straight away at 260 u/s; its timers are unchanged and it does not become his", () => {
+    let b: Thing | null = null;
+    const { s } = hurt((s) => {
+      b = battery(s, 180, 374 + 60);
+    });
+    const fuse = b!.fuseTick;
+    expect(b!.vx).toBeCloseTo(0, 9);
+    expect(b!.vy).toBeCloseTo(260 * Math.exp(-T.lightDragK / 60) - T.lightFriction / 60, 6);
+    expect([b!.fuseTick, b!.knockTick, b!.mine, b!.launchId]).toEqual([fuse, -1, false, -1]);
+    // Thrown, not knocked: it bounces off a cushion and does not burst there.
+    const events = run(s, T, 30);
+    expect(of(events, "burst")).toEqual([]);
+    expect(of(events, "cushion")).toEqual([]);
+    expect(b!.vy).toBeLessThan(0);
+  });
+
+  it("gum: nothing", () => {
+    let g: Thing | null = null;
+    hurt((s) => {
+      g = put(s, "gum", 180 + 40, 374);
+    });
+    expect([g!.x, g!.y, g!.vx, g!.vy, g!.hp]).toEqual([220, 374, 0, 0, 2]);
+  });
+
+  it("a pickup: nothing; him: invulnerable 72 ticks and his pips refilled", () => {
+    let tile: Thing | null = null;
+    const { s } = hurt((s) => {
+      tile = put(s, "pickup", 180 + 50, 374, { landTick: 0 });
+      s.pips = 0;
+    });
+    expect([tile!.x, tile!.y]).toEqual([230, 374]);
+    expect(s.him.invulnUntil).toBe(s.tick - 1 + 72);
+    expect(s.pips).toBe(3);
+  });
+
+  it("the polisher: nothing", () => {
+    const s = fight();
+    machine(s, { lane: 5, x: 180, dir: 1, mode: "hitStall", until: s.tick + 200 });
+    stand(s, 180, 120);
+    put(s, "bunny", 180, 120 + 20);
+    const before = [s.boss.x, s.boss.y];
+    const events = run(s, B, 1);
+    expect(of(events, "hurt")).toHaveLength(1);
+    expect([s.boss.x, s.boss.y]).toEqual(before);
+  });
+});
+
+// ── 6. Bell ───────────────────────────────────────────────────────────
+
+describe("Bell", () => {
+  function rung(over: (s: State) => void): { s: State; events: SimEvent[] } {
+    const s = room();
+    light(s, 1, "bell");
+    stand(s, 180, 60);
+    over(s);
+    const events = fire(s, T, shot(0, -1), 4);
+    expect(of(events, "cushion").map((e) => e.charm)).toEqual(["bell"]);
+    return { s, events };
+  }
+
+  it("dust bunnies and tokens, all of them in the room: dazed 36 ticks", () => {
+    let d: Thing | null = null;
+    let t: Thing | null = null;
+    const { events } = rung((s) => {
+      d = put(s, "bunny", 40, 440);
+      t = put(s, "token", 320, 440);
+    });
+    const [c] = of(events, "cushion");
+    expect([d!.dazedUntil, t!.dazedUntil]).toEqual([c.tick + 36, c.tick + 36]);
+  });
+
+  it("a battery and gum: nothing", () => {
+    let b: Thing | null = null;
+    let g: Thing | null = null;
+    rung((s) => {
+      b = battery(s, 40, 440);
+      g = put(s, "gum", 320, 440);
+    });
+    expect([b!.dazedUntil, g!.dazedUntil, g!.hp]).toEqual([0, 0, 2]);
+  });
+});
+
+// ── 7. A blast of his ─────────────────────────────────────────────────
+
+describe("a blast of his (70 u)", () => {
+  /** His battery, at rest, going off on the next tick; him landed far from it. */
+  function his(x = 180, y = 150): { s: State; b: Thing } {
+    const s = room();
+    stand(s, 180, 440);
+    const b = battery(s, x, y, { mine: true, knockTick: 0, launchId: 1 }, 1);
+    return { s, b };
+  }
+
+  it("pops what pops in one hit, at twice its points, flat; not in his chain, not a body pop, not a contact", () => {
+    const { s, b } = his();
+    const d = put(s, "bunny", 180 + 50, 150);
+    const t = put(s, "token", 180, 150 - 69);
+    const far = put(s, "bunny", 180 + 71, 150);
+    const events = run(s, T, 2);
+    const [burst] = of(events, "burst");
+    expect([burst.id, burst.mine, burst.pops]).toEqual([b.id, true, 2]);
+    expect(of(events, "pop").map((e) => [e.id, e.source, e.points, e.n, e.chain, e.cushions])).toEqual([
+      [d.id, "blast", 20, 0, 1, 1],
+      [t.id, "blast", 50, 0, 1, 1],
+    ]);
+    expect(alive(s, far)).toBe(true);
+    // 40 for the battery that went off as his, and the pops.
+    expect(burst.points).toBe(40 + 20 + 50);
+    expect(s.score).toBe(110);
+    expect([s.launch.pops, s.launch.bodyPops]).toEqual([0, 0]);
+    expect(s.him.lastContactTick).toBe(-1);
+    expect(alive(s, b)).toBe(false);
+  });
+
+  it("a battery is set off 12 ticks later, and it becomes his, its blast the same launch's", () => {
+    const { s, b } = his();
+    const other = battery(s, 180 + 60, 150);
+    const events = run(s, T, 2);
+    const [burst] = of(events, "burst");
+    expect(burst.set).toBe(1);
+    expect([other.fuseTick, other.mine, other.launchId]).toEqual([burst.tick + 12, true, b.launchId]);
+    const next = toBurst(s, T, 20);
+    const [second] = of(next, "burst");
+    expect([second.id, second.tick, second.mine, second.why, second.launchId]).toEqual([other.id, burst.tick + 12, true, "chain", 1]);
+    // Each battery that goes off as his pays 40.
+    expect(s.score).toBe(80);
+  });
+
+  it("gum: one hit, never two (off a cushion or not), 15 points", () => {
+    const { s } = his();
+    const g = put(s, "gum", 180 + 40, 150);
+    s.launch = { ...s.launch, id: 1, active: true, cushions: 2, lastCushionTick: 0 };
+    const events = run(s, T, 2);
+    const [hit] = of(events, "hit");
+    expect([hit.id, hit.source, hit.left, hit.points, hit.two]).toEqual([g.id, "blast", 1, 15, false]);
+    expect(of(events, "burst")[0].points).toBe(40 + 15);
+  });
+
+  it("a pickup: nothing", () => {
+    const { s } = his();
+    const tile = put(s, "pickup", 180 + 30, 150, { landTick: 0 });
+    run(s, T, 2);
+    expect(alive(s, tile)).toBe(true);
+  });
+
+  it("the polisher: nothing (a blast is never a plug hit)", () => {
+    const s = fight();
+    machine(s, { lane: 1, x: 180, dir: 1, mode: "lane" });
+    stand(s, 180, 440);
+    battery(s, 180 - 60 - 5, laneMiddle(s, 1), { mine: true, knockTick: 0, launchId: 1, vx: 0, vy: 0 }, 1);
+    const events = run(s, B, 2);
+    expect(of(events, "burst")).toHaveLength(1);
+    expect(of(events, "hit")).toEqual([]);
+    expect(s.boss.hp).toBe(B.bossHits);
+  });
+
+  it("him: nothing, ever (his own blast never hurts him), landed in it or not", () => {
+    const { s } = his(180, 440 - 20);
+    const events = run(s, T, 2);
+    expect(of(events, "burst")).toHaveLength(1);
+    expect(of(events, "hurt")).toEqual([]);
+    expect(s.hearts).toBe(3);
+  });
+});
+
+// ── 8. A blast that is not his ────────────────────────────────────────
+
+describe("a blast that is not his (70 u)", () => {
+  it("pops nothing, and pays nothing", () => {
+    const s = room();
+    stand(s, 180, 440);
+    const d = put(s, "bunny", 180 + 30, 150);
+    const t = put(s, "token", 180 - 30, 150);
+    battery(s, 180, 150, {}, 1);
+    const events = run(s, T, 2);
+    const [burst] = of(events, "burst");
+    expect([burst.mine, burst.pops, burst.points, burst.launchId]).toEqual([false, 0, 0, -1]);
+    expect(of(events, "pop")).toEqual([]);
+    expect([alive(s, d), alive(s, t)]).toEqual([true, true]);
+    expect(s.score).toBe(0);
+  });
+
+  it("a battery is set off 12 ticks later, and its owner does not change", () => {
+    const s = room();
+    stand(s, 180, 440);
+    battery(s, 180, 150, {}, 1);
+    const notHis = battery(s, 180 + 50, 150);
+    const hisToo = battery(s, 180 - 50, 150, { mine: true, knockTick: 0, launchId: 7, fuseTick: 400 });
+    const events = run(s, T, 2);
+    const [burst] = of(events, "burst");
+    expect(burst.set).toBe(2);
+    expect([notHis.fuseTick, notHis.mine, notHis.launchId]).toEqual([burst.tick + 12, false, -1]);
+    expect([hisToo.fuseTick, hisToo.mine, hisToo.launchId]).toEqual([burst.tick + 12, true, 7]);
+  });
+
+  it("gum and a pickup: nothing", () => {
+    const s = room();
+    stand(s, 180, 440);
+    const g = put(s, "gum", 180 + 30, 150);
+    const tile = put(s, "pickup", 180 - 30, 150, { landTick: 0 });
+    battery(s, 180, 150, {}, 1);
+    run(s, T, 2);
+    expect(g.hp).toBe(2);
+    expect(alive(s, tile)).toBe(true);
+  });
+
+  it("the polisher: nothing", () => {
+    const s = fight();
+    machine(s, { lane: 1, x: 180, dir: 1, mode: "lane" });
+    stand(s, 180, 440);
+    battery(s, 180 - 60 - 15, laneMiddle(s, 1), {}, 1);
+    const before = [s.boss.hp, s.boss.mode];
+    const events = run(s, B, 2);
+    expect(of(events, "burst")).toHaveLength(1);
+    expect([s.boss.hp, s.boss.mode]).toEqual(before);
+  });
+
+  it("him: it costs a heart while he is landed, not invulnerable, and his centre within 70 u", () => {
+    const { s, events } = blastAt(70);
+    const [hurt] = of(events, "hurt");
+    expect([hurt.by, hurt.blast, hurt.hearts]).toEqual(["battery", true, 2]);
+    expect(of(events, "burst")[0].hurt).toBe(true);
+    expect(s.lastHurtBy).toBe("battery");
+    // Its wave goes out from him, and his pips are refilled, as for any lost heart.
+    expect(s.him.invulnUntil).toBe(hurt.tick + 72);
+  });
+
+  it("him: not 70.5 u from it; not while he is invulnerable; not while he is hot", () => {
+    expect(of(blastAt(70.5).events, "hurt")).toEqual([]);
+    expect(of(blastAt(30, (s) => (s.him.invulnUntil = s.tick + 10)).events, "hurt")).toEqual([]);
+    // Flying: he is released on the tick before it goes off, and it goes off on the next.
+    const s = room();
+    battery(s, 180 + 40, 374, {}, 2);
+    const events = fire(s, T, shot(0, -1, 0.6), 3);
+    expect(of(events, "burst")).toHaveLength(1);
+    expect(of(events, "hurt")).toEqual([]);
+    expect(distance(s, { x: 220, y: 374 })).toBeLessThan(70);
+  });
+
+  it("him: not from a battery that is dazed when it goes off (§5.2 rule 9: a dazed thing cannot cost a heart)", () => {
+    const { events } = blastAt(40, (s) => {
+      s.things[0].dazedUntil = s.tick + 30;
+    });
+    expect(of(events, "burst")[0].hurt).toBe(false);
+    expect(of(events, "hurt")).toEqual([]);
+  });
+});
+
+// ── 9. A knocked battery in flight ────────────────────────────────────
+
+describe("a knocked battery in flight", () => {
+  /** Him landed down the room; the battery flies right across it at 400 u/s. */
+  function flying(): { s: State; b: Thing } {
+    const s = room();
+    stand(s, 180, 440);
+    const b = knocked(s, 60, 200, 400, 0);
+    return { s, b };
+  }
+
+  it("bursts the moment it touches a dust bunny, or a token", () => {
+    for (const kind of ["bunny", "token"] as const) {
+      const { s, b } = flying();
+      const d = put(s, kind, 160, 200);
+      const events = toBurst(s, T, 30);
+      const [burst] = of(events, "burst");
+      expect([burst.id, burst.why, burst.mine]).toEqual([b.id, "touch", true]);
+      // It burst where it touched, and its blast popped what it touched.
+      expect(Math.hypot(burst.x - d.x, burst.y - d.y)).toBeLessThan(10 + KINDS[kind].radius);
+      expect(Math.hypot(burst.x - d.x, burst.y - d.y)).toBeGreaterThan(10 + KINDS[kind].radius - 400 / 60);
+      expect(of(events, "pop").map((e) => [e.id, e.source])).toEqual([[d.id, "blast"]]);
+    }
+  });
+
+  it("bursts on touching another battery, which is set off 12 ticks later and becomes his", () => {
+    const { s, b } = flying();
+    const other = battery(s, 160, 200);
+    const events = toBurst(s, T, 30);
+    const [burst] = of(events, "burst");
+    expect([burst.id, burst.why]).toEqual([b.id, "touch"]);
+    expect([other.mine, other.launchId, other.fuseTick]).toEqual([true, b.launchId, burst.tick + 12]);
+  });
+
+  it("passes over gum, and over a pickup", () => {
+    const { s, b } = flying();
+    const g = put(s, "gum", 90, 200);
+    const tile = put(s, "pickup", 130, 200, { landTick: 0 });
+    const events = run(s, T, 34);
+    // It is past both, still flying (a knocked thing slows as the toy's dummies do), and neither is touched.
+    expect(b.x).toBeGreaterThan(130 + 18 + 10);
+    expect(b.vx).toBeGreaterThan(0);
+    expect(of(events, "burst")).toEqual([]);
+    expect(g.hp).toBe(2);
+    expect(alive(s, tile)).toBe(true);
+  });
+
+  it("bursts on touching the polisher", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 240, dir: 1, mode: "hitStall", until: s.tick + 300 });
+    stand(s, 180, 440);
+    const b = knocked(s, 60, laneMiddle(s, 3), 400, 0);
+    const events = toBurst(s, B, 30);
+    const [burst] = of(events, "burst");
+    expect([burst.id, burst.why]).toEqual([b.id, "touch"]);
+    // At the casing, and the machine is not hit.
+    expect(Math.abs(burst.x - (boxOf(s.boss).x0 - 10))).toBeLessThan(400 / 60);
+    expect(s.boss.hp).toBe(B.bossHits);
+  });
+
+  it("him: nothing (it is his): it passes him, landed, and costs no heart", () => {
+    const s = room();
+    stand(s, 180, 200);
+    const b = knocked(s, 120, 200, 400, 0, { fuseTick: s.tick + 200, knockTick: s.tick - 1 });
+    const events = run(s, T, 40);
+    expect(b.x).toBeGreaterThan(180 + 23);
+    expect(of(events, "hurt")).toEqual([]);
+    expect([s.him.x, s.him.y]).toEqual([180, 200]);
+  });
+});
+
+// ── 10. A cushion ─────────────────────────────────────────────────────
+
+describe("a cushion", () => {
+  it("a token mirrors off it; a shoved dust bunny bounces", () => {
+    const s = room(tuned({ bunnySpeed: 0, batterySpeed: 0 }));
+    const t = put(s, "token", 340, 200, { vx: 150, vy: 0 });
+    const d = put(s, "bunny", 340, 300, { vx: 200, vy: 0 });
+    run(s, T, 8);
+    expect(t.vx).toBe(-150);
+    expect(d.vx).toBeLessThan(0);
+  });
+
+  it("a knocked battery bursts on it; a shoved one bounces", () => {
+    const s = room();
+    stand(s, 180, 440);
+    const b = knocked(s, 320, 200, 400, 0);
+    const events = toBurst(s, T, 20);
+    expect(of(events, "burst").map((e) => [e.id, e.why])).toEqual([[b.id, "touch"]]);
+    expect(of(events, "burst")[0].x).toBe(352 - 10);
+    const t = room();
+    stand(t, 180, 440);
+    const shoved = battery(t, 320, 200, { vx: 260, vy: 0 });
+    const ev = run(t, T, 10);
+    expect(of(ev, "burst")).toEqual([]);
+    expect(shoved.vx).toBeLessThan(0);
+  });
+
+  it("gum: nothing", () => {
+    const s = room();
+    const g = put(s, "gum", 352 - 14, 200);
+    run(s, T, 10);
+    expect([g.x, g.y, g.hp]).toEqual([338, 200, 2]);
+  });
+
+  it("the polisher stalls at it and changes lane", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 352 - 60 - 1, dir: 1 });
+    stand(s, 60, 440);
+    const events = run(s, B, 4);
+    expect(of(events, "bossStall").map((e) => e.why)).toEqual(["wall"]);
+    const more = run(s, B, 60);
+    expect(of(more, "bossLane")).toHaveLength(1);
+  });
+
+  it("him: he bounces, and the plate fires", () => {
+    const s = room();
+    light(s, 1, "pip");
+    stand(s, 180, 60);
+    s.pips = 1;
+    const events = fire(s, T, shot(0, -1), 4);
+    const [c] = of(events, "cushion");
+    expect([c.side, c.plate, c.charm]).toEqual(["top", 1, "pip"]);
+    expect(s.him.vy).toBeGreaterThan(0);
+  });
+});
+
+// ── 11. Touching him while he is landed ───────────────────────────────
+
+describe("touching him while he is landed", () => {
+  it("pops in one hit: costs a heart; dazed, or with him invulnerable, it is held at arm's length and a token bounces off", () => {
+    for (const kind of ["bunny", "token"] as const) {
+      const s = room();
+      put(s, kind, 180, 374 - 18);
+      expect(of(run(s, T, 1), "hurt").map((e) => e.by)).toEqual([kind]);
+      const dazed = room();
+      const d = put(dazed, kind, 180, 374 - 18, { dazedUntil: 10 });
+      expect(of(run(dazed, T, 1), "hurt")).toEqual([]);
+      expect(distance(dazed, d)).toBeCloseTo(13 + KINDS[kind].radius, 9);
+    }
+    const s = room();
+    s.him.invulnUntil = 50;
+    const t = put(s, "token", 180, 374 - 25, { vx: 0, vy: 150 });
+    run(s, tuned({ bunnySpeed: 0 }), 3);
+    expect(s.hearts).toBe(3);
+    expect(t.vy).toBe(-150);
+  });
+
+  it("a battery: costs a heart, unless it is his, it is dazed, or he is invulnerable", () => {
+    const s = room();
+    const b = battery(s, 180, 374 - 22);
+    const [hurt] = of(run(s, T, 1), "hurt");
+    expect([hurt.by, hurt.id, hurt.blast]).toEqual(["battery", b.id, false]);
+    const mine = room();
+    const m = battery(mine, 180, 374 - 22, { mine: true, launchId: 1 });
+    expect(of(run(mine, T, 3), "hurt")).toEqual([]);
+    // His passes him: it is not held at arm's length.
+    expect(distance(mine, m)).toBe(22);
+    const dazed = room();
+    const d = battery(dazed, 180, 374 - 22, { dazedUntil: 10 });
+    expect(of(run(dazed, T, 1), "hurt")).toEqual([]);
+    expect(distance(dazed, d)).toBeCloseTo(23, 9);
+    const safe = room();
+    safe.him.invulnUntil = 10;
+    battery(safe, 180, 374 - 22);
+    expect(of(run(safe, T, 1), "hurt")).toEqual([]);
+  });
+
+  it("gum and a pickup: nothing", () => {
+    const s = room();
+    put(s, "gum", 180, 374);
+    put(s, "pickup", 180 + 20, 374, { landTick: 0 });
+    expect(of(run(s, T, 30), "hurt")).toEqual([]);
+    expect(s.hearts).toBe(3);
+  });
+
+  it("the polisher's casing pushes him, and never hurts him", () => {
+    const s = fight();
+    machine(s, { lane: 6, x: 352 - 60, dir: 1, mode: "laneMove", laneStep: 1 });
+    stand(s, 352 - 13, 472 - 13);
+    const events = run(s, B, 60);
+    expect(of(events, "hurt")).toEqual([]);
+    expect(s.him.x).toBeLessThan(352 - 13);
+    expect(overlapDepth(s.boss, s.him.x, s.him.y, 13)).toBe(0);
+  });
+});
+
+// ── 12. The polisher's pad ────────────────────────────────────────────
+
+describe("the polisher's pad", () => {
+  it("pushes dust bunnies aside; a token bounces off it", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    stand(s, 180, 440);
+    const d = put(s, "bunny", 155, 212);
+    const t = put(s, "token", 152, 200, { vx: -150, vy: 0 });
+    run(s, tuned({ ...QUIET, tokenSpeed: 150 }), 30);
+    expect(d.x).toBeGreaterThan(boxOf(s.boss).x1);
+    expect(t.vx).toBeGreaterThan(0);
+  });
+
+  it("pushes a battery aside", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    stand(s, 180, 440);
+    const b = battery(s, 155, 212);
+    const events = run(s, B, 30);
+    expect(overlapDepth(s.boss, b.x, b.y, 10)).toBe(0);
+    expect(b.x).toBeGreaterThan(boxOf(s.boss).x1);
+    expect(of(events, "burst")).toEqual([]);
+  });
+
+  it("gum and a pickup: nothing (they lie where they lie)", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    stand(s, 180, 440);
+    const g = put(s, "gum", 170, 212);
+    const tile = put(s, "pickup", 220, 212, { landTick: 0 });
+    run(s, B, 60);
+    expect([g.x, g.y, g.hp]).toEqual([170, 212, 2]);
+    expect([tile.x, tile.y]).toEqual([220, 212]);
+  });
+
+  it("him: it throws him, hot or landed, invulnerable or not, and costs a heart unless he is invulnerable", () => {
+    const s = fight();
+    machine(s, { lane: 3, x: 90, dir: 1 });
+    stand(s, 150 + 13 + 0.5, 212);
+    const events = run(s, B, 3);
+    expect(of(events, "hurt").map((e) => e.by)).toEqual(["polisher"]);
+    expect(of(events, "bossThrow").map((e) => e.hurt)).toEqual([true]);
+    const safe = fight();
+    machine(safe, { lane: 3, x: 90, dir: 1 });
+    stand(safe, 150 + 13 + 0.5, 212);
+    safe.him.invulnUntil = safe.tick + 50;
+    const ev = run(safe, B, 3);
+    expect(of(ev, "hurt")).toEqual([]);
+    expect(of(ev, "bossThrow").map((e) => e.hurt)).toEqual([false]);
+  });
+});
+
+// ── 13. The polisher changing lane, or landing at 06:00 ───────────────
+
+describe("the polisher changing lane, or landing at 06:00", () => {
+  it("dust bunnies, tokens and batteries are pushed, never hurt; gum lies where it lies", () => {
+    const s = fight();
+    machine(s, { lane: 2, x: 120, dir: -1, mode: "laneMove", laneStep: 1 });
+    stand(s, 300, 440);
+    const lower = laneMiddle(s, 3);
+    const d = put(s, "bunny", 100, lower + 20);
+    const b = battery(s, 140, lower + 20);
+    const g = put(s, "gum", 120, lower);
+    const events = run(s, B, 70);
+    expect(s.boss.lane).toBe(3);
+    expect(overlapDepth(s.boss, d.x, d.y, 8)).toBe(0);
+    expect(overlapDepth(s.boss, b.x, b.y, 10)).toBe(0);
+    expect([alive(s, d), alive(s, b)]).toEqual([true, true]);
+    expect(of(events, "burst")).toEqual([]);
+    expect([g.x, g.y, g.hp]).toEqual([120, lower, 2]);
+  });
+
+  it("its landing pushes what is under it out, never hurt, a battery too", () => {
+    const s = createState(1, B, { hour: BOSS_HOUR, empty: true, kinds: ["polisher"], ...DARK });
+    s.phase = "boss";
+    tick(s, B);
+    stand(s, 300, 440);
+    const b = battery(s, s.boss.x + 20, s.boss.y);
+    const events = run(s, B, BOSS_TELEGRAPH);
+    expect(of(events, "bossArrive")).toHaveLength(1);
+    expect(overlapDepth(s.boss, b.x, b.y, 10)).toBe(0);
+    expect(alive(s, b)).toBe(true);
+  });
+
+  it("him: pushed, never hurt", () => {
+    const s = createState(1, B, { hour: BOSS_HOUR, empty: true, kinds: ["polisher"], ...DARK });
+    s.phase = "boss";
+    tick(s, B);
+    stand(s, s.boss.x, s.boss.y);
+    const events = run(s, B, BOSS_TELEGRAPH);
+    expect(of(events, "bossArrive")).toHaveLength(1);
+    expect(of(events, "hurt")).toEqual([]);
+    expect(overlapDepth(s.boss, s.him.x, s.him.y, 13)).toBe(0);
+  });
+});
