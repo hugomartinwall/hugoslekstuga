@@ -146,6 +146,23 @@ describe("his hot body, no cushion yet this launch", () => {
     expect(of(events, "pop")).toEqual([]);
   });
 
+  it("a battery knocked again: sent off along the new line, its blast this launch's, and its 48 ticks not restarted", () => {
+    const s = room();
+    run(s, T, 40);
+    // Knocked 30 ticks ago by launch 1, it has come to rest in his path: 18 ticks of its knock's time are left.
+    s.launch = { ...s.launch, id: 1 };
+    const b = battery(s, 180, 300, { mine: true, knockTick: s.tick - 30, launchId: 1, fuseTick: s.tick + 18 });
+    const until = b.fuseTick;
+    const events = fire(s, T, shot(0, -1), 6);
+    const [k] = of(events, "knock");
+    expect(k.id).toBe(b.id);
+    expect(k.vy).toBeLessThan(0);
+    expect([b.knockTick, b.fuseTick, k.until]).toEqual([until - 48, until, until]);
+    expect(b.launchId).toBe(2);
+    const burst = of(toBurst(s, T, 30), "burst");
+    expect(burst.map((e) => [e.id, e.tick])).toEqual([[b.id, until]]);
+  });
+
   it("gum with two hits left: one hit, 15 points, and he stops dead on it and lands, with the thump", () => {
     const s = room();
     const g = put(s, "gum", 180, 280);
@@ -1030,5 +1047,31 @@ describe("the polisher changing lane, or landing at 06:00", () => {
     expect(of(events, "bossArrive")).toHaveLength(1);
     expect(of(events, "hurt")).toEqual([]);
     expect(overlapDepth(s.boss, s.him.x, s.him.y, 13)).toBe(0);
+  });
+});
+
+// ── How a battery moves (5.4), which the table's rows lean on ─────────
+
+describe("a battery's drift", () => {
+  const D = tuned({ ...STILL, batterySpeed: 14 });
+
+  it("drifts straight toward him at 14 u/s; dazed, it stands still; his, it no longer drifts", () => {
+    const s = room(D);
+    const live = battery(s, 180 + 120, 374 - 160);
+    const dazed = battery(s, 40, 100, { dazedUntil: 30 });
+    const his = battery(s, 300, 440, { mine: true, launchId: 1, knockTick: 0, fuseTick: 400 });
+    const from = { x: live.x, y: live.y };
+    run(s, D, 20);
+    const moved = Math.hypot(live.x - from.x, live.y - from.y);
+    expect(moved).toBeCloseTo((14 * 20) / 60, 6);
+    // Along the bearing to him: it is no farther off the line from where it was to him than rounding.
+    const ux = (180 - from.x) / Math.hypot(180 - from.x, 374 - from.y);
+    const uy = (374 - from.y) / Math.hypot(180 - from.x, 374 - from.y);
+    expect((live.x - from.x) * uy - (live.y - from.y) * ux).toBeCloseTo(0, 6);
+    expect([dazed.x, dazed.y]).toEqual([40, 100]);
+    expect([his.x, his.y]).toEqual([300, 440]);
+    // When the daze ends it drifts on.
+    run(s, D, 20);
+    expect(Math.hypot(dazed.x - 40, dazed.y - 100)).toBeCloseTo((14 * (40 - 30)) / 60, 6);
   });
 });
