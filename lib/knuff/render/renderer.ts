@@ -28,8 +28,8 @@ import type { PullView } from "../input/pointer";
 import type { AimLine } from "../sim/aim";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
-import { FLICK_TICKS, type Effects } from "./effects";
-import { drawBoss, drawBossTelegraph } from "./boss";
+import { FLICK_TICKS, SHEEN_TICKS, type Effects } from "./effects";
+import { drawBoss, drawBossTelegraph, drawSheen } from "./boss";
 import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing } from "./charms";
 import { createBaker, type Bitmap, type Palette } from "./bake";
 import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, onFloor, rollMarks } from "./intruders";
@@ -404,6 +404,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       ctx.fillStyle = dither;
       ctx.fillRect(fl, ft, fw, fh);
     }
+    // Where the polisher has been: the floor shines for a few seconds.
+    drawSheen(paint, fx.sheen, tickNow, SHEEN_TICKS);
     // Floor inserts, gum, tiles (§9.9): each offered plate's insert and its
     // name; gum, flat on the floor, under everything that moves; then each
     // pickup's tile and its name, and the love heart's tile.
@@ -537,7 +539,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     }
 
     // The polisher, over the intruders.
-    drawBoss(paint, state, tune, alpha);
+    drawBoss(paint, state, tune, alpha, tickNow, f.reduced);
 
     // The cross where the aim line ends on a thing, over the polisher: the plug he would hit is
     // where the machine's trailing end will be when he gets there, inside its box as it stands now.

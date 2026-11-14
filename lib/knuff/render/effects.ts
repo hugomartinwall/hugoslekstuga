@@ -22,6 +22,13 @@ export type Float = { x: number; y: number; text: string; life: number; max: num
 export type Blast = { x: number; y: number; life: number; max: number; mine: boolean };
 /** A token the thump turned away (decision 31): its id and the tick, for the flick drawn on it. */
 export type Flick = { id: number; tick: number };
+/** A stretch of floor the polisher has just passed over, and the tick it did: its sheen fades from there. */
+export type Sheen = { x0: number; y0: number; x1: number; y1: number; tick: number };
+
+/** The polisher's sheen lasts this long on the floor, in ticks (5 s). */
+export const SHEEN_TICKS = 300;
+/** A stretch of sheen is laid every this many ticks. */
+const SHEEN_EVERY = 6;
 
 /** Afterimages kept, as in the toy. */
 const TRAIL_LENGTH = 16;
@@ -51,6 +58,8 @@ export type Effects = {
   readonly blasts: Blast[];
   /** Tokens the thump has just turned: each shows the way it now rolls (`FLICK_TICKS`). */
   readonly flicks: Flick[];
+  /** Where the polisher has been in the last `SHEEN_TICKS`: drawn on the floor, it changes nothing. */
+  readonly sheen: Sheen[];
   /** Seconds left of the pips drawn in coral after a refused launch. */
   refused: number;
   /** How far plate `i` is into its flash: 1 as it fires, 0 when it is over (none with reduced motion). */
@@ -107,6 +116,9 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
   const flicks: Flick[] = [];
   /** Seconds left of each plate's flash. */
   const flashes = new Array<number>(10).fill(0);
+  const sheen: Sheen[] = [];
+  /** The lane run the sheen is being laid along: where its last stretch ended. */
+  let run: { lane: number; dir: number; x: number; tick: number } | null = null;
   let reduced = false;
   let blinkAt = -1;
   let blinkUntil = 0;
@@ -135,6 +147,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
     floats,
     blasts,
     flicks,
+    sheen,
     refused: 0,
     squashX: 1,
     squashY: 1,
@@ -315,6 +328,19 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       const dazeTicks = tuneNow().dazeTicks;
       while (thumps.length > 0 && s.tick - thumps[0].tick >= dazeTicks) thumps.shift();
       while (flicks.length > 0 && s.tick - flicks[0].tick >= FLICK_TICKS) flicks.shift();
+      // The polisher's sheen: a stretch of floor behind its trailing end every few ticks, while it runs along a lane.
+      const b = s.boss;
+      if (b.present && b.mode === "lane") {
+        const tx = b.x - b.dir * 60;
+        if (run && run.lane === b.lane && run.dir === b.dir) {
+          if (s.tick - run.tick >= SHEEN_EVERY) {
+            sheen.push({ x0: Math.min(run.x, tx), y0: b.y - 30, x1: Math.max(run.x, tx), y1: b.y + 30, tick: s.tick });
+            run.x = tx;
+            run.tick = s.tick;
+          }
+        } else run = { lane: b.lane, dir: b.dir, x: tx, tick: s.tick };
+      } else if (!b.present || b.mode === "down") run = null;
+      while (sheen.length > 0 && s.tick - sheen[0].tick >= SHEEN_TICKS) sheen.shift();
       const h = s.him;
       const sp = Math.hypot(h.vx, h.vy);
       if (sp > 40) {
@@ -392,6 +418,8 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       blasts.length = 0;
       flicks.length = 0;
       flashes.fill(0);
+      sheen.length = 0;
+      run = null;
       fx.refused = 0;
       fx.shake = 0;
       fx.squashX = 1;
