@@ -93,7 +93,8 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = "
   if (turn && turn.k < 1 && turn.from >= 0 && turn.from < CLOCK.length) {
     // The clock turns: the hour that ended rolls up and out, the new one up and in.
     const k = Math.max(0, Math.min(1, turn.k));
-    const lift = 12 * dpr;
+    // A full line: the two hours roll past each other inside the clip, never one over the other.
+    const lift = 24 * dpr;
     ctx.save();
     ctx.beginPath();
     ctx.rect(Math.round(bx + B / 2 - 44 * dpr), Math.round(by + 4 * dpr), Math.round(88 * dpr), Math.round(30 * dpr));
