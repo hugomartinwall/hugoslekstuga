@@ -194,16 +194,26 @@ export function drawBattery(p: Paint, s: State, d: Thing, x: number, y: number, 
   rect(p, x0 + 2, y0 + 5, CELL_W - 4, 2, rgba(C.page, 0.8));
 }
 
-/** Its blast's reach: drawn for its last 60 ticks, and from the moment he knocks it. */
+/**
+ * Its blast's reach: drawn for its last 60 ticks, and from the moment he
+ * knocks it. Amber where the blast cannot hurt him (his, or dazed: rule 9);
+ * coral where it can, the colour its burst and the pad use for a heart, and
+ * with squares twice the size while he stands landed inside it. A plain
+ * amber ring read as an area, like the thump's, not as a danger (the play
+ * check of steps 4 and 5).
+ */
 export function drawBlastRings(p: Paint, s: State, tune: Tune, alpha: number): void {
   const w = Math.max(2, Math.round(p.S * 2));
+  const h = s.him;
   onFloor(p, s, () => {
     for (const d of s.things) {
       if (d.kind !== "battery" || d.hp <= 0 || s.tick < d.landTick) continue;
       if (d.knockTick < 0 && d.fuseTick - s.tick > 60) continue;
       const x = d.px + (d.x - d.px) * alpha;
       const y = d.py + (d.y - d.py) * alpha;
-      p.ring(p.X(x), p.Y(y), tune.blastRadius * p.S, rgba(C.amber, 0.8), w);
+      const harms = !d.mine && s.tick >= d.dazedUntil;
+      const inside = harms && !h.hot && Math.hypot(h.x - d.x, h.y - d.y) <= tune.blastRadius;
+      p.ring(p.X(x), p.Y(y), tune.blastRadius * p.S, harms ? C.coral : rgba(C.amber, 0.8), inside ? w * 2 : w);
     }
   });
 }
