@@ -330,6 +330,14 @@ export type Thing = {
   v: number;
   /** A token the money bag let out, and the love heart: the tick it is gone (it fades, or leaves). -1 for everything else. */
   goneTick: number;
+  /**
+   * The money bag: it landed on him (dazed, over him) and he has not left it
+   * since. While this holds it stays where it is (he cannot move it, §5.4)
+   * and a launch released on it passes through it (§5.2 rule 5). False for
+   * every other kind, and for a bag that came onto him any other way: that
+   * one is held at arm's length (§3.5).
+   */
+  onHim: boolean;
 };
 
 /** The launch in progress, or the last one. */

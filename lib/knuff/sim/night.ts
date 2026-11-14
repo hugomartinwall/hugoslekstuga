@@ -14,7 +14,7 @@
  */
 import { KINDS } from "../content/kinds";
 import { BUNCH, HOURS, RACK_APEX, ROWS } from "../content/night";
-import { bagTelegraph, dazedWithin } from "./bag";
+import { BAG_R, bagTelegraph, dazedWithin } from "./bag";
 import { bossClock } from "./boss";
 import { closeOffer, offerStep } from "./charms";
 import { rand } from "./rng";
@@ -256,6 +256,7 @@ export function addThing(s: State, kind: Thing["kind"], x: number, y: number, la
     heading: 0,
     v: -1,
     goneTick: -1,
+    onHim: false,
   };
   s.things.push(d);
   return d;
@@ -709,6 +710,8 @@ function landArrivals(s: State, tune: Tune, events: SimEvent[]): void {
     // Every kind that can hurt lands dazed close to him (the money bag within 94 u); gum hurts nothing and is never dazed.
     const dazed = dist <= dazedWithin(d.kind, tune) && rowOf(d).hurts;
     if (dazed) daze(s, d, s.tick + tune.dazeTicks, events);
+    // A money bag that comes down over him stays where it landed: he cannot move it (§5.4).
+    if (d.kind === "bag" && dist < s.stats.radius + BAG_R) d.onHim = true;
     events.push({ type: "arrive", tick: s.tick, x: d.x, y: d.y, id: d.id, kind: d.kind, dist, dazed });
   }
 }

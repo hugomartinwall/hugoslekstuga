@@ -302,7 +302,7 @@ type Outcome = {
 };
 
 function putThing(e: State, x: number, y: number, vx: number, vy: number): void {
-  e.things.push({ id: e.nextId++, kind: "bunny", x, y, px: x, py: y, vx, vy, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil: 0, phase: 0, worth0: false, fuseTick: -1, knockTick: -1, mine: false, launchId: -1, heading: 0, v: -1, goneTick: -1 });
+  e.things.push({ id: e.nextId++, kind: "bunny", x, y, px: x, py: y, vx, vy, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil: 0, phase: 0, worth0: false, fuseTick: -1, knockTick: -1, mine: false, launchId: -1, heading: 0, v: -1, goneTick: -1, onHim: false });
 }
 
 /** Run one scenario on both simulations. Stops at the first value that differs. */

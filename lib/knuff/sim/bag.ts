@@ -132,9 +132,11 @@ function hitBag(s: State, tune: Tune, d: Thing, two: boolean, source: "body" | "
  * two if the bag has not been hit this launch. His hot body bounces off it
  * (by his speed relative to its creep) and, if this launch has not hit it,
  * hits it: one, or two off a cushion. A launch released on top of it
- * cannot hit it until he has left it (rule 5); it still bounces him.
- * Landed, a touch costs a heart unless it is dazed or he is invulnerable;
- * then it is held at arm's length. Returns false if that was his last heart.
+ * passes through it until he has left it (rule 5), as it passes over gum
+ * and a tile: no hit and no bounce. Landed, a touch costs a heart unless
+ * it is dazed or he is invulnerable; hurt or not, it is then held at
+ * arm's length, put back touching him (§3.5), unless it landed on him:
+ * that one stays where it is. Returns false if that was his last heart.
  */
 export function bagContact(s: State, tune: Tune, d: Thing, events: SimEvent[]): boolean {
   const h = s.him;
@@ -145,6 +147,8 @@ export function bagContact(s: State, tune: Tune, d: Thing, events: SimEvent[]): 
   const far = spark ? reach + tune.sparkReach : reach;
   const dx = d.x - h.x;
   const dy = d.y - h.y;
+  // He has left a bag that landed on him: from now on it is held at arm's length like any other.
+  if (d.onHim && dx * dx + dy * dy >= reach * reach) d.onHim = false;
   if (dx >= far || dx <= -far || dy >= far || dy <= -far) return true;
   const dist = Math.hypot(dx, dy);
   if (dist >= far) return true;
@@ -159,6 +163,8 @@ export function bagContact(s: State, tune: Tune, d: Thing, events: SimEvent[]): 
     }
     return true;
   }
+  // A launch released on top of it passes through it until he has left it (rule 5): it does not touch him.
+  if (h.hot && blocked) return true;
   const nx = dist > 1e-6 ? dx / dist : 0;
   const ny = dist > 1e-6 ? dy / dist : -1;
   if (h.hot) {
@@ -173,7 +179,7 @@ export function bagContact(s: State, tune: Tune, d: Thing, events: SimEvent[]): 
     }
     // A bounce off the money bag is a contact (§3.5).
     h.lastContactTick = s.tick;
-    if (!blocked && !hitAlready) hitBag(s, tune, d, l.cushions > 0, "body", events);
+    if (!hitAlready) hitBag(s, tune, d, l.cushions > 0, "body", events);
     else events.push({ type: "bounce", tick: s.tick, x: h.x, y: h.y, kind: "bag", id: d.id, speed: speedIn });
     // The landing test, after every contact.
     h.hot = isHot(s, tune, Math.hypot(h.vx, h.vy));
@@ -183,20 +189,18 @@ export function bagContact(s: State, tune: Tune, d: Thing, events: SimEvent[]): 
   // Landed: a touch costs a heart, unless it is dazed or he is invulnerable.
   if (s.tick >= d.dazedUntil && s.tick >= h.invulnUntil) {
     loseHeart(s, tune, d, events);
-    return s.hearts > 0;
+    if (s.hearts <= 0) return false;
   }
-  // Held at arm's length (§3.5), and never moved by him (§5.4): its own creep
-  // into him is undone, so it stands touching him. A bag that was on him
-  // already as the tick began (it landed on him dazed, or crept on while he
-  // could not be hurt) stays where it was: overlapping, so his next launch
-  // cannot hit it until he has left it (rule 5).
-  const sx = d.px - h.x;
-  const sy = d.py - h.y;
-  if (sx * sx + sy * sy < reach * reach) {
+  // A bag that landed on him stays where it is (§5.4: he cannot move it):
+  // its own creep is undone, and his next launch passes through it (rule 5).
+  if (d.onHim) {
     d.x = d.px;
     d.y = d.py;
     return true;
   }
+  // Anything else is held at arm's length (§3.5), whether it took a heart or
+  // not: put back touching him, its creep into him undone. So his next
+  // launch straight at it hits it.
   d.x = h.x + nx * reach;
   d.y = h.y + ny * reach;
   const room = s.room;

@@ -4,9 +4,10 @@ import { KINDS } from "../../lib/knuff/content/kinds";
 import { BOSS_HOUR } from "../../lib/knuff/content/night";
 import { BOSS_TELEGRAPH, boxOf, laneMiddle, overlapDepth } from "../../lib/knuff/sim/boss";
 import { gapToGum } from "../../lib/knuff/sim/battery";
+import { aimLine } from "../../lib/knuff/sim/aim";
 import { land } from "../../lib/knuff/sim/hot";
 import { HIM_MASS, slow } from "../../lib/knuff/sim/physics";
-import { createState, type StartOptions } from "../../lib/knuff/sim/state";
+import { cloneState, createState, type StartOptions } from "../../lib/knuff/sim/state";
 import type { BossMode, SimEvent, State, Thing, Tune } from "../../lib/knuff/sim/types";
 import { distance, fire, night, of, put, run, shot, speedOf, tick, tuned, until } from "./room";
 
@@ -1270,7 +1271,7 @@ describe("touching him while he is landed", () => {
     expect(s.hearts).toBe(2);
   });
 
-  it("the money bag: costs a heart, unless it is dazed or he is invulnerable; then it is held at arm's length, and he never moves it", () => {
+  it("the money bag: costs a heart, unless it is dazed or he is invulnerable; hurt or not, it is held at arm's length, and he never moves it", () => {
     const s = room();
     const bag = put(s, "bag", 180, 374 - 46);
     expect(of(run(s, T, 1), "hurt").map((e) => [e.by, e.id])).toEqual([["bag", bag.id]]);
@@ -1282,19 +1283,67 @@ describe("touching him while he is landed", () => {
     expect(of(run(t, creep, 30), "hurt")).toEqual([]);
     expect(distance(t, b)).toBeCloseTo(13 + 34, 9);
     expect([t.him.x, t.him.y]).toEqual([180, 374]);
-    // On him already, dazed (it landed on him): it stays where it is; nothing moves it out, and he does not move.
+  });
+
+  it("the money bag that takes a heart by creeping into him is put back touching him (§3.5): his next launch straight at it hits it", () => {
+    const creep = tuned({ ...STILL, bagSpeed: 10 });
+    const s = room(creep);
+    const bag = put(s, "bag", 180, 374 - 47.05);
+    const events = until(s, creep, (e) => of(e, "hurt").length > 0, 30);
+    expect(of(events, "hurt").map((e) => [e.by, e.id])).toEqual([["bag", bag.id]]);
+    // Not left inside him by that tick's creep: touching, on the line between the centres.
+    expect(distance(s, bag)).toBeCloseTo(13 + 34, 9);
+    expect(bag.x).toBe(180);
+    expect([s.him.x, s.him.y]).toEqual([180, 374]);
+    // So the launch straight at it is not one released on top of it (rule 5): one hit, and he bounces off it.
+    const shotAt = fire(s, creep, shot(0, -1), 3);
+    expect(s.launch.blocked).toEqual([]);
+    expect(of(shotAt, "hit").map((e) => [e.kind, e.id, e.left, e.source])).toEqual([["bag", bag.id, 7, "body"]]);
+    expect(of(shotAt, "bounce")).toEqual([]);
+    expect(s.him.vy).toBeGreaterThan(0);
+  });
+
+  it("the money bag that lands on him dazed stays where it landed, and a launch released on it passes through it (rule 5)", () => {
     const u = room();
-    const on = put(u, "bag", 180, 374 - 30, { dazedUntil: 10 });
-    expect(of(run(u, T, 3), "hurt")).toEqual([]);
+    // It comes down over him on this tick: dazed (within 94 u), and on him.
+    const on = put(u, "bag", 180, 374 - 30, { landTick: u.tick });
+    const landed = run(u, T, 3);
+    expect(of(landed, "arrive").map((e) => [e.id, e.dazed])).toEqual([[on.id, true]]);
+    expect(of(landed, "hurt")).toEqual([]);
+    expect(on.onHim).toBe(true);
+    // Nothing moves it out, and he does not move.
     expect([on.x, on.y]).toEqual([180, 374 - 30]);
     expect([u.him.x, u.him.y]).toEqual([180, 374]);
-    // His next launch is released on it: it cannot hit it until he has left it (rule 5); he bounces off it.
-    const events = tick(u, T, shot(0, -1));
-    expect(u.launch.id).toBe(1);
-    events.push(...run(u, T, 2));
-    expect(of(events, "hit")).toEqual([]);
-    expect(of(events, "bounce").map((e) => e.id)).toEqual([on.id]);
-    expect(on.hp).toBe(8);
+
+    for (const [dx, dy, why] of [
+      [0, 1, "away from it"],
+      [0, -1, "straight at its centre"],
+      [1, 0, "across it"],
+    ] as const) {
+      const v = cloneState(u);
+      // A twin room without the bag: where the same launch takes him in the open.
+      const o = cloneState(u);
+      o.things.length = 0;
+      const line = aimLine(v, { dx, dy, power: 1 }, T);
+      const first = tick(v, T, shot(dx, dy));
+      tick(o, T, shot(dx, dy));
+      // Not moved to its rim on the first tick: exactly where the open room puts him.
+      expect([v.him.x, v.him.y], why).toEqual([o.him.x, o.him.y]);
+      expect(v.launch.blocked, why).toEqual([on.id]);
+      // Until he has left it: no bounce and no hit, and it does not move.
+      const inside = [...first, ...until(v, T, () => !v.launch.blocked.includes(on.id), 20)];
+      expect(v.launch.blocked, why).toEqual([]);
+      expect(of(inside, "bounce"), why).toEqual([]);
+      expect(of(inside, "hit"), why).toEqual([]);
+      expect(on.hp, why).toBe(8);
+      const bagNow = v.things.find((d) => d.id === on.id)!;
+      expect([bagNow.x, bagNow.y], why).toEqual([180, 374 - 30]);
+      // He has left it: it is held at arm's length from now on.
+      expect(bagNow.onHim, why).toBe(false);
+      // The aim line runs on through it: it does not end on the bag where he starts.
+      expect([line.pts[2], line.pts[3]], why).toEqual([o.him.x, o.him.y]);
+      expect(line.pts.length, why).toBeGreaterThan(12);
+    }
   });
 
   it("gum and a pickup: nothing", () => {

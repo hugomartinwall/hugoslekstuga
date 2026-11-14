@@ -388,7 +388,7 @@ describe("the night's twelve steps in the top bar", () => {
     // A dust bunny walks into him while he is landed.
     const x = s.him.x + 30;
     const y = s.him.y;
-    s.things.push({ id: s.nextId++, kind: "bunny", x, y, px: x, py: y, vx: 0, vy: 0, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil: 0, phase: 0, worth0: false, fuseTick: -1, knockTick: -1, mine: false, launchId: -1, heading: 0, v: -1, goneTick: -1 });
+    s.things.push({ id: s.nextId++, kind: "bunny", x, y, px: x, py: y, vx: 0, vy: 0, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil: 0, phase: 0, worth0: false, fuseTick: -1, knockTick: -1, mine: false, launchId: -1, heading: 0, v: -1, goneTick: -1, onHim: false });
     for (let i = 0; i < 300 && s.phase !== "over"; i++) step(s, REST, tune, []);
     expect(s.ended).toBe("hearts");
     expect(s.night.hour).toBe(10);
@@ -415,7 +415,7 @@ describe("a dazed thing's marks (§9.5)", () => {
     { x: 1.5, y: -radius(d) - 5, w: 3, h: 3 },
   ];
   const put = (s: State, kind: Thing["kind"], x: number, y: number, dazedUntil = 0): Thing => {
-    const d: Thing = { id: s.nextId++, kind, x, y, px: x, py: y, vx: 0, vy: 0, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil, phase: 0, worth0: false, fuseTick: -1, knockTick: -1, mine: false, launchId: -1, heading: 0, v: -1, goneTick: -1 };
+    const d: Thing = { id: s.nextId++, kind, x, y, px: x, py: y, vx: 0, vy: 0, wx: 0, wy: 0, hp: 1, landTick: -1, dazedUntil, phase: 0, worth0: false, fuseTick: -1, knockTick: -1, mine: false, launchId: -1, heading: 0, v: -1, goneTick: -1, onHim: false };
     s.things.push(d);
     return d;
   };
