@@ -16,8 +16,16 @@
  * The sound (audio/) starts on the first touch or key, hears each tick's
  * events, and is closed on destroy; M mutes. The picture reads one motion
  * value, `reduced`: the player's choice (`setMotion`: auto, on or off, the
- * panel's system, reduced and full) laid over the system's setting. Where
- * the choice and the mute are stored is the shell's (save.ts).
+ * panel's system, reduced and full) laid over the system's setting.
+ *
+ * What is kept on the device goes through save.ts and nothing else: the
+ * record (written when a night begins and when it ends), the three
+ * settings (read here when the game is made, written when they change),
+ * and the night of this browser session. That one is written at every
+ * pause of a night in progress and when the page unmounts in the middle
+ * of one; read when the game is made and left in place, so the Resume
+ * panel can offer it; and deleted when the night goes on, when that panel
+ * is answered, at BACK TO PLAYHOUSE and at the end of a night (§3.11).
  */
 import { readAccent, subscribeAccent } from "@/lib/hugo/sprite";
 import { createAudio, type Cue } from "./audio/audio";
@@ -35,6 +43,7 @@ import { effectiveReduced, type MotionPref } from "./render/motion";
 import { createRenderer } from "./render/renderer";
 import { aimLine, type AimLine } from "./sim/aim";
 import { threat } from "./sim/hot";
+import { browserStorages, createStore, MORNING_CLOCK } from "./save";
 import { createState, type StartOptions } from "./sim/state";
 import { step, wouldSlow } from "./sim/step";
 import type { Launch, SimEvent, State, Tune } from "./sim/types";
@@ -58,6 +67,14 @@ export type KnuffOver = {
  */
 export type KnuffView = {
   screen: "start" | "play" | "paused" | "over" | "tooSmall";
+  /**
+   * A night paused or left earlier in this browser session waits: the hour
+   * it stopped in ("23:00"), which the Resume panel offers. Null when none
+   * waits, or once the panel is answered. The screen is "start" meanwhile.
+   */
+  waiting: string | null;
+  /** Laid out for a phone (a coarse pointer): which line a page too small shows. */
+  coarse: boolean;
   over: KnuffOver | null;
   /** The body charms taken this night, by name, in the order they were taken: the pause panel lists them. */
   charms: string[];
@@ -65,15 +82,20 @@ export type KnuffView = {
   muted: boolean;
   /** The player's choice of motion: "auto" (system), "on" (reduced) or "off" (full). */
   motion: MotionPref;
+  /** Which way a pull launches him: "back" (away from the pull) or "push" (along it). */
+  pull: "back" | "push";
 };
 
 /** The view before the game has said anything. */
 export const FIRST_VIEW: KnuffView = {
   screen: "start",
+  waiting: null,
+  coarse: false,
   over: null,
   charms: [],
   muted: false,
   motion: "auto",
+  pull: "back",
 };
 
 export type KnuffOptions = {
@@ -89,14 +111,18 @@ export type KnuffHandle = {
   pause(): void;
   /** Go on where it stopped. The room stays frozen for a moment, so the press that resumed is not a shot. */
   resume(): void;
-  /** AGAIN: a new seed and the start screen. */
+  /** AGAIN and NEW NIGHT: a new seed and the start screen. Deletes the stored night. */
   restart(): void;
-  /** BACK TO PLAYHOUSE: the night ends with no panel. */
+  /** RESUME 23:00: the night read when the game was made goes on, and its key is deleted. */
+  resumeStored(): void;
+  /** BACK TO PLAYHOUSE: the night ends with no panel, and the stored night is deleted. */
   abandon(): void;
   /** Sound on or off. M does the same from the keyboard. */
   setMuted(muted: boolean): void;
   /** Reduced motion: "auto" follows the system, "on" reduces, "off" never does. Changes the picture only. */
   setMotion(pref: MotionPref): void;
+  /** Pull back, or push. A setting, not a rule: a held pull is dropped, and the night goes on. */
+  setPull(dir: "back" | "push"): void;
 };
 
 /**
@@ -141,8 +167,12 @@ function newSeed(): number {
 }
 
 export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: KnuffOptions): KnuffHandle {
-  /** The game's table (content/tune.ts). */
-  const tune: Tune = { ...DEFAULT_TUNE };
+  // Everything kept on the device, through save.ts. Storage that is blocked
+  // is tolerated in silence: the game plays from memory.
+  const storages = browserStorages();
+  const store = createStore(storages.local, storages.session);
+  /** The game's table (content/tune.ts). Only the pull's direction, a setting and not a rule, is ever changed in it. */
+  let tune: Tune = { ...DEFAULT_TUNE, pullDir: store.readPull() };
   // First, and before anything is registered: this is the one call that can throw.
   const renderer = createRenderer(root, canvas, opts.fonts);
   const fx = createEffects(
@@ -155,7 +185,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   const audio = createAudio();
   const ears = createEars();
   const cues: Cue[] = [];
-  let muted = false;
+  let muted = store.readMuted();
+  audio.setMuted(muted);
   const listen = <E extends Event>(
     target: EventTarget,
     type: string,
@@ -169,6 +200,12 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
 
   let destroyed = false;
   let state = createState(newSeed(), tune);
+  /**
+   * The night this browser session kept, as it was read when the game was
+   * made; its key is left in place until the Resume panel is answered.
+   * While it waits nothing is played and nothing writes the key.
+   */
+  let stored = store.readRun(tune);
   /** A release waiting for the next tick. */
   let queued: Launch | null = null;
   let autopause = true;
@@ -179,8 +216,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   /** The end panel is up: the night has been over for 800 ms. */
   let overShown = false;
   let overTimer = 0;
-  /** The best score since the page opened, under the rules in use. */
-  let best = 0;
+  /** The best score kept on the device, as the last night left it. */
+  let best = store.readSave().best;
   let newBest = false;
   /** After RESUME: frozen until this time, and until these pointers are up. */
   let holdUntil = 0;
@@ -224,7 +261,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       ? "play"
       : renderer.layout.tooSmall
         ? "tooSmall"
-        : state.phase === "waiting"
+        : stored !== null || state.phase === "waiting"
           ? "start"
           : state.phase === "over"
             ? overShown
@@ -233,10 +270,13 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
             : paused
               ? "paused"
               : "play",
+    waiting: stored !== null && !left ? CLOCK[Math.min(Math.max(0, stored.night.hour), CLOCK.length - 1)] : null,
+    coarse: renderer.layout.coarse,
     over: overShown ? over() : null,
     charms: state.charms.map((c) => CHARM_NAME[c] ?? c),
     muted,
     motion,
+    pull: tune.pullDir,
   });
   let told = "";
   const tell = () => {
@@ -253,7 +293,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   const pointer = attachPointer(root, {
     tune: () => tune,
     // No pull on a page too small, under a panel, or once the night is over.
-    enabled: () => !renderer.layout.tooSmall && !paused && !left && state.phase !== "over",
+    enabled: () => !renderer.layout.tooSmall && !paused && !left && stored === null && state.phase !== "over",
     onLaunch: (launch) => {
       queued = launch;
     },
@@ -316,8 +356,21 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     pointer.cancel();
     queued = null;
     paused = false;
-    newBest = state.score > best && state.score > 0;
-    if (newBest) best = state.score;
+    // A night that is over is not kept: it cannot be used to retry an hour.
+    store.deleteRun();
+    const morning = state.ended === "morning";
+    // How far it got: the hour he fell in (0 to 10), 11 for the boss, 12 for morning.
+    const hour = state.ended === "dawn" ? state.night.hour : state.lastHurtHour >= 0 ? state.lastHurtHour : state.night.hour;
+    const record = store.nightEnded({
+      score: state.score,
+      clock: morning ? MORNING_CLOCK : Math.min(MORNING_CLOCK - 1, Math.max(0, hour)),
+      bestShot: state.bestShot,
+      morning,
+    });
+    best = record.save.best;
+    newBest = record.newBest && state.score > 0;
+    // Morning is the one thing that makes him happy across the site: once a night, never for a best score alone.
+    if (morning) window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
     window.clearTimeout(overTimer);
     overTimer = window.setTimeout(() => {
       overTimer = 0;
@@ -332,6 +385,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     pointer.cancel();
     if (destroyed || left || paused || !inNight()) return;
     paused = true;
+    // Whoever paused it, the night is kept for this browser session.
+    store.writeRun(tune, state);
     loopNow();
     tell();
   }
@@ -341,11 +396,18 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     // held a moment too long would pause and resume.
     if (destroyed || !paused || pauseKeyDown !== "" || renderer.layout.tooSmall) return;
     paused = false;
+    // It goes on: the key only ever holds a night that is not running.
+    store.deleteRun();
+    hold();
+    loopNow();
+    tell();
+  }
+
+  /** After RESUME the room stays frozen for a moment, and until every pointer that was down is up. */
+  function hold(): void {
     holdUntil = performance.now() + RESUME_HOLD_MS;
     holdFor.clear();
     for (const id of down) holdFor.add(id);
-    loopNow();
-    tell();
   }
 
   /** The polisher's loop plays while it is in the room and the night runs; it quickens as the machine does. */
@@ -359,6 +421,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     if (destroyed || next === muted) return;
     muted = next;
     audio.setMuted(muted);
+    // M and the pause panel's switch both come here, so both are kept.
+    store.writeMuted(muted);
     tell();
   }
 
@@ -378,7 +442,12 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     pointer.cancel();
     if (renderer.layout.tooSmall) {
       queued = null;
-      if (inNight() && !left) paused = true;
+      // Written like any other pause; the Too small panel stands where the pause panel would.
+      if (inNight() && !left && !paused) {
+        paused = true;
+        store.writeRun(tune, state);
+        loopNow();
+      }
     }
     tell();
   };
@@ -396,7 +465,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
 
   // The one motion value the picture reads: the player's choice laid over the system's setting.
   const lessMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let motion: MotionPref = "auto";
+  let motion: MotionPref = store.readMotion();
   let reduced = effectiveReduced(motion, lessMotion.matches);
   fx.setReduced(reduced);
   const rethinkMotion = () => {
@@ -423,7 +492,10 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     events.length = 0;
     const launch = queued;
     queued = null;
+    const waiting = state.phase === "waiting";
     step(state, { launch, pullHeld: aimNow() !== null }, tune, events);
+    // The first launch begins the night, and the record counts it.
+    if (waiting && inNight()) store.nightBegan();
     let freeze = 0;
     let over = false;
     for (const e of events) {
@@ -566,6 +638,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       start(start = {}) {
         const { seed, ...options } = start;
         left = false;
+        // As NEW NIGHT: a night that was waiting is not offered again.
+        stored = null;
+        store.deleteRun();
         begin(seed ?? newSeed(), options);
       },
       setAutopause(on) {
@@ -574,7 +649,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       },
       launch(launch) {
         // As a release: there is none on a page too small, under a panel, or after the night.
-        if (renderer.layout.tooSmall || paused || left || state.phase === "over") return;
+        if (renderer.layout.tooSmall || paused || left || stored !== null || state.phase === "over") return;
         queued = launch;
       },
       tune: () => tune,
@@ -597,6 +672,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   return {
     destroy() {
       if (destroyed) return;
+      // Left in the middle of a night (the Back button, a row of the search
+      // palette: neither sends a pagehide): it is kept for this session.
+      if (inNight() && !left) store.writeRun(tune, state);
       destroyed = true;
       loop.stop();
       audio.dispose();
@@ -609,10 +687,28 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     resume,
     restart() {
       if (destroyed || left) return;
+      // NEW NIGHT answers the Resume panel; AGAIN has nothing kept to delete.
+      stored = null;
+      store.deleteRun();
       begin();
+    },
+    resumeStored() {
+      if (destroyed || left || stored === null) return;
+      // The copy read when the game was made, not the key a second time.
+      const night = stored;
+      stored = null;
+      store.deleteRun();
+      begin(night.seed);
+      state = night;
+      hold();
+      loopNow();
+      tell();
     },
     abandon() {
       if (destroyed) return;
+      // The night it leaves is not offered again.
+      stored = null;
+      store.deleteRun();
       left = true;
       paused = false;
       queued = null;
@@ -626,7 +722,17 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     setMotion(pref) {
       if (destroyed || pref === motion) return;
       motion = pref;
+      store.writeMotion(motion);
       rethinkMotion();
+      tell();
+    },
+    setPull(dir) {
+      if (destroyed || dir === tune.pullDir) return;
+      // A held pull would turn round under the thumb: it is dropped, never fired.
+      pointer.cancel();
+      tune = { ...tune, pullDir: dir };
+      line = null;
+      store.writePull(dir);
       tell();
     },
   };

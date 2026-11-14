@@ -127,11 +127,14 @@ export default function Client({ standalone = false }: { standalone?: boolean })
   }, [searchOpen]);
 
   // The keys are heard on the root: when a panel has gone, the focus goes
-  // back there, not to wherever it was before the panel.
+  // back there, not to wherever it was before the panel. (NEW NIGHT closes
+  // the Resume panel and leaves the screen at "start": the night that was
+  // waiting is part of the key.)
   const screen = view.screen;
+  const waiting = view.waiting;
   useEffect(() => {
-    if (screen === "play" || screen === "start") rootRef.current?.focus({ preventScroll: true });
-  }, [screen]);
+    if ((screen === "play" || screen === "start") && waiting === null) rootRef.current?.focus({ preventScroll: true });
+  }, [screen, waiting]);
 
   const resume = () => {
     if (!searchOpen) gameRef.current?.resume();
@@ -160,6 +163,29 @@ export default function Client({ standalone = false }: { standalone?: boolean })
       >
         <canvas ref={canvasRef} className="block h-full w-full" />
       </div>
+
+      {/* A night paused or left earlier in this browser session: offered
+          before anything else, until it is answered. Escape and the scrim
+          do nothing here. */}
+      <Dialog
+        open={screen === "start" && waiting !== null && !searchOpen}
+        onClose={() => {}}
+        label={PANEL_LABEL.waiting}
+        returnFocus={false}
+        style={GAME_ACCENT}
+        className={PANEL}
+      >
+        <ScrollRegion>
+          <div className="flex flex-col gap-3 p-5">
+            <Keycap tone="accent" size="lg" block data-autofocus onClick={() => gameRef.current?.resumeStored()}>
+              {`${KEYS.resume} ${waiting ?? ""}`}
+            </Keycap>
+            <Keycap tone="neutral" block onClick={() => gameRef.current?.restart()}>
+              {KEYS.newNight}
+            </Keycap>
+          </div>
+        </ScrollRegion>
+      </Dialog>
 
       <Dialog
         open={screen === "paused" && !searchOpen}

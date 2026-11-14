@@ -33,17 +33,20 @@ export const TOO_SMALL = {
   laptop: "make the window taller",
 } as const;
 
-/** The keys of the panels. */
+/** The keys of the panels. RESUME on the Resume panel is followed by the hour the night stopped in: RESUME 23:00. */
 export const KEYS = {
   resume: "RESUME",
   again: "AGAIN",
   back: "BACK TO PLAYHOUSE",
+  newNight: "NEW NIGHT",
 } as const;
 
-/** What a screen reader calls each panel. */
+/** What a screen reader calls each panel. None names him. */
 export const PANEL_LABEL = {
   pause: "Paused",
+  waiting: "A night is waiting",
   end: "Night over",
+  tooSmall: "Page too small",
 } as const;
 
 /** The end panel's labels. */
