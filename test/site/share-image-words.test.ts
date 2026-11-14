@@ -38,7 +38,7 @@ describe("the words on the share images", () => {
     }
   });
 
-  it("so has every word the fourteen images and the name card set", async () => {
+  it("so has every word the fifteen images and the name card set", async () => {
     // What each image actually sets, read from the tree it draws: the
     // site image's own words and the site's name on every card are not
     // in the registry.

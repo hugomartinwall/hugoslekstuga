@@ -9,7 +9,7 @@ import { fingerprint, recorded } from "./drawn";
 
 /**
  * The address of a share image is `…/opengraph-image?<hash>`, and the
- * hash is of the route file's bytes and nothing else. The thirteen cards
+ * hash is of the route file's bytes and nothing else. The fourteen cards
  * are drawn in lib/og.tsx from the registry, so a new design, tagline,
  * colour or icon changes a picture and leaves its address where it was,
  * and whatever keeps pictures by their address (link previews do) goes

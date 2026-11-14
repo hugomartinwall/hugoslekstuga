@@ -21,7 +21,7 @@ import { tools } from "../../lib/tools";
  * the homepage's canonical address and og:url, and a page inherits what
  * its layout says. Now each page says its own (lib/site.ts). This suite
  * holds what keeps that true: what the helper builds, what each page
- * exports (the thirteen from the registry, the homepage and /about),
+ * exports (the fourteen from the registry, the homepage and /about),
  * that the layout stays out of it, and that nothing else under app/
  * writes an address by hand.
  *

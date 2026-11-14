@@ -14,6 +14,7 @@ const GAME_SLUGS = new Set<string>([
   "adventure",
   "greyrot",
   "survival-maxx",
+  "knuff",
 ]);
 
 /**
