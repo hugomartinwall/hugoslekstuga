@@ -306,8 +306,12 @@ export function drawRoomHint(
   reduced: boolean,
 ): void {
   const y = p.Y(318);
-  if (hint.words === "first") {
-    p.text(p.layout.coarse ? HINT.touch[dir] : HINT.mouse[dir], p.X(180), y, 16, C.ink, "pixel");
+  if (hint.words === "first" && p.layout.coarse) {
+    p.text(HINT.touch[dir], p.X(180), y, 16, C.ink, "pixel");
+  } else if (hint.words === "first") {
+    // No touch screen: the keys, then the mouse.
+    p.text(HINT.mouse[dir][0], p.X(180), y, 16, C.ink, "pixel");
+    p.text(HINT.mouse[dir][1], p.X(180), y + 18 * p.dpr, 16, C.ink, "pixel");
   } else if (hint.words === "again") {
     p.text(HINT_AGAIN[0], p.X(180), y, 16, C.ink, "pixel");
     p.text(HINT_AGAIN[1], p.X(180), y + 18 * p.dpr, 16, C.ink, "pixel");

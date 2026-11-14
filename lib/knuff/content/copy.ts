@@ -8,17 +8,17 @@
 
 /** The root's label for a screen reader: how to play, in a sentence. */
 export const ROOT_LABEL =
-  "Knuff, an arcade game. Pull back anywhere on the screen and let go to launch him across the room; with a mouse, drag back and let go. He bounces off the cushions and pops what he hits while he is fast.";
+  "Knuff, an arcade game. Pull back anywhere on the screen and let go to launch him across the room; with a mouse, drag back and let go; on the keys, the arrows aim, Up points at the nearest intruder and Space launches. He bounces off the cushions and pops what he hits while he is fast. Escape pauses.";
 
 /** The start hint, by pull direction. Shown until the third launch. */
 export const HINT = {
   /** Under a thumb. */
   touch: { back: "PULL BACK. LET GO.", push: "PUSH. LET GO." },
-  /**
-   * Under a mouse. The spec's hint has a first line about the keys
-   * (ARROWS AIM, SPACE LAUNCHES); it joins when the keyboard is built.
-   */
-  mouse: { back: "DRAG BACK AND LET GO", push: "PUSH AND LET GO" },
+  /** Where there is no touch screen: the keys first, then the mouse. Two lines. */
+  mouse: {
+    back: ["ARROWS AIM, SPACE LAUNCHES", "OR DRAG BACK AND LET GO"],
+    push: ["ARROWS AIM, SPACE LAUNCHES", "OR PUSH AND LET GO"],
+  },
 } as const;
 
 /**

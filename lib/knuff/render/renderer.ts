@@ -687,8 +687,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     // The hint in the thumb deck.
     if (hintInDeck && (hint.hand || hint.words !== "")) drawDeckHint(paint, hint, tune.pullDir, now, f.reduced);
 
-    // Where the pull began, faintly, so it has a start you can see.
-    if (f.pull) {
+    // Where the pull began, faintly, so it has a start you can see. (The keys' aim began nowhere.)
+    if (f.pull && f.pull.pointerType !== "keys") {
       const rect = root.getBoundingClientRect();
       paint.ring((f.pull.x0 - rect.left) * dpr, (f.pull.y0 - rect.top) * dpr, 9 * dpr, rgba(C.ink, 0.25), hair);
     }

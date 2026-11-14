@@ -35,6 +35,7 @@ import { CLOCK } from "./content/night";
 import { DEFAULT_TUNE } from "./content/tune";
 import { DEV_HANDLES } from "./dev";
 import type { KnuffFonts } from "./fonts";
+import { createKeys } from "./input/keyboard";
 import { attachPointer, type Aim, type PullView } from "./input/pointer";
 import { createLoop } from "./loop";
 import { createEffects } from "./render/effects";
@@ -290,16 +291,21 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
 
   // ── The pull ────────────────────────────────────────────────────────
 
+  /** Is a launch taken now? Not on a page too small, under a panel, while a night waits to be resumed, or once the night is over. */
+  const taking = () => !renderer.layout.tooSmall && !paused && !left && stored === null && state.phase !== "over";
   const pointer = attachPointer(root, {
     tune: () => tune,
-    // No pull on a page too small, under a panel, or once the night is over.
-    enabled: () => !renderer.layout.tooSmall && !paused && !left && stored === null && state.phase !== "over",
+    enabled: taking,
     onLaunch: (launch) => {
       queued = launch;
     },
-    // A press that is cancelled does not move the focus by itself, and
-    // keys are heard only while the root has it.
-    onPress: () => root.focus({ preventScroll: true }),
+    onPress: () => {
+      // A press that is cancelled does not move the focus by itself, and
+      // keys are heard only while the root has it.
+      root.focus({ preventScroll: true });
+      // The keys' aim line is hidden again at the next touch or mouse press.
+      keys.pressed();
+    },
     // The pause key is drawn in the canvas, in the top bar's right corner.
     keyAt: (x, y) => {
       if (renderer.layout.tooSmall) return false;
@@ -314,6 +320,37 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   disposers.push(pointer.detach);
   /** What the held pull would do if it were let go now; null while there is none, or it has not become one. */
   const aimNow = (): Aim | null => pointer.pull()?.aim ?? null;
+
+  // The keys (§4.3): the same launches, at full power, aimed by turning
+  // or by pointing at the nearest intruder.
+  const keys = createKeys({
+    state: () => state,
+    enabled: taking,
+    onLaunch: (launch) => {
+      // A key fires what its line showed; a pull held at that moment is dropped.
+      pointer.cancel();
+      queued = launch;
+    },
+  });
+  /** Slow motion follows the same meter for a thumb and for the keys: a pull held, or an aim key down or just up. */
+  const pullHeld = () => aimNow() !== null || keys.held(performance.now());
+  /**
+   * The keys' aim, drawn as a full pull: the band behind him and the line
+   * ahead. Shown once an aim key has been used, until the next touch or
+   * mouse press, and only while a launch can be taken.
+   */
+  const keyPull = (): PullView | null => {
+    const k = keys.aim();
+    if (!k || !taking() || pointer.pull() !== null) return null;
+    return {
+      x0: 0,
+      y0: 0,
+      x: 0,
+      y: 0,
+      pointerType: "keys",
+      aim: { launch: { dx: k.dx, dy: k.dy, power: 1 }, pull01: 1, lengthPx: tune.pullFullPx, short: false },
+    };
+  };
 
   // The aim line: worked out at most once a frame, and only when the aim
   // has moved or a tick has passed.
@@ -344,6 +381,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     window.clearTimeout(overTimer);
     overTimer = 0;
     pointer.cancel();
+    keys.reset();
     fx.reset();
     ears.reset();
     lightsFrom = -1;
@@ -383,6 +421,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   function pause(): void {
     // On any pause a held pull is dropped, never fired: also where there is no night to pause.
     pointer.cancel();
+    keys.release(performance.now());
     if (destroyed || left || paused || !inNight()) return;
     paused = true;
     // Whoever paused it, the night is kept for this browser session.
@@ -493,7 +532,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     const launch = queued;
     queued = null;
     const waiting = state.phase === "waiting";
-    step(state, { launch, pullHeld: aimNow() !== null }, tune, events);
+    step(state, { launch, pullHeld: pullHeld() }, tune, events);
     // The first launch begins the night, and the record counts it.
     if (waiting && inNight()) store.nightBegan();
     let freeze = 0;
@@ -519,7 +558,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   const loop = createLoop({
     // The State says which ticks are slowed, and counts them: a pull is
     // held, something in the room can hurt him, and the meter is not empty.
-    slowed: () => wouldSlow(state, { launch: queued, pullHeld: aimNow() !== null }),
+    slowed: () => wouldSlow(state, { launch: queued, pullHeld: pullHeld() }),
     slowShare: () => tune.slowShare,
     launchQueued: () => queued !== null,
     held: () => renderer.layout.tooSmall || paused || left || resuming(),
@@ -535,7 +574,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       lastFrameAt = frame.now;
       const now = frame.now - pausedFor;
       if (!stopped) fx.update(frame.realDt, frame.scaledDt, now);
-      const pull = pointer.pull();
+      keys.frame(performance.now());
+      const pull = pointer.pull() ?? keyPull();
       const aim = pull?.aim ?? null;
       // When a night ends as MORNING or as "the lights came on", the lights come on (§10).
       const lit = state.phase === "over" && (state.ended === "morning" || state.ended === "dawn");
@@ -551,7 +591,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
         pull,
         line: aim ? lineFor(aim) : null,
         // The meter is shown only while a pull is held and there is a threat.
-        meter: aim && threat(state) ? state.slow.meter / Math.max(1, tune.slowMeterMax) : -1,
+        meter: aim && pullHeld() && threat(state) ? state.slow.meter / Math.max(1, tune.slowMeterMax) : -1,
         accent,
         reduced,
         lights,
@@ -584,20 +624,28 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     pauseKeyDown = "";
     down.clear();
     holdFor.clear();
+    keys.release(performance.now());
     if (autopause) pause();
   });
   listen(window, "pagehide", () => pause());
 
-  // Esc or P pauses, while a night is in progress. One press is one
-  // action, and a key pressed with Ctrl, Cmd or Alt is left alone. P is
-  // read by its place on the keyboard, not by the letter printed on it.
+  // The keys act only while the root has the focus, and a key pressed with
+  // Ctrl, Cmd or Alt is left alone (the site's palette is Cmd-K and /).
+  // Letters are read by their place on the keyboard, not by the letter
+  // printed on them. One press is one action.
   listen<KeyboardEvent>(root, "keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    // M mutes, at any time, one press one change (decision 11). By its place on the keyboard.
+    // M mutes, at any time, one press one change (decision 11).
     if (e.code === "KeyM") {
       if (!e.repeat) setMuted(!muted);
       return;
     }
+    // Aim, point and launch. Their defaults (scrolling, a click) are not wanted on the root.
+    if (keys.down(e, performance.now())) {
+      e.preventDefault();
+      return;
+    }
+    // Esc or P pauses, while a night is in progress.
     if (e.key !== "Escape" && e.code !== "KeyP") return;
     if (e.repeat) return;
     const can = inNight() && !paused && !left;
@@ -606,7 +654,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     if (can && paused) pauseKeyDown = e.key === "Escape" ? "Escape" : "KeyP";
   });
   // The panel is outside the root, so the key-up is watched on the window.
+  // So are the aim keys': one may come up after a panel has taken the focus.
   listen<KeyboardEvent>(window, "keyup", (e) => {
+    keys.up(e, performance.now());
     if (pauseKeyDown === "") return;
     if ((pauseKeyDown === "Escape" && e.key === "Escape") || (pauseKeyDown === "KeyP" && e.code === "KeyP")) pauseKeyDown = "";
   });
