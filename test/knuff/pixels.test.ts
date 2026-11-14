@@ -6,6 +6,10 @@ import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
 import type { State } from "../../lib/knuff/sim/types";
 import { stampRect } from "../../lib/knuff/render/bake";
+import { FLICK_TICKS, createEffects } from "../../lib/knuff/render/effects";
+import { C, rgba } from "../../lib/knuff/render/palette";
+import type { SimEvent } from "../../lib/knuff/sim/types";
+import { night, put } from "./room";
 import { FONTS, MemoryStorage, installBrowser, type Browser } from "./browser";
 
 /**
@@ -21,19 +25,19 @@ import { FONTS, MemoryStorage, installBrowser, type Browser } from "./browser";
  * the transform; the canvases the game makes for itself keep theirs too.
  */
 
-type Rect = { x0: number; y0: number; x1: number; y1: number; what: string; on: string };
+type Rect = { x0: number; y0: number; x1: number; y1: number; what: string; on: string; color: string };
 
 /** A 2D context that draws nothing and keeps every rectangle, transformed, in `out`. */
 function recordingContext(name: string, out: Rect[]): CanvasRenderingContext2D {
   let m = [1, 0, 0, 1, 0, 0];
   const stack: number[][] = [];
   const at = (x: number, y: number) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  const props: Record<string | symbol, unknown> = { globalAlpha: 1, lineWidth: 1, font: "10px sans-serif", fillStyle: "#000", strokeStyle: "#000" };
   const keep = (what: string, x: number, y: number, w: number, h: number) => {
     const [ax, ay] = at(x, y);
     const [bx, by] = at(x + w, y + h);
-    out.push({ x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), what, on: name });
+    out.push({ x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), what, on: name, color: String(props.fillStyle) });
   };
-  const props: Record<string | symbol, unknown> = { globalAlpha: 1, lineWidth: 1, font: "10px sans-serif", fillStyle: "#000", strokeStyle: "#000" };
   const calls: Record<string, (...a: never[]) => unknown> = {
     save: () => void stack.push(m.slice()),
     restore: () => void (m = stack.pop() ?? [1, 0, 0, 1, 0, 0]),
@@ -160,5 +164,86 @@ describe("stampRect: where a scaled picture is stamped", () => {
         }
       }
     }
+  });
+});
+
+describe("the turned token's flick (decision 31, §9.5)", () => {
+  let b: Browser | null = null;
+  let game: KnuffHandle | null = null;
+  afterEach(() => {
+    game?.destroy();
+    game = null;
+    b?.restore();
+    b = null;
+  });
+
+  const turned = (): SimEvent => ({ type: "tokenTurned", tick: 100, x: 200, y: 300, id: 7, vx: 90, vy: -120 }) as SimEvent;
+
+  it("is held for FLICK_TICKS after the turn, then let go", () => {
+    const fx = createEffects(() => DEFAULT_TUNE);
+    fx.onEvent(turned());
+    expect(fx.flicks).toEqual([{ id: 7, tick: 100 }]);
+    const s = night(DEFAULT_TUNE);
+    s.tick = 100 + FLICK_TICKS - 1;
+    fx.afterTick(s);
+    expect(fx.flicks.length).toBe(1);
+    s.tick = 100 + FLICK_TICKS;
+    fx.afterTick(s);
+    expect(fx.flicks.length).toBe(0);
+  });
+
+  it("throws four acid squares off the token; with reduced motion none fly, and the marks hold", () => {
+    const full = createEffects(() => DEFAULT_TUNE);
+    full.onEvent(turned());
+    expect(full.particles.length).toBe(4);
+    const reduced = createEffects(() => DEFAULT_TUNE);
+    reduced.setReduced(true);
+    reduced.onEvent(turned());
+    expect(reduced.particles.length).toBe(0);
+    expect(reduced.flicks.length).toBe(1);
+  });
+
+  it("is drawn on the token: three acid squares stepping off it the way it now rolls, away from him", () => {
+    // He lands on the next tick with a token past the bunnies' ring and inside the tokens' reach, rolling at him.
+    const s = night(DEFAULT_TUNE);
+    put(s, "token", s.him.x + 42 * 0.6, s.him.y - 42 * 0.8, { vx: -150 * 0.6, vy: 150 * 0.8 });
+    s.him.hot = true;
+    s.him.vx = 30;
+    s.launch.active = true;
+    s.launch.id = 1;
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    createStore(local, session).writeRun({ ...DEFAULT_TUNE }, s);
+    // 390 × 664 at device scale 2: s 1, 2 device px a unit; motion reduced, so nothing shakes and no square flies.
+    b = installBrowser({ w: 390, h: 664, coarse: true, local, session });
+    const rects: Rect[] = [];
+    const main = recordingCanvas("main", rects);
+    b.doc.createElement = () => recordingCanvas(`made ${++made}`, rects);
+    game = createKnuff(b.root as unknown as HTMLElement, main, { fonts: FONTS, onChange: () => undefined });
+    game.setMotion("on");
+    game.resumeStored();
+    b.wait(600);
+    // Away from him: the way the thump turned it.
+    const away = { x: 0.6, y: -0.8 };
+    const acid = rgba(C.acid, 1);
+    let seen = 0;
+    for (let f = 0; f < 12; f++) {
+      rects.length = 0;
+      b.frame();
+      const sq = (n: number) => rects.filter((r) => r.on === "main" && r.color === acid && r.x1 - r.x0 === n && r.y1 - r.y0 === n);
+      const mid = (r: Rect) => ({ x: (r.x0 + r.x1) / 2, y: (r.y0 + r.y1) / 2 });
+      for (const a of sq(6)) {
+        for (const c of sq(4)) {
+          const d = { x: (mid(c).x - mid(a).x) / 10, y: (mid(c).y - mid(a).y) / 10 };
+          if (Math.abs(Math.hypot(d.x, d.y) - 1) > 0.12) continue;
+          const third = sq(3).find((e) => Math.hypot(mid(e).x - (mid(c).x + d.x * 10), mid(e).y - (mid(c).y + d.y * 10)) <= 1.5);
+          if (!third) continue;
+          // The squares step off the token along its new roll, not toward him.
+          expect(d.x * away.x + d.y * away.y).toBeGreaterThan(0.95);
+          seen++;
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(5);
   });
 });
