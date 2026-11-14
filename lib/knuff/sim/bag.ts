@@ -185,7 +185,18 @@ export function bagContact(s: State, tune: Tune, d: Thing, events: SimEvent[]): 
     loseHeart(s, tune, d, events);
     return s.hearts > 0;
   }
-  // Held at arm's length: put back touching him. (Its own creep is what is undone; he does not move it.)
+  // Held at arm's length (§3.5), and never moved by him (§5.4): its own creep
+  // into him is undone, so it stands touching him. A bag that was on him
+  // already as the tick began (it landed on him dazed, or crept on while he
+  // could not be hurt) stays where it was: overlapping, so his next launch
+  // cannot hit it until he has left it (rule 5).
+  const sx = d.px - h.x;
+  const sy = d.py - h.y;
+  if (sx * sx + sy * sy < reach * reach) {
+    d.x = d.px;
+    d.y = d.py;
+    return true;
+  }
   d.x = h.x + nx * reach;
   d.y = h.y + ny * reach;
   const room = s.room;

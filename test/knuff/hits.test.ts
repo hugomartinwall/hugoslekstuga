@@ -1270,18 +1270,31 @@ describe("touching him while he is landed", () => {
     expect(s.hearts).toBe(2);
   });
 
-  it("the money bag: costs a heart, unless it is dazed or he is invulnerable; then it is held at arm's length", () => {
+  it("the money bag: costs a heart, unless it is dazed or he is invulnerable; then it is held at arm's length, and he never moves it", () => {
     const s = room();
     const bag = put(s, "bag", 180, 374 - 46);
     expect(of(run(s, T, 1), "hurt").map((e) => [e.by, e.id])).toEqual([["bag", bag.id]]);
-    for (const over of [{ dazed: true }, { invulnerable: true }]) {
-      const t = room();
-      const b = put(t, "bag", 180, 374 - 46, { dazedUntil: over.dazed ? 10 : 0 });
-      if (over.invulnerable) t.him.invulnUntil = 10;
-      expect(of(run(t, T, 1), "hurt")).toEqual([]);
-      expect(distance(t, b)).toBeCloseTo(13 + 34, 9);
-      expect([t.him.x, t.him.y]).toEqual([180, 374]);
-    }
+    // Creeping into him while he cannot be hurt: its creep is undone, and it stands touching him.
+    const creep = tuned({ ...STILL, bagSpeed: 10 });
+    const t = room(creep);
+    t.him.invulnUntil = 60;
+    const b = put(t, "bag", 180, 374 - 47.1);
+    expect(of(run(t, creep, 30), "hurt")).toEqual([]);
+    expect(distance(t, b)).toBeCloseTo(13 + 34, 9);
+    expect([t.him.x, t.him.y]).toEqual([180, 374]);
+    // On him already, dazed (it landed on him): it stays where it is; nothing moves it out, and he does not move.
+    const u = room();
+    const on = put(u, "bag", 180, 374 - 30, { dazedUntil: 10 });
+    expect(of(run(u, T, 3), "hurt")).toEqual([]);
+    expect([on.x, on.y]).toEqual([180, 374 - 30]);
+    expect([u.him.x, u.him.y]).toEqual([180, 374]);
+    // His next launch is released on it: it cannot hit it until he has left it (rule 5); he bounces off it.
+    const events = tick(u, T, shot(0, -1));
+    expect(u.launch.id).toBe(1);
+    events.push(...run(u, T, 2));
+    expect(of(events, "hit")).toEqual([]);
+    expect(of(events, "bounce").map((e) => e.id)).toEqual([on.id]);
+    expect(on.hp).toBe(8);
   });
 
   it("gum and a pickup: nothing", () => {
