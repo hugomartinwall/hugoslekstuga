@@ -103,13 +103,18 @@ export function drawPlates(p: Paint, s: State): void {
   }
 }
 
-/** The offer on the floor: each offered plate's insert, and each pickup's tile, each with its name. */
-export function drawOffer(p: Paint, s: State): void {
+/**
+ * The offer on the floor, in two parts (§9.9 puts gum between them): the
+ * `inserts`, each offered plate's insert with its name, and the `tiles`,
+ * each pickup's tile with its name.
+ */
+export function drawOffer(p: Paint, s: State, part: "inserts" | "tiles"): void {
   if (!s.offer.open) return;
   const { dpr } = p;
   const room = s.room;
   const half = INSERT_SIZE / 2;
   for (const it of s.offer.items) {
+    if ((it.kind === "plate") !== (part === "inserts")) continue;
     const name = CHARM_NAME[it.charm] ?? it.charm.toUpperCase();
     if (it.kind === "plate") {
       const c = insertCentre(s, it.plate);

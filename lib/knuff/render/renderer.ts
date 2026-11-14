@@ -391,11 +391,12 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       ctx.fillStyle = dither;
       ctx.fillRect(fl, ft, fw, fh);
     }
-    // The offer: each offered plate's insert, each pickup's tile, and their names.
-    drawOffer(paint, state);
-    // Gum lies flat on the floor, under everything that moves.
+    // Floor inserts, gum, tiles (§9.9): each offered plate's insert and its
+    // name; gum, flat on the floor, under everything that moves; then each
+    // pickup's tile and its name, and the love heart's tile.
+    drawOffer(paint, state, "inserts");
     drawGum(paint, state, f.line !== null ? f.line.hitId : -1);
-    // The love heart's tile, with the tiles on the floor.
+    drawOffer(paint, state, "tiles");
     drawHeart(paint, state);
 
     // The hint on the floor, under everything that moves. Its hand is in
