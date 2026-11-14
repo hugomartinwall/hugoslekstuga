@@ -1317,6 +1317,19 @@ describe("touching him while he is landed", () => {
     expect([on.x, on.y]).toEqual([180, 374 - 30]);
     expect([u.him.x, u.him.y]).toEqual([180, 374]);
 
+    // Left under it, he is under a bag: once its daze is over it takes a heart, one, and stays where it landed.
+    const w = cloneState(u);
+    const sack = w.things.find((d) => d.id === on.id)!;
+    expect(sack.dazedUntil).toBeGreaterThan(w.tick);
+    const dazed = run(w, T, sack.dazedUntil - w.tick - 1);
+    expect(of(dazed, "hurt")).toEqual([]);
+    const after = run(w, T, T.invulnTicks - 2);
+    expect(of(after, "hurt").map((e) => [e.by, e.id])).toEqual([["bag", on.id]]);
+    expect(of(after, "hurt")[0].tick).toBeLessThanOrEqual(sack.dazedUntil + 1);
+    expect(w.hearts).toBe(u.hearts - 1);
+    expect([sack.x, sack.y]).toEqual([180, 374 - 30]);
+    expect(sack.onHim).toBe(true);
+
     for (const [dx, dy, why] of [
       [0, 1, "away from it"],
       [0, -1, "straight at its centre"],
