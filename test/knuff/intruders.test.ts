@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KINDS } from "../../lib/knuff/content/kinds";
+import { rimOut } from "../../lib/knuff/sim/bag";
 import { land } from "../../lib/knuff/sim/hot";
 import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
@@ -383,6 +384,53 @@ describe("the money bag (venture capital)", () => {
     }
     expect(nearest).toBeGreaterThanOrEqual(41 - 1e-9);
     expect(Math.hypot(t.x - bag.x, t.y - bag.y)).toBeGreaterThan(41 + 100);
+  });
+
+  it("a bag in a corner, him off its diagonal: the token slides the shorter way round the rim to the floor", () => {
+    const s = night(tuned({ bunnySpeed: 0, bagSpeed: 0 }));
+    const room = s.room;
+    // In the top left corner: the side away from him is the corner, off the floor both ways.
+    const bag = put(s, "bag", room.left + 34, room.top + 34, { hp: 7 });
+    const at = (o: { nx: number; ny: number }) => ({ x: bag.x + o.nx * 41, y: bag.y + o.ny * 41 });
+    const onFloor = (p: { x: number; y: number }) => p.x >= room.left + 7 - 1e-9 && p.y >= room.top + 7 - 1e-9;
+    // Him below it and a little to the right: away from him is up and a little left, nearer the top cushion's
+    // line. The shorter way round to the floor is clockwise: the token comes out along the top cushion, right of the bag.
+    s.him.x = bag.x + 60;
+    s.him.y = bag.y + 150;
+    const below = at(rimOut(s, bag, 41));
+    expect(onFloor(below)).toBe(true);
+    expect(below.x).toBeGreaterThan(bag.x);
+    expect(below.y).toBeLessThan(bag.y);
+    expect(below.y - (room.top + 7)).toBeLessThan(41 * (Math.PI / 180) + 1e-9);
+    // Him to its right and a little down: away is left and a little up. The token comes out along the left cushion, below the bag.
+    s.him.x = bag.x + 150;
+    s.him.y = bag.y + 60;
+    const beside = at(rimOut(s, bag, 41));
+    expect(onFloor(beside)).toBe(true);
+    expect(beside.y).toBeGreaterThan(bag.y);
+    expect(beside.x).toBeLessThan(bag.x);
+    expect(beside.x - (room.left + 7)).toBeLessThan(41 * (Math.PI / 180) + 1e-9);
+  });
+
+  it("a bag against a cushion off the room's middle, him straight below: a tie, and the token comes out on the side nearer the middle", () => {
+    const s = night(tuned({ bunnySpeed: 0, bagSpeed: 0 }));
+    const room = s.room;
+    const mid = (room.left + room.right) / 2;
+    for (const x of [100, 260]) {
+      const bag = put(s, "bag", x, room.top + 34, { hp: 7 });
+      s.him.x = x;
+      s.him.y = 300;
+      const o = rimOut(s, bag, 41);
+      const p = { x: bag.x + o.nx * 41, y: bag.y + o.ny * 41 };
+      // Both ways round reach the floor at the same turn: it goes the way that is nearer the middle of the room.
+      expect(p.y).toBeGreaterThanOrEqual(room.top + 7);
+      expect(Math.sign(p.x - x), `bag at ${x}`).toBe(Math.sign(mid - x));
+      // And the mirror spot, the other way round, is as far on: it was a tie.
+      const other = { x: bag.x - o.nx * 41, y: p.y };
+      expect(other.y).toBeGreaterThanOrEqual(room.top + 7);
+      expect(Math.abs(other.x - x)).toBeCloseTo(Math.abs(p.x - x), 9);
+      s.things.length = 0;
+    }
   });
 
   it("a token from the bag stops and fades 480 ticks after it appeared: gone, harmless, worth nothing; popped before that it is an ordinary token", () => {
