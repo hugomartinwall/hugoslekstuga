@@ -140,6 +140,48 @@ const survivalMaxx: ScreenPainter = (put, t) => {
   put(1, 14, 1 + Math.floor(((t % 9) / 9) * 27), 1, C.mint);
 };
 
+/** Knuff — pulled back, let go: he flies, pops three, and lands in a closing ring. */
+const knuff: ScreenPainter = (put, t) => {
+  const p = (t % 3.6) / 3.6;
+  const box = (x: number, y: number, n: number, color: string) => {
+    put(x, y, n, 1, color);
+    put(x, y + n - 1, n, 1, color);
+    put(x, y + 1, 1, n - 2, color);
+    put(x + n - 1, y + 1, 1, n - 2, color);
+  };
+  // The room: a cushion down each side.
+  put(0, 0, 1, SCREEN_H, C.dim);
+  put(29, 0, 1, SCREEN_H, C.dim);
+  // To 0.3 the pull grows, to 0.38 it is held, to 0.68 he flies, then he has landed.
+  const pull = p < 0.3 ? p / 0.3 : p < 0.38 ? 1 : 0;
+  const fly = p < 0.38 ? 0 : Math.min(1, (p - 0.38) / 0.3);
+  const landed = p >= 0.68;
+  const hx = 8 + Math.floor(fly * 15);
+  // The band behind him, and the thumb at its end (clear of the cushion at x = 0).
+  if (pull > 0) {
+    const len = 1 + Math.floor(pull * 4);
+    for (let i = 1; i <= len; i += 2) put(8 - i, 8, 1, 1, C.ink);
+    put(6 - len, 7, 2, 3, C.ink);
+  }
+  // Three dust bunnies in his way. Each is gone once he has reached it.
+  for (const bx of [13, 17, 21]) {
+    if (hx + 3 <= bx) put(bx, 8, 2, 2, C.ash);
+    else if (hx <= bx + 1 && !landed) put(bx - 1, 7, 4, 4, C.ink);
+  }
+  // Him: the mascot's coral, one eye.
+  put(hx, 7, 3, 3, C.coral);
+  put(hx + 2, 8, 1, 1, C.ink);
+  if (fly > 0 && !landed) {
+    // Flying: the white ring.
+    box(hx - 1, 6, 5, C.ink);
+  } else if (landed) {
+    // Landed: the thump ring closes from 9 cells to 7, then nothing.
+    // It never shrinks to the 5 × 5 box, which is the hot ring.
+    const k = Math.floor(((p - 0.68) / 0.32) * 4);
+    if (k < 2) box(hx - 3 + k, 4 + k, 9 - 2 * k, C.ink);
+  }
+};
+
 /** A cabinet with nothing special to show: two idle pixels (the old look). */
 const idle: ScreenPainter = (put, t) => {
   const blink = Math.floor(t * 2) % 2;
@@ -152,6 +194,7 @@ const SCREENS: Record<string, ScreenPainter> = {
   adventure,
   greyrot,
   "survival-maxx": survivalMaxx,
+  knuff,
 };
 
 export function screenFor(slug: string): ScreenPainter {
