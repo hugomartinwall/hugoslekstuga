@@ -22,7 +22,7 @@
  * Art is on a 1 u grid and every rectangle is snapped to whole device
  * pixels when it is drawn.
  */
-import { drawHugoSprite, type EyeState } from "@/lib/hugo/sprite";
+import { SPRITE_SIZE, drawHugoSprite, type EyeState, type SpriteDrawOptions } from "@/lib/hugo/sprite";
 import type { KnuffFonts } from "../fonts";
 import type { PullView } from "../input/pointer";
 import type { AimLine } from "../sim/aim";
@@ -31,7 +31,7 @@ import type { State, Thing, Tune } from "../sim/types";
 import { FLICK_TICKS, SHEEN_TICKS, type Effects } from "./effects";
 import { drawBoss, drawBossTelegraph, drawSheen } from "./boss";
 import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing, drawTileJump } from "./charms";
-import { createBaker, type Bitmap, type Palette } from "./bake";
+import { createBaker, stampRect, type Bitmap, type Palette } from "./bake";
 import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, drawTokenGhost, onFloor, rollMarks } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint } from "./hud";
 import {
@@ -162,6 +162,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
   let layout = layoutFor(ROOM_W, ROOM_H + 76, 1, false, { top: 0, right: 0, bottom: 0, left: 0 });
   const baker = createBaker();
+  /** His sprite at a whole cell, for drawing him scaled (drawHim). Made on first use; null where no canvas can be made. */
+  let himCanvas: HTMLCanvasElement | null | undefined;
   let dither: CanvasPattern | null = null;
   let ditherCell = 0;
 
@@ -265,6 +267,55 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       else ctx.drawImage(img, Math.round(paint.X(x)), Math.round(paint.Y(y)), Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)));
     },
   };
+
+  /**
+   * Him, by the site's painter. At his own size the painter draws him
+   * straight onto the canvas, every cell a whole `px` at a whole point.
+   * Scaled (Wide, a squash), the painter's own `ctx.scale` would make a
+   * 6 px cell 6.92 px and every cell edge a soft seam across his body. So
+   * he is painted at his whole cell into a canvas of his own and stamped
+   * from it at a whole number of device pixels, nearest neighbour: each
+   * cell a whole number of pixels, one wider in some places than in others
+   * (§9.1), mirrored about his middle when he faces left.
+   */
+  function drawHim(o: SpriteDrawOptions): void {
+    const sx = o.scaleX ?? 1;
+    const sy = o.scaleY ?? 1;
+    if (Math.abs(sx) === 1 && sy === 1) {
+      drawHugoSprite(ctx, o);
+      return;
+    }
+    if (himCanvas === undefined) {
+      try {
+        himCanvas = document.createElement("canvas");
+      } catch {
+        himCanvas = null;
+      }
+    }
+    const hctx = himCanvas ? himCanvas.getContext("2d") : null;
+    if (!himCanvas || !hctx) {
+      drawHugoSprite(ctx, o);
+      return;
+    }
+    const side = SPRITE_SIZE * o.px;
+    if (himCanvas.width !== side || himCanvas.height !== side) {
+      himCanvas.width = side;
+      himCanvas.height = side;
+    }
+    hctx.setTransform(1, 0, 0, 1, 0, 0);
+    hctx.clearRect(0, 0, side, side);
+    drawHugoSprite(hctx, { ...o, x: side / 2, y: side / 2, scaleX: 1, scaleY: 1 });
+    const at = stampRect(o.x, o.y, side, side, sx, sy);
+    if (sx < 0) {
+      ctx.save();
+      ctx.translate(at.x + at.w, at.y);
+      ctx.scale(-1, 1);
+      ctx.drawImage(himCanvas, 0, 0, at.w, at.h);
+      ctx.restore();
+    } else {
+      ctx.drawImage(himCanvas, at.x, at.y, at.w, at.h);
+    }
+  }
 
   function measure(coarse: boolean): boolean {
     const w = root.clientWidth;
@@ -616,7 +667,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     else if (fx.squashSide === "right") px += Math.round((1 - sqx) * 7 * cell * grow);
     else if (fx.squashSide === "top") py -= Math.round((1 - sqy) * 6 * cell * grow);
     else if (fx.squashSide === "bottom") py += Math.round((1 - sqy) * 6 * cell * grow);
-    drawHugoSprite(ctx, {
+    drawHim({
       x: px,
       y: py,
       px: cell,

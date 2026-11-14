@@ -112,3 +112,20 @@ export function outlineOf(rows: Bitmap, ch: string, empty = "-"): Bitmap {
     return out;
   });
 }
+
+/**
+ * Where a picture `w` × `h` device pixels, scaled by (`sx`, `sy`) about
+ * (`cx`, `cy`), is stamped: a rectangle a whole number of device pixels
+ * wide and tall with its corners on whole device pixels (`cx` and `cy`
+ * are whole). Stamped there nearest neighbour (`imageSmoothingEnabled`
+ * off), a cell of the picture is a whole number of pixels: one wider in
+ * some places than in others where the scale is not whole, as §9.1
+ * accepts, and never a soft edge. A negative `sx` (a mirror) gives the
+ * same rectangle mirrored about `cx`.
+ */
+export function stampRect(cx: number, cy: number, w: number, h: number, sx: number, sy: number): { x: number; y: number; w: number; h: number } {
+  const dw = Math.max(1, Math.round(w * Math.abs(sx)));
+  const dh = Math.max(1, Math.round(h * Math.abs(sy)));
+  const left = cx - Math.round(dw / 2);
+  return { x: sx < 0 ? 2 * cx - left - dw : left, y: cy - Math.round(dh / 2), w: dw, h: dh };
+}
