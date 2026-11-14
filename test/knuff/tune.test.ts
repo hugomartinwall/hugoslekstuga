@@ -34,8 +34,9 @@ describe("the knob table", () => {
     expect(DEFAULT_TUNE.pullFullPx).toBe(100);
   });
 
-  it("the game's half holds the spec's starting values (§2.2), as the lead's decisions have set them", () => {
+  it("the game's half holds the spec's values (§2.2), as the lead's decisions have set them", () => {
     // Written out, so a number changed in the table shows up here as a change someone made on purpose.
+    // pace 2, popHotTicks 0, aimCushions 1 and pipRefillTicks 96 are the game's (decision 1), no longer knobs on the screen.
     // From the spec's first values: bossSpeed 90 (decision 16), padHurtsHot off (21), thumpTurnsTokens on (22), paceLastCall 1020 (23),
     // and paceTokens 5, the dial turned to bring the table's rows back in after them (decision 24) and after the thump's
     // wider reach for tokens, thumpTokenReach 43 (decision 31); bellDazeTicks 60, Bell made a live pick (decision 33).
@@ -131,10 +132,12 @@ describe("the knob table", () => {
     });
   });
 
-  it("the three knobs the playable carries on the screen start at pace 2, 0 ticks and 1 cushion", () => {
+  it("the game plays at pace 2, hot for 0 ticks after a pop, a line through 1 cushion and a pip back every 96 ticks (decision 1)", () => {
+    // The four the owner's builds carried on the screen, written into the table as the game's own.
     expect(DEFAULT_TUNE.pace).toBe(2);
     expect(DEFAULT_TUNE.popHotTicks).toBe(0);
     expect(DEFAULT_TUNE.aimCushions).toBe(1);
+    expect(DEFAULT_TUNE.pipRefillTicks).toBe(96);
   });
 });
 

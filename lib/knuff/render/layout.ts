@@ -60,19 +60,12 @@ function snapToCells(fit: number, dpr: number): number {
 }
 
 /**
- * `playable` is the builds the owner checks before the game ships (the
- * spec's steps 1 to 5): there a laptop page is never too small. Under 0.75
- * the room goes on shrinking to fit, however short the window. A phone
- * keeps its rule either way.
+ * Under a scale of 0.75 the game does not run, on a phone and on a laptop
+ * alike: a panel says why (turn the phone upright; make the window
+ * taller). So a laptop is too small only when its page is under 436 px
+ * tall.
  */
-export function layoutFor(
-  pageW: number,
-  pageH: number,
-  dpr: number,
-  coarse: boolean,
-  safe: Insets,
-  playable = false,
-): Layout {
+export function layoutFor(pageW: number, pageH: number, dpr: number, coarse: boolean, safe: Insets): Layout {
   // The page less the safe areas.
   const W = pageW - safe.left - safe.right;
   const H = pageH - safe.top - safe.bottom;
@@ -99,9 +92,10 @@ export function layoutFor(
     // The snap alone can only land on multiples of 1 / (2 × dpr): where it
     // comes out under 1 the room shrinks to fit instead, as on a phone.
     if (s < 1) s = Math.min(1, fit);
-    // A window with no height at all still gets a room, not a negative one.
-    if (playable) s = Math.max(s, 0.05);
   }
+  // A page with no height at all still gets a room, not one turned inside
+  // out (it is too small to play, and nothing is drawn in it).
+  s = Math.max(s, 0.05);
 
   const roomW = ROOM_W * s;
   const roomH = ROOM_H * s;
@@ -135,7 +129,7 @@ export function layoutFor(
     s,
     dpr,
     coarse,
-    tooSmall: !playable && s < MIN_SCALE,
+    tooSmall: s < MIN_SCALE,
     page: { w: pageW, h: pageH },
     bar: { x: barX, y: top, w: barW, h: BAR_H },
     room: { x: roomX, y: roomY, w: roomW, h: roomH },

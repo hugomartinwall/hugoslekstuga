@@ -150,7 +150,7 @@ export type Paint = {
 
 export type Renderer = {
   /** Measure the root, lay the screen out and size the canvas. True if the layout changed. */
-  measure(coarse: boolean, playable: boolean): boolean;
+  measure(coarse: boolean): boolean;
   readonly layout: Layout;
   draw(frame: Frame): void;
 };
@@ -266,12 +266,12 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     },
   };
 
-  function measure(coarse: boolean, playable: boolean): boolean {
+  function measure(coarse: boolean): boolean {
     const w = root.clientWidth;
     const h = root.clientHeight;
     if (w === 0 || h === 0) return false;
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    const next = layoutFor(w, h, dpr, coarse, readSafeInsets(), playable);
+    const next = layoutFor(w, h, dpr, coarse, readSafeInsets());
     const changed = JSON.stringify(next) !== JSON.stringify(layout);
     layout = next;
     const cw = Math.round(w * dpr);

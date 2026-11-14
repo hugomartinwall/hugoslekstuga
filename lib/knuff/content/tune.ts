@@ -7,9 +7,9 @@
  * game's and fails if they part. GAME is what the game adds (the spec's
  * table, §2.2), and grows a row at a time as the steps are built.
  *
- * One knob, `pace`, gives six others their values (PACE below). A caller
- * may override any knob when a game starts: `createKnuff` takes a partial
- * table and lays it over DEFAULT_TUNE with `mergeTune`.
+ * One knob, `pace`, gives six others their values (PACE below). The game
+ * plays DEFAULT_TUNE as it stands; the bots and the balance script may lay
+ * a partial table over it with `mergeTune` (the script's `--tune`).
  */
 import type { Tune } from "../sim/types";
 
@@ -93,21 +93,26 @@ export function paceGives(pace: number): PaceGiven {
   return pace === 2 || pace === 3 ? PACE[pace] : PACE[1];
 }
 
-/** The pace the night starts at. */
-const START_PACE = 2;
+/**
+ * The game's pace. It, `popHotTicks` 0, `aimCushions` 1 and the 96-tick
+ * pip timer pace 2 gives were knobs on the screen of the builds the owner
+ * played; the lead's decision 1 fixed them at these values.
+ */
+const GAME_PACE = 2;
 
-/** What the game adds: the spec's table of knobs, as far as the build has reached. */
+/** What the game adds: the spec's table of knobs (§2.2). */
 export const GAME = {
   // Launch and pips.
   lineShowsPx: 12,
   noShotPx: 24,
   minPower: 0.5,
+  // The aim line runs through one cushion and stops at the next (decision 1).
   aimCushions: 1,
   pipMax: 3,
   pipRefundPop: 2,
   gumStopMinPips: 1,
 
-  // Hot and landing.
+  // Hot and landing. Not hot after a pop below the hot speed (decision 1).
   popHotTicks: 0,
   thumpRadius: 40,
   dazeTicks: 36,
@@ -144,8 +149,9 @@ export const GAME = {
   telegraphTicks: 36,
   arriveMinDist: 150,
   roomCap: 24,
-  pace: START_PACE,
-  ...PACE[START_PACE],
+  // Pace 2, and with it a pip back every 96 ticks (decision 1).
+  pace: GAME_PACE,
+  ...PACE[GAME_PACE],
 
   // Intruders.
   bunnySpeed: 22,

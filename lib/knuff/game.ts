@@ -18,17 +18,13 @@
  * value, `reduced`: the player's choice (`setMotion`: auto, on or off, the
  * panel's system, reduced and full) laid over the system's setting. Where
  * the choice and the mute are stored is the shell's (save.ts).
- *
- * Until the game ships the handle also carries `setTune`, for the knob
- * keys of the builds the owner checks. No night is ever played under two
- * sets of rules: a change of rules makes the night again.
  */
 import { readAccent, subscribeAccent } from "@/lib/hugo/sprite";
 import { createAudio, type Cue } from "./audio/audio";
 import { createEars } from "./audio/events";
 import { CHARM_NAME, END, KIND_NAME } from "./content/copy";
 import { CLOCK } from "./content/night";
-import { DEFAULT_TUNE, mergeTune } from "./content/tune";
+import { DEFAULT_TUNE } from "./content/tune";
 import { DEV_HANDLES } from "./dev";
 import type { KnuffFonts } from "./fonts";
 import { attachPointer, type Aim, type PullView } from "./input/pointer";
@@ -42,9 +38,6 @@ import { threat } from "./sim/hot";
 import { createState, type StartOptions } from "./sim/state";
 import { step, wouldSlow } from "./sim/step";
 import type { Launch, SimEvent, State, Tune } from "./sim/types";
-
-/** The three knobs the owner's builds carry on the screen, and the one more behind MORE. */
-export type KnuffKnobs = { pace: number; popHotTicks: number; aimCushions: number; pipRefillTicks: number };
 
 /** What the end panel shows. */
 export type KnuffOver = {
@@ -60,16 +53,11 @@ export type KnuffOver = {
 };
 
 /**
- * What the page needs to know, and nothing more: which screen is up, what
- * the knobs are set to (so their keys show it), and when the night is
- * over, what the end panel says.
+ * What the page needs to know, and nothing more: which screen is up, the
+ * settings, and when the night is over, what the end panel says.
  */
 export type KnuffView = {
   screen: "start" | "play" | "paused" | "over" | "tooSmall";
-  /** The knobs the next night is made with. */
-  knobs: KnuffKnobs;
-  /** Every knob that is not at its starting value, as JSON: what MORE prints. */
-  named: string;
   over: KnuffOver | null;
   /** The body charms taken this night, by name, in the order they were taken: the pause panel lists them. */
   charms: string[];
@@ -82,13 +70,6 @@ export type KnuffView = {
 /** The view before the game has said anything. */
 export const FIRST_VIEW: KnuffView = {
   screen: "start",
-  knobs: {
-    pace: DEFAULT_TUNE.pace,
-    popHotTicks: DEFAULT_TUNE.popHotTicks,
-    aimCushions: DEFAULT_TUNE.aimCushions,
-    pipRefillTicks: DEFAULT_TUNE.pipRefillTicks,
-  },
-  named: "{}",
   over: null,
   charms: [],
   muted: false,
@@ -99,10 +80,6 @@ export type KnuffOptions = {
   fonts: KnuffFonts;
   /** The one callback: called when the view changes, never per frame. */
   onChange: (view: KnuffView) => void;
-  /** Knobs laid over the default table (content/tune.ts): the `?tune=` of the owner's builds. */
-  tune?: Partial<Tune>;
-  /** The owner's builds: a laptop page is never too small. */
-  playable?: boolean;
 };
 
 export type KnuffHandle = {
@@ -116,14 +93,6 @@ export type KnuffHandle = {
   restart(): void;
   /** BACK TO PLAYHOUSE: the night ends with no panel. */
   abandon(): void;
-  /**
-   * The knob keys. A patch that changes only the aim line's cushions
-   * takes effect at once: it changes what is drawn and nothing else. Any
-   * other patch changes the rules: on the start screen the night is made
-   * again, a night in progress is dropped for the start screen, and after
-   * a night is over the patch waits for the next one.
-   */
-  setTune(patch: Partial<Tune>): void;
   /** Sound on or off. M does the same from the keyboard. */
   setMuted(muted: boolean): void;
   /** Reduced motion: "auto" follows the system, "on" reduces, "off" never does. Changes the picture only. */
@@ -171,27 +140,9 @@ function newSeed(): number {
   return (Date.now() ^ (Math.random() * 0x100000000)) >>> 0;
 }
 
-/** Do two tables differ in anything but the cushions the aim line runs through? That one is drawing only. */
-function rulesDiffer(a: Tune, b: Tune): boolean {
-  const x = a as unknown as Record<string, unknown>;
-  const y = b as unknown as Record<string, unknown>;
-  for (const key of Object.keys(x)) {
-    if (key !== "aimCushions" && x[key] !== y[key]) return true;
-  }
-  return false;
-}
-
 export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: KnuffOptions): KnuffHandle {
-  /**
-   * Every knob that has been named, by the link or by a key, in one
-   * object. The table in use is always this laid over the default table
-   * in one pass: `pace` deals six other knobs their values, and one of
-   * them named here must outlive a change of pace.
-   */
-  let named: Partial<Tune> = { ...(opts.tune ?? {}) };
-  /** The table the State was made with. */
-  let tune = mergeTune(DEFAULT_TUNE, named);
-  const playable = opts.playable === true;
+  /** The game's table (content/tune.ts). */
+  const tune: Tune = { ...DEFAULT_TUNE };
   // First, and before anything is registered: this is the one call that can throw.
   const renderer = createRenderer(root, canvas, opts.fonts);
   const fx = createEffects(
@@ -251,25 +202,6 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
 
   // ── What the page is told ───────────────────────────────────────────
 
-  let knobs: KnuffKnobs = FIRST_VIEW.knobs;
-  let namedJson = "{}";
-  /** The knobs as the next night will have them: its keys show these. */
-  const readKnobs = () => {
-    const next = mergeTune(DEFAULT_TUNE, named);
-    knobs = {
-      pace: next.pace,
-      popHotTicks: next.popHotTicks,
-      aimCushions: next.aimCushions,
-      pipRefillTicks: next.pipRefillTicks,
-    };
-    const base = DEFAULT_TUNE as unknown as Record<string, unknown>;
-    const now = next as unknown as Record<string, unknown>;
-    const moved: Record<string, unknown> = {};
-    for (const key of Object.keys(base)) if (now[key] !== base[key]) moved[key] = now[key];
-    namedJson = JSON.stringify(moved);
-  };
-  readKnobs();
-
   const over = (): KnuffOver | null => {
     if (state.phase !== "over") return null;
     const morning = state.ended === "morning";
@@ -301,8 +233,6 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
             : paused
               ? "paused"
               : "play",
-    knobs,
-    named: namedJson,
     over: overShown ? over() : null,
     charms: state.charms.map((c) => CHARM_NAME[c] ?? c),
     muted,
@@ -361,12 +291,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
 
   // ── Starting, ending, pausing ───────────────────────────────────────
 
-  /** A new night on the start screen, made with every knob named so far. */
+  /** A new night on the start screen. */
   const begin = (seed: number = newSeed(), start: StartOptions = {}) => {
-    const next = mergeTune(DEFAULT_TUNE, named);
-    // A best score under other rules says nothing about these.
-    if (rulesDiffer(next, tune)) best = 0;
-    tune = next;
     state = createState(seed, tune, start);
     queued = null;
     line = null;
@@ -382,7 +308,6 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     ears.reset();
     lightsFrom = -1;
     loopNow();
-    readKnobs();
     tell();
   };
 
@@ -445,7 +370,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   const coarse = window.matchMedia("(pointer: coarse)");
   let measuredDpr = 0;
   const relayout = () => {
-    const changed = renderer.measure(coarse.matches, playable);
+    const changed = renderer.measure(coarse.matches);
     measuredDpr = window.devicePixelRatio;
     if (!changed) return;
     // A resize drops a held pull and lays the screen out again. It pauses
@@ -703,29 +628,6 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       motion = pref;
       rethinkMotion();
       tell();
-    },
-    setTune(patch) {
-      if (destroyed || left) return;
-      named = { ...named, ...patch };
-      const next = mergeTune(DEFAULT_TUNE, named);
-      readKnobs();
-      if (!rulesDiffer(next, tune)) {
-        // Only the line: it changes what is drawn and nothing else.
-        tune = next;
-        line = null;
-        tell();
-        return;
-      }
-      if (state.phase === "over") {
-        // The rules wait for the night AGAIN starts; the line does not.
-        tune = { ...tune, aimCushions: next.aimCushions };
-        line = null;
-        tell();
-        return;
-      }
-      // On the start screen the night is made again; a night in progress
-      // is dropped and the start screen comes back.
-      begin();
     },
   };
 }
