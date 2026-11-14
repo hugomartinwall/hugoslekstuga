@@ -247,3 +247,103 @@ describe("the turned token's flick (decision 31, §9.5)", () => {
     expect(seen).toBeGreaterThan(5);
   });
 });
+
+describe("the thump ring when the night is over (§9.5)", () => {
+  let b: Browser | null = null;
+  let game: KnuffHandle | null = null;
+  afterEach(() => {
+    game?.destroy();
+    game = null;
+    b?.restore();
+    b = null;
+  });
+
+  const land = (tick: number): SimEvent => ({ type: "land", tick, x: 200, y: 300, dazed: 0 }) as SimEvent;
+  const turned = (tick: number): SimEvent => ({ type: "tokenTurned", tick, x: 230, y: 300, id: 7, vx: 150, vy: 0 }) as SimEvent;
+  const over = (tick: number): SimEvent => ({ type: "over", tick, how: "morning", score: 0, bonus: 0 }) as SimEvent;
+
+  for (const reduced of [false, true]) {
+    it(`goes on by the picture's clock once no tick comes, and is let go when its ticks are up; a flick too${reduced ? " (reduced motion)" : ""}`, () => {
+      const fx = createEffects(() => DEFAULT_TUNE);
+      fx.setReduced(reduced);
+      fx.onEvent(land(100));
+      fx.onEvent(turned(100));
+      // While the night runs the marks are drawn at the picture's tick.
+      expect(fx.markTick(99.5)).toBe(99.5);
+      fx.onEvent(over(100));
+      // The simulation has stopped on tick 100: from here the frames move them, 60 ticks a second.
+      expect(fx.markTick(100.5)).toBe(100);
+      fx.update(0.3, 0.3, 0);
+      expect(fx.markTick(100.5)).toBeCloseTo(118, 6);
+      expect([fx.thumps.length, fx.flicks.length]).toEqual([1, 1]);
+      fx.update(0.2, 0.2, 0);
+      // The flick's 24 ticks are up; the ring's 36 are not.
+      expect([fx.thumps.length, fx.flicks.length]).toEqual([1, 0]);
+      fx.update(0.2, 0.2, 0);
+      expect([fx.thumps.length, fx.flicks.length]).toEqual([0, 0]);
+      // A new night is drawn on its own ticks again.
+      fx.reset();
+      expect(fx.markTick(7.25)).toBe(7.25);
+    });
+  }
+
+  it("is drawn closing after a night ends inside it, and is gone when its 36 ticks are up, in the whole game", () => {
+    // He lands on the next tick with one heart, and a token 60 u away, past the reach that turns
+    // tokens, rolls into him: the night ends inside the ring's 36 ticks.
+    const s = night(DEFAULT_TUNE, { hearts: 1 });
+    put(s, "token", s.him.x + 60, s.him.y, { vx: -150, vy: 0 });
+    s.him.hot = true;
+    s.him.vx = 30;
+    s.launch.active = true;
+    s.launch.id = 1;
+    // The same night on a copy, to say where its landing and its end fall.
+    const copy: State = structuredClone(s);
+    const seen: SimEvent[] = [];
+    for (let i = 0; i < 120 && copy.phase !== "over"; i++) step(copy, { launch: null, pullHeld: false }, DEFAULT_TUNE, seen);
+    const landed = seen.find((e) => e.type === "land")?.tick ?? -1;
+    const ended = seen.find((e) => e.type === "over")?.tick ?? -1;
+    expect(landed).toBeGreaterThanOrEqual(0);
+    expect(ended - landed).toBeGreaterThan(6);
+    expect(ended - landed).toBeLessThan(DEFAULT_TUNE.dazeTicks - 12);
+
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    createStore(local, session).writeRun({ ...DEFAULT_TUNE }, s);
+    b = installBrowser({ w: 390, h: 664, coarse: true, local, session });
+    const rects: Rect[] = [];
+    const main = recordingCanvas("main", rects);
+    b.doc.createElement = () => recordingCanvas(`made ${++made}`, rects);
+    const views: string[] = [];
+    game = createKnuff(b.root as unknown as HTMLElement, main, { fonts: FONTS, onChange: (v) => views.push(v.screen) });
+    // Full motion: the ring closes. (The lost heart shakes the picture: that moves the whole ring, not its radius.)
+    game.setMotion("off");
+    game.resumeStored();
+    b.wait(600);
+    const ink = rgba(C.ink, 0.75);
+    /** The ring's radius in device px this frame, or -1 when none is drawn. */
+    const ringNow = (): number => {
+      const sq = rects.filter((r) => r.on === "main" && r.color === ink);
+      if (sq.length < 6) return -1;
+      const cx = sq.reduce((a, r) => a + (r.x0 + r.x1) / 2, 0) / sq.length;
+      const cy = sq.reduce((a, r) => a + (r.y0 + r.y1) / 2, 0) / sq.length;
+      return sq.reduce((a, r) => a + Math.hypot((r.x0 + r.x1) / 2 - cx, (r.y0 + r.y1) / 2 - cy), 0) / sq.length;
+    };
+    const radii: number[] = [];
+    for (let f = 0; f < 90; f++) {
+      rects.length = 0;
+      b.frame();
+      radii.push(ringNow());
+    }
+    // The night did end, and its panel came.
+    expect(views).toContain("over");
+    const drawn = radii.filter((r) => r >= 0);
+    // Drawn on every tick of its 36 (and one frame either side of a tick's edge), closing all the way:
+    // frozen at the end, it was drawn on every frame of the hold.
+    expect(drawn.length).toBeGreaterThanOrEqual(DEFAULT_TUNE.dazeTicks - 2);
+    expect(drawn.length).toBeLessThanOrEqual(DEFAULT_TUNE.dazeTicks + 2);
+    for (let i = 1; i < drawn.length; i++) expect(drawn[i]).toBeLessThanOrEqual(drawn[i - 1] + 0.5);
+    expect(drawn[drawn.length - 1]).toBeLessThan(drawn[0] * 0.5);
+    // And once gone it stays gone, under the lights and the panel alike.
+    expect(radii.slice(radii.indexOf(drawn[drawn.length - 1]) + 1).every((r) => r < 0)).toBe(true);
+  });
+});

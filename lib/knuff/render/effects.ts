@@ -6,7 +6,7 @@
  * the simulation. Random numbers here are the built-in ones on purpose:
  * this is drawing, and no outcome hangs on it.
  */
-import { hotSpeed } from "../sim/physics";
+import { DT, hotSpeed } from "../sim/physics";
 import type { Side, SimEvent, State, Tune } from "../sim/types";
 import { C, charmColor } from "./palette";
 
@@ -89,6 +89,16 @@ export type Effects = {
   shake: number;
   /** Is he blinking at `now`? */
   blinking(now: number): boolean;
+  /**
+   * The tick the marks timed in ticks (the thump rings, the turned
+   * tokens' flicks) are drawn at, given the picture's `tickNow`. While a
+   * night runs, `tickNow`. Once it is over the simulation has stopped and
+   * its ticks with it, so they go on by the picture's clock: the tick it
+   * ended on, and the real time since, in ticks. A ring that was closing
+   * as he won finishes closing under the lights, and is gone; frozen half
+   * closed, it was the one thing in the picture that looked paused.
+   */
+  markTick(tickNow: number): number;
   /** Take in one event of a tick. Returns the freeze it asks for, in seconds. */
   onEvent(e: SimEvent): number;
   /** After every tick: the trail and which way he faces. */
@@ -139,6 +149,9 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
   /** The lane run the sheen is being laid along: where its last stretch ended. */
   let run: { lane: number; dir: number; x: number; tick: number } | null = null;
   let reduced = false;
+  /** The tick the night ended on, -1 while it runs; and the real time since, in ticks (`markTick`). */
+  let endTick = -1;
+  let sinceEnd = 0;
   let blinkAt = -1;
   let blinkUntil = 0;
 
@@ -197,6 +210,10 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
 
     blinking(now) {
       return now < blinkUntil;
+    },
+
+    markTick(tickNow) {
+      return endTick >= 0 ? endTick + sinceEnd : tickNow;
     },
 
     plateFlash(i) {
@@ -379,6 +396,11 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           burst(e.x, e.y, 30, 260, C.ink, 3);
           if (!reduced) fx.shake = Math.max(fx.shake, 8);
           return 0;
+        case "over":
+          // The simulation stops here: the marks timed in ticks go on by the picture's clock (`markTick`).
+          endTick = e.tick;
+          sinceEnd = 0;
+          return 0;
         default:
           return 0;
       }
@@ -421,6 +443,14 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
     },
 
     update(realDt, scaledDt, now) {
+      // After the end no tick comes to let the thump rings and the flicks go: they go here, on their time.
+      if (endTick >= 0) {
+        sinceEnd += realDt / DT;
+        const at = endTick + sinceEnd;
+        const dazeTicks = tuneNow().dazeTicks;
+        while (thumps.length > 0 && at - thumps[0].tick >= dazeTicks) thumps.shift();
+        while (flicks.length > 0 && at - flicks[0].tick >= FLICK_TICKS) flicks.shift();
+      }
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.life -= scaledDt;
@@ -506,6 +536,8 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       fx.squashY = 1;
       fx.squashSide = "";
       fx.facing = 1;
+      endTick = -1;
+      sinceEnd = 0;
     },
   };
   return fx;

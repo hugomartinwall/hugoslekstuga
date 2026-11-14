@@ -489,9 +489,11 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     }
 
     // The thump: a broken ring on the floor that closes over the daze. The ring is the timer.
+    // Once the night is over it closes on the picture's clock (`markTick`), and is gone.
+    const markNow = fx.markTick(tickNow);
     const ringW = Math.max(2, Math.round(S * 2));
     for (const t of fx.thumps) {
-      const k = Math.min(1, Math.max(0, (tickNow - t.tick) / Math.max(1, tune.dazeTicks)));
+      const k = Math.min(1, Math.max(0, (markNow - t.tick) / Math.max(1, tune.dazeTicks)));
       const radius = f.reduced ? tune.thumpRadius : tune.thumpRadius - (tune.thumpRadius - r) * k;
       paint.ring(X(t.x), Y(t.y), radius * S, rgba(C.ink, 0.75), ringW);
     }
@@ -601,7 +603,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     for (const fl of fx.flicks) {
       const d = state.things.find((t) => t.id === fl.id);
       if (!d || d.hp <= 0) continue;
-      const k = Math.min(1, Math.max(0, (tickNow - fl.tick) / FLICK_TICKS));
+      const k = Math.min(1, Math.max(0, (markNow - fl.tick) / FLICK_TICKS));
       rollMarks(paint, d.px + (d.x - d.px) * alpha, d.py + (d.y - d.py) * alpha, d.vx, d.vy, rgba(C.acid, f.reduced ? 1 : 1 - 0.8 * k));
     }
 
