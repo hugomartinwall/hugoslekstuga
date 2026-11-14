@@ -978,9 +978,12 @@ pieces (the pull, the keys, the loop, the layout) are driven with
 stand-ins for the browser, and `save` and `keyboard` make the whole
 game in one (`test/knuff/browser.ts`: a window, a document, a canvas
 that draws nothing, two storages and a frame clock turned by hand).
-`wiring` holds its place on the site: the registry entry, the icon and
-the cabinet's painter. The dev handle is `window.__knuff`, development
-only.
+`pixels` makes it with a canvas that keeps every rectangle it is asked
+for: every one lands on whole device pixels (him grown by Wide or
+squashed is stamped from a canvas of his own, nearest neighbour), and
+a token the thump turns shows its new way. `wiring` holds its place on
+the site: the registry entry, the icon and the cabinet's painter. The
+dev handle is `window.__knuff`, development only.
 
 ## Things NOT to do
 
