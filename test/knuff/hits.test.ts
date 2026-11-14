@@ -800,7 +800,7 @@ describe("Bell", () => {
     return { s, events };
   }
 
-  it("dust bunnies, tokens and envelopes, all of them in the room: dazed 36 ticks", () => {
+  it("dust bunnies, tokens and envelopes, all of them in the room: dazed bellDazeTicks (60 since decision 33)", () => {
     let d: Thing | null = null;
     let t: Thing | null = null;
     let e: Thing | null = null;
@@ -810,7 +810,9 @@ describe("Bell", () => {
       e = put(s, "envelope", 320, 300);
     });
     const [c] = of(events, "cushion");
-    expect([d!.dazedUntil, t!.dazedUntil, e!.dazedUntil]).toEqual([c.tick + 36, c.tick + 36, c.tick + 36]);
+    const until = c.tick + T.bellDazeTicks;
+    expect(T.bellDazeTicks).toBe(60);
+    expect([d!.dazedUntil, t!.dazedUntil, e!.dazedUntil]).toEqual([until, until, until]);
   });
 
   it("a battery, gum and the money bag: nothing", () => {
