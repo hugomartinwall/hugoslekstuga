@@ -168,6 +168,8 @@ export function hourStep(s: State, i: number): "done" | "now" | "to come" {
 
 /** Which of the two hints is up, from the State alone. */
 export function hintFor(s: State): { hand: boolean; words: "first" | "again" | "" } {
+  // A night that is over asks for nothing: no launch is taken while the room holds its last picture.
+  if (s.phase === "over") return { hand: false, words: "" };
   const launches = s.launch.id;
   const landed = launches >= 2 || (launches === 1 && !s.launch.active);
   return {

@@ -313,6 +313,17 @@ describe("what is drawn for reading: where it goes", () => {
     expect(seen).toEqual(["1:hand/first", "2:hand/again", "3:-/again", "4:-/again", "5:-/again", "6:-/-", "7:-/-"]);
   });
 
+  it("a night that is over shows no hint, however few launches it had", () => {
+    const s = night();
+    fire(s);
+    toLanding(s);
+    expect(hintFor(s)).toEqual({ hand: true, words: "again" });
+    // He falls before his third launch: the hand and the words go with the night.
+    s.phase = "over";
+    s.ended = "hearts";
+    expect(hintFor(s)).toEqual({ hand: false, words: "" });
+  });
+
   it("his pips are 23 u under his centre and the meter 24 u above it; near a cushion they change sides", () => {
     const s = night();
     const r = DEFAULT_TUNE.himRadius;
