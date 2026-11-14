@@ -33,7 +33,7 @@ import { drawBoss, drawBossTelegraph, drawSheen } from "./boss";
 import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing, drawTileJump } from "./charms";
 import { createBaker, type Bitmap, type Palette } from "./bake";
 import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, drawTokenGhost, onFloor, rollMarks } from "./intruders";
-import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
+import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint } from "./hud";
 import {
   DECK_HINT_MIN,
   bodyOrder,
@@ -378,10 +378,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = C.page;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (L.tooSmall) {
-      drawTooSmall(paint);
-      return;
-    }
+    // Too small to play: the room is not drawn, and the Too small panel (Client.tsx) says why.
+    if (L.tooSmall) return;
 
     const h = state.him;
     const hx = h.px + (h.x - h.px) * alpha;

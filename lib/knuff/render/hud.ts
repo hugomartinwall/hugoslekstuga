@@ -9,7 +9,7 @@
  * the step that draws everything else. Sizes given in px do not scale
  * with the room; sizes given in units do.
  */
-import { CHARM_LINE, CHARM_NAME, HINT, HINT_AGAIN, TOO_SMALL } from "../content/copy";
+import { CHARM_LINE, CHARM_NAME, HINT, HINT_AGAIN } from "../content/copy";
 import { CLOCK, HOURS } from "../content/night";
 import type { State, Tune } from "../sim/types";
 import { hourStep, pauseKeyRect } from "./layout";
@@ -320,8 +320,3 @@ export function drawRoomHint(
   else drawHand(p, hx, hy + pull, hy, now, reduced);
 }
 
-/** The page is too small to play: one line, in the middle of it. */
-export function drawTooSmall(p: Paint): void {
-  const { page, coarse } = p.layout;
-  p.sentence(coarse ? TOO_SMALL.phone : TOO_SMALL.laptop, (page.w / 2) * p.dpr, (page.h / 2) * p.dpr, C.ink);
-}

@@ -111,3 +111,15 @@ export const CHARM_LINE: Readonly<Record<string, string>> = {
 
 /** The pause panel's heading over the body charms taken. */
 export const CHARMS_TAKEN = "CHARMS";
+
+/**
+ * The pause panel's three settings (§9.7) and the choices of the two
+ * groups. Motion's three are the stored values "auto", "on" and "off".
+ */
+export const SETTINGS = {
+  sound: "Sound",
+  pull: "Pull",
+  motion: "Motion",
+  pullChoice: { back: "back", push: "push" },
+  motionChoice: { auto: "system", on: "reduced", off: "full" },
+} as const;

@@ -2,14 +2,17 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useSearch } from "@/components/Search";
+import { ChipGroup } from "@/components/ui/Chip";
 import Dialog from "@/components/ui/Dialog";
 import Keycap from "@/components/ui/Keycap";
 import ScrollRegion from "@/components/ui/ScrollRegion";
+import Switch from "@/components/ui/Switch";
 import Tag from "@/components/ui/Tag";
 import { CREAM_HEX, accentVars } from "@/lib/colors";
-import { CHARMS_TAKEN, END, KEYS, PANEL_LABEL, ROOT_LABEL } from "@/lib/knuff/content/copy";
+import { CHARMS_TAKEN, END, KEYS, PANEL_LABEL, ROOT_LABEL, SETTINGS, TOO_SMALL } from "@/lib/knuff/content/copy";
 import { resolveKnuffFonts } from "@/lib/knuff/fonts";
 import { FIRST_VIEW, createKnuff, type KnuffHandle, type KnuffView } from "@/lib/knuff/game";
+import type { MotionPref } from "@/lib/knuff/render/motion";
 
 /**
  * Knuff: full-screen from first paint. The whole game is imperative
@@ -36,6 +39,17 @@ const GAME_ACCENT = accentVars("pink");
  * margin above, so its top never leaves the page.
  */
 const PANEL = "flex max-h-[calc(100dvh-3rem)] w-full max-w-sm flex-col";
+
+const PULL_OPTIONS = [
+  { value: "back", label: SETTINGS.pullChoice.back },
+  { value: "push", label: SETTINGS.pullChoice.push },
+] as const;
+
+const MOTION_OPTIONS = [
+  { value: "auto", label: SETTINGS.motionChoice.auto },
+  { value: "on", label: SETTINGS.motionChoice.on },
+  { value: "off", label: SETTINGS.motionChoice.off },
+] as const satisfies readonly { value: MotionPref; label: string }[];
 
 /**
  * AGAIN needs a fresh press at least 600 ms after the panel appears: the
@@ -92,6 +106,8 @@ export default function Client({ standalone = false }: { standalone?: boolean })
   const [view, setView] = useState<KnuffView>(FIRST_VIEW);
   const searchOpen = useSearch().open;
   const charmsId = useId();
+  const pullId = useId();
+  const motionId = useId();
 
   // One effect, and everything it does is undone by its clean-up, so
   // StrictMode's mount, clean-up and second mount end with one game, one
@@ -200,6 +216,27 @@ export default function Client({ standalone = false }: { standalone?: boolean })
             <Keycap tone="accent" size="lg" block data-autofocus onClick={resume}>
               {KEYS.resume}
             </Keycap>
+            {/* The three settings. Each is kept on the device as it changes. */}
+            <div data-settings="pause" className="flex flex-col gap-3">
+              <Switch label={SETTINGS.sound} checked={!view.muted} onChange={(on) => gameRef.current?.setMuted(!on)} />
+              <div className="flex flex-col gap-1.5">
+                <span id={pullId} className="label-pixel">
+                  {SETTINGS.pull}
+                </span>
+                <ChipGroup labelledBy={pullId} options={PULL_OPTIONS} value={view.pull} onChange={(dir) => gameRef.current?.setPull(dir)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span id={motionId} className="label-pixel">
+                  {SETTINGS.motion}
+                </span>
+                <ChipGroup
+                  labelledBy={motionId}
+                  options={MOTION_OPTIONS}
+                  value={view.motion}
+                  onChange={(pref) => gameRef.current?.setMotion(pref)}
+                />
+              </div>
+            </div>
             {/* The body charms taken this night, by name: they are not on the play screen. */}
             {view.charms.length > 0 && (
               <div data-charms="pause" className="flex flex-col gap-2">
@@ -287,6 +324,30 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         )}
       </Dialog>
 
+      {/* A page too small to play: the line, and a way out. It closes by
+          itself when the page is big enough, and the pause panel follows if
+          a night was running. Escape and the scrim do nothing here. */}
+      <Dialog
+        open={screen === "tooSmall" && !searchOpen}
+        onClose={() => {}}
+        label={PANEL_LABEL.tooSmall}
+        returnFocus={false}
+        style={GAME_ACCENT}
+        className={PANEL}
+      >
+        <ScrollRegion>
+          <div className="flex flex-col gap-4 p-5">
+            <p data-small="line" className="text-[15px] text-ink">
+              {view.coarse ? TOO_SMALL.phone : TOO_SMALL.laptop}
+            </p>
+            {!standalone && (
+              <Keycap href="/" tone="quiet" size="sm" className="self-start" onClick={leave}>
+                {KEYS.back}
+              </Keycap>
+            )}
+          </div>
+        </ScrollRegion>
+      </Dialog>
     </>
   );
 }
