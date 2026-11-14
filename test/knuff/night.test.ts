@@ -1087,17 +1087,20 @@ describe("the pace: a new kind keeps its moment", () => {
 });
 
 describe("the pace: extra bunches until last call", () => {
-  it("last call is tick 840 of the hour, and tick 456 at 19:00", () => {
+  it("last call is tick 1020 of the hour (decision 23; the spec began at 840), and tick 456 at 19:00", () => {
     const tune = tuned();
     expect(lastCall(0, tune)).toBe(456);
-    for (let hour = 1; hour < HOURS; hour++) expect(lastCall(hour, tune)).toBe(840);
-    expect([PACE[2].paceLastCall, PACE[2].paceLastCallFirst]).toEqual([840, 456]);
+    for (let hour = 1; hour < HOURS; hour++) expect(lastCall(hour, tune)).toBe(1020);
+    expect([PACE[2].paceLastCall, PACE[2].paceLastCallFirst]).toEqual([1020, 456]);
   });
+
+  // The cases below lay out their ticks at the spec's first last call, 840, named; the rule is the same at any.
+  const AT840 = { paceLastCall: 840 };
 
   for (const pace of [2, 3]) {
     describe(`pace ${pace}`, () => {
       it("when the hour's rows are out, extra bunches follow, one at a time, each when the one before has landed and been cleared", () => {
-        const night = new Night({ pace }, { hour: 6 });
+        const night = new Night({ pace, ...AT840 }, { hour: 6 });
         night.through(1019, night.popLanded);
         const rows = night.rows(6);
         expect(rows.slice(0, 2).map((r) => [r.row, r.how, r.at])).toEqual([
@@ -1115,9 +1118,9 @@ describe("the pace: extra bunches until last call", () => {
         expect(Math.max(...of(night.events, "arrive").map((e) => e.tick))).toBeLessThanOrEqual(875);
       });
 
-      it("no extra bunch is announced at tick 840 or later", () => {
+      it("no extra bunch is announced at last call or later (840 named; 1020, the start)", () => {
         // A player who pops nothing gets them by the clock: 456 and 684, and not at 912.
-        const night = new Night({ pace }, { hour: 6 });
+        const night = new Night({ pace, ...AT840 }, { hour: 6 });
         night.through(1799);
         expect(night.rows(6).map((r) => [r.row, r.how, r.at])).toEqual([
           [0, "tick", 0],
@@ -1125,16 +1128,26 @@ describe("the pace: extra bunches until last call", () => {
           [-1, "clock", 456],
           [-1, "clock", 684],
         ]);
+        // At the start's 1020: 912 too, and not 1140.
+        const start = new Night({ pace }, { hour: 6 });
+        start.through(1799);
+        expect(start.rows(6).map((r) => [r.row, r.how, r.at])).toEqual([
+          [0, "tick", 0],
+          [2, "clock", 228],
+          [-1, "clock", 456],
+          [-1, "clock", 684],
+          [-1, "clock", 912],
+        ]);
         // On the very tick: one that would come at 839 does, and one at 840 does not.
         const before = new Night({ pace, paceLastCall: 840, paceEvery: 839 }, { hour: 9 });
         before.through(1799, before.popLanded);
         const last = before.rows(9).filter((r) => r.row === -1);
         expect(Math.max(...last.map((r) => r.at))).toBeLessThan(840);
-        const edge = new Night({ pace, paceEvery: 280, paceRoom: -1 }, { hour: 6 });
+        const edge = new Night({ pace, ...AT840, paceEvery: 280, paceRoom: -1 }, { hour: 6 });
         edge.through(1799);
         // 0, 280, 560, and the next would be exactly 840: not announced.
         expect(edge.rows(6).map((r) => r.at)).toEqual([0, 280, 560]);
-        const inside = new Night({ pace, paceEvery: 279, paceRoom: -1 }, { hour: 6 });
+        const inside = new Night({ pace, ...AT840, paceEvery: 279, paceRoom: -1 }, { hour: 6 });
         inside.through(1799);
         expect(inside.rows(6).map((r) => r.at)).toEqual([0, 279, 558, 837]);
       });
@@ -1221,8 +1234,8 @@ describe("the pace: extra bunches until last call", () => {
 });
 
 describe("the pace: no hour is clear before last call", () => {
-  it("an empty room is not a clear hour until tick 840; then the hour ends 180 ticks later", () => {
-    const night = new Night({ pace: 2 }, { hour: 6 });
+  it("an empty room is not a clear hour until last call (840 named here); then the hour ends 180 ticks later", () => {
+    const night = new Night({ pace: 2, paceLastCall: 840 }, { hour: 6 });
     night.through(839, night.popLanded);
     night.empty();
     expect(night.s.night.clearTick).toBe(-1);
@@ -1236,17 +1249,17 @@ describe("the pace: no hour is clear before last call", () => {
     expect(night.s.night.hourStart).toBe(1020);
   });
 
-  it("a night in which nothing arrives: 636 ticks for 19:00 and 1,020 for each hour after, 10,836 in all", () => {
+  it("a night in which nothing arrives: 636 ticks for 19:00 and 1,200 for each hour after, 12,636 in all", () => {
     for (const pace of [2, 3]) {
       const night = new Night({ pace }, { empty: true });
       night.run(20000);
-      expect(of(night.events, "clear").map((e) => e.tick - night.began[e.hour])).toEqual([456, 840, 840, 840, 840, 840, 840, 840, 840, 840, 840]);
-      expect(night.began.slice(0, 11)).toEqual([0, 636, 1656, 2676, 3696, 4716, 5736, 6756, 7776, 8796, 9816]);
+      expect(of(night.events, "clear").map((e) => e.tick - night.began[e.hour])).toEqual([456, 1020, 1020, 1020, 1020, 1020, 1020, 1020, 1020, 1020, 1020]);
+      expect(night.began.slice(0, 11)).toEqual([0, 636, 1836, 3036, 4236, 5436, 6636, 7836, 9036, 10236, 11436]);
       expect(night.s.ended).toBe("morning");
-      expect(of(night.events, "over")[0].tick).toBe(10836);
-      // Three minutes, by construction.
-      expect(10836).toBe(night.tune.paceLastCallFirst + 180 + 10 * (night.tune.paceLastCall + 180));
-      expect(10836 / 60).toBeGreaterThanOrEqual(180);
+      expect(of(night.events, "over")[0].tick).toBe(12636);
+      // Three minutes, by construction (it was 10,836 at the spec's first 840).
+      expect(12636).toBe(night.tune.paceLastCallFirst + 180 + 10 * (night.tune.paceLastCall + 180));
+      expect(12636 / 60).toBeGreaterThanOrEqual(180);
     }
   });
 
@@ -1264,10 +1277,11 @@ describe("the pace: no hour is clear before last call", () => {
     const lengths = night.began.slice(1, 11).map((start, i) => start - night.began[i]);
     // 19:00: the last extra bunch is announced at 432, lands at 468 and is popped: clear at 469, over at 649.
     expect(lengths[0]).toBe(649);
-    // Every other hour: announced at 814 or so, landed and popped by 851; the hour ends 180 ticks later.
+    // Every other hour: the last announced before last call (1020), landed and popped by about 1,035; the hour ends
+    // 180 ticks later. (At the spec's first 840 it was 1,020 to 1,060.)
     for (const length of lengths.slice(1)) {
-      expect(length).toBeGreaterThanOrEqual(1020);
-      expect(length).toBeLessThanOrEqual(1060);
+      expect(length).toBeGreaterThanOrEqual(1200);
+      expect(length).toBeLessThanOrEqual(1240);
     }
     // And he is sent far more than the table holds.
     expect(night.rows().reduce((sum, r) => sum + r.n, 0)).toBeGreaterThan(169 * 4);
@@ -1276,8 +1290,8 @@ describe("the pace: no hour is clear before last call", () => {
 
 describe("the pace: a row the cap cuts", () => {
   it("to nothing has still been announced: it is the row before, and the clock starts again from it", () => {
-    // 01:00 in a room that holds nine: the opening bunch fills it, and nothing is popped.
-    const night = new Night({ pace: 2, roomCap: 9 }, { hour: 6 });
+    // 01:00 in a room that holds nine: the opening bunch fills it, and nothing is popped. (Last call at 840, named.)
+    const night = new Night({ pace: 2, roomCap: 9, paceLastCall: 840 }, { hour: 6 });
     night.through(1799);
     expect(night.rows(6)).toEqual([
       { hour: 6, row: 0, how: "tick", at: 0, n: 9, cut: 0 },
@@ -1826,7 +1840,7 @@ describe("the love of your life in the night (step 5)", () => {
 
   /**
    * A night begun at `hour` with nothing in its rows, the heart's own rule only, and him missing `missing` hearts.
-   * At pace 2 an hour with nothing in it still lasts to last call and the pause after it: 1,020 ticks.
+   * At pace 2 an hour with nothing in it still lasts to last call and the pause after it: 1,200 ticks.
    */
   function waiting(hour: number, missing: number, over: Partial<Tune> = {}): Night {
     const night = new Night({ pace: 2, ...over }, { hour, kinds: ["heart"], empty: true });
@@ -1886,7 +1900,7 @@ describe("the love of your life in the night (step 5)", () => {
     night.run(5 * 1800);
     expect(of(night.events, "heartShown")).toEqual([]);
     const early = waiting(0, 1);
-    early.run(636 + 5 * 1020 - 10);
+    early.run(636 + 5 * 1200 - 10);
     expect(early.s.night.hour).toBe(5);
     expect(of(early.events, "heartShown")).toEqual([]);
   });

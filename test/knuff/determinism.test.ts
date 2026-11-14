@@ -236,8 +236,8 @@ describe("determinism", () => {
     const events: SimEvent[] = [];
     for (let t = 0; t < 30; t++) step(s, { launch: t === 0 ? { dx: -1, dy: 0, power: 1 } : null, pullHeld: false }, DEFAULT_TUNE, events);
     expect(events.some((e) => e.type === "cushion" && e.side === "left" && e.x === 13)).toBe(true);
-    // An empty room stays empty: nothing arrives, all night, and morning comes all the same.
-    for (let t = 0; t < 12000; t++) step(s, { launch: null, pullHeld: false }, DEFAULT_TUNE, events);
+    // An empty room stays empty: nothing arrives, all night, and morning comes all the same (12,636 ticks at pace 2).
+    for (let t = 0; t < 14000; t++) step(s, { launch: null, pullHeld: false }, DEFAULT_TUNE, events);
     expect(events.some((e) => e.type === "announce" || e.type === "row")).toBe(false);
     expect(s.things).toEqual([]);
     expect(s.ended).toBe("morning");

@@ -478,7 +478,8 @@ describe("flat scores and blasts (step 4)", () => {
       const events: SimEvent[] = [];
       /** Each launch's total, its blasts included, by id. */
       const totals = new Map<number, number>();
-      for (let t = 0; t < 14000 && s.phase !== "over"; t++) {
+      // The whole night: with no polisher it ends when 05:00 ends, at most 19,800 ticks in.
+      for (let t = 0; t < 19900 && s.phase !== "over"; t++) {
         const from = events.length;
         step(s, input(), long, events);
         for (let i = from; i < events.length; i++) {

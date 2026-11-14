@@ -151,7 +151,8 @@ describe("the pip timer", () => {
     const input = scripted(4);
     const events: SimEvent[] = [];
     const seen = new Set<number>();
-    for (let t = 0; t < 8000 && s.phase !== "over"; t++) {
+    // The whole night: it can never pass 25,200 ticks (§3.2).
+    for (let t = 0; t < 25300 && s.phase !== "over"; t++) {
       step(s, input(), long, events);
       seen.add(s.pips);
       // The most is his, after charms: a Fourth pip taken from an offer makes it 4.

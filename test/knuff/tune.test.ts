@@ -14,8 +14,8 @@ describe("the knob table", () => {
   it("is plain: every knob a finite number, but the pull's direction and two switches", () => {
     for (const [knob, value] of Object.entries(DEFAULT_TUNE)) {
       if (knob === "pullDir") expect(["back", "push"]).toContain(value);
-      else if (knob === "thumpTurnsTokens") expect(value).toBe(false);
-      else if (knob === "padHurtsHot") expect(value).toBe(true);
+      else if (knob === "thumpTurnsTokens") expect(value).toBe(true);
+      else if (knob === "padHurtsHot") expect(value).toBe(false);
       else expect(typeof value === "number" && Number.isFinite(value), knob).toBe(true);
     }
     expect(JSON.parse(JSON.stringify(DEFAULT_TUNE))).toEqual(DEFAULT_TUNE);
@@ -34,8 +34,9 @@ describe("the knob table", () => {
     expect(DEFAULT_TUNE.pullFullPx).toBe(100);
   });
 
-  it("the game's half holds the spec's starting values (§2.2)", () => {
+  it("the game's half holds the spec's starting values (§2.2), as the lead's decisions have set them", () => {
     // Written out, so a number changed in the table shows up here as a change someone made on purpose.
+    // From the spec's first values: bossSpeed 90 (decision 16), padHurtsHot off (21), thumpTurnsTokens on (22), paceLastCall 1020 (23).
     expect(GAME).toEqual({
       lineShowsPx: 12,
       noShotPx: 24,
@@ -49,7 +50,7 @@ describe("the knob table", () => {
       thumpRadius: 40,
       dazeTicks: 36,
       arriveDazedWithin: 60,
-      thumpTurnsTokens: false,
+      thumpTurnsTokens: true,
       hearts: 3,
       invulnTicks: 72,
       hitWaveRadius: 90,
@@ -66,7 +67,7 @@ describe("the knob table", () => {
       pace: 2,
       paceRoom: 6,
       paceEvery: 228,
-      paceLastCall: 840,
+      paceLastCall: 1020,
       paceLastCallFirst: 456,
       paceTokens: 2,
       bunnySpeed: 22,
@@ -120,7 +121,7 @@ describe("the knob table", () => {
       bossCough: 3,
       plugWidth: 24,
       padThrowSpeed: 450,
-      padHurtsHot: true,
+      padHurtsHot: false,
       bossMaxTicks: 5400,
       nightBonus: 1000,
       heartBonus: 250,
@@ -147,11 +148,11 @@ describe("what each pace gives", () => {
     expect(PACE[3].paceTokens).toBe(3);
   });
 
-  it("the other four are the same at 2 and 3: six left, 228 ticks, last call at 840 and at 456", () => {
+  it("the other four are the same at 2 and 3: six left, 228 ticks, last call at 1020 (decision 23) and at 456", () => {
     for (const pace of [2, 3] as const) {
       expect(PACE[pace].paceRoom).toBe(6);
       expect(PACE[pace].paceEvery).toBe(228);
-      expect(PACE[pace].paceLastCall).toBe(840);
+      expect(PACE[pace].paceLastCall).toBe(1020);
       expect(PACE[pace].paceLastCallFirst).toBe(456);
     }
   });
@@ -219,11 +220,11 @@ describe("what each pace gives", () => {
 
 describe("laying a partial table over it", () => {
   it("changes the knobs it names and no other", () => {
-    const tune = mergeTune(DEFAULT_TUNE, { aimCushions: 2, pullDir: "push", maxSpeed: 1000, thumpTurnsTokens: true });
+    const tune = mergeTune(DEFAULT_TUNE, { aimCushions: 2, pullDir: "push", maxSpeed: 1000, thumpTurnsTokens: false });
     expect(tune.aimCushions).toBe(2);
     expect(tune.pullDir).toBe("push");
     expect(tune.maxSpeed).toBe(1000);
-    expect(tune.thumpTurnsTokens).toBe(true);
+    expect(tune.thumpTurnsTokens).toBe(false);
     const named = ["aimCushions", "pullDir", "maxSpeed", "thumpTurnsTokens"];
     const rest = (t: Tune) => Object.entries(t).filter(([k]) => !named.includes(k));
     expect(rest(tune)).toEqual(rest(DEFAULT_TUNE));
@@ -269,9 +270,9 @@ describe("laying a partial table over it", () => {
     for (const knob of ["pace", "popHotTicks", "aimCushions", "pipRefillTicks", "paceTokens", "paceLastCall", "pipRefundPop", "slowMeterMax", "slowRefillTicks", "slowLandingFloor", "thumpTurnsTokens", "padHurtsHot"]) {
       expect(Object.prototype.hasOwnProperty.call(DEFAULT_TUNE, knob), knob).toBe(true);
     }
-    const typed = JSON.parse('{"popHotTicks":15,"aimCushions":2,"pace":1,"slowMeterMax":10,"thumpTurnsTokens":true,"padHurtsHot":false}') as Partial<Tune>;
+    const typed = JSON.parse('{"popHotTicks":15,"aimCushions":2,"pace":1,"slowMeterMax":10,"thumpTurnsTokens":false,"padHurtsHot":true}') as Partial<Tune>;
     const tune = mergeTune(DEFAULT_TUNE, typed);
-    expect([tune.popHotTicks, tune.aimCushions, tune.pace, tune.slowMeterMax, tune.thumpTurnsTokens, tune.padHurtsHot]).toEqual([15, 2, 1, 10, true, false]);
+    expect([tune.popHotTicks, tune.aimCushions, tune.pace, tune.slowMeterMax, tune.thumpTurnsTokens, tune.padHurtsHot]).toEqual([15, 2, 1, 10, false, true]);
   });
 });
 

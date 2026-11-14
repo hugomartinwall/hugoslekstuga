@@ -129,7 +129,7 @@ describe("the aim line in an empty room", () => {
 
   it("a launch with no direction has no line, and neither has a night that is over", () => {
     const s = night(tune);
-    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "", padAfter: false, battery: [], burst: [] });
+    expect(aimLine(s, { dx: 0, dy: 0, power: 1 }, tune)).toEqual({ pts: [180, 374], cushions: [], cushionPts: [], end: "time", hitId: -1, takes: -1, plate: -1, charm: "", padAfter: false, padHeart: false, battery: [], burst: [] });
     s.phase = "over";
     expect(aimLine(s, UP, tune).pts).toEqual([180, 374]);
   });

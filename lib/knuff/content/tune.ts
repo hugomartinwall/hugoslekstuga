@@ -70,12 +70,14 @@ export type PaceGiven = Pick<Tune, "pipRefillTicks" | "paceRoom" | "paceEvery" |
  * What each pace gives (§3.4). 1: the timetable as written; the five pace
  * numbers are not used there. 2: the full room. 3: the full room with one
  * more loose token on every extra bunch. A `pace` that is none of the
- * three is read as 1.
+ * three is read as 1. Last call is tick 1,020 of the hour (decision 23; the
+ * spec started it at 840): inside both its floors of §3.4, it keeps the
+ * Ordinary and the Expert who take a charm off the edges of their rows.
  */
 export const PACE: Readonly<Record<1 | 2 | 3, PaceGiven>> = {
-  1: { pipRefillTicks: 120, paceRoom: 6, paceEvery: 228, paceLastCall: 840, paceLastCallFirst: 456, paceTokens: 2 },
-  2: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 840, paceLastCallFirst: 456, paceTokens: 2 },
-  3: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 840, paceLastCallFirst: 456, paceTokens: 3 },
+  1: { pipRefillTicks: 120, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 2 },
+  2: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 2 },
+  3: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 3 },
 };
 
 /** The values `pace` gives. */
@@ -102,7 +104,10 @@ export const GAME = {
   thumpRadius: 40,
   dazeTicks: 36,
   arriveDazedWithin: 60,
-  thumpTurnsTokens: false,
+  // On (decision 22, the lever §14 keeps "if tokens feel unfair in the
+  // hand"): driven by hand, every token heart came 0 to 11 ticks after a
+  // landing, too soon to see. The thump now turns tokens within its reach.
+  thumpTurnsTokens: true,
 
   // Hearts.
   hearts: 3,
@@ -186,9 +191,11 @@ export const GAME = {
   bossCough: 3,
   plugWidth: 24,
   padThrowSpeed: 450,
-  // Not in the spec's table: decision 3 (the pad hurts him hot or landed)
-  // as a switch, so the fight can be measured, and felt, both ways.
-  padHurtsHot: true,
+  // Decision 3 (the pad hurts him hot or landed) as a switch, turned over
+  // by decision 21: with real hands the polisher was beaten in 6 of 18
+  // fights, the pad taking hearts from launches whose line had looked safe.
+  // Off, the pad still throws him hot or landed; hot, it takes no heart.
+  padHurtsHot: false,
   bossMaxTicks: 5400,
   nightBonus: 1000,
   heartBonus: 250,

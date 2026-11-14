@@ -132,11 +132,11 @@ describe("06:00", () => {
   });
 
   it("a night whose kinds leave the polisher out has no 06:00: it ends when 05:00 ends, with nothing added", () => {
-    // Nothing arrives: 05:00 is clear at last call (840), and ends 180 ticks later.
+    // Nothing arrives: 05:00 is clear at last call (1020, decision 23), and ends 180 ticks later.
     const s = createState(1, T, { hour: 10, empty: true, kinds: [], plates: DARK_PLATES, offers: false });
     s.phase = "night";
     const events = run(s, T, 1801);
-    expect(of(events, "over")).toEqual([{ type: "over", tick: 1020, how: "morning", score: 0, bonus: 0 }]);
+    expect(of(events, "over")).toEqual([{ type: "over", tick: 1200, how: "morning", score: 0, bonus: 0 }]);
     expect(of(events, "hour")).toEqual([]);
     expect(s.boss.present).toBe(false);
     expect(s.night.hour).toBe(11);
@@ -259,19 +259,20 @@ describe("the pad", () => {
     expect(inside(s)).toBe(0);
   });
 
-  it("costs a heart while he is hot too, flying into it", () => {
-    const s = landed();
+  it("with padHurtsHot on (decision 3, the spec's first rule) it costs a heart while he is hot too, flying into it", () => {
+    const hurts = tuned({ ...QUIET, padHurtsHot: true });
+    const s = landed(hurts);
     machine(s, { lane: 3, x: 90, dir: 1 });
     him(s, 300, 212);
-    const events = launchAnd(s, T, shot(-1, 0), (e) => of(e, "bossThrow").length > 0, 60);
+    const events = launchAnd(s, hurts, shot(-1, 0), (e) => of(e, "bossThrow").length > 0, 60);
     expect(of(events, "hurt").map((e) => e.by)).toEqual(["polisher"]);
     expect(of(events, "bossThrow")[0].hurt).toBe(true);
     expect(of(events, "bossThrow")[0].vx).toBe(450);
     expect(s.hearts).toBe(2);
   });
 
-  it("with padHurtsHot off (decision 3 turned over) it takes a heart only while he is landed; hot, he is thrown all the same", () => {
-    const soft = tuned({ ...QUIET, padHurtsHot: false });
+  it("with padHurtsHot off (decision 21, the start) it takes a heart only while he is landed; hot, he is thrown all the same", () => {
+    const soft = T;
     const s = landed(soft);
     machine(s, { lane: 3, x: 90, dir: 1 });
     him(s, 300, 212);
@@ -283,7 +284,7 @@ describe("the pad", () => {
     machine(still, { lane: 3, x: 90, dir: 1 });
     him(still, 150 + 13 + 0.5, 212);
     expect(of(run(still, soft, 3), "hurt").map((e) => e.by)).toEqual(["polisher"]);
-    expect(T.padHurtsHot).toBe(true);
+    expect(T.padHurtsHot).toBe(false);
   });
 
   it("throws an invulnerable mascot and takes no heart", () => {
@@ -756,15 +757,22 @@ describe("the turn after a hit (the lead's decision 14)", () => {
     expect(toThePad(s, turned).hearts).toBe(1);
   });
 
-  it("not while he is hot: flying into the end he hit as it turns, or sliding when it turns and landing in its way, the pad takes its heart", () => {
-    // He launches into it on the tick it turns (a pip given back by hand).
+  it("not while he is hot: flying into the end he hit as it turns (with padHurtsHot on), or sliding when it turns and landing in its way, the pad takes its heart", () => {
+    // He launches into it on the tick it turns (a pip given back by hand). With padHurtsHot on, the pad takes the heart.
     const into = hitAndLand().s;
     until(into, HT, () => into.boss.modeUntil === into.tick, 80);
+    const hurts = { ...HT, padHurtsHot: true };
+    const soft = cloneState(into);
     into.pips = 1;
-    const ev = tick(into, HT, shot(1, 0, 0.5));
+    const ev = tick(into, hurts, shot(1, 0, 0.5));
     expect(of(ev, "bossTurn")).toHaveLength(1);
     expect(into.boss.shovedTick).toBe(-1);
-    expect(of([...ev, ...until(into, HT, (e) => of(e, "hurt").length > 0, 20)], "hurt").map((e) => e.by)).toEqual(["polisher"]);
+    expect(of([...ev, ...until(into, hurts, (e) => of(e, "hurt").length > 0, 20)], "hurt").map((e) => e.by)).toEqual(["polisher"]);
+    // With it off (the start), the same launch is thrown and keeps its hearts.
+    soft.pips = 1;
+    const sev = tick(soft, HT, shot(1, 0, 0.5));
+    sev.push(...until(soft, HT, (e) => of(e, "bossThrow").length > 0, 20));
+    expect([of(sev, "hurt"), of(sev, "bossThrow")[0]?.hurt]).toEqual([[], false]);
     // Sliding away from it as it turns, just fast enough to be hot (as at the end of a launch): he lands at once, in its way.
     const slide = hitAndLand().s;
     until(slide, HT, () => slide.boss.modeUntil === slide.tick, 80);
@@ -867,7 +875,9 @@ describe("so the fight always ends", () => {
   });
 
   it("zero hearts comes first: the last hit and the last heart in one tick end the night as the hour he fell in, with no bonus", () => {
-    const s = landed();
+    // The thump leaves the token rolling at him: with thumpTurnsTokens on (the start) it would be turned away.
+    const T = tuned({ ...QUIET, thumpTurnsTokens: false });
+    const s = landed(T);
     machine(s, { lane: 3, x: 200, dir: 1 });
     // 1 u behind the plug; a token rolling after him, its centre 20.5 u back (20 is touching). A soft launch hits the
     // plug on its first tick, he bounces off and lands, and the token reaches him on that same tick.
@@ -952,7 +962,7 @@ describe("around it", () => {
 });
 
 describe("the aim line on the polisher", () => {
-  it("ends on the plug it would hit, on the casing it would bounce off, and on the pad, which will cost a heart", () => {
+  it("ends on the plug it would hit, on the casing it would bounce off, and on the pad, which costs a heart only where the pad takes one", () => {
     const s = landed();
     machine(s, { lane: 3, x: 200, dir: 1 });
     him(s, 60, 212);
@@ -961,11 +971,16 @@ describe("the aim line on the polisher", () => {
     him(s, 200, 100);
     expect(aimLine(s, { dx: 0, dy: 1, power: 1 }, T).end).toBe("polisher");
     him(s, 330, 212);
-    expect(aimLine(s, { dx: -1, dy: 0, power: 1 }, T).end).toBe("pad");
+    const pad = aimLine(s, { dx: -1, dy: 0, power: 1 }, T);
+    // Hot, with padHurtsHot off (the start): the pad throws him and takes nothing, and the line says so.
+    expect([pad.end, pad.padHeart]).toEqual(["pad", false]);
+    const hurts = aimLine(s, { dx: -1, dy: 0, power: 1 }, tuned({ ...QUIET, padHurtsHot: true }));
+    expect([hurts.end, hurts.padHeart]).toEqual(["pad", true]);
   });
 
-  it("says when the launch meets the pad after the line has ended, which will cost a heart", () => {
-    const s = landed();
+  it("says when the launch meets the pad after the line has ended, which will cost a heart (padHurtsHot on)", () => {
+    const T = tuned({ ...QUIET, padHurtsHot: true });
+    const s = landed(T);
     // The pad heading right in lane 3, its leading end at 150; a dust bunny between it and him.
     machine(s, { lane: 3, x: 90, dir: 1 });
     him(s, 330, 212);
@@ -978,20 +993,24 @@ describe("the aim line on the polisher", () => {
     const ev = launchAnd(real, T, { launch: left, pullHeld: false }, (e) => of(e, "bossThrow").length > 0, 120);
     expect(of(ev, "pop").map((e) => e.id)).toEqual([d.id]);
     expect(of(ev, "hurt").map((e) => e.by)).toEqual(["polisher"]);
-    // Not when it would cost nothing: invulnerable, or with padHurtsHot off.
+    // Not when it would cost nothing: invulnerable, or with padHurtsHot off (the start, decision 21).
     s.him.invulnUntil = s.tick + 1000;
     expect(aimLine(s, left, T).padAfter).toBe(false);
     s.him.invulnUntil = 0;
-    expect(aimLine(s, left, tuned({ ...QUIET, padHurtsHot: false })).padAfter).toBe(false);
-    // Nor when the line ends on the pad itself: that end is the pad's own.
+    expect(aimLine(s, left, tuned(QUIET)).padAfter).toBe(false);
+    // Nor when the line ends on the pad itself: that end is the pad's own, and says whether it costs a heart.
     d.hp = 0;
     s.things.length = 0;
-    expect([aimLine(s, left, T).end, aimLine(s, left, T).padAfter]).toEqual(["pad", false]);
+    const own = aimLine(s, left, T);
+    expect([own.end, own.padAfter, own.padHeart]).toEqual(["pad", false, true]);
+    const thrown = aimLine(s, left, tuned(QUIET));
+    expect([thrown.end, thrown.padAfter, thrown.padHeart]).toEqual(["pad", false, false]);
   });
 
-  it("warns of the pad on his last heart too, where the night ends and nothing throws him", () => {
+  it("warns of the pad on his last heart too, where the night ends and nothing throws him (padHurtsHot on)", () => {
+    const T = tuned({ ...QUIET, padHurtsHot: true });
     // As above, with one heart left: the pad heading right in lane 3, its leading end at 150.
-    const s = landed();
+    const s = landed(T);
     machine(s, { lane: 3, x: 90, dir: 1 });
     him(s, 330, 212);
     s.hearts = 1;

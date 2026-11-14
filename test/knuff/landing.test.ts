@@ -316,15 +316,30 @@ describe("the thump", () => {
         expect(of(events, "launchEnd")).toHaveLength(1);
       });
 
-      it("moves nothing", () => {
+      it("moves nothing; with thumpTurnsTokens off, it changes no speed either", () => {
         const s = night(tune);
         put(s, "bunny", 180 + 22, 374 - 3, { vx: 14, vy: -9 });
         put(s, "bunny", 180 - 30, 374 + 20);
-        put(s, "token", 180 + 10, 374 + 28, { vx: 90, vy: 120 });
+        const inside = put(s, "token", 180 + 10, 374 + 28, { vx: 90, vy: 120 });
         put(s, "token", 300, 100, { vx: -150, vy: 0 });
-        const before = JSON.stringify(s.things.map((d) => [d.x, d.y, d.vx, d.vy]));
+        const before = s.things.map((d) => [d.x, d.y, d.vx, d.vy]);
         landNow(s);
-        expect(JSON.stringify(s.things.map((d) => [d.x, d.y, d.vx, d.vy]))).toBe(before);
+        // On (the start, decision 22), only the token inside the ring changes: its speed, not its place.
+        expect(tune.thumpTurnsTokens).toBe(true);
+        expect(s.things.map((d) => [d.x, d.y])).toEqual(before.map(([x, y]) => [x, y]));
+        expect(s.things.filter((d) => d !== inside).map((d) => [d.vx, d.vy])).toEqual(before.filter((_, i) => s.things[i] !== inside).map(([, , vx, vy]) => [vx, vy]));
+        const off = tuned({ popHotTicks, thumpTurnsTokens: false });
+        const t = night(off);
+        put(t, "bunny", 180 + 22, 374 - 3, { vx: 14, vy: -9 });
+        put(t, "bunny", 180 - 30, 374 + 20);
+        put(t, "token", 180 + 10, 374 + 28, { vx: 90, vy: 120 });
+        put(t, "token", 300, 100, { vx: -150, vy: 0 });
+        const was = JSON.stringify(t.things.map((d) => [d.x, d.y, d.vx, d.vy]));
+        t.tick = 100;
+        t.him.hot = true;
+        t.launch.active = true;
+        land(t, off, []);
+        expect(JSON.stringify(t.things.map((d) => [d.x, d.y, d.vx, d.vy]))).toBe(was);
       });
 
       it("a dust bunny overlapping him is only set down touching him", () => {
@@ -341,16 +356,21 @@ describe("the thump", () => {
         expect(onHim.dazedUntil).toBe(136);
       });
 
-      it("leaves tokens alone: one inside the ring is not dazed and rolls on as it was", () => {
-        const s = night(tune);
+      it("with thumpTurnsTokens off (the spec's first value), it leaves tokens alone: one inside the ring is not dazed and rolls on as it was", () => {
+        const off = tuned({ popHotTicks, thumpTurnsTokens: false });
+        const s = night(off);
         const token = put(s, "token", 180 + 25, 374, { vx: -150, vy: 0 });
-        landNow(s);
+        s.tick = 100;
+        s.him.hot = true;
+        s.launch.active = true;
+        land(s, off, []);
         expect(token.dazedUntil).toBe(0);
         expect([token.vx, token.vy]).toEqual([-150, 0]);
       });
 
-      it("with thumpTurnsTokens on, a token inside the ring is turned to roll straight away", () => {
-        const turning = tuned({ popHotTicks, thumpTurnsTokens: true });
+      it("with thumpTurnsTokens on (the start, decision 22), a token inside the ring is turned to roll straight away", () => {
+        const turning = tune;
+        expect(turning.thumpTurnsTokens).toBe(true);
         const s = night(turning);
         const inside = put(s, "token", 180 + 18, 374 - 24, { vx: -150, vy: 0 });
         const outside = put(s, "token", 180, 374 - 41, { vx: 0, vy: 150 });
@@ -432,6 +452,8 @@ describe("there is no third state", () => {
         step(s, input(), tune, events);
         if (s.phase === "waiting") continue;
         const h = s.him;
+        // A launch released this tick moved him while it lasted, even if it ended in the same tick (a gum stop).
+        if (events.some((e) => e.type === "launch")) stood = null;
         if (h.hot) {
           // Hot is flying: a launch in flight, and moving.
           if (!s.launch.active) expect.fail(`hot with no launch in flight at tick ${t}`);

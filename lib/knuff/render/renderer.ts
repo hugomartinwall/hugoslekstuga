@@ -560,14 +560,15 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
     // The cross where the aim line ends on a thing, over the polisher: the plug he would hit is
     // where the machine's trailing end will be when he gets there, inside its box as it stands now.
-    // Coral on the pad, which will cost a heart, and where the launch runs on into the pad after it.
+    // Coral on the pad where it will cost a heart (where it only throws him, the line's own colour), and where the
+    // launch runs on into the pad after it.
     if (aim && f.line && f.line.pts.length >= 4 && (f.line.end === "thing" || f.line.end === "polisher" || f.line.end === "pad")) {
       const pts = f.line.pts;
       const ex = pts[pts.length - 2];
       const ey = pts[pts.length - 1];
       const arm = Math.round(r * S * 0.9);
       const tw = Math.max(2, Math.round(dpr * 2.6));
-      ctx.fillStyle = f.line.end === "pad" || f.line.padAfter ? C.coral : col;
+      ctx.fillStyle = (f.line.end === "pad" && f.line.padHeart) || f.line.padAfter ? C.coral : col;
       ctx.fillRect(Math.round(X(ex) - arm), Math.round(Y(ey) - tw / 2), arm * 2, tw);
       ctx.fillRect(Math.round(X(ex) - tw / 2), Math.round(Y(ey) - arm), tw, arm * 2);
     }

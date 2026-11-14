@@ -14,7 +14,8 @@
  * the same 120 ticks): a launch that pops a dust bunny and then takes the
  * plate behind it is named as well. On that same run it learns whether the
  * launch meets the polisher's pad after the line has ended, which will
- * cost a heart: the end is then marked in coral, as the pad's own is.
+ * cost a heart: the end is then marked in coral, as the pad's own is when
+ * it costs one (`padHeart`).
  *
  * When the first thing is a battery (he knocks it), the copy is stepped on
  * until that battery bursts: its path is the second line, and where it
@@ -34,9 +35,11 @@ export type AimLine = {
   /**
    * Why it stops: on the first thing he would pop, hit, knock, be stopped
    * by or bounce off (the money bag; the polisher's plug is thing 0); on the polisher, where he would bounce off its casing;
-   * on its pad, which costs a heart and throws him (on his last heart the
-   * night ends there, and nothing throws him); at the cushion after the
-   * last one it runs through; where he would land; or after `maxTicks`.
+   * on its pad, which throws him and costs a heart unless he is
+   * invulnerable or, with `padHurtsHot` off, hot (`padHeart` says which;
+   * on his last heart the night ends there, and nothing throws him); at
+   * the cushion after the last one it runs through; where he would land;
+   * or after `maxTicks`.
    */
   end: "thing" | "polisher" | "pad" | "cushion" | "land" | "time";
   /** The thing he reaches first (0 for the polisher's plug), or -1. He is always hot when he reaches it. */
@@ -52,6 +55,8 @@ export type AimLine = {
   charm: string;
   /** The launch meets the pad after the line has ended (within the 120 ticks), and that will cost a heart: his last one too. */
   padAfter: boolean;
+  /** The line ends on the pad (`end` "pad") and that costs a heart; false where the pad only throws him. Drawn coral when true. */
+  padHeart: boolean;
   /**
    * The line ends on a battery he knocks: its centre from the knock, one
    * point a tick, to where it bursts (x0, y0, x1, y1, ...). Empty for any
@@ -82,6 +87,7 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
     plate: -1,
     charm: "",
     padAfter: false,
+    padHeart: false,
     battery: [],
     burst: [],
   };
@@ -120,6 +126,7 @@ export function aimLine(s: State, launch: Launch, tune: Tune, maxTicks = AIM_TIC
         if (drawing) {
           out.pts.push(e.x, e.y);
           out.end = "pad";
+          out.padHeart = true;
           drawing = false;
         } else out.padAfter = true;
       } else if (!drawing) {

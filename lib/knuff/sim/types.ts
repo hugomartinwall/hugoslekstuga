@@ -79,7 +79,7 @@ export type Tune = {
   dazeTicks: number;
   /** An arrival that lands this close to him lands dazed, u. */
   arriveDazedWithin: number;
-  /** The thump also turns tokens inside its ring to roll straight away. */
+  /** The thump also turns tokens inside its ring to roll straight away (on from decision 22). */
   thumpTurnsTokens: boolean;
 
   // ── Hearts ──────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ export type Tune = {
   plugWidth: number;
   /** The speed the pad throws him at, u/s. */
   padThrowSpeed: number;
-  /** The pad costs a heart while he is hot too (decision 3). Off: hot, he is only thrown. */
+  /** The pad costs a heart while he is hot too (decision 3). Off (decision 21, the start): hot, he is only thrown. */
   padHurtsHot: boolean;
   /** The night ends this long after 06:00 begins, beaten or not, ticks. */
   bossMaxTicks: number;
