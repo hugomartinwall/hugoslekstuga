@@ -54,7 +54,7 @@ const NAME_SPAN_PX = 242;
  * and the score, and on a bar too narrow for the line the hearts give way
  * too.
  */
-export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = ""): void {
+export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = "", turn: { from: number; k: number } | null = null): void {
   const { ctx, dpr } = p;
   const bar = p.layout.bar;
   const bx = bar.x * dpr;
@@ -70,7 +70,9 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = "
   // Hearts: the first at x 12, y 18 to 30, one every 18 px. Four at most, with Thick skin.
   if (!naming || wide) {
     const most = Math.max(s.stats.maxHearts, s.hearts);
-    for (let i = 0; i < most; i++) drawHeart(p, bx + (12 + 18 * i) * dpr, by + 18 * dpr, i < s.hearts);
+    // Four fit, one every 18 px. More (only a tune typed by hand gives more) close up to fit the same span, clear of the clock.
+    const every = most > 4 ? (18 * 3) / (most - 1) : 18;
+    for (let i = 0; i < most; i++) drawHeart(p, bx + (12 + every * i) * dpr, by + 18 * dpr, i < s.hearts);
   }
 
   if (naming) {
@@ -88,7 +90,20 @@ export function drawBar(p: Paint, s: State, tune: Tune, live: boolean, named = "
   // the last: the clock stays on the hour that ended.
   // (On a night with the polisher the State's hour is 06:00's, and the clock shows it, beaten or not.)
   const hour = s.ended === "morning" && s.night.hour === HOURS && !s.boss.present ? HOURS - 1 : Math.min(s.night.hour, CLOCK.length - 1);
-  p.text(CLOCK[hour], bx + B / 2, by + 20 * dpr, 24, C.ink, "display");
+  if (turn && turn.k < 1 && turn.from >= 0 && turn.from < CLOCK.length) {
+    // The clock turns: the hour that ended rolls up and out, the new one up and in.
+    const k = Math.max(0, Math.min(1, turn.k));
+    const lift = 12 * dpr;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(Math.round(bx + B / 2 - 44 * dpr), Math.round(by + 4 * dpr), Math.round(88 * dpr), Math.round(30 * dpr));
+    ctx.clip();
+    p.text(CLOCK[turn.from], bx + B / 2, by + 20 * dpr - lift * k, 24, rgba(C.ink, 1 - k), "display");
+    p.text(CLOCK[hour], bx + B / 2, by + 20 * dpr + lift * (1 - k), 24, rgba(C.ink, k), "display");
+    ctx.restore();
+  } else {
+    p.text(CLOCK[hour], bx + B / 2, by + 20 * dpr, 24, C.ink, "display");
+  }
 
   // The night: twelve steps of 6 × 4 px, 2 px apart.
   const stepW = 6 * dpr;

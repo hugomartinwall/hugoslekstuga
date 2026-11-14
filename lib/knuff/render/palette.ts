@@ -21,6 +21,8 @@ export const C = {
   /** The darkest the floor gets (03:00), and the warm it turns toward morning. */
   floorNight: "#07080f",
   floorWarm: "#1d1612",
+  /** The floor when the lights come on at the end of a night that reached the boss's end (§10). */
+  lightsOn: "#1b1f2e",
   /** An envelope: paper white, a shade off phosphor. */
   paper: "#f6f0dc",
   /** A raised key (--color-panel). */

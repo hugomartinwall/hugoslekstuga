@@ -30,9 +30,9 @@ import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
 import { FLICK_TICKS, SHEEN_TICKS, type Effects } from "./effects";
 import { drawBoss, drawBossTelegraph, drawSheen } from "./boss";
-import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing } from "./charms";
+import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing, drawTileJump } from "./charms";
 import { createBaker, type Bitmap, type Palette } from "./bake";
-import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, onFloor, rollMarks } from "./intruders";
+import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, drawTokenGhost, onFloor, rollMarks } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
   DECK_HINT_MIN,
@@ -90,7 +90,18 @@ export type Frame = {
   meter: number;
   /** The mascot's colour: the visitor's. */
   accent: string;
+  /**
+   * The one motion value the picture reads: true while motion is reduced
+   * (the player's choice of system, reduced or full, laid over the
+   * system's setting: render/motion.ts). It takes away shake, flashes,
+   * squash, the trail and the ring's fragments, and two thirds of the
+   * particles (§10). It changes no rule and no time a rule counts.
+   */
   reduced: boolean;
+  /** How far the lights have come on at the end of a night, 0..1 (§10: 1,000 ms). 0 (or left out) while a night is played. */
+  lights?: number;
+  /** His celebration pixels at MORNING: the painter's `sparklePhase`, or null (or left out). */
+  sparkle?: number | null;
   effects: Effects;
 };
 
@@ -134,7 +145,7 @@ export type Paint = {
    * render/bake.ts) and stamped with its top left at (x, y) in units, on a
    * whole device pixel. `key` names the bitmap and palette together.
    */
-  stamp(key: string, rows: Bitmap, palette: Palette, x: number, y: number): void;
+  stamp(key: string, rows: Bitmap, palette: Palette, x: number, y: number, scale?: number): void;
 };
 
 export type Renderer = {
@@ -247,9 +258,11 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       const x0 = cx - (str.length * cellW) / 2 + cellW / 2;
       for (let i = 0; i < str.length; i++) ctx.fillText(str[i], Math.round(x0 + i * cellW), Math.round(y));
     },
-    stamp(key, rows, palette, x, y) {
+    stamp(key, rows, palette, x, y, scale = 1) {
       const img = baker.get(key, rows, palette, paint.S);
-      if (img) ctx.drawImage(img, Math.round(paint.X(x)), Math.round(paint.Y(y)));
+      if (!img) return;
+      if (scale === 1) ctx.drawImage(img, Math.round(paint.X(x)), Math.round(paint.Y(y)));
+      else ctx.drawImage(img, Math.round(paint.X(x)), Math.round(paint.Y(y)), Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)));
     },
   };
 
@@ -382,7 +395,9 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     const hintInDeck = L.coarse && L.deck.h >= DECK_HINT_MIN;
     /** The tick the picture is at, between two ticks. */
     const tickNow = state.tick - 1 + alpha;
-    const floor = floorAt(state.night.hour);
+    // The night's colour; when the lights come on at its end, the room's own light.
+    const lights = f.lights ?? 0;
+    const floor = lights > 0 ? mix(floorAt(state.night.hour), C.lightsOn, Math.min(1, lights)) : floorAt(state.night.hour);
 
     if (!f.reduced && !f.still && fx.shake > 0) {
       ctx.translate(Math.round((Math.random() - 0.5) * fx.shake * dpr), Math.round((Math.random() - 0.5) * fx.shake * dpr));
@@ -508,6 +523,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     // it. The live ones first, then the dazed ones over them (a token rolls
     // through anything): a dazed thing's marks are then on its own body. A
     // money bag that came down over him is drawn over him instead (below).
+    // Tokens from the money bag that faded: their rings fade where they stood.
+    for (const g of fx.ghosts) drawTokenGhost(paint, g.x, g.y, (g.life / g.max) * 0.8);
     let bagOnHim: Thing | null = null;
     for (const d of bodyOrder(state, inOrder)) {
       if (d.onHim) {
@@ -612,6 +629,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       // Nothing can cost him a heart: his outline only. Not a flash, and
       // not a white ring, which means hot.
       outline: outlined,
+      // At MORNING, the sprite's celebration pixels.
+      sparklePhase: f.sparkle ?? null,
     });
 
     // A money bag that came down over him (decision 29): he is under it, and
@@ -646,9 +665,18 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       ctx.fillRect(Math.round(X(p.x) - q / 2), Math.round(Y(p.y) - q / 2), q, q);
     }
 
-    // Floating numbers: a multiplier where a pop earned it, a launch's total where it ended.
+    // A pickup taken: its tile flies to him, shrinking.
+    for (const j of fx.jumps) {
+      const k = 1 - j.life / j.max;
+      drawTileJump(paint, j.charm, j.x + (hx - j.x) * k, j.y + (hy - j.y) * k, 1 - 0.6 * k);
+    }
+
+    // Floating numbers: a multiplier where a pop earned it, a launch's total a ring above where it
+    // ended. One over him while he stands, or over what stands by him, is faded back so it does not
+    // hide either (the play check of steps 4 and 5).
     for (const n of fx.floats) {
-      const a = Math.min(1, n.life / (n.max * 0.4));
+      let a = Math.min(1, n.life / (n.max * 0.4));
+      if (!h.hot && Math.hypot(n.x - hx, n.y - hy) < r + 30) a *= 0.4;
       const fy = Math.max(state.room.top + 12, n.y);
       paint.text(n.text, X(Math.min(state.room.right - 16, Math.max(state.room.left + 16, n.x))), Y(fy), n.big ? 28 : 22, rgba(C.ink, a), "display");
     }
@@ -656,7 +684,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // While the aim would take an offered thing, or bounce off a lit plate first, the bar names that charm.
-    drawBar(paint, state, tune, f.live, f.line ? f.line.charm : "");
+    drawBar(paint, state, tune, f.live, f.line ? f.line.charm : "", fx.clock ? { from: fx.clock.from, k: 1 - fx.clock.life / fx.clock.max } : null);
 
     // The hint in the thumb deck.
     if (hintInDeck && (hint.hand || hint.words !== "")) drawDeckHint(paint, hint, tune.pullDir, now, f.reduced);

@@ -22,6 +22,12 @@ export type Float = { x: number; y: number; text: string; life: number; max: num
 export type Blast = { x: number; y: number; life: number; max: number; mine: boolean };
 /** A token the thump turned away (decision 31): its id and the tick, for the flick drawn on it. */
 export type Flick = { id: number; tick: number };
+/** A token the money bag let out, gone where it stood: its ring fades. */
+export type Ghost = { x: number; y: number; life: number; max: number };
+/** A pickup taken: its tile flies to him and shrinks. */
+export type Jump = { x: number; y: number; charm: string; life: number; max: number };
+/** The clock turning to a new hour: the hour it turns from, and how far it is. */
+export type ClockTurn = { from: number; life: number; max: number };
 /** A stretch of floor the polisher has just passed over, and the tick it did: its sheen fades from there. */
 export type Sheen = { x0: number; y0: number; x1: number; y1: number; tick: number };
 
@@ -44,6 +50,9 @@ const WAVE_S = 0.35;
 const FLOAT_S = 0.8;
 const BLAST_S = 0.3;
 const MAX_FLOATS = 12;
+const GHOST_S = 0.45;
+const JUMP_S = 0.24;
+const CLOCK_TURN_S = 0.3;
 /** A plate that fires flashes this long, s. */
 const PLATE_FLASH_S = 0.16;
 /** How long a token the thump turned shows the way it now rolls, in ticks (0.4 s). */
@@ -60,6 +69,12 @@ export type Effects = {
   readonly flicks: Flick[];
   /** Where the polisher has been in the last `SHEEN_TICKS`: drawn on the floor, it changes nothing. */
   readonly sheen: Sheen[];
+  /** Tokens from the money bag that faded: each ring fades where it stood. */
+  readonly ghosts: Ghost[];
+  /** Pickups taken: each tile flying to him. */
+  readonly jumps: Jump[];
+  /** The clock turning to the hour that has just begun, or null (none with reduced motion). */
+  clock: ClockTurn | null;
   /** Seconds left of the pips drawn in coral after a refused launch. */
   refused: number;
   /** How far plate `i` is into its flash: 1 as it fires, 0 when it is over (none with reduced motion). */
@@ -117,6 +132,10 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
   /** Seconds left of each plate's flash. */
   const flashes = new Array<number>(10).fill(0);
   const sheen: Sheen[] = [];
+  const ghosts: Ghost[] = [];
+  const jumps: Jump[] = [];
+  /** Where each offered pickup lies, by its thing's id: it has left the room by the time its taking is heard. */
+  const pickups = new Map<number, { x: number; y: number }>();
   /** The lane run the sheen is being laid along: where its last stretch ended. */
   let run: { lane: number; dir: number; x: number; tick: number } | null = null;
   let reduced = false;
@@ -134,8 +153,26 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
     if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
   }
 
+  /**
+   * A number floating up from (x, y). Two that would overlap do not: a new
+   * one is stacked over the ones still in the air, so 'x4' over '13' never
+   * reads 'x413' (the play check of steps 4 and 5). Boxes in units, from the
+   * face's width at about 1 px a unit.
+   */
   function float(x: number, y: number, text: string, big: boolean): void {
-    floats.push({ x, y, text, life: FLOAT_S, max: FLOAT_S, big });
+    const w = text.length * (big ? 13 : 10) + 4;
+    const h = big ? 24 : 19;
+    let fy = y;
+    for (let tries = 0; tries < 6; tries++) {
+      const clash = floats.some((f) => {
+        const fw = f.text.length * (f.big ? 13 : 10) + 4;
+        const fh = f.big ? 24 : 19;
+        return Math.abs(f.x - x) < (w + fw) / 2 && Math.abs(f.y - fy) < (h + fh) / 2;
+      });
+      if (!clash) break;
+      fy -= h;
+    }
+    floats.push({ x, y: fy, text, life: FLOAT_S, max: FLOAT_S, big });
     if (floats.length > MAX_FLOATS) floats.shift();
   }
 
@@ -148,6 +185,9 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
     blasts,
     flicks,
     sheen,
+    ghosts,
+    jumps,
+    clock: null,
     refused: 0,
     squashX: 1,
     squashY: 1,
@@ -230,10 +270,12 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           // The thump turned it away: a flick of acid squares off it, and its new way drawn on it for a moment.
           flicks.push({ id: e.id, tick: e.tick });
           if (flicks.length > 12) flicks.shift();
-          burst(e.x, e.y, 4, 80, C.acid, 2);
+          // With reduced motion no squares fly: the way it rolls, drawn on it, holds (§9.5).
+          if (!reduced) burst(e.x, e.y, 4, 80, C.acid, 2);
           return 0;
         case "launchEnd":
-          if (e.pops >= 3) float(e.x, e.y - tune.himRadius - 14, String(e.total), true);
+          // A ring above him (his radius and 20 u), rising: not over him or what he landed by.
+          if (e.pops >= 3) float(e.x, e.y - radiusNow() - 20, String(e.total), true);
           return 0;
         case "hurt":
           waves.push({ x: e.x, y: e.y, life: WAVE_S, max: WAVE_S });
@@ -295,7 +337,25 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           burst(e.x, e.y, 6, 120, C.acid, 2);
           return 0;
         case "fade":
+          // A token from the bag stops and fades: its ring fades where it stood, not gone at once.
+          ghosts.push({ x: e.x, y: e.y, life: GHOST_S, max: GHOST_S });
+          if (ghosts.length > 8) ghosts.shift();
           burst(e.x, e.y, 4, 50, C.acid, 2);
+          return 0;
+        case "offerTaken": {
+          // A plate lights (and flashes); a pickup's tile jumps to him.
+          if (e.kind === "plate") {
+            if (!reduced && e.plate >= 0 && e.plate < flashes.length) flashes[e.plate] = PLATE_FLASH_S;
+          } else {
+            const it = e.items[e.item];
+            const at = it ? pickups.get(it.thingId) : undefined;
+            if (at) jumps.push({ x: at.x, y: at.y, charm: e.charm, life: JUMP_S, max: JUMP_S });
+          }
+          return 0;
+        }
+        case "hour":
+          // The clock turns to the new hour (the first, at the first launch, has nothing to turn from).
+          if (!reduced && e.hour > 0) fx.clock = { from: e.hour - 1, life: CLOCK_TURN_S, max: CLOCK_TURN_S };
           return 0;
         case "heartTaken":
           burst(e.x, e.y, 16, 200, C.coral, 3);
@@ -341,6 +401,10 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
         } else run = { lane: b.lane, dir: b.dir, x: tx, tick: s.tick };
       } else if (!b.present || b.mode === "down") run = null;
       while (sheen.length > 0 && s.tick - sheen[0].tick >= SHEEN_TICKS) sheen.shift();
+      // Where the offered pickups lie, for the tile that jumps to him when one is taken.
+      if (s.offer.open) {
+        for (const d of s.things) if (d.kind === "pickup") pickups.set(d.id, { x: d.x, y: d.y });
+      } else if (pickups.size > 0) pickups.clear();
       const h = s.him;
       const sp = Math.hypot(h.vx, h.vy);
       if (sp > 40) {
@@ -376,6 +440,18 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       for (let i = blasts.length - 1; i >= 0; i--) {
         blasts[i].life -= scaledDt;
         if (blasts[i].life <= 0) blasts.splice(i, 1);
+      }
+      for (let i = ghosts.length - 1; i >= 0; i--) {
+        ghosts[i].life -= realDt;
+        if (ghosts[i].life <= 0) ghosts.splice(i, 1);
+      }
+      for (let i = jumps.length - 1; i >= 0; i--) {
+        jumps[i].life -= realDt;
+        if (jumps[i].life <= 0) jumps.splice(i, 1);
+      }
+      if (fx.clock) {
+        fx.clock.life -= realDt;
+        if (fx.clock.life <= 0) fx.clock = null;
       }
       for (let i = floats.length - 1; i >= 0; i--) {
         const f = floats[i];
@@ -420,6 +496,10 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       flashes.fill(0);
       sheen.length = 0;
       run = null;
+      ghosts.length = 0;
+      jumps.length = 0;
+      pickups.clear();
+      fx.clock = null;
       fx.refused = 0;
       fx.shake = 0;
       fx.squashX = 1;

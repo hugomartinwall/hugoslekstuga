@@ -183,6 +183,14 @@ export function drawOffer(p: Paint, s: State, part: "inserts" | "tiles"): void {
   }
 }
 
+/** A pickup's tile on its way to him (`scale` of its size), centred on (cx, cy). */
+export function drawTileJump(p: Paint, charm: string, cx: number, cy: number, scale: number): void {
+  const icon = CHARM_ICON[charm];
+  if (!icon) return;
+  const size = INSERT_SIZE * scale;
+  p.stamp(`pickup-${charm}`, tileBitmap(INSERT_SIZE, FRAME_U, icon, 3), { f: C.ink, i: C.page, x: charmColor(charm) }, cx - size / 2, cy - size / 2, scale);
+}
+
 /** Widths of the names, px at 16 px, as the page's font draws them: measured once each. */
 const widths = new Map<string, number>();
 
