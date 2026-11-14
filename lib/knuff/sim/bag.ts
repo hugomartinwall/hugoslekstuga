@@ -57,24 +57,53 @@ export function takeOff(s: State, tune: Tune, d: Thing, off: number, events: Sim
 }
 
 /**
- * A token comes out of the bag: at its rim on the side away from him,
- * dazed for `dazeTicks` (the daze is its telegraph), then rolling straight
- * away from the bag. It does not come while the room is at the cap.
+ * Where on the bag's rim a token comes out: the side away from him, the
+ * token's centre `out` from the bag's. A bag against a cushion (the
+ * polisher pushes it there) can have that spot outside the floor; then the
+ * spot slides along the rim, a degree at a time each way, to the nearest
+ * one that is inside it, toward the middle of the room on a tie. Returns
+ * the way out, from the bag's centre: the token stands there and rolls
+ * that way, straight away from the bag.
+ */
+export function rimOut(s: State, bag: Thing, out: number): { nx: number; ny: number } {
+  const h = s.him;
+  const len = Math.hypot(bag.x - h.x, bag.y - h.y);
+  const away = len > 1e-6 ? Math.atan2(bag.y - h.y, bag.x - h.x) : -Math.PI / 2;
+  const room = s.room;
+  const inside = (a: number) => {
+    const x = bag.x + Math.cos(a) * out;
+    const y = bag.y + Math.sin(a) * out;
+    return x >= room.left + TOKEN_R && x <= room.right - TOKEN_R && y >= room.top + TOKEN_R && y <= room.bottom - TOKEN_R;
+  };
+  const midX = (room.left + room.right) / 2;
+  const midY = (room.top + room.bottom) / 2;
+  const fromMid = (a: number) => Math.hypot(bag.x + Math.cos(a) * out - midX, bag.y + Math.sin(a) * out - midY);
+  let a = away;
+  for (let k = 0; k <= 180; k++) {
+    const turn = (k * Math.PI) / 180;
+    const plus = inside(away + turn);
+    const minus = k > 0 && inside(away - turn);
+    if (plus || minus) {
+      a = plus && minus ? (fromMid(away - turn) < fromMid(away + turn) ? away - turn : away + turn) : plus ? away + turn : away - turn;
+      break;
+    }
+  }
+  // Straight on (k = 0) is the plain case: the way away from him, as it always was (straight up the room if the centres coincide).
+  if (a === away) return len > 1e-6 ? { nx: (bag.x - h.x) / len, ny: (bag.y - h.y) / len } : { nx: 0, ny: -1 };
+  return { nx: Math.cos(a), ny: Math.sin(a) };
+}
+
+/**
+ * A token comes out of the bag: at its rim on the side away from him (kept
+ * on the floor: `rimOut`), dazed for `dazeTicks` (the daze is its
+ * telegraph), then rolling straight away from the bag. It does not come
+ * while the room is at the cap.
  */
 function letOut(s: State, tune: Tune, bag: Thing, events: SimEvent[]): void {
   if (intruders(s) >= tune.roomCap) return;
   const h = s.him;
-  let nx = bag.x - h.x;
-  let ny = bag.y - h.y;
-  const len = Math.hypot(nx, ny);
-  if (len > 1e-6) {
-    nx /= len;
-    ny /= len;
-  } else {
-    nx = 0;
-    ny = -1;
-  }
   const out = BAG_R + TOKEN_R;
+  const { nx, ny } = rimOut(s, bag, out);
   const d = addThing(s, "token", bag.x + nx * out, bag.y + ny * out, s.tick, nx * tune.tokenSpeed + 0, ny * tune.tokenSpeed + 0);
   d.goneTick = s.tick + tune.bagTokenLife;
   announce(s, d, events);

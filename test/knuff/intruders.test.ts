@@ -353,6 +353,38 @@ describe("the money bag (venture capital)", () => {
     expect(last.goneTick).toBe(last.landTick + 480);
   });
 
+  it("a bag against a cushion, him on the far side: the token comes out at the rim inside the floor, and rolls away from the bag", () => {
+    const rolling = tuned({ bunnySpeed: 0, bagSpeed: 0 });
+    const s = night(rolling);
+    const room = s.room;
+    // Flush against the top cushion, him straight below: the side away from him is the cushion.
+    const bag = put(s, "bag", 180, room.top + 34, { hp: 7 });
+    s.him.x = 180;
+    s.him.y = 200;
+    put(s, "battery", 180 + 50, room.top + 34 + 40, { mine: true, knockTick: 0, launchId: 1, fuseTick: 1 });
+    const events = run(s, rolling, 2);
+    const [out] = of(events, "bagToken");
+    const t = s.things.find((d) => d.id === out.id)!;
+    // On the floor, with its whole circle, and at the rim.
+    expect(t.y).toBeGreaterThanOrEqual(room.top + 7);
+    expect(Math.hypot(t.x - bag.x, t.y - bag.y)).toBeCloseTo(34 + 7, 9);
+    // As far round toward the cushion as the floor lets it: the next degree on is off the floor.
+    expect(t.y - (room.top + 7)).toBeLessThan(41 * (Math.PI / 180) + 1e-9);
+    // Its roll points straight away from the bag's centre.
+    const ax = (t.x - bag.x) / 41;
+    const ay = (t.y - bag.y) / 41;
+    expect(t.vx).toBeCloseTo(150 * ax, 9);
+    expect(t.vy).toBeCloseTo(150 * ay, 9);
+    // When its daze is over it rolls off, and away from the bag: never back through it.
+    let nearest = Infinity;
+    for (let i = 0; i < 90; i++) {
+      run(s, rolling, 1);
+      nearest = Math.min(nearest, Math.hypot(t.x - bag.x, t.y - bag.y));
+    }
+    expect(nearest).toBeGreaterThanOrEqual(41 - 1e-9);
+    expect(Math.hypot(t.x - bag.x, t.y - bag.y)).toBeGreaterThan(41 + 100);
+  });
+
   it("a token from the bag stops and fades 480 ticks after it appeared: gone, harmless, worth nothing; popped before that it is an ordinary token", () => {
     const still = tuned({ bunnySpeed: 0, tokenSpeed: 0, bagSpeed: 0 });
     const s = night(still);
