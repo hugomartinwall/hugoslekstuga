@@ -298,6 +298,37 @@ describe("what the game does with the stored night (§3.11)", () => {
     expect(session.getItem(KEY.run)).not.toBeNull();
   });
 
+  it("is written when the page becomes too small in the middle of a night; Escape does nothing there, and big again it is paused", () => {
+    const local = new MemoryStorage();
+    const session = new MemoryStorage();
+    b = installBrowser({ coarse: false, w: 1280, h: 800, local, session });
+    views = [];
+    game = createKnuff(b.root as unknown as HTMLElement, b.canvas, { fonts: FONTS, onChange: (v) => views.push(v) });
+    const br = b as Browser;
+    pull(br, 640, 500, 0, 90, "mouse");
+    br.frames(60);
+    expect(view().screen).toBe("play");
+    expect(session.getItem(KEY.run)).toBeNull();
+    // A laptop window under 436 px tall is too small (§9.1).
+    br.root.clientHeight = 400;
+    br.win.dispatchEvent(new Event("resize"));
+    expect(view().screen).toBe("tooSmall");
+    const kept = JSON.parse(session.getItem(KEY.run) as string);
+    expect(kept.state.phase).toBe("night");
+    // The night stands still under the panel, and Escape there neither resumes it nor deletes it.
+    br.frames(30);
+    br.key("keydown", { key: "Escape", code: "Escape" });
+    br.key("keyup", { key: "Escape", code: "Escape" }, br.win);
+    (game as KnuffHandle).resume();
+    expect(view().screen).toBe("tooSmall");
+    expect(JSON.parse(session.getItem(KEY.run) as string).state.tick).toBe(kept.state.tick);
+    // Big again: the pause panel, the night still kept.
+    br.root.clientHeight = 800;
+    br.win.dispatchEvent(new Event("resize"));
+    expect(view().screen).toBe("paused");
+    expect(session.getItem(KEY.run)).not.toBeNull();
+  });
+
   it("is written when the page unmounts in the middle of a night, and offered when it opens again", () => {
     const { local, session, b: br } = open();
     begin(br);
@@ -445,6 +476,27 @@ describe("what the game does with the stored night (§3.11)", () => {
     // This night's own best shot, not the record's.
     expect(view().over?.bestShot).toBe(fell.bestShot);
     expect(JSON.parse(local.getItem(KEY.save) as string)).toEqual({ v: 1, best: fell.score + 1000, bestClock: 9, bestShot: 5000, runs: 7, mornings: 2 });
+  });
+
+  it("a first night that ends with nothing scored is no NEW BEST", () => {
+    // The night that ends on its next tick, as above, with its score taken away: nothing scored.
+    const fell = midNight(31, {}, 20000);
+    const before = midNight(31, {}, 0);
+    while (before.tick < fell.tick - 1) step(before, { launch: null, pullHeld: false }, DEFAULT_TUNE, []);
+    before.score = 0;
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    createStore(local, session).writeRun({ ...DEFAULT_TUNE }, before);
+    const { b: br, game: g } = open(local, session);
+    g.resumeStored();
+    br.wait(600);
+    br.frames(5);
+    br.wait(800);
+    br.frames(1);
+    expect(view().screen).toBe("over");
+    expect(view().over?.score).toBe(0);
+    expect(view().over?.newBest).toBe(false);
+    expect(view().over?.best).toBe(0);
   });
 
   it("MORNING sends hugo-happy once; another ending sends nothing", () => {

@@ -273,6 +273,36 @@ describe("a night on the keys alone", () => {
     expect(view().screen).toBe("paused");
   });
 
+  it("the key that paused must come up before anything resumes: a held Escape or P stays paused", () => {
+    const { b: br, game: g } = open();
+    br.frames(3);
+    tap(br, " ", "Space");
+    br.frames(60);
+    for (const [key, code] of [
+      ["Escape", "Escape"],
+      ["p", "KeyP"],
+    ]) {
+      expect(view().screen).toBe("play");
+      br.key("keydown", { key, code });
+      expect(view().screen).toBe("paused");
+      // The key is still down; its repeats reach the panel, which resumes on Escape (Client.tsx): nothing yet.
+      br.key("keydown", { key, code, repeat: true });
+      g.resume();
+      br.frames(5);
+      expect(view().screen).toBe("paused");
+      // Another key coming up does not count.
+      br.key("keyup", { key: "ArrowLeft", code: "ArrowLeft" }, br.win);
+      g.resume();
+      expect(view().screen).toBe("paused");
+      // It comes up: now a fresh press resumes.
+      br.key("keyup", { key, code }, br.win);
+      g.resume();
+      expect(view().screen).toBe("play");
+      br.wait(600);
+      br.frames(10);
+    }
+  });
+
   it("a key pressed with Ctrl, Cmd or Alt is left alone, and so is / (the site's search)", () => {
     const { b: br } = open();
     br.frames(3);
