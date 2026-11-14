@@ -969,10 +969,13 @@ or left, offered as RESUME until it is answered). All five go through
 `lib/knuff/save.ts`.
 
 **Tests**: `test/knuff/`. All pure, node environment; the shell's
-pieces (the pull, the loop, the layout) are driven with stand-ins for
-the browser. `wiring` holds its place on the site: the registry entry,
-the icon and the cabinet's painter. The dev handle is `window.__knuff`,
-development only.
+pieces (the pull, the keys, the loop, the layout) are driven with
+stand-ins for the browser, and `save` and `keyboard` make the whole
+game in one (`test/knuff/browser.ts`: a window, a document, a canvas
+that draws nothing, two storages and a frame clock turned by hand).
+`wiring` holds its place on the site: the registry entry, the icon and
+the cabinet's painter. The dev handle is `window.__knuff`, development
+only.
 
 ## Things NOT to do
 
