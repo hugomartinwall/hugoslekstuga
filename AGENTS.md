@@ -425,8 +425,11 @@ and fails when any of the three stops matching it, cell for cell: change
 the sprite and the copies have to follow.
 
 One more drawing of him is deliberate and is not a copy: Knuff's icon in
-`lib/pixel-icons.ts` is a simplified 12×12 Hugo on a band (his body is
-14×12 and does not fit an icon). It is not held to the painter.
+`lib/pixel-icons.ts` is a simplified 12×12 Hugo flying, speed lines
+behind him (his body is 14×12 and does not fit an icon). It is not held
+to the painter. Do not put him on a stick or a band: a round head on a
+stick reads as a magnifying glass, and the search field's own sits right
+above it in the palette.
 
 **`lib/hugo-state.ts` is his brain**: mood (sleepy/calm/curious/
 excited/grumpy), energy, visit streaks, `firstSeen` — persisted at

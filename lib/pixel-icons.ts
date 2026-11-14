@@ -215,21 +215,23 @@ export const PIXEL_ICONS = {
     "..##.##.##..",
     "............",
   ],
-  // Him, pulled back on a band. A simplified drawing of him, the one
-  // icon that shows him: his 14×12 body does not fit in 12×12.
+  // Him, flying: speed lines behind him. A simplified drawing of him, the
+  // one icon that shows him: his 14×12 body does not fit in 12×12. (He was
+  // drawn pulled back on a band once, and a round head on a stick read as a
+  // magnifying glass, right under the search field's own.)
   knuff: [
-    "......####..",
+    "............",
+    "............",
     ".....######.",
     "....########",
+    "##..#.##.###",
     "....#.##.###",
-    "....#.##.###",
+    "###.########",
     "....########",
-    ".....######.",
-    "...#..####..",
-    "..#.........",
-    ".#..........",
-    "##..........",
-    "##..........",
+    "##...######.",
+    "............",
+    "............",
+    "............",
   ],
   // An arcade cabinet: a game that has no mark of its own yet.
   game: [
