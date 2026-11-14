@@ -4,7 +4,7 @@ import { BOSS_AIMLESS, BOSS_BOUNDS, fightBuild, fightStart, sumFights } from "..
 import { CORNER_MATE } from "../../lib/knuff/content/charms";
 import { BOSS_HOUR } from "../../lib/knuff/content/night";
 import { boxOf, laneMiddle } from "../../lib/knuff/sim/boss";
-import { CAST, STEP1_NIGHT, TAKERS, nightSeed, player, playerStream, runNight, wholeNightFor, type Night } from "../../lib/knuff/bots/driver";
+import { CAST, STEP1_NIGHT, TAKERS, lateRelease, nightSeed, player, playerStream, runNight, wholeNightFor, type Night } from "../../lib/knuff/bots/driver";
 import { CAUTIOUS, EXPERT, NO_INPUT, ORDINARY, PROBE, handBot, isDown, ms, probePick, rollout, type Now } from "../../lib/knuff/bots/probe";
 import { AIMLESS, AS_WRITTEN, FULL_BOUNDS, SMOKE, SMOKE_LOOK_AHEAD, STEP1_BOUNDS, STEP4_BOUNDS, boundsFor, fullBoundsFor, summarise, type Sum } from "../../lib/knuff/bots/table";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
@@ -289,6 +289,42 @@ describe("the driver", () => {
       }
     });
     expect(Math.min(...quick)).toBe(16);
+  });
+
+  it("counts the room empty by 13.2's words: a tick with only the polisher in it is empty, and is counted apart too", () => {
+    // A fight alone: every tick of it has the polisher in the room, but the first, which finds it not yet announced.
+    const n = runNight(nightSeed(2), player("expert"), tune, fightStart(nightSeed(2)));
+    expect(n.ticksEmptyBoss).toBeGreaterThan(100);
+    expect(n.ticksEmpty - n.ticksEmptyBoss).toBe(1);
+    // On the step-1 night there is no polisher, and none of its empty ticks are his.
+    const step1 = runNight(nightSeed(2), player("ordinary"), tune, STEP1_NIGHT);
+    expect(step1.ticksEmpty).toBeGreaterThan(0);
+    expect(step1.ticksEmptyBoss).toBe(0);
+  });
+
+  it("a player who lets go late (decision 25) holds the pull on for those ticks and fires what it chose; the players who do not aim are as they were", () => {
+    expect(lateRelease(player("once"), 6)).toBe(player("once"));
+    expect(lateRelease(player("expert"), 0)).toBe(player("expert"));
+    const late = lateRelease(player("ordinary"), 6);
+    expect(late.label).toBe("Ordinary, no charms, 6 ticks late");
+    const s = createState(nightSeed(0), tune, STEP1_NIGHT);
+    const plain = player("ordinary").make(playerStream(nightSeed(0), "ordinary"));
+    const bot = late.make(playerStream(nightSeed(0), "ordinary"));
+    const inputs: { launch: unknown; pullHeld: boolean }[] = [];
+    let landedTick = -1;
+    for (let t = 0; t < 1500 && s.phase !== "over"; t++) {
+      const n = { clock: s.normalTicks + 5 * s.slowedTicks, landedTick };
+      // The first launch, before anything moves, is the plain player's, at once.
+      if (t === 0) expect(bot.act(s, tune, n)).toEqual(plain.act(s, tune, n));
+      const input = t === 0 ? { launch: { dx: 0, dy: -1, power: 1 }, pullHeld: false } : bot.act(s, tune, n);
+      inputs.push(input);
+      const events: SimEvent[] = [];
+      step(s, input, tune, events);
+      for (const e of events) if (e.type === "land") landedTick = e.tick;
+    }
+    const fired = inputs.flatMap((x, i) => (x.launch !== null && i > 0 ? [i] : []));
+    expect(fired.length).toBeGreaterThan(5);
+    for (const i of fired) expect(inputs.slice(i - 6, i).every((x) => x.launch === null && x.pullHeld)).toBe(true);
   });
 
   it("keeps the books the table reads", () => {

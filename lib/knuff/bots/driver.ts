@@ -22,9 +22,9 @@ import { overlapDepth } from "../sim/boss";
 import { intruders } from "../sim/night";
 import { createState, type StartOptions } from "../sim/state";
 import { step } from "../sim/step";
-import type { SimEvent, State, Thing, Tune } from "../sim/types";
+import type { Input, SimEvent, State, Thing, Tune } from "../sim/types";
 import { KITER, KITER_RANDOM, flickerBot, kiterBot, onceBot, rhythmBot, spamBot } from "./aimless";
-import { CAUTIOUS, EXPERT, ORDINARY, STRAIGHT, cornerHands, handBot, type Bot, type Now, type Rand } from "./probe";
+import { CAUTIOUS, EXPERT, HOLD, ORDINARY, STRAIGHT, cornerHands, handBot, type Bot, type Now, type Rand } from "./probe";
 
 // ── The cast ──────────────────────────────────────────────────────────
 
@@ -66,6 +66,45 @@ export function player(key: string): Player {
   const p = CAST.find((c) => c.key === key) ?? TAKERS.find((c) => c.key === key);
   if (!p) throw new Error(`no player "${key}"`);
   return p;
+}
+
+/**
+ * A player who lets go `ticks` ticks after it has chosen: a finger that
+ * comes up a moment after the eye has read the line (the lead's decision
+ * 25, data for the owner, not one of §13.1's players). It chooses as it
+ * always does; the pull is held on for those ticks, and the launch it
+ * chose is released then, in the room as it is by then. The first launch
+ * is not held: nothing moves before it. Only the players who aim are held
+ * (the probe's five, Straight, and the two who take one); the rest are
+ * returned as they are. 0 is the player itself.
+ */
+export function lateRelease(p: Player, ticks: number): Player {
+  if (ticks <= 0 || !(p.looksAhead || p.key === "straight")) return p;
+  return {
+    ...p,
+    label: `${p.label}, ${ticks} ticks late`,
+    make: (r) => {
+      const inner = p.make(r);
+      let held: Input["launch"] = null;
+      let at = 0;
+      return {
+        aimingAt: inner.aimingAt,
+        act(s, tune, now) {
+          if (held !== null) {
+            if (s.tick < at) return HOLD;
+            const launch = held;
+            held = null;
+            return { launch, pullHeld: false };
+          }
+          const input = inner.act(s, tune, now);
+          if (input.launch === null || s.phase === "waiting") return input;
+          held = input.launch;
+          at = s.tick + ticks;
+          return HOLD;
+        },
+      };
+    },
+  };
 }
 
 /**
