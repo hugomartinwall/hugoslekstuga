@@ -153,14 +153,23 @@ export type KnuffDev = {
   running(): boolean;
 };
 
-/** The end panel appears this long after the night ends, ms. */
-const END_PANEL_MS = 800;
 /** After RESUME the room stays frozen this long, ms, and until no pointer that was down is still down. */
 const RESUME_HOLD_MS = 500;
 /** The lights come on at the end of a night that reached 06:00's end, over this long, ms (§10, §12.7). */
 const LIGHTS_MS = 1000;
 /** His celebration pixels at MORNING change places this often, ms. */
 const SPARKLE_MS = 220;
+/**
+ * The end panel appears this long after the night ends, ms (§3.10). When he
+ * fell, 800 ms. When the lights come on, once they are fully on; and at
+ * MORNING a second longer, so the win is seen before the panel (a sheet on a
+ * phone) covers him.
+ */
+export function endPanelMs(how: State["ended"]): number {
+  if (how === "morning") return LIGHTS_MS + 1200;
+  if (how === "dawn") return LIGHTS_MS + 200;
+  return 800;
+}
 
 /** A new seed for a new game. Nobody promises that a seed plays the same on two devices. */
 function newSeed(): number {
@@ -214,7 +223,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   let paused = false;
   /** BACK TO PLAYHOUSE was pressed: nothing more happens here. */
   let left = false;
-  /** The end panel is up: the night has been over for 800 ms. */
+  /** The end panel is up: the night has been over for endPanelMs(). */
   let overShown = false;
   let overTimer = 0;
   /** The best score kept on the device, as the last night left it. */
@@ -417,7 +426,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       if (destroyed || state.phase !== "over") return;
       overShown = true;
       tell();
-    }, END_PANEL_MS);
+    }, endPanelMs(state.ended));
   };
 
   function pause(): void {

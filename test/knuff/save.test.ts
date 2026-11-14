@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_TUNE, mergeTune } from "../../lib/knuff/content/tune";
-import { createKnuff, type KnuffHandle, type KnuffView } from "../../lib/knuff/game";
+import { createKnuff, endPanelMs, type KnuffHandle, type KnuffView } from "../../lib/knuff/game";
 import { KEY, NO_SAVE, RUN_V, browserStorages, createStore, tuneFingerprint } from "../../lib/knuff/save";
 import { cloneState, createState, type StartOptions } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
@@ -523,6 +523,42 @@ describe("what the game does with the stored night (§3.11)", () => {
     br.wait(1000);
     br.frames(120);
     expect(br.sent.filter((t) => t === "hugoslekstuga:hugo-happy")).toHaveLength(1);
+    expect(view().over?.night).toBe("MORNING");
+  });
+
+  it("the end panel waits for the lights, and at MORNING a second more (§3.10)", () => {
+    // When he fell: 800 ms. When the lights come on: once they are on (1,000 ms), and the win is seen a second.
+    expect(endPanelMs("hearts")).toBe(800);
+    expect(endPanelMs("dawn")).toBe(1200);
+    expect(endPanelMs("morning")).toBe(2200);
+    // In the game: a night that ends as MORNING keeps him on screen with no panel for those 2,200 ms.
+    const morningFrom = (seed: number) => {
+      const s = createState(seed, DEFAULT_TUNE, { hour: 10, empty: true, kinds: [] });
+      step(s, { launch: { dx: 0, dy: -1, power: 1 }, pullHeld: false }, DEFAULT_TUNE, []);
+      return s;
+    };
+    const whole = morningFrom(43);
+    for (let i = 0; i < 20000 && whole.phase !== "over"; i++) step(whole, { launch: null, pullHeld: false }, DEFAULT_TUNE, []);
+    expect(whole.ended).toBe("morning");
+    const before = morningFrom(43);
+    while (before.tick < whole.tick - 2) step(before, { launch: null, pullHeld: false }, DEFAULT_TUNE, []);
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    createStore(local, session).writeRun({ ...DEFAULT_TUNE }, cloneState(before));
+    const { b: br, game: g } = open(local, session);
+    g.resumeStored();
+    br.wait(600);
+    // Frame by frame to the end of the night: hugo-happy is sent the moment it ends.
+    for (let i = 0; i < 600 && !br.sent.includes("hugoslekstuga:hugo-happy"); i++) br.frame();
+    expect(br.sent).toContain("hugoslekstuga:hugo-happy");
+    br.frames(1);
+    expect(view().screen).not.toBe("over");
+    br.wait(2000);
+    br.frames(1);
+    expect(view().screen).not.toBe("over");
+    br.wait(250);
+    br.frames(1);
+    expect(view().screen).toBe("over");
     expect(view().over?.night).toBe("MORNING");
   });
 
