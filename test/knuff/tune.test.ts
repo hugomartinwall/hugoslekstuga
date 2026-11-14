@@ -36,7 +36,8 @@ describe("the knob table", () => {
 
   it("the game's half holds the spec's starting values (§2.2), as the lead's decisions have set them", () => {
     // Written out, so a number changed in the table shows up here as a change someone made on purpose.
-    // From the spec's first values: bossSpeed 90 (decision 16), padHurtsHot off (21), thumpTurnsTokens on (22), paceLastCall 1020 (23).
+    // From the spec's first values: bossSpeed 90 (decision 16), padHurtsHot off (21), thumpTurnsTokens on (22), paceLastCall 1020 (23),
+    // and paceTokens 4, the dial turned to bring the table's rows back in after them (decision 24).
     expect(GAME).toEqual({
       lineShowsPx: 12,
       noShotPx: 24,
@@ -69,7 +70,7 @@ describe("the knob table", () => {
       paceEvery: 228,
       paceLastCall: 1020,
       paceLastCallFirst: 456,
-      paceTokens: 2,
+      paceTokens: 4,
       bunnySpeed: 22,
       bunnyWobble: 0.6,
       bunnyWobbleRate: 0.07,
@@ -143,9 +144,9 @@ describe("what each pace gives", () => {
     expect(DEFAULT_TUNE.pipRefillTicks).toBe(96);
   });
 
-  it("an extra bunch carries two tokens at pace 2 and three at pace 3", () => {
-    expect(PACE[2].paceTokens).toBe(2);
-    expect(PACE[3].paceTokens).toBe(3);
+  it("an extra bunch carries four tokens at pace 2 and five at pace 3 (the fix round of steps 4 and 5; the spec began at two and three)", () => {
+    expect(PACE[2].paceTokens).toBe(4);
+    expect(PACE[3].paceTokens).toBe(5);
   });
 
   it("the other four are the same at 2 and 3: six left, 228 ticks, last call at 1020 (decision 23) and at 456", () => {
@@ -164,7 +165,7 @@ describe("what each pace gives", () => {
 
   it("naming a pace deals its values", () => {
     expect(mergeTune(DEFAULT_TUNE, { pace: 1 }).pipRefillTicks).toBe(120);
-    expect(mergeTune(DEFAULT_TUNE, { pace: 3 }).paceTokens).toBe(3);
+    expect(mergeTune(DEFAULT_TUNE, { pace: 3 }).paceTokens).toBe(5);
     expect(mergeTune(DEFAULT_TUNE, { pace: 3 }).pipRefillTicks).toBe(96);
     const one = mergeTune(DEFAULT_TUNE, { pace: 1 });
     expect(mergeTune(one, { pace: 2 })).toEqual(DEFAULT_TUNE);
@@ -190,7 +191,7 @@ describe("what each pace gives", () => {
   it("an override that does not name the pace leaves what it gave alone", () => {
     const three = mergeTune(DEFAULT_TUNE, { pace: 3 });
     const later = mergeTune(three, { popHotTicks: 15 });
-    expect(later.paceTokens).toBe(3);
+    expect(later.paceTokens).toBe(5);
     expect(later.pace).toBe(3);
     expect(later.popHotTicks).toBe(15);
   });
@@ -203,7 +204,7 @@ describe("what each pace gives", () => {
     const second = mergeTune(DEFAULT_TUNE, named);
     expect(first.pipRefillTicks).toBe(120);
     expect(second.pipRefillTicks).toBe(120);
-    expect(second.paceTokens).toBe(3);
+    expect(second.paceTokens).toBe(5);
     // Laying only the newest change over the table in use would deal the pace's own value again.
     expect(mergeTune(first, { pace: 3 }).pipRefillTicks).toBe(96);
   });
@@ -234,7 +235,7 @@ describe("laying a partial table over it", () => {
     const before = JSON.stringify(DEFAULT_TUNE);
     const tune = mergeTune(DEFAULT_TUNE, { friction: 1, pace: 3 });
     expect(JSON.stringify(DEFAULT_TUNE)).toBe(before);
-    expect(JSON.stringify(PACE[3])).toBe(JSON.stringify({ ...PACE[2], paceTokens: 3 }));
+    expect(JSON.stringify(PACE[3])).toBe(JSON.stringify({ ...PACE[2], paceTokens: 5 }));
     expect(tune).not.toBe(DEFAULT_TUNE);
     expect(mergeTune(DEFAULT_TUNE, undefined)).toEqual(DEFAULT_TUNE);
     expect(mergeTune(DEFAULT_TUNE, undefined)).not.toBe(DEFAULT_TUNE);

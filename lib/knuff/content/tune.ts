@@ -73,11 +73,16 @@ export type PaceGiven = Pick<Tune, "pipRefillTicks" | "paceRoom" | "paceEvery" |
  * three is read as 1. Last call is tick 1,020 of the hour (decision 23; the
  * spec started it at 840): inside both its floors of §3.4, it keeps the
  * Ordinary and the Expert who take a charm off the edges of their rows.
+ * An extra bunch carries four loose tokens at pace 2 and five at pace 3 (the
+ * spec started them at two and three): with the thump turning tokens away
+ * (decision 22, "only together with more tokens", §2.2) the Ordinary lived
+ * to the end of 05:00 in 42% of its nights, and `paceTokens`, the first lever
+ * of §3.4's dial, brought every row but the two the lead accepted back in.
  */
 export const PACE: Readonly<Record<1 | 2 | 3, PaceGiven>> = {
-  1: { pipRefillTicks: 120, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 2 },
-  2: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 2 },
-  3: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 3 },
+  1: { pipRefillTicks: 120, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 4 },
+  2: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 4 },
+  3: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 5 },
 };
 
 /** The values `pace` gives. */

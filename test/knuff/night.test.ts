@@ -1173,7 +1173,7 @@ describe("the pace: extra bunches until last call", () => {
 
       it("an extra bunch is the hour's dust bunnies in a blob, with a few loose tokens before midnight", () => {
         const tokensGiven = PACE[pace as 2 | 3].paceTokens;
-        expect(tokensGiven).toBe(pace === 2 ? 2 : 3);
+        expect(tokensGiven).toBe(pace === 2 ? 4 : 5);
         for (let hour = 0; hour < HOURS; hour++) {
           const night = new Night({ pace, tokenSpeed: 150, hearts: 999 }, { hour });
           // Popped as it lands, until the first extra bunch has been announced.
@@ -1212,7 +1212,8 @@ describe("the pace: extra bunches until last call", () => {
   });
 
   it("an extra bunch is cut by the cap like any row", () => {
-    const night = new Night({ pace: 2 }, { hour: 3 });
+    // Two loose tokens on an extra bunch, named: the counts below are laid out for them.
+    const night = new Night({ pace: 2, paceTokens: 2 }, { hour: 3 });
     night.through(684);
     // Two bunches of seven by the clock, and then extras of six dust bunnies and two tokens: 14, 22, and the cap.
     expect(night.rows(3).map((r) => [r.row, r.at, r.n, r.cut])).toEqual([
@@ -1290,8 +1291,9 @@ describe("the pace: no hour is clear before last call", () => {
 
 describe("the pace: a row the cap cuts", () => {
   it("to nothing has still been announced: it is the row before, and the clock starts again from it", () => {
-    // 01:00 in a room that holds nine: the opening bunch fills it, and nothing is popped. (Last call at 840, named.)
-    const night = new Night({ pace: 2, roomCap: 9, paceLastCall: 840 }, { hour: 6 });
+    // 01:00 in a room that holds nine: the opening bunch fills it, and nothing is popped. (Last call at 840 and the
+    // spec's first two tokens, named: the extra bunches of 01:00 then carry none.)
+    const night = new Night({ pace: 2, roomCap: 9, paceLastCall: 840, paceTokens: 2 }, { hour: 6 });
     night.through(1799);
     expect(night.rows(6)).toEqual([
       { hour: 6, row: 0, how: "tick", at: 0, n: 9, cut: 0 },
@@ -1337,8 +1339,9 @@ describe("the pace: what it sends", () => {
     // The same rows on the same ticks.
     expect(three.rows().map((r) => [r.row, r.how, r.at])).toEqual(two.rows().map((r) => [r.row, r.how, r.at]));
     const extra = (night: Night) => night.rows().filter((r) => r.row === -1);
-    expect(extra(two).every((r) => r.n === 7)).toBe(true);
-    expect(extra(three).every((r) => r.n === 8)).toBe(true);
+    // 21:00's five dust bunnies and four loose tokens, and five at pace 3.
+    expect(extra(two).every((r) => r.n === 9)).toBe(true);
+    expect(extra(three).every((r) => r.n === 10)).toBe(true);
     // And the tabled rows are the table's at both.
     expect(two.rows().filter((r) => r.row >= 0).map((r) => r.n)).toEqual([6, 6]);
     expect(three.rows().filter((r) => r.row >= 0).map((r) => r.n)).toEqual([6, 6]);
