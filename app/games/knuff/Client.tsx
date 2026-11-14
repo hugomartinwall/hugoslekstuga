@@ -327,7 +327,10 @@ export default function Client({ standalone = false }: { standalone?: boolean })
                     </Tag>
                   )}
                 </div>
-                <dl className="grid grid-cols-3 gap-2">
+                {/* The three wrap rather than share a third each: at 200% text a
+                    third of the panel is narrower than a score, and the values
+                    ran into each other. */}
+                <dl className="flex flex-wrap justify-between gap-x-6 gap-y-3">
                   {(
                     [
                       [END.best, String(over.best), "best"],
@@ -359,7 +362,10 @@ export default function Client({ standalone = false }: { standalone?: boolean })
 
       {/* A page too small to play: the line, and a way out. It closes by
           itself when the page is big enough, and the pause panel follows if
-          a night was running. Escape and the scrim do nothing here. */}
+          a night was running. Escape and the scrim do nothing here. The line
+          takes the focus, not BACK TO PLAYHOUSE: Enter and Space are launch
+          keys, and a keyboard player's next one would have left the night
+          (as 9.7 says of the end panel). BACK is a Tab away. */}
       <Dialog
         open={screen === "tooSmall" && !searchOpen}
         onClose={() => {}}
@@ -373,7 +379,7 @@ export default function Client({ standalone = false }: { standalone?: boolean })
             {PANEL_LABEL.tooSmall}
           </span>
           <div className="flex flex-col gap-4 p-5">
-            <p data-small="line" className="text-[15px] text-ink">
+            <p data-small="line" data-autofocus tabIndex={-1} className="text-[15px] text-ink not-forced-colors:outline-none">
               {view.coarse ? TOO_SMALL.phone : TOO_SMALL.laptop}
             </p>
             {!standalone && (
