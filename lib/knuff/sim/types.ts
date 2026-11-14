@@ -81,6 +81,12 @@ export type Tune = {
   arriveDazedWithin: number;
   /** The thump also turns tokens inside its ring to roll straight away (on from decision 22). */
   thumpTurnsTokens: boolean;
+  /**
+   * With `thumpTurnsTokens` on: the thump turns tokens whose centre is this
+   * close to his, u. Its own reach (decision 31); the dust bunnies' daze
+   * stays at `thumpRadius`.
+   */
+  thumpTokenReach: number;
 
   // ── Hearts ──────────────────────────────────────────────────────────
   hearts: number;
@@ -605,6 +611,8 @@ export type SimEvent =
     }
   /** He landed. `dazed` is how many dust bunnies the thump dazed. */
   | { type: "land"; tick: number; x: number; y: number; dazed: number }
+  /** The thump turned a token to roll straight away from him (`thumpTurnsTokens`): it is at `x`, `y`, rolling `vx`, `vy`. */
+  | { type: "tokenTurned"; tick: number; x: number; y: number; id: number; vx: number; vy: number }
   /** A launch ended: on a landing, at the next release, or with the night. `x`, `y` is where he was. */
   | { type: "launchEnd"; tick: number; x: number; y: number; id: number; pops: number; total: number }
   /** A pip came back. `pips` is the count now. */

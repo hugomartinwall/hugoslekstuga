@@ -1173,7 +1173,7 @@ describe("the pace: extra bunches until last call", () => {
 
       it("an extra bunch is the hour's dust bunnies in a blob, with a few loose tokens before midnight", () => {
         const tokensGiven = PACE[pace as 2 | 3].paceTokens;
-        expect(tokensGiven).toBe(pace === 2 ? 4 : 5);
+        expect(tokensGiven).toBe(pace === 2 ? 5 : 6);
         for (let hour = 0; hour < HOURS; hour++) {
           const night = new Night({ pace, tokenSpeed: 150, hearts: 999 }, { hour });
           // Popped as it lands, until the first extra bunch has been announced.
@@ -1339,9 +1339,11 @@ describe("the pace: what it sends", () => {
     // The same rows on the same ticks.
     expect(three.rows().map((r) => [r.row, r.how, r.at])).toEqual(two.rows().map((r) => [r.row, r.how, r.at]));
     const extra = (night: Night) => night.rows().filter((r) => r.row === -1);
-    // 21:00's five dust bunnies and four loose tokens, and five at pace 3.
-    expect(extra(two).every((r) => r.n === 9)).toBe(true);
-    expect(extra(three).every((r) => r.n === 10)).toBe(true);
+    // 21:00's five dust bunnies and the loose tokens pace 2 gives, and one more at pace 3.
+    expect(PACE[3].paceTokens).toBe(PACE[2].paceTokens + 1);
+    expect(extra(two).length).toBeGreaterThan(0);
+    expect(extra(two).every((r) => r.n === 5 + PACE[2].paceTokens)).toBe(true);
+    expect(extra(three).every((r) => r.n === 5 + PACE[2].paceTokens + 1)).toBe(true);
     // And the tabled rows are the table's at both.
     expect(two.rows().filter((r) => r.row >= 0).map((r) => r.n)).toEqual([6, 6]);
     expect(three.rows().filter((r) => r.row >= 0).map((r) => r.n)).toEqual([6, 6]);

@@ -20,6 +20,8 @@ export type Wave = { x: number; y: number; life: number; max: number };
 export type Float = { x: number; y: number; text: string; life: number; max: number; big: boolean };
 /** A battery going off: a ring of squares growing to its reach. `mine`: his (amber), or not (coral). */
 export type Blast = { x: number; y: number; life: number; max: number; mine: boolean };
+/** A token the thump turned away (decision 31): its id and the tick, for the flick drawn on it. */
+export type Flick = { id: number; tick: number };
 
 /** Afterimages kept, as in the toy. */
 const TRAIL_LENGTH = 16;
@@ -35,6 +37,8 @@ const WAVE_S = 0.35;
 const FLOAT_S = 0.8;
 const BLAST_S = 0.3;
 const MAX_FLOATS = 12;
+/** How long a token the thump turned shows the way it now rolls, in ticks (0.4 s). */
+export const FLICK_TICKS = 24;
 
 export type Effects = {
   readonly particles: Particle[];
@@ -43,6 +47,8 @@ export type Effects = {
   readonly waves: Wave[];
   readonly floats: Float[];
   readonly blasts: Blast[];
+  /** Tokens the thump has just turned: each shows the way it now rolls (`FLICK_TICKS`). */
+  readonly flicks: Flick[];
   /** Seconds left of the pips drawn in coral after a refused launch. */
   refused: number;
   /** Squash and stretch of his body, and the cushion it is anchored at ("" for a launch). */
@@ -94,6 +100,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
   const waves: Wave[] = [];
   const floats: Float[] = [];
   const blasts: Blast[] = [];
+  const flicks: Flick[] = [];
   let reduced = false;
   let blinkAt = -1;
   let blinkUntil = 0;
@@ -121,6 +128,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
     waves,
     floats,
     blasts,
+    flicks,
     refused: 0,
     squashX: 1,
     squashY: 1,
@@ -192,6 +200,12 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
           }
           return 0;
         }
+        case "tokenTurned":
+          // The thump turned it away: a flick of acid squares off it, and its new way drawn on it for a moment.
+          flicks.push({ id: e.id, tick: e.tick });
+          if (flicks.length > 12) flicks.shift();
+          burst(e.x, e.y, 4, 80, C.acid, 2);
+          return 0;
         case "launchEnd":
           if (e.pops >= 3) float(e.x, e.y - tune.himRadius - 14, String(e.total), true);
           return 0;
@@ -287,6 +301,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
     afterTick(s) {
       const dazeTicks = tuneNow().dazeTicks;
       while (thumps.length > 0 && s.tick - thumps[0].tick >= dazeTicks) thumps.shift();
+      while (flicks.length > 0 && s.tick - flicks[0].tick >= FLICK_TICKS) flicks.shift();
       const h = s.him;
       const sp = Math.hypot(h.vx, h.vy);
       if (sp > 40) {
@@ -361,6 +376,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       waves.length = 0;
       floats.length = 0;
       blasts.length = 0;
+      flicks.length = 0;
       fx.refused = 0;
       fx.shake = 0;
       fx.squashX = 1;

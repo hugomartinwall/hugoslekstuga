@@ -29,7 +29,7 @@ import type { AimLine } from "../sim/aim";
 import { KINDS } from "../content/kinds";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
-import type { Effects } from "./effects";
+import { FLICK_TICKS, type Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
 import { drawBag, drawBattery, drawBatteryLine, drawBlastRings, drawEnvelope, drawGum, drawHeart, drawTelegraph, onFloor } from "./intruders";
@@ -553,6 +553,26 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       // On paper white, phosphor would not show: an envelope's marks are room dark (step 6's art settles it).
       ctx.fillStyle = d.kind === "envelope" ? C.page : C.ink;
       for (const m of DAZE_MARKS) ctx.fillRect(Math.round(X(dx + m.x)), Math.round(Y(dy + m.y)), dazeQ, dazeQ);
+    }
+    // A token the thump has just turned away (decision 31): three acid squares
+    // stepping off along its new roll, as an announced token shows its way,
+    // fading over `FLICK_TICKS` (held with reduced motion). The thump's ring
+    // is the bunnies' daze; the turn is drawn on the token itself.
+    for (const fl of fx.flicks) {
+      const d = state.things.find((t) => t.id === fl.id);
+      if (!d || d.hp <= 0) continue;
+      const v = Math.hypot(d.vx, d.vy);
+      if (v <= 0) continue;
+      const k = Math.min(1, Math.max(0, (tickNow - fl.tick) / FLICK_TICKS));
+      const dx = d.px + (d.x - d.px) * alpha;
+      const dy = d.py + (d.y - d.py) * alpha;
+      const dr = KINDS.token.radius;
+      ctx.fillStyle = rgba(C.acid, f.reduced ? 1 : 1 - 0.8 * k);
+      for (let i = 1; i <= 3; i++) {
+        const q = Math.max(2, Math.round(S * (3.4 - i * 0.6)));
+        const reach = dr + 1 + i * 5;
+        ctx.fillRect(Math.round(X(dx + (d.vx / v) * reach) - q / 2), Math.round(Y(dy + (d.vy / v) * reach) - q / 2), q, q);
+      }
     }
 
     // The polisher, over the intruders.

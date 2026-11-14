@@ -73,16 +73,19 @@ export type PaceGiven = Pick<Tune, "pipRefillTicks" | "paceRoom" | "paceEvery" |
  * three is read as 1. Last call is tick 1,020 of the hour (decision 23; the
  * spec started it at 840): inside both its floors of §3.4, it keeps the
  * Ordinary and the Expert who take a charm off the edges of their rows.
- * An extra bunch carries four loose tokens at pace 2 and five at pace 3 (the
+ * An extra bunch carries five loose tokens at pace 2 and six at pace 3 (the
  * spec started them at two and three): with the thump turning tokens away
  * (decision 22, "only together with more tokens", §2.2) the Ordinary lived
  * to the end of 05:00 in 42% of its nights, and `paceTokens`, the first lever
- * of §3.4's dial, brought every row but the two the lead accepted back in.
+ * of §3.4's dial, brought every row but the two the lead accepted back in at
+ * four; the thump's wider reach for tokens (decision 31) took it to five. At
+ * six the room fills for the players who wait, and Straight no longer
+ * outscores the Kiter.
  */
 export const PACE: Readonly<Record<1 | 2 | 3, PaceGiven>> = {
-  1: { pipRefillTicks: 120, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 4 },
-  2: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 4 },
-  3: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 5 },
+  1: { pipRefillTicks: 120, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 5 },
+  2: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 5 },
+  3: { pipRefillTicks: 96, paceRoom: 6, paceEvery: 228, paceLastCall: 1020, paceLastCallFirst: 456, paceTokens: 6 },
 };
 
 /** The values `pace` gives. */
@@ -113,6 +116,15 @@ export const GAME = {
   // hand"): driven by hand, every token heart came 0 to 11 ticks after a
   // landing, too soon to see. The thump now turns tokens within its reach.
   thumpTurnsTokens: true,
+  // Its own reach (decision 31): at the thump's 40 u, tokens just outside
+  // the ring still reached him 8 to 11 ticks after he landed, too soon for a
+  // hand. 43 is about the widest the table holds with the dial's levers (at
+  // 45 the Kiter is on its ceiling at five tokens a bunch, and six puts
+  // Straight under the Kiter); it takes the Ordinary's token hearts within 11
+  // ticks of a landing from about 30% to about 17%. The lead's target for
+  // it, under 10% of them within 20 ticks, is met at no reach (49% at the
+  // best, 70 u). The dust bunnies' daze stays at `thumpRadius`.
+  thumpTokenReach: 43,
 
   // Hearts.
   hearts: 3,

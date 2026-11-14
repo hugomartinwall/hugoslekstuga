@@ -42,8 +42,11 @@ export function keepInside(s: State, d: Thing): void {
  * The landing. His velocity is set to zero where he is, and the thump
  * dazes every dust bunny whose centre is within `thumpRadius` of his. The
  * thump moves nothing: a dust bunny overlapping him is only set down
- * touching him. A landing also tops up the slow-motion meter and ends the
- * launch.
+ * touching him. With `thumpTurnsTokens` on it also turns every token whose
+ * centre is within `thumpTokenReach` of his to roll straight away, each
+ * with a `tokenTurned` event (the screen shows the turn on the token: the
+ * thump's own ring stays the bunnies'). A landing also tops up the
+ * slow-motion meter and ends the launch.
  *
  * The tick he lands is still part of the launch: an armed launch that sets
  * him down on a pickup's tile takes it, before he lands.
@@ -60,6 +63,7 @@ export function land(s: State, tune: Tune, events: SimEvent[]): void {
   // telegraph, until he lets go, the pad takes no heart there (decision 30).
   if (s.launch.active && s.launch.thrown && s.boss.present) s.boss.shovedTick = s.tick;
   const reachSq = tune.thumpRadius * tune.thumpRadius;
+  const turnSq = tune.thumpTurnsTokens ? tune.thumpTokenReach * tune.thumpTokenReach : -1;
   const until = s.tick + tune.dazeTicks;
   let dazed = 0;
   for (let i = 0; i < s.things.length; i++) {
@@ -69,7 +73,7 @@ export function land(s: State, tune: Tune, events: SimEvent[]): void {
     const dx = d.x - h.x;
     const dy = d.y - h.y;
     const distSq = dx * dx + dy * dy;
-    if (distSq > reachSq) continue;
+    if (distSq > reachSq && (d.kind !== "token" || distSq > turnSq)) continue;
     if (d.kind === "bunny") {
       daze(s, d, until, events);
       dazed++;
@@ -83,13 +87,14 @@ export function land(s: State, tune: Tune, events: SimEvent[]): void {
         d.y = h.y + ny * touch;
         keepInside(s, d);
       }
-    } else if (d.kind === "token" && tune.thumpTurnsTokens) {
-      // The fallback: a token inside the ring is turned to roll straight away.
+    } else if (d.kind === "token" && distSq <= turnSq) {
+      // The fallback: a token within its reach is turned to roll straight away.
       const dist = Math.sqrt(distSq);
       const nx = dist > 1e-6 ? dx / dist : 0;
       const ny = dist > 1e-6 ? dy / dist : -1;
       d.vx = nx * tune.tokenSpeed;
       d.vy = ny * tune.tokenSpeed;
+      events.push({ type: "tokenTurned", tick: s.tick, x: d.x, y: d.y, id: d.id, vx: d.vx, vy: d.vy });
     }
   }
   if (s.slow.meter < tune.slowLandingFloor) s.slow.meter = tune.slowLandingFloor;

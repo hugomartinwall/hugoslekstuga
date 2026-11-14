@@ -373,7 +373,8 @@ describe("the thump", () => {
         expect(turning.thumpTurnsTokens).toBe(true);
         const s = night(turning);
         const inside = put(s, "token", 180 + 18, 374 - 24, { vx: -150, vy: 0 });
-        const outside = put(s, "token", 180, 374 - 41, { vx: 0, vy: 150 });
+        // Past the tokens' own reach (decision 31): left as it was.
+        const outside = put(s, "token", 180, 374 - turning.thumpTokenReach - 1, { vx: 0, vy: 150 });
         s.him.hot = true;
         s.launch.active = true;
         land(s, turning, []);
@@ -381,6 +382,41 @@ describe("the thump", () => {
         expect(inside.vy).toBeCloseTo(150 * -0.8, 9);
         expect(inside.dazedUntil).toBe(0);
         expect([outside.vx, outside.vy]).toEqual([0, 150]);
+      });
+
+      it("turns tokens within thumpTokenReach, its own reach past the bunnies' ring (decision 31), each with a tokenTurned event", () => {
+        const reach = tune.thumpTokenReach;
+        // Its own reach, wider than the ring the bunnies are dazed in.
+        expect(reach).toBeGreaterThan(tune.thumpRadius);
+        const s = night(tune);
+        // Past the ring, inside the reach: turned straight away from him. On the reach: turned too.
+        const past = put(s, "token", 180 + (tune.thumpRadius + 1) * 0.6, 374 + (tune.thumpRadius + 1) * 0.8, { vx: -150, vy: 0 });
+        const onIt = put(s, "token", 180 - reach, 374, { vx: 150, vy: 0 });
+        const beyond = put(s, "token", 180, 374 - reach - 0.01, { vx: 0, vy: 150 });
+        // A dust bunny past the ring is not dazed: the reach is the tokens' alone.
+        const bunny = put(s, "bunny", 180 + tune.thumpRadius + 1, 374);
+        const events = landNow(s);
+        expect([past.vx, past.vy].map((v) => Math.round(v * 1e9) / 1e9)).toEqual([150 * 0.6, 150 * 0.8]);
+        expect([onIt.vx, onIt.vy]).toEqual([-150, 0]);
+        expect([beyond.vx, beyond.vy]).toEqual([0, 150]);
+        expect(bunny.dazedUntil).toBe(0);
+        // Nothing is moved or dazed by the turn.
+        expect([past.dazedUntil, onIt.dazedUntil, onIt.x, onIt.y]).toEqual([0, 0, 180 - reach, 374]);
+        // The screen is told which tokens turned, and which way they now roll.
+        expect(of(events, "tokenTurned").map((e) => [e.id, Math.round(e.vx), Math.round(e.vy)])).toEqual([
+          [past.id, 90, 120],
+          [onIt.id, -150, 0],
+        ]);
+        // Named back to the ring's 40 u, the token past the ring rolls on as it was.
+        const ring = tuned({ popHotTicks, thumpTokenReach: 40 });
+        const t = night(ring);
+        const was = put(t, "token", 180 + 41, 374, { vx: -150, vy: 0 });
+        t.tick = 100;
+        t.him.hot = true;
+        t.launch.active = true;
+        const none: SimEvent[] = [];
+        land(t, ring, none);
+        expect([was.vx, was.vy, of(none, "tokenTurned").length]).toEqual([-150, 0, 0]);
       });
 
       it("does not reach a thing that is still announced", () => {

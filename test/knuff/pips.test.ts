@@ -147,7 +147,10 @@ describe("the pip timer", () => {
 
   it("never takes him over the maximum or under zero, all night", () => {
     const long = tuned({ hearts: 40 });
-    const s = createState(5, long);
+    // A night that holds every way a pip comes back, a gum stop with none in hand among them. (Seed 5 did
+    // until the thump's reach for tokens and the extra bunch's tokens changed the night: its one gum stop
+    // now comes with a pip in hand.)
+    const s = createState(6, long);
     const input = scripted(4);
     const events: SimEvent[] = [];
     const seen = new Set<number>();
