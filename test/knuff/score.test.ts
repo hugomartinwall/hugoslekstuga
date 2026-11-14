@@ -597,4 +597,24 @@ describe("the newsletter's bonus (step 5)", () => {
     expect(of(ev, "pop").map((e) => e.source)).toEqual(["blast", "blast", "blast", "blast", "blast"]);
     expect(of(ev, "vBonus")).toEqual([]);
   });
+
+  it("two of a V popped by a blast of his early in a launch, the other three by his body in it: no bonus", () => {
+    const s = night(tune);
+    // Three of the V on his line, far enough up that he reaches them after the blast.
+    const lead = v(s, 3, 180);
+    for (const d of s.things) d.y -= 60;
+    // The other two beside a battery of this launch's, far off his line, going off on the launch's second tick.
+    for (const x of [50, 66]) {
+      const d = put(s, "envelope", x, 100);
+      d.v = lead;
+    }
+    put(s, "battery", 58, 120, { mine: true, knockTick: 0, launchId: 1, fuseTick: 1 });
+    const events = fire(s, tune, shot(0, -1), 30);
+    const pops = of(events, "pop");
+    expect(pops.map((e) => e.source)).toEqual(["blast", "blast", "body", "body", "body"]);
+    expect(pops.every((e) => e.kind === "envelope")).toBe(true);
+    // All five of one V, in one launch, but two were blast pops.
+    expect(of(events, "burst").map((e) => e.launchId)).toEqual([1]);
+    expect(of(events, "vBonus")).toEqual([]);
+  });
 });

@@ -3,7 +3,9 @@ import { DARK_PLATES } from "../../lib/knuff/content/charms";
 import { KINDS } from "../../lib/knuff/content/kinds";
 import { BOSS_HOUR } from "../../lib/knuff/content/night";
 import { BOSS_TELEGRAPH, boxOf, laneMiddle, overlapDepth } from "../../lib/knuff/sim/boss";
+import { gapToGum } from "../../lib/knuff/sim/battery";
 import { land } from "../../lib/knuff/sim/hot";
+import { HIM_MASS, slow } from "../../lib/knuff/sim/physics";
 import { createState, type StartOptions } from "../../lib/knuff/sim/state";
 import type { BossMode, SimEvent, State, Thing, Tune } from "../../lib/knuff/sim/types";
 import { distance, fire, night, of, put, run, shot, speedOf, tick, tuned, until } from "./room";
@@ -150,6 +152,37 @@ describe("his hot body, no cushion yet this launch", () => {
     expect(of(events, "pop")).toEqual([]);
   });
 
+  it("a knock: he feels the impulse of a pop of a lightMass body along the line between the centres, then the tick's drag", () => {
+    const s = room();
+    const b = battery(s, 186, 300);
+    tick(s, T, shot(0, -1));
+    let v0 = { vx: s.him.vx, vy: s.him.vy };
+    let k: Extract<SimEvent, { type: "knock" }> | undefined;
+    for (let i = 0; i < 20 && k === undefined; i++) {
+      v0 = { vx: s.him.vx, vy: s.him.vy };
+      [k] = of(tick(s, T), "knock");
+    }
+    expect(k?.id).toBe(b.id);
+    if (k === undefined) return;
+    const len = Math.hypot(k.x - k.hx, k.y - k.hy);
+    const nx = (k.x - k.hx) / len;
+    const ny = (k.y - k.hy) / len;
+    // The battery stood still: his closing speed is his velocity along the line.
+    const closing = v0.vx * nx + v0.vy * ny;
+    const impulse = (m: number) => ((1 + T.bodyRestitution) * closing) / (1 / HIM_MASS + 1 / m);
+    const after = (m: number) => {
+      const v = { x: 0, y: 0, vx: v0.vx - (impulse(m) / HIM_MASS) * nx * s.stats.popImpulse, vy: v0.vy - (impulse(m) / HIM_MASS) * ny * s.stats.popImpulse };
+      slow(v, T.dragK, T.friction, T.restSpeed);
+      return v;
+    };
+    const want = after(T.lightMass);
+    expect(s.him.vx).toBeCloseTo(want.vx, 6);
+    expect(s.him.vy).toBeCloseTo(want.vy, 6);
+    // A heavy body's pop would leave him going another way.
+    const heavy = after(1);
+    expect(Math.hypot(heavy.vx - want.vx, heavy.vy - want.vy)).toBeGreaterThan(20);
+  });
+
   it("a battery knocked again: sent off along the new line, its blast this launch's, and its 48 ticks not restarted", () => {
     const s = room();
     run(s, T, 40);
@@ -187,6 +220,28 @@ describe("his hot body, no cushion yet this launch", () => {
     expect(s.tick < bunny.dazedUntil).toBe(true);
     // The hit that stops him is not a contact.
     expect(s.him.lastContactTick).toBe(-1);
+  });
+
+  it("gum: a launch released on top of it cannot hit it until he has left it (rule 5); left and come back, it can", () => {
+    const s = room();
+    // Near the top cushion, so that the launch released on it comes back down through it.
+    const g = put(s, "gum", 180, 100);
+    fire(s, T, shot(0, -1), 30);
+    // Stopped on it, one hit left, standing on its box.
+    expect([g.hp, s.him.hot]).toEqual([1, false]);
+    expect(gapToGum(s.him.x, s.him.y, g)).toBeLessThan(s.stats.radius);
+    // Released on it, straight up: nothing as he leaves it.
+    const events = tick(s, T, shot(0, -1));
+    expect(s.launch.blocked).toContain(g.id);
+    events.push(...until(s, T, () => gapToGum(s.him.x, s.him.y, g) >= s.stats.radius, 30));
+    expect(gapToGum(s.him.x, s.him.y, g)).toBeGreaterThanOrEqual(s.stats.radius);
+    expect(of(events, "hit")).toEqual([]);
+    expect(g.hp).toBe(1);
+    // Off the top cushion and back down through it: now it is hit, and the hit counts as two.
+    const back = until(s, T, (e) => of(e, "hit").length > 0 || of(e, "land").length > 0, 120);
+    const [hit] = of(back, "hit");
+    expect([hit.id, hit.kind, hit.source, hit.two, hit.left, hit.points, hit.stop]).toEqual([g.id, "gum", "body", true, 0, 15, false]);
+    expect(alive(s, g)).toBe(false);
   });
 
   it("a gum stop leaves him at least one pip: with none, he is given one", () => {
@@ -788,18 +843,23 @@ describe("a blast of his (70 u)", () => {
     const t = put(s, "token", 180, 150 - 69);
     const e = put(s, "envelope", 180 - 60, 150 + 30);
     const far = put(s, "bunny", 180 + 71, 150);
+    // A dazed thing pops all the same (rule 9), and the reach is 70 u inclusive.
+    const dazed = put(s, "bunny", 180 - 30, 150 - 30, { dazedUntil: 100 });
+    const edge = put(s, "bunny", 180, 150 + 70);
     const events = run(s, T, 2);
     const [burst] = of(events, "burst");
-    expect([burst.id, burst.mine, burst.pops]).toEqual([b.id, true, 3]);
+    expect([burst.id, burst.mine, burst.pops]).toEqual([b.id, true, 5]);
     expect(of(events, "pop").map((e) => [e.id, e.source, e.points, e.n, e.chain, e.cushions])).toEqual([
       [d.id, "blast", 20, 0, 1, 1],
       [t.id, "blast", 50, 0, 1, 1],
       [e.id, "blast", 30, 0, 1, 1],
+      [dazed.id, "blast", 20, 0, 1, 1],
+      [edge.id, "blast", 20, 0, 1, 1],
     ]);
     expect(alive(s, far)).toBe(true);
     // 40 for the battery that went off as his, and the pops.
-    expect(burst.points).toBe(40 + 20 + 50 + 30);
-    expect(s.score).toBe(140);
+    expect(burst.points).toBe(40 + 20 + 50 + 30 + 20 + 20);
+    expect(s.score).toBe(180);
     expect([s.launch.pops, s.launch.bodyPops]).toEqual([0, 0]);
     expect(s.him.lastContactTick).toBe(-1);
     expect(alive(s, b)).toBe(false);
@@ -817,6 +877,19 @@ describe("a blast of his (70 u)", () => {
     expect([second.id, second.tick, second.mine, second.why, second.launchId]).toEqual([other.id, burst.tick + 12, true, "chain", 1]);
     // Each battery that goes off as his pays 40.
     expect(s.score).toBe(80);
+  });
+
+  it("a battery already his, of another launch, set off by a blast of his takes that blast's launch (§5.4)", () => {
+    const s = room();
+    stand(s, 180, 440);
+    const b = battery(s, 180, 150, { mine: true, knockTick: 0, launchId: 2 }, 1);
+    const older = battery(s, 180 + 60, 150, { mine: true, knockTick: 0, launchId: 1, fuseTick: 400 });
+    const events = run(s, T, 2);
+    const [burst] = of(events, "burst");
+    expect([burst.id, burst.launchId, burst.set]).toEqual([b.id, 2, 1]);
+    expect([older.mine, older.launchId, older.fuseTick]).toEqual([true, 2, burst.tick + 12]);
+    const [second] = of(toBurst(s, T, 20), "burst");
+    expect([second.id, second.why, second.mine, second.launchId]).toEqual([older.id, "chain", true, 2]);
   });
 
   it("the money bag: one hit, never two, 40; its seventh hit point lost lets out no token, its eighth... at 6 left one comes", () => {
@@ -1188,6 +1261,15 @@ describe("touching him while he is landed", () => {
     expect(of(run(safe, T, 1), "hurt")).toEqual([]);
   });
 
+  it("a battery going off no longer touches: overlapping him on its fuse tick, it costs one heart, the blast's", () => {
+    const s = room();
+    const b = battery(s, 180, 374 - 22, {}, 0);
+    const events = run(s, T, 1);
+    expect(of(events, "burst").map((e) => [e.id, e.hurt])).toEqual([[b.id, true]]);
+    expect(of(events, "hurt").map((e) => [e.by, e.id, e.blast])).toEqual([["battery", b.id, true]]);
+    expect(s.hearts).toBe(2);
+  });
+
   it("the money bag: costs a heart, unless it is dazed or he is invulnerable; then it is held at arm's length", () => {
     const s = room();
     const bag = put(s, "bag", 180, 374 - 46);
@@ -1379,6 +1461,9 @@ describe("a battery's drift", () => {
     const ux = (180 - from.x) / Math.hypot(180 - from.x, 374 - from.y);
     const uy = (374 - from.y) / Math.hypot(180 - from.x, 374 - from.y);
     expect((live.x - from.x) * uy - (live.y - from.y) * ux).toBeCloseTo(0, 6);
+    // Toward him, not away: it is nearer him by all it moved.
+    expect(Math.hypot(live.x - 180, live.y - 374)).toBeCloseTo(Math.hypot(from.x - 180, from.y - 374) - moved, 6);
+    expect((live.x - from.x) * ux + (live.y - from.y) * uy).toBeGreaterThan(0);
     expect([dazed.x, dazed.y]).toEqual([40, 100]);
     expect([his.x, his.y]).toEqual([300, 440]);
     // When the daze ends it drifts on.

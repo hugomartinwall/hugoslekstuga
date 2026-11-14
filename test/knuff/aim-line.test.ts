@@ -526,6 +526,22 @@ describe("a battery first (§4.2): the second line", () => {
     expect(slow.battery.length / 2).toBe(1 + 48 + 1);
   });
 
+  it("a battery knocked late in the look is followed past its end, to where it bursts", () => {
+    const t = night(tune);
+    t.him.x = 300;
+    t.him.px = 300;
+    put(t, "battery", 300 - 40, 374 - 2, { fuseTick: 400 });
+    const LEFT = { dx: -1, dy: 0, power: 0.5 };
+    // A look of 20 ticks: the knock comes inside it, the burst 48 ticks after the knock, past it.
+    const short = aimLine(t, LEFT, tune, 20);
+    const r = real(t, LEFT);
+    expect(short.end).toBe("thing");
+    expect(r.why).toBe("knock");
+    expect(short.burst).toEqual(r.burst);
+    expect(short.battery).toEqual(r.path);
+    expect(short.battery.length / 2).toBe(1 + 48 + 1);
+  });
+
   it("no second line when the first thing is anything else, or when he knocks nothing", () => {
     const s = night(tune);
     put(s, "bunny", 180, 300);
