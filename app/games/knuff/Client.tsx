@@ -142,8 +142,10 @@ export default function Client({ standalone = false }: { standalone?: boolean })
   }, []);
 
   // The search palette opening over the game pauses the night. While it
-  // is open the pause panel is not shown, so it never lands on top of the
-  // palette the visitor asked for, and Escape cannot resume behind it.
+  // is open no panel is shown: each waits for the palette to close, so
+  // none lands on top of the palette the visitor asked for and takes the
+  // focus, and Escape cannot resume behind it. (The end panel too: it
+  // comes up to 2.2 s after the night ends, by when Cmd-K may be open.)
   useEffect(() => {
     if (searchOpen) gameRef.current?.pause();
   }, [searchOpen]);
@@ -164,7 +166,7 @@ export default function Client({ standalone = false }: { standalone?: boolean })
   const leave = () => gameRef.current?.abandon();
 
   const over = view.over;
-  const endOpen = screen === "over" && over !== null;
+  const endOpen = screen === "over" && over !== null && !searchOpen;
 
   // The end panel opens with BACK TO PLAYHOUSE above the score. On a page
   // that is short for the text (200% text, a zoomed window) the score fell

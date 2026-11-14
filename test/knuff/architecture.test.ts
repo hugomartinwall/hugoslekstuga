@@ -416,3 +416,34 @@ describe("nothing the player reads names the mascot", () => {
     });
   });
 });
+
+describe.skipIf(routeFiles.length === 0)("the route's panels", () => {
+  it("shows no panel over the search palette: each one waits for it to close (§3.11)", () => {
+    // The end panel comes up to 2.2 s after the night ends. Opened over
+    // a palette that was already up, it took the focus, and Escape (which
+    // does nothing on that panel) left the palette open under it.
+    const file = join(ROUTE, "Client.tsx");
+    const src = ts.createSourceFile(file, read(file), ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
+    const consts = new Map<string, string>();
+    const opens: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) consts.set(node.name.text, node.initializer.getText(src));
+      if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(src) === "Dialog") {
+        for (const attr of node.attributes.properties) {
+          if (ts.isJsxAttribute(attr) && attr.name.getText(src) === "open" && attr.initializer && ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
+            opens.push(attr.initializer.expression.getText(src));
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(src);
+    // Resume, pause, end and too small.
+    expect(opens).toHaveLength(4);
+    for (const open of opens) {
+      // A name stands for what it was set to (the end panel's `endOpen`).
+      const said = /^\w+$/.test(open) ? (consts.get(open) ?? "") : open;
+      expect(said, open).toMatch(/&&\s*!searchOpen\s*$/);
+    }
+  });
+});

@@ -945,7 +945,8 @@ Things that make it unlike the other games:
 - **Its panels are the kit's** (`Dialog`, `Keycap`, `Switch`,
   `ChipGroup`), rendered by `Client.tsx` from one view object
   (`KnuffView`, which `game.ts` reports when it changes, never per
-  frame). Only the pause key is hit-tested on the canvas.
+  frame). Only the pause key is hit-tested on the canvas. None is shown
+  over the search palette: each waits for it to close.
 - **Its page lock is a class** (`game-open` on `<html>`), not saved
   and restored inline styles. New game routes should do the same.
 - **He is drawn by `lib/hugo/sprite.ts`**, in the visitor's colour.
