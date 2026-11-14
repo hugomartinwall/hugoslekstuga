@@ -137,3 +137,26 @@ export function placeNames(s: State, widthPx: (text: string) => number, scale: n
   }
   return placed;
 }
+
+/**
+ * A floating number's box, in units, drawn centred on (x, y): its face is
+ * about 10 px a character at 22 px, 13 at 28 (`big`), as render/effects.ts
+ * stacks them; `scale` is the room's px per unit.
+ */
+export function floatBox(x: number, y: number, text: string, big: boolean, scale: number): UBox {
+  const k = 1 / Math.max(0.05, scale);
+  const w = (text.length * (big ? 13 : 10) + 4) * k;
+  const h = (big ? 24 : 19) * k;
+  return { x0: x - w / 2, y0: y - h / 2, x1: x + w / 2, y1: y + h / 2 };
+}
+
+/**
+ * Is a floating number in the offer's way? A number that rises onto an
+ * offered name, an offered insert, a pickup's tile, the love heart's tile
+ * or a lit plate's insert (`clear`: what the renderer drew this frame) is
+ * faded back, as one over him is: 'SPARK' with 'x4' on it read 'SPARKx4'
+ * (the play check of step 6).
+ */
+export function floatOver(b: UBox, clear: readonly UBox[]): boolean {
+  return clear.some((c) => overlaps(b, c));
+}

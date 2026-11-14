@@ -26,7 +26,7 @@ import { INSERT_SIZE, insertCentre } from "../sim/charms";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State } from "../sim/types";
 import type { Palette } from "./bake";
-import { placeNames } from "./names";
+import { placeNames, type NameSpot, type UBox } from "./names";
 import { C, charmColor, charmSoft, mix } from "./palette";
 import type { Paint } from "./renderer";
 import { CHARM_ICON, tileBitmap } from "./sprites";
@@ -128,6 +128,17 @@ export function drawPlates(p: Paint, s: State, flash: (plate: number) => number)
   }
 }
 
+/** Each lit plate's insert, as a box in units. */
+export function litInsertBoxes(s: State): UBox[] {
+  const out: UBox[] = [];
+  for (let i = 0; i < PLATES; i++) {
+    if (s.plates[i].charm === "") continue;
+    const c = litInsertCentre(s, i);
+    out.push({ x0: c.x - LIT_SIZE / 2, y0: c.y - LIT_SIZE / 2, x1: c.x + LIT_SIZE / 2, y1: c.y + LIT_SIZE / 2 });
+  }
+  return out;
+}
+
 /** The middle of a lit plate's 28 u insert: 4 u inside the rail, in front of the plate's middle. */
 export function litInsertCentre(s: State, plate: number): { x: number; y: number } {
   const c = insertCentre(s, plate);
@@ -199,8 +210,8 @@ const widths = new Map<string, number>();
  * colour beside its insert, a pickup's in phosphor under its tile, each
  * where render/names.ts found room. Plate names are drawn last.
  */
-export function drawOfferNames(p: Paint, s: State): void {
-  if (!s.offer.open) return;
+export function drawOfferNames(p: Paint, s: State): NameSpot[] {
+  if (!s.offer.open) return [];
   const { ctx, dpr } = p;
   const font = `${Math.round(16 * dpr)}px ${p.fonts.pixel}`;
   const widthPx = (text: string) => {
@@ -220,6 +231,7 @@ export function drawOfferNames(p: Paint, s: State): void {
       p.text(n.text, p.X(n.x0), p.Y((n.y0 + n.y1) / 2), 16, n.plate ? charmColor(n.charm) : C.ink, "pixel", "left");
     }
   }
+  return spots;
 }
 
 /** Spark's ring, while it lasts and he is hot: a broken amber ring 12 u past his edge. */

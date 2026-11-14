@@ -30,7 +30,8 @@ import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
 import { FLICK_TICKS, SHEEN_TICKS, type Effects } from "./effects";
 import { drawBoss, drawBossTelegraph, drawSheen } from "./boss";
-import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing, drawTileJump } from "./charms";
+import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing, drawTileJump, litInsertBoxes } from "./charms";
+import { floatBox, floatOver, offerTiles } from "./names";
 import { createBaker, stampRect, type Bitmap, type Palette } from "./bake";
 import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, drawTokenGhost, onFloor, rollMarks } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint } from "./hud";
@@ -478,7 +479,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     drawGum(paint, state, f.line !== null ? f.line.hitId : -1);
     drawOffer(paint, state, "tiles");
     drawHeart(paint, state, tune.heartLife);
-    drawOfferNames(paint, state);
+    const offerNames = drawOfferNames(paint, state);
 
     // The hint on the floor, under everything that moves. Its hand is in
     // the way of a pull, so it stands back while one is held or he flies.
@@ -722,12 +723,15 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
     // Floating numbers: a multiplier where a pop earned it, a launch's total a ring above where it
     // ended. One over him while he stands, or over what stands by him, is faded back so it does not
-    // hide either (the play check of steps 4 and 5).
+    // hide either (the play check of steps 4 and 5); so is one on an offered name or tile or a lit
+    // plate's insert, which it would make unreadable ('SPARK' and 'x4' read 'SPARKx4').
+    const clear = fx.floats.length > 0 ? [...offerTiles(state), ...offerNames, ...litInsertBoxes(state)] : [];
     for (const n of fx.floats) {
       let a = Math.min(1, n.life / (n.max * 0.4));
-      if (!h.hot && Math.hypot(n.x - hx, n.y - hy) < r + 30) a *= 0.4;
+      const fx0 = Math.min(state.room.right - 16, Math.max(state.room.left + 16, n.x));
       const fy = Math.max(state.room.top + 12, n.y);
-      paint.text(n.text, X(Math.min(state.room.right - 16, Math.max(state.room.left + 16, n.x))), Y(fy), n.big ? 28 : 22, rgba(C.ink, a), "display");
+      if ((!h.hot && Math.hypot(n.x - hx, n.y - hy) < r + 30) || floatOver(floatBox(fx0, fy, n.text, n.big, L.s), clear)) a *= 0.4;
+      paint.text(n.text, X(fx0), Y(fy), n.big ? 28 : 22, rgba(C.ink, a), "display");
     }
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);

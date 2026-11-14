@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PLATE_SIDE } from "../../lib/knuff/content/charms";
 import { CHARM_NAME } from "../../lib/knuff/content/copy";
 import { DEFAULT_TUNE } from "../../lib/knuff/content/tune";
-import { offerTiles, overlaps, placeNames, type UBox } from "../../lib/knuff/render/names";
+import { floatBox, floatOver, offerTiles, overlaps, placeNames, type UBox } from "../../lib/knuff/render/names";
 import { INSERT_INSET, insertCentre } from "../../lib/knuff/sim/charms";
 import { createState } from "../../lib/knuff/sim/state";
 import { step } from "../../lib/knuff/sim/step";
@@ -147,5 +147,38 @@ describe("the offer's names", () => {
     const at1 = placeNames(s, width, 1)[0];
     const at84 = placeNames(s, width, 0.84)[0];
     expect(at84.x1 - at84.x0).toBeCloseTo((at1.x1 - at1.x0) / 0.84, 6);
+  });
+
+  it("a floating number on a name or a tile is in the offer's way (it is drawn faded); one clear of them is not", () => {
+    let over = 0;
+    let away = 0;
+    for (const s of made.slice(0, 200)) {
+      const names = placeNames(s, width, 1);
+      const clear = [...offerTiles(s), ...names];
+      // 'x4' risen onto each name's middle, and onto each tile's: in the way.
+      for (const b of clear) {
+        expect(floatOver(floatBox((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, "x4", false, 1), clear)).toBe(true);
+        over++;
+      }
+      // A launch's total in an empty corner of the floor, if the offer left one empty: not in the way.
+      for (const [x, y] of [
+        [40, 40],
+        [320, 40],
+        [40, 440],
+        [320, 440],
+      ]) {
+        const b = floatBox(x, y, "1250", true, 1);
+        if (clear.some((c) => overlaps(b, c))) continue;
+        expect(floatOver(b, clear)).toBe(false);
+        away++;
+      }
+    }
+    expect(over).toBeGreaterThan(400);
+    expect(away).toBeGreaterThan(100);
+    // Its box is the face's: 10 px a character at 22 px, 13 at 28, in units at the room's scale.
+    const b = floatBox(100, 50, "x4", false, 1);
+    expect([b.x1 - b.x0, b.y1 - b.y0]).toEqual([24, 19]);
+    const big = floatBox(100, 50, "250", true, 1.5);
+    expect(big.x1 - big.x0).toBeCloseTo(43 / 1.5, 6);
   });
 });
