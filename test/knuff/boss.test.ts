@@ -634,6 +634,26 @@ describe("where the machine puts him", () => {
     expect(of(run(cloneState(base), T, 5), "hurt")).toHaveLength(1);
   });
 
+  it("a throw is not a launch of his: the grace asks when he last let go, not when the last launch began (decision 30)", () => {
+    const base = landed();
+    machine(base, { lane: 3, x: 90, dir: 1 });
+    him(base, 150 + 13 + 0.5, 212);
+    const at = of(run(cloneState(base), T, 5), "bossThrow")[0].tick;
+    const hearts = (released: number) => {
+      const s = cloneState(base);
+      s.boss.shovedTick = at - 10;
+      // The last launch began after he was put there: the pad's throw, which keeps the tick he last let go.
+      s.launch.startTick = at - 5;
+      s.launch.thrown = true;
+      s.launch.released = released;
+      return of(run(s, T, 5), "hurt").length;
+    };
+    // He last let go before he was put there: the throw since does not end the grace.
+    expect(hearts(at - 20)).toBe(0);
+    // He let go after it (the same launch, his own): the grace is over, and the pad takes its heart.
+    expect(hearts(at - 5)).toBe(1);
+  });
+
   it("its landing on him puts him there while he is landed; flying through it as it lands, he is not put there", () => {
     /** He stands landed just ahead of the pad, as if he had come to rest there, and the pad comes on: the hearts it takes. */
     const inTheWay = (s: State) => {
