@@ -958,7 +958,12 @@ Things that make it unlike the other games:
   with `npx tsx scripts/knuff-balance.ts`, which runs the scripted
   players through the real step and prints their table with pass or
   FAIL beside each floor and ceiling (`--whole` is the whole night,
-  the table that gates; it exits 1 when a bound fails).
+  the table that gates; it exits 1 when a bound fails). Two rows are
+  accepted red on the shipped game by the lead's decision, and
+  `--whole` and `--boss` exit 1 when they fail: the Expert alive when
+  05:00 ends (ceiling 85 in 100; 82 to 95 on fresh samples) and the
+  boss check's median win (floor 1,200 ticks; 1,050 to 1,140). Any
+  other FAIL is a regression.
 - **It yields to the corner mascot's rule**: it announces itself with
   `hugo-stage`, and fires `hugo-happy` once, at morning. It fires no
   other site event and listens to none.
