@@ -442,10 +442,13 @@ export function moveBoss(s: State, tune: Tune, sub: number, events: SimEvent[]):
 /** A launch that costs no pip: the pad's throw. A new launch for the score, with carry 0. */
 function throwHim(s: State, tune: Tune, vx: number, vy: number, hurt: boolean, metX: number, metY: number, events: SimEvent[]): void {
   const h = s.him;
+  // He did not let go: the throw keeps the tick he last did (the grace for where the machine put him holds through it).
+  const released = s.launch.released;
   endLaunch(s, events);
   s.launch = {
     id: s.launch.id + 1,
     startTick: s.tick,
+    released,
     active: true,
     carry: 0,
     pops: 0,
@@ -485,7 +488,11 @@ function throwHim(s: State, tune: Tune, vx: number, vy: number, hurt: boolean, m
  * into an end lane can slide him along the cushion onto the very face that
  * leads when it sets off, and he must have the time to read that. The turn
  * after a hit counts as putting him there when he is landed in the way of
- * the end that now leads (`inTheWay`).
+ * the end that now leads (`inTheWay`), and so does the pad's own throw,
+ * where it sets him down (the lead's decision 30: a line that ends on the
+ * pad in its own colour reads harmless, and standing where the throw left
+ * him cost a heart about half the time). The throw is not a launch of his:
+ * it does not end the grace it was given in (`released`).
  */
 function padHit(s: State, tune: Tune, box: Box, events: SimEvent[]): boolean {
   const b = s.boss;
@@ -493,7 +500,7 @@ function padHit(s: State, tune: Tune, box: Box, events: SimEvent[]): boolean {
   const r = s.stats.radius;
   const metX = h.x;
   const metY = h.y;
-  const putThere = !h.hot && b.shovedTick >= 0 && s.tick - b.shovedTick < tune.telegraphTicks && s.launch.startTick <= b.shovedTick;
+  const putThere = !h.hot && b.shovedTick >= 0 && s.tick - b.shovedTick < tune.telegraphTicks && s.launch.released <= b.shovedTick;
   let hurt = false;
   if (s.tick >= h.invulnUntil && !putThere && (tune.padHurtsHot || !h.hot)) {
     loseHeart(s, tune, { kind: "polisher", id: 0 }, events);

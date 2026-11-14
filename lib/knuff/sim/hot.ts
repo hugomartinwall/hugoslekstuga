@@ -56,6 +56,9 @@ export function land(s: State, tune: Tune, events: SimEvent[]): void {
   h.vx = 0;
   h.vy = 0;
   h.hot = false;
+  // Where the pad's throw sets him down, the machine has put him: for a
+  // telegraph, until he lets go, the pad takes no heart there (decision 30).
+  if (s.launch.active && s.launch.thrown && s.boss.present) s.boss.shovedTick = s.tick;
   const reachSq = tune.thumpRadius * tune.thumpRadius;
   const until = s.tick + tune.dazeTicks;
   let dazed = 0;

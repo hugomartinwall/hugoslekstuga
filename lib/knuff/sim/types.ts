@@ -345,6 +345,13 @@ export type LaunchState = {
   /** Counts launches from 1. 0: there has been none. */
   id: number;
   startTick: number;
+  /**
+   * The tick he last let go: this launch's `startTick`, or, for the pad's
+   * throw (which he did not release), the tick of the launch before it.
+   * The pad's grace for where the machine put him lasts until he lets go
+   * again (§8). -1: he has not let go yet.
+   */
+  released: number;
   /** In flight. A landing, the next release and the end of the night close it. */
   active: boolean;
   /** Steps the chain was carried in from the launch before (§7). */

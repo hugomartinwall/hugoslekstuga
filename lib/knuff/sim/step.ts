@@ -75,6 +75,7 @@ export function step(s: State, input: Input, tune: Tune, events: SimEvent[]): vo
       s.launch = {
         id: s.launch.id + 1,
         startTick: s.tick,
+        released: s.tick,
         active: true,
         carry,
         pops: 0,

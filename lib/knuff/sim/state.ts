@@ -115,6 +115,7 @@ export function createState(seed: number, tune: Tune, start: StartOptions = {}):
     launch: {
       id: 0,
       startTick: 0,
+      released: -1,
       active: false,
       carry: 0,
       pops: 0,

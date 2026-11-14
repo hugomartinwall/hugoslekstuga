@@ -623,7 +623,7 @@ describe("where the machine puts him", () => {
       const s = cloneState(base);
       s.boss.shovedTick = at - ago;
       // As if he had launched since it put him there, and landed again.
-      if (launchedAfter) s.launch.startTick = at - ago + 1;
+      if (launchedAfter) s.launch.startTick = s.launch.released = at - ago + 1;
       return of(run(s, T, 5), "hurt").length;
     };
     expect(hearts(T.telegraphTicks - 1)).toBe(0);
@@ -662,6 +662,50 @@ describe("where the machine puts him", () => {
     expect(f.him.hot).toBe(true);
     expect(f.boss.shovedTick).toBe(-1);
     expect(inTheWay(f)).toBe(1);
+  });
+
+  /**
+   * The pad heading right in lane 3, its leading end at 270, and he 20 u ahead of it: his launch
+   * straight back at it is thrown (hot, so no heart), off the right cushion and down in its lane
+   * again, where the machine comes on. Returns the State on the tick he lands, and that tick.
+   */
+  function thrownDown(): { s: State; launched: number; landTick: number } {
+    const s = landed();
+    machine(s, { lane: 3, x: 270 - 60, dir: 1 });
+    him(s, 270 + 13 + 20, laneMiddle(s, 3));
+    const launched = s.tick;
+    const ev = launchAnd(s, T, shot(-1, 0), (e) => of(e, "land").length > 0, 60);
+    const [thrown] = of(ev, "bossThrow");
+    expect([thrown.hurt, of(ev, "hurt").length]).toEqual([false, 0]);
+    const [down] = of(ev, "land");
+    expect(down.tick).toBeGreaterThan(thrown.tick);
+    expect(s.him.hot).toBe(false);
+    return { s, launched, landTick: down.tick };
+  }
+
+  it("the pad's own throw puts him there: standing where it set him down, the pad throws him again and takes no heart (the lead's decision 30)", () => {
+    const { s, launched, landTick } = thrownDown();
+    // The throw is not a launch of his: the tick he last let go is his own launch's.
+    expect(s.launch.released).toBe(launched);
+    expect(s.boss.shovedTick).toBe(landTick);
+    const ev = until(s, T, (e) => of(e, "bossThrow").length > 0 || of(e, "hurt").length > 0, 120);
+    const [again] = of(ev, "bossThrow");
+    expect(again.tick - landTick).toBeLessThan(T.telegraphTicks);
+    expect([again.hurt, of(ev, "hurt"), s.hearts]).toEqual([false, [], 3]);
+  });
+
+  it("the throw's grace: only for a telegraph after he lands, and only until he lets go", () => {
+    // Slower, the machine reaches him a telegraph or more after he landed: the pad takes its heart.
+    const late = thrownDown();
+    late.s.boss.speed = 40;
+    const lev = until(late.s, T, (e) => of(e, "hurt").length > 0 || of(e, "bossThrow").length > 0, 200);
+    const [met] = of(lev, "bossThrow");
+    expect(met.tick - late.landTick).toBeGreaterThanOrEqual(T.telegraphTicks);
+    expect(of(lev, "hurt").map((e) => e.by)).toEqual(["polisher"]);
+    // As if he had let go since he was set down (and come down there again): the pad takes its heart.
+    const again = thrownDown();
+    again.s.launch.startTick = again.s.launch.released = again.landTick + 1;
+    expect(of(until(again.s, T, (e) => of(e, "hurt").length > 0, 120), "hurt").map((e) => e.by)).toEqual(["polisher"]);
   });
 });
 
@@ -727,6 +771,32 @@ describe("the turn after a hit (the lead's decision 14)", () => {
     expect([met.hearts, met.thrownUnhurt, s.hearts]).toEqual([0, true, 3]);
   });
 
+  it("a throw does not end it: thrown at the turn and set down in its way again near the cushion, the pad throws him and he keeps his heart (decision 30)", () => {
+    // The machine heading right in lane 3, its box 85 to 205: hit, he lands against the end he hit, 64 u from the left cushion.
+    const s = landed(HT);
+    machine(s, { lane: 3, x: 145, dir: 1 });
+    him(s, 85 - 13 - 40, 212);
+    s.pips = 1;
+    s.pipTimer = HT.pipRefillTicks;
+    const launched = s.tick;
+    const ev = launchAnd(s, HT, shot(1, 0, 0.5), (e) => of(e, "bossThrow").length > 0, 120);
+    const [turn] = of(ev, "bossTurn");
+    const [thrown] = of(ev, "bossThrow");
+    expect(of(ev, "hit").map((e) => e.kind)).toEqual(["polisher"]);
+    // Thrown at the turn, unhurt: he was in its way, landed, with no pip.
+    expect(thrown.tick - turn.tick).toBeLessThan(HT.telegraphTicks);
+    expect(thrown.hurt).toBe(false);
+    expect(s.launch.thrown).toBe(true);
+    expect(s.launch.released).toBe(launched);
+    // Off the left cushion and down in its way again: the pad comes on.
+    const down = until(s, HT, (e) => of(e, "land").length > 0, 60);
+    const landTick = of(down, "land")[0].tick;
+    const met = until(s, HT, (e) => of(e, "bossThrow").length > 0 || of(e, "hurt").length > 0, 120);
+    const [again] = of(met, "bossThrow");
+    expect(again.tick - landTick).toBeLessThan(HT.telegraphTicks);
+    expect([again.hurt, of(met, "hurt"), s.hearts]).toEqual([false, [], 3]);
+  });
+
   it("only for a telegraph after the turn: where the pad reaches him later, it takes its heart", () => {
     const { s, end } = hitAndLand();
     // Moved along the lane by hand, still in the way of the end that will lead: the further, the later the pad reaches him.
@@ -753,7 +823,7 @@ describe("the turn after a hit (the lead's decision 14)", () => {
     const stayed = toThePad(cloneState(s), turned);
     expect([stayed.hearts, stayed.thrownUnhurt]).toEqual([0, true]);
     // As if he had launched on the tick after the turn and come down in its way again.
-    s.launch.startTick = turn + 1;
+    s.launch.startTick = s.launch.released = turn + 1;
     expect(toThePad(s, turned).hearts).toBe(1);
   });
 
