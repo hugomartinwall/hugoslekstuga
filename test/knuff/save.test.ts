@@ -154,11 +154,11 @@ describe("blocked storage", () => {
   });
 });
 
-/** A night in progress: one launch, and a few seconds of it. */
+/** A night in progress: one launch straight up through the rack, and a few seconds of it. */
 function midNight(seed: number, start: StartOptions = {}, ticks = 240): State {
   const s = createState(seed, DEFAULT_TUNE, start);
   const events: SimEvent[] = [];
-  step(s, { launch: { dx: 0.3, dy: -1, power: 1 }, pullHeld: false }, DEFAULT_TUNE, events);
+  step(s, { launch: { dx: 0, dy: -1, power: 1 }, pullHeld: false }, DEFAULT_TUNE, events);
   for (let i = 0; i < ticks && s.phase !== "over"; i++) step(s, { launch: null, pullHeld: false }, DEFAULT_TUNE, events);
   return s;
 }
@@ -351,8 +351,9 @@ describe("what the game does with the stored night (§3.11)", () => {
     createStore(local, session).writeRun({ ...DEFAULT_TUNE }, night);
     const { b: br, game: g } = open(local, session);
     expect(view().waiting).toBe("22:00");
-    // The key is changed behind the engine's back: RESUME loads the copy it read, not the key a second time.
-    session.setItem(KEY.run, "{}");
+    // The key is changed behind the engine's back, to another night that could be played: RESUME loads
+    // the copy it read when it was made, not the key a second time.
+    createStore(local, session).writeRun({ ...DEFAULT_TUNE }, midNight(99, { hour: 7 }));
     g.resumeStored();
     expect(session.getItem(KEY.run)).toBeNull();
     expect(view().waiting).toBeNull();
@@ -388,6 +389,8 @@ describe("what the game does with the stored night (§3.11)", () => {
     // Make a night that ends on its next tick: stand still from the first launch until he falls, and keep the tick before.
     const fell = midNight(31, {}, 20000);
     expect(fell.phase).toBe("over");
+    // It scored: so with nothing kept before it, it is a new best.
+    expect(fell.score).toBeGreaterThan(0);
     const before = midNight(31, {}, 0);
     while (before.tick < fell.tick - 1) step(before, { launch: null, pullHeld: false }, DEFAULT_TUNE, []);
     expect(before.phase).not.toBe("over");
@@ -401,6 +404,8 @@ describe("what the game does with the stored night (§3.11)", () => {
     br.wait(600);
     br.frames(5);
     expect(session.getItem(KEY.run)).toBeNull();
+    // He fell: nobody is told to be happy about that.
+    expect(br.sent).not.toContain("hugoslekstuga:hugo-happy");
     const record = JSON.parse(local.getItem(KEY.save) as string);
     // A resumed night was counted when it began, in the session that began it.
     expect(record.runs).toBe(0);
@@ -413,11 +418,33 @@ describe("what the game does with the stored night (§3.11)", () => {
     br.frames(1);
     expect(view().screen).toBe("over");
     expect(view().over?.best).toBe(fell.score);
-    expect(view().over?.newBest).toBe(fell.score > 0);
+    expect(view().over?.newBest).toBe(true);
     // AGAIN, and the next night's first launch is counted.
     g.restart();
     begin(br);
     expect(JSON.parse(local.getItem(KEY.save) as string).runs).toBe(1);
+  });
+
+  it("NEW BEST is against the best kept on the device, and BEST shows that one", () => {
+    const fell = midNight(31, {}, 20000);
+    const before = midNight(31, {}, 0);
+    while (before.tick < fell.tick - 1) step(before, { launch: null, pullHeld: false }, DEFAULT_TUNE, []);
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    local.setItem(KEY.save, JSON.stringify({ v: 1, best: fell.score + 1000, bestClock: 9, bestShot: 5000, runs: 7, mornings: 2 }));
+    createStore(local, session).writeRun({ ...DEFAULT_TUNE }, before);
+    const { b: br, game: g } = open(local, session);
+    g.resumeStored();
+    br.wait(600);
+    br.frames(5);
+    br.wait(800);
+    br.frames(1);
+    expect(view().screen).toBe("over");
+    expect(view().over?.newBest).toBe(false);
+    expect(view().over?.best).toBe(fell.score + 1000);
+    // This night's own best shot, not the record's.
+    expect(view().over?.bestShot).toBe(fell.bestShot);
+    expect(JSON.parse(local.getItem(KEY.save) as string)).toEqual({ v: 1, best: fell.score + 1000, bestClock: 9, bestShot: 5000, runs: 7, mornings: 2 });
   });
 
   it("MORNING sends hugo-happy once; another ending sends nothing", () => {
