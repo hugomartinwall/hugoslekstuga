@@ -373,7 +373,7 @@ describe("the wall charms", () => {
     expect(t3.launch.sparkUntil).toBe(-1);
   });
 
-  it("Bell: every dust bunny and token in the room is dazed for 36 ticks, at most once every 240 ticks", () => {
+  it("Bell: every dust bunny and token in the room is dazed for 60 ticks, at most once every 240 ticks", () => {
     const s = lit({ 1: "bell" });
     standAt(s, 180, 150);
     const a = put(s, "bunny", 60, 400);
@@ -385,7 +385,7 @@ describe("the wall charms", () => {
     events.push(...toLanding(s, still));
     const bell = of(events, "cushion")[0];
     expect(bell).toMatchObject({ plate: 1, charm: "bell" });
-    const until1 = bell.tick + 36;
+    const until1 = bell.tick + still.bellDazeTicks;
     expect(of(events, "daze").map((e) => [e.id, e.until])).toEqual([
       [a.id, until1],
       [b.id, until1],
@@ -397,7 +397,8 @@ describe("the wall charms", () => {
     again.push(...until(s, still, (e) => e.some((x) => x.type === "cushion"), 60));
     expect(of(again, "cushion")[0]).toMatchObject({ plate: 1, charm: "" });
     expect(of(again, "daze")).toEqual([]);
-    expect([still.bellDazeTicks, still.bellCooldown, still.capBell]).toEqual([36, 240, 1]);
+    // Dazed for 60 ticks, draft 1's one second, since Bell moved nothing at the spec's 36 (decision 33).
+    expect([still.bellDazeTicks, still.bellCooldown, still.capBell]).toEqual([60, 240, 1]);
   });
 
   it("Coin slot: pops by his body and by Spark's ring pay twice for the rest of the launch; two slots are still twice", () => {

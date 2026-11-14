@@ -181,7 +181,11 @@ export const GAME = {
   pipPlateCooldown: 240,
   sparkTicks: 48,
   sparkReach: 12,
-  bellDazeTicks: 36,
+  // 60, draft 1's one second (decision 33): at the spec's 36 Bell moved no
+  // player's hours, score or hearts by 10% on two fresh samples of 480
+  // nights of the whole night, a dead pick. At 60 it moves the Ordinary's
+  // score by 11% on one and the Expert's hearts by 12% on the other.
+  bellDazeTicks: 60,
   bellCooldown: 240,
   coinFactor: 2,
   capBumper: 2,

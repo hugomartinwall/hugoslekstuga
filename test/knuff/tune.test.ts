@@ -38,7 +38,7 @@ describe("the knob table", () => {
     // Written out, so a number changed in the table shows up here as a change someone made on purpose.
     // From the spec's first values: bossSpeed 90 (decision 16), padHurtsHot off (21), thumpTurnsTokens on (22), paceLastCall 1020 (23),
     // and paceTokens 5, the dial turned to bring the table's rows back in after them (decision 24) and after the thump's
-    // wider reach for tokens, thumpTokenReach 43 (decision 31).
+    // wider reach for tokens, thumpTokenReach 43 (decision 31); bellDazeTicks 60, Bell made a live pick (decision 33).
     expect(GAME).toEqual({
       lineShowsPx: 12,
       noShotPx: 24,
@@ -102,7 +102,7 @@ describe("the knob table", () => {
       pipPlateCooldown: 240,
       sparkTicks: 48,
       sparkReach: 12,
-      bellDazeTicks: 36,
+      bellDazeTicks: 60,
       bellCooldown: 240,
       coinFactor: 2,
       capBumper: 2,
