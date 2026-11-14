@@ -147,7 +147,7 @@ export type KnuffDev = {
   layout(): Layout;
   /** The pull being held, or null. */
   pull(): PullView | null;
-  /** The aim line of the held pull, or null. */
+  /** The aim line on the screen (a held pull's, or the keys'), or null. */
   aim(): AimLine | null;
   /** Is the frame loop running? */
   running(): boolean;
@@ -707,7 +707,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       layout: () => renderer.layout,
       pull: () => pointer.pull(),
       aim() {
-        const aim = aimNow();
+        // The line on the screen: a held pull's, or the keys'.
+        const aim = (pointer.pull() ?? keyPull())?.aim ?? null;
         return aim ? lineFor(aim) : null;
       },
       running: () => loop.running,
