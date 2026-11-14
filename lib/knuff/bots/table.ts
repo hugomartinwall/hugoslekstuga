@@ -69,9 +69,16 @@ export type Sum = {
   bossN: number;
   dawnN: number;
   bossLostN: number;
-  /** Share of ticks with nothing alive or announced, all nights pooled: with the pause between hours, and with it taken out. */
+  /**
+   * Share of ticks with no intruder alive or announced (13.2's words; the
+   * polisher is not an intruder), all nights pooled: with the pause between
+   * hours, and with it taken out. And the share with the ticks the polisher
+   * stood in an otherwise empty room left out of the empty ones: a reading
+   * the build once gated on, printed beside (it is the easier of the two).
+   */
   emptyShare: number;
   emptyShareNoPause: number;
+  emptyShareNoBoss: number;
   longestEmptyMedian: number;
   meanRoom: number;
   maxRoom: number;
@@ -123,6 +130,7 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
   let ticks = 0;
   let empty = 0;
   let emptyPause = 0;
+  let emptyBoss = 0;
   let roomSum = 0;
   let maxRoom = 0;
   let cap = 0;
@@ -157,6 +165,7 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     ticks += x.ticks;
     empty += x.ticksEmpty;
     emptyPause += x.ticksEmptyPause;
+    emptyBoss += x.ticksEmptyBoss ?? 0;
     roomSum += x.roomSum;
     if (x.maxRoom > maxRoom) maxRoom = x.maxRoom;
     cap += x.capRefused;
@@ -241,6 +250,7 @@ export function summarise(key: string, label: string, nights: readonly Night[], 
     bossLostN: boss.filter((x) => x.ended === "hearts").length,
     emptyShare: div(empty, ticks),
     emptyShareNoPause: div(empty - emptyPause, ticks - emptyPause),
+    emptyShareNoBoss: div(empty - emptyBoss, ticks),
     longestEmptyMedian: median(nights.map((x) => x.longestEmpty)),
     meanRoom: div(roomSum, ticks),
     maxRoom,
@@ -500,7 +510,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     text: "Ordinary: the room empty for at most 15% of the ticks from its first launch to the end of its night",
     check: (m, _t, w) => {
       const s = get(m, "ordinary");
-      return { ok: s.emptyShare <= 0.15 * (1 + w.part), measured: `${pct(s.emptyShare)} with the pause between hours, ${pct(s.emptyShareNoPause)} without it; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
+      return { ok: s.emptyShare <= 0.15 * (1 + w.part), measured: `${pct(s.emptyShare)} with the pause between hours, ${pct(s.emptyShareNoPause)} without it, ${pct(s.emptyShareNoBoss)} with 06:00's ticks alone with the polisher not counted; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
     },
   },
   {
@@ -536,7 +546,7 @@ export const STEP1_BOUNDS: readonly Bound[] = [
     text: "Expert: the room empty for at most 25% of its ticks",
     check: (m, _t, w) => {
       const s = get(m, "expert");
-      return { ok: s.emptyShare <= 0.25 * (1 + w.part), measured: `${pct(s.emptyShare)} with the pause, ${pct(s.emptyShareNoPause)} without it; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
+      return { ok: s.emptyShare <= 0.25 * (1 + w.part), measured: `${pct(s.emptyShare)} with the pause, ${pct(s.emptyShareNoPause)} without it, ${pct(s.emptyShareNoBoss)} with 06:00's ticks alone with the polisher not counted; longest empty stretch, median ${f0(s.longestEmptyMedian)} ticks` };
     },
   },
   {

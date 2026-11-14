@@ -286,6 +286,8 @@ export type Night = {
   /** Ticks with nothing alive and nothing announced; those of them in the pause between hours; the longest run. */
   ticksEmpty: number;
   ticksEmptyPause: number;
+  /** Of the empty ticks, those with the polisher in the room (06:00): empty by 13.2's words, though not a room to wait in. */
+  ticksEmptyBoss: number;
   longestEmpty: number;
   /** Intruders alive or announced: summed over ticks, and the most at once. */
   roomSum: number;
@@ -354,6 +356,7 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     unfair: 0,
     ticksEmpty: 0,
     ticksEmptyPause: 0,
+    ticksEmptyBoss: 0,
     longestEmpty: 0,
     roomSum: 0,
     maxRoom: 0,
@@ -424,7 +427,8 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
     burstNow.clear();
     // The room as the tick finds it: intruders only (an offer's tiles and the love heart are not).
     const roomBefore = intruders(s);
-    // From 06:00 the polisher is in the room: a tick with it there is not an empty room.
+    // From 06:00 the polisher is in the room. It is not an intruder, so a tick with it there and nothing else is
+    // empty by 13.2's words; it is counted apart as well, for the reading that leaves those ticks out.
     const bossBefore = s.boss.present;
     // Gum is swept away when its hour ends, before the next hour's rows are announced.
     let gumBefore = 0;
@@ -439,10 +443,11 @@ export function runNight(seed: number, who: Player, tune: Tune, start: StartOpti
       if (++idle > 3) break;
       continue;
     }
-    // The room as the tick found it: empty is nothing alive and nothing announced.
-    if (roomBefore === 0 && !bossBefore) {
+    // The room as the tick found it: empty is no intruder alive and none announced (13.2).
+    if (roomBefore === 0) {
       n.ticksEmpty++;
       if (inPause) n.ticksEmptyPause++;
+      if (bossBefore) n.ticksEmptyBoss++;
       if (++emptyRun > n.longestEmpty) n.longestEmpty = emptyRun;
     } else emptyRun = 0;
 
