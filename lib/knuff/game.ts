@@ -12,13 +12,20 @@
  * Slow motion lives in the State: the loop only asks `wouldSlow` how fast
  * to feed ticks. The panels are the page's (Client.tsx renders them from
  * the view this file reports); what they do goes through the handle.
- * Saving and sound join in the steps that build them.
+ *
+ * The sound (audio/) starts on the first touch or key, hears each tick's
+ * events, and is closed on destroy; M mutes. The picture reads one motion
+ * value, `reduced`: the player's choice (`setMotion`: auto, on or off, the
+ * panel's system, reduced and full) laid over the system's setting. Where
+ * the choice and the mute are stored is the shell's (save.ts).
  *
  * Until the game ships the handle also carries `setTune`, for the knob
  * keys of the builds the owner checks. No night is ever played under two
  * sets of rules: a change of rules makes the night again.
  */
 import { readAccent, subscribeAccent } from "@/lib/hugo/sprite";
+import { createAudio, type Cue } from "./audio/audio";
+import { createEars } from "./audio/events";
 import { CHARM_NAME, END, KIND_NAME } from "./content/copy";
 import { CLOCK } from "./content/night";
 import { DEFAULT_TUNE, mergeTune } from "./content/tune";
@@ -66,6 +73,10 @@ export type KnuffView = {
   over: KnuffOver | null;
   /** The body charms taken this night, by name, in the order they were taken: the pause panel lists them. */
   charms: string[];
+  /** Sound off (M, or the pause panel's switch). */
+  muted: boolean;
+  /** The player's choice of motion: "auto" (system), "on" (reduced) or "off" (full). */
+  motion: MotionPref;
 };
 
 /** The view before the game has said anything. */
@@ -80,6 +91,8 @@ export const FIRST_VIEW: KnuffView = {
   named: "{}",
   over: null,
   charms: [],
+  muted: false,
+  motion: "auto",
 };
 
 export type KnuffOptions = {
@@ -111,6 +124,10 @@ export type KnuffHandle = {
    * a night is over the patch waits for the next one.
    */
   setTune(patch: Partial<Tune>): void;
+  /** Sound on or off. M does the same from the keyboard. */
+  setMuted(muted: boolean): void;
+  /** Reduced motion: "auto" follows the system, "on" reduces, "off" never does. Changes the picture only. */
+  setMotion(pref: MotionPref): void;
 };
 
 /**
@@ -140,12 +157,14 @@ export type KnuffDev = {
   running(): boolean;
 };
 
-/** The player's choice of motion arrives with the settings; until then the system's setting decides. */
-const MOTION: MotionPref = "auto";
 /** The end panel appears this long after the night ends, ms. */
 const END_PANEL_MS = 800;
 /** After RESUME the room stays frozen this long, ms, and until no pointer that was down is still down. */
 const RESUME_HOLD_MS = 500;
+/** The lights come on at the end of a night that reached 06:00's end, over this long, ms (§10, §12.7). */
+const LIGHTS_MS = 1000;
+/** His celebration pixels at MORNING change places this often, ms. */
+const SPARKLE_MS = 220;
 
 /** A new seed for a new game. Nobody promises that a seed plays the same on two devices. */
 function newSeed(): number {
@@ -181,6 +200,11 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   );
 
   const disposers: Array<() => void> = [];
+  // Made now, silent until the first touch or key: no AudioContext exists before then.
+  const audio = createAudio();
+  const ears = createEars();
+  const cues: Cue[] = [];
+  let muted = false;
   const listen = <E extends Event>(
     target: EventTarget,
     type: string,
@@ -281,6 +305,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     named: namedJson,
     over: overShown ? over() : null,
     charms: state.charms.map((c) => CHARM_NAME[c] ?? c),
+    muted,
+    motion,
   });
   let told = "";
   const tell = () => {
@@ -353,6 +379,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     overTimer = 0;
     pointer.cancel();
     fx.reset();
+    ears.reset();
+    lightsFrom = -1;
+    loopNow();
     readKnobs();
     tell();
   };
@@ -378,6 +407,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     pointer.cancel();
     if (destroyed || left || paused || !inNight()) return;
     paused = true;
+    loopNow();
     tell();
   }
 
@@ -389,6 +419,21 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     holdUntil = performance.now() + RESUME_HOLD_MS;
     holdFor.clear();
     for (const id of down) holdFor.add(id);
+    loopNow();
+    tell();
+  }
+
+  /** The polisher's loop plays while it is in the room and the night runs; it quickens as the machine does. */
+  function loopNow(): void {
+    const on = !destroyed && !paused && !left && state.phase === "boss" && state.boss.present && state.boss.mode !== "down";
+    audio.setLoop(on, state.boss.speed / Math.max(1, tune.bossSpeed));
+  }
+
+  /** Sound on or off: M, and the pause panel's switch through the handle. */
+  function setMuted(next: boolean): void {
+    if (destroyed || next === muted) return;
+    muted = next;
+    audio.setMuted(muted);
     tell();
   }
 
@@ -424,13 +469,25 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
 
   // ── Motion ──────────────────────────────────────────────────────────
 
+  // The one motion value the picture reads: the player's choice laid over the system's setting.
   const lessMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let reduced = effectiveReduced(MOTION, lessMotion.matches);
+  let motion: MotionPref = "auto";
+  let reduced = effectiveReduced(motion, lessMotion.matches);
   fx.setReduced(reduced);
-  listen(lessMotion, "change", () => {
-    reduced = effectiveReduced(MOTION, lessMotion.matches);
+  const rethinkMotion = () => {
+    reduced = effectiveReduced(motion, lessMotion.matches);
     fx.setReduced(reduced);
-  });
+  };
+  listen(lessMotion, "change", rethinkMotion);
+
+  // ── Sound ───────────────────────────────────────────────────────────
+
+  // The first touch or key of the visit makes the sound, inside that
+  // gesture; every later one wakes it if the browser let it sleep. On the
+  // window, in the capture phase: the first press can be RESUME or NEW
+  // NIGHT, which are outside the root (§12.6).
+  const unlock = () => audio.unlock();
+  for (const type of ["pointerup", "touchend", "click", "keydown"]) listen(window, type, unlock, { capture: true });
 
   // ── The loop ────────────────────────────────────────────────────────
 
@@ -449,7 +506,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       if (e.type === "over") over = true;
     }
     fx.afterTick(state);
+    for (const c of ears.hear(events, state, tune, cues)) audio.play(c);
     if (over) ended();
+    loopNow();
     tell();
     return freeze;
   };
@@ -457,6 +516,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   /** The picture's clock: the frame's, less the time spent paused. */
   let pausedFor = 0;
   let lastFrameAt = -1;
+  /** When the lights began to come on, on the picture's clock; -1 until a night ends at 06:00's end. */
+  let lightsFrom = -1;
 
   const loop = createLoop({
     // The State says which ticks are slowed, and counts them: a pull is
@@ -479,6 +540,10 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       if (!stopped) fx.update(frame.realDt, frame.scaledDt, now);
       const pull = pointer.pull();
       const aim = pull?.aim ?? null;
+      // When a night ends as MORNING or as "the lights came on", the lights come on (§10).
+      const lit = state.phase === "over" && (state.ended === "morning" || state.ended === "dawn");
+      if (lit && lightsFrom < 0) lightsFrom = now;
+      const lights = lit ? Math.min(1, (now - lightsFrom) / LIGHTS_MS) : 0;
       renderer.draw({
         state,
         tune,
@@ -492,6 +557,9 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
         meter: aim && threat(state) ? state.slow.meter / Math.max(1, tune.slowMeterMax) : -1,
         accent,
         reduced,
+        lights,
+        // At MORNING he wears the sprite's celebration pixels; held still with reduced motion.
+        sparkle: lit && state.ended === "morning" ? (reduced ? 0 : Math.floor((now - lightsFrom) / SPARKLE_MS) % 2) : null,
         effects: fx,
       });
     },
@@ -508,8 +576,10 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
     if (hidden()) {
       pause();
       loop.stop();
+      audio.sleep();
     } else {
       loop.start();
+      audio.wake();
     }
   });
   listen(window, "blur", () => {
@@ -526,6 +596,11 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
   // read by its place on the keyboard, not by the letter printed on it.
   listen<KeyboardEvent>(root, "keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // M mutes, at any time, one press one change (decision 11). By its place on the keyboard.
+    if (e.code === "KeyM") {
+      if (!e.repeat) setMuted(!muted);
+      return;
+    }
     if (e.key !== "Escape" && e.code !== "KeyP") return;
     if (e.repeat) return;
     const can = inNight() && !paused && !left;
@@ -599,6 +674,7 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       if (destroyed) return;
       destroyed = true;
       loop.stop();
+      audio.dispose();
       window.clearTimeout(overTimer);
       overTimer = 0;
       for (let i = disposers.length - 1; i >= 0; i--) disposers[i]();
@@ -615,9 +691,17 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       left = true;
       paused = false;
       queued = null;
+      loopNow();
       window.clearTimeout(overTimer);
       overTimer = 0;
       pointer.cancel();
+      tell();
+    },
+    setMuted,
+    setMotion(pref) {
+      if (destroyed || pref === motion) return;
+      motion = pref;
+      rethinkMotion();
       tell();
     },
     setTune(patch) {
