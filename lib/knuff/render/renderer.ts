@@ -30,7 +30,7 @@ import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
 import { FLICK_TICKS, type Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
-import { drawOffer, drawPlates, drawSparkRing } from "./charms";
+import { RAIL_GROOVE, drawLitInserts, drawOffer, drawOfferNames, drawPlates, drawSparkRing } from "./charms";
 import { createBaker, type Bitmap, type Palette } from "./bake";
 import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, onFloor, rollMarks } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
@@ -390,14 +390,14 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
     // The cushions: the room's outer shape, and the floor cut into it.
     roomPath();
-    ctx.fillStyle = C.rail;
+    ctx.fillStyle = RAIL_GROOVE;
     ctx.fill();
     const fl = Math.round(X(state.room.left));
     const ft = Math.round(Y(state.room.top));
     const fw = Math.round(X(state.room.right)) - fl;
     const fh = Math.round(Y(state.room.bottom)) - ft;
     // Lit plates, and offered ones, in their charm's colour on the rail.
-    drawPlates(paint, state);
+    drawPlates(paint, state, (i) => (f.reduced ? 0 : fx.plateFlash(i)));
     ctx.fillStyle = floor;
     ctx.fillRect(fl, ft, fw, fh);
     if (dither) {
@@ -407,10 +407,12 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     // Floor inserts, gum, tiles (§9.9): each offered plate's insert and its
     // name; gum, flat on the floor, under everything that moves; then each
     // pickup's tile and its name, and the love heart's tile.
+    drawLitInserts(paint, state);
     drawOffer(paint, state, "inserts");
     drawGum(paint, state, f.line !== null ? f.line.hitId : -1);
     drawOffer(paint, state, "tiles");
     drawHeart(paint, state, tune.heartLife);
+    drawOfferNames(paint, state);
 
     // The hint on the floor, under everything that moves. Its hand is in
     // the way of a pull, so it stands back while one is held or he flies.

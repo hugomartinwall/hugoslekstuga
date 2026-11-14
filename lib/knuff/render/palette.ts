@@ -1,4 +1,4 @@
-import { COLOR_HEX, CREAM_HEX, INK_HEX } from "@/lib/colors";
+import { COLOR_HEX, COLOR_HEX_SOFT, CREAM_HEX, INK_HEX } from "@/lib/colors";
 import { hexRgb } from "@/lib/hugo/sprite";
 
 /**
@@ -47,6 +47,20 @@ export const CHARM_COLOR: Readonly<Record<string, string>> = {
   bell: C.violet,
   coin: C.acid,
 };
+
+/** Each wall charm's dark tint (the site's soft variants): a lit plate's floor insert. */
+const CHARM_SOFT: Readonly<Record<string, string>> = {
+  bumper: COLOR_HEX_SOFT.tomato,
+  pip: COLOR_HEX_SOFT.green,
+  spark: COLOR_HEX_SOFT.orange,
+  bell: COLOR_HEX_SOFT.purple,
+  coin: COLOR_HEX_SOFT.yellow,
+};
+
+/** A charm's dark tint, for the tile under its icon; the panel's colour for a body charm. */
+export function charmSoft(charm: string): string {
+  return CHARM_SOFT[charm] ?? C.panel;
+}
 
 /** The colour a charm is drawn and named in: its own for a wall charm, phosphor for a body charm. */
 export function charmColor(charm: string): string {

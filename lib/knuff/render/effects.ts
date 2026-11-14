@@ -37,6 +37,8 @@ const WAVE_S = 0.35;
 const FLOAT_S = 0.8;
 const BLAST_S = 0.3;
 const MAX_FLOATS = 12;
+/** A plate that fires flashes this long, s. */
+const PLATE_FLASH_S = 0.16;
 /** How long a token the thump turned shows the way it now rolls, in ticks (0.4 s). */
 export const FLICK_TICKS = 24;
 
@@ -51,6 +53,8 @@ export type Effects = {
   readonly flicks: Flick[];
   /** Seconds left of the pips drawn in coral after a refused launch. */
   refused: number;
+  /** How far plate `i` is into its flash: 1 as it fires, 0 when it is over (none with reduced motion). */
+  plateFlash(i: number): number;
   /** Squash and stretch of his body, and the cushion it is anchored at ("" for a launch). */
   squashX: number;
   squashY: number;
@@ -101,6 +105,8 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
   const floats: Float[] = [];
   const blasts: Blast[] = [];
   const flicks: Flick[] = [];
+  /** Seconds left of each plate's flash. */
+  const flashes = new Array<number>(10).fill(0);
   let reduced = false;
   let blinkAt = -1;
   let blinkUntil = 0;
@@ -140,6 +146,10 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       return now < blinkUntil;
     },
 
+    plateFlash(i) {
+      return Math.max(0, Math.min(1, (flashes[i] ?? 0) / PLATE_FLASH_S));
+    },
+
     onEvent(e) {
       const tune = tuneNow();
       switch (e.type) {
@@ -156,8 +166,11 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
             burst(e.x, e.y, 4, 90 + 160 * s01, C.ink, 2);
             if (!reduced) fx.shake = Math.max(fx.shake, 1.2 + 2.2 * s01);
           }
-          // A plate that fired says so in its colour.
-          if (e.charm !== "") burst(e.x, e.y, 10, 170, charmColor(e.charm), 3);
+          // A plate that fired says so in its colour, and its segment flashes.
+          if (e.charm !== "") {
+            burst(e.x, e.y, 10, 170, charmColor(e.charm), 3);
+            if (!reduced && e.plate >= 0 && e.plate < flashes.length) flashes[e.plate] = PLATE_FLASH_S;
+          }
           // Squash against the cushion he hit.
           if (!reduced) {
             const side = e.side === "left" || e.side === "right";
@@ -348,6 +361,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
         if (!reduced) f.y -= 26 * realDt;
       }
       fx.refused = Math.max(0, fx.refused - realDt);
+      for (let i = 0; i < flashes.length; i++) if (flashes[i] > 0) flashes[i] = Math.max(0, flashes[i] - realDt);
       fx.shake = Math.max(0, fx.shake - realDt * 26);
       fx.squashX += (1 - fx.squashX) * Math.min(1, realDt * 16);
       fx.squashY += (1 - fx.squashY) * Math.min(1, realDt * 16);
@@ -377,6 +391,7 @@ export function createEffects(tuneNow: () => Tune, radiusNow: () => number = () 
       floats.length = 0;
       blasts.length = 0;
       flicks.length = 0;
+      flashes.fill(0);
       fx.refused = 0;
       fx.shake = 0;
       fx.squashX = 1;
