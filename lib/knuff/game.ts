@@ -55,7 +55,7 @@ export type KnuffOver = {
   /** What the panel calls the night: the hour he fell in, 06:00 when the lights came on, or MORNING. */
   night: string;
   bestShot: number;
-  /** The best score since the page opened, under these rules. Nothing is stored yet. */
+  /** The best score kept on the device (save.ts), after this night. */
   best: number;
   newBest: boolean;
   /** What took the last heart ("lost to a runaway token"), or "the lights came on"; empty when morning came. */
@@ -406,6 +406,8 @@ export function createKnuff(root: HTMLElement, canvas: HTMLCanvasElement, opts: 
       morning,
     });
     best = record.save.best;
+    // A night that scored nothing is no best. The store already says so (its best is never below 0, and a
+    // new best must be above it); said again here, where the panel is made.
     newBest = record.newBest && state.score > 0;
     // Morning is the one thing that makes him happy across the site: once a night, never for a best score alone.
     if (morning) window.dispatchEvent(new CustomEvent("hugoslekstuga:hugo-happy"));
