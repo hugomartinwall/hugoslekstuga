@@ -108,6 +108,12 @@ export default function Client({ standalone = false }: { standalone?: boolean })
   const charmsId = useId();
   const pullId = useId();
   const motionId = useId();
+  // What names each panel's scrolling part, while it scrolls (the panels have no visible heading).
+  const waitingId = useId();
+  const pauseId = useId();
+  const endId = useId();
+  const smallId = useId();
+  const scoreRef = useRef<HTMLDivElement>(null);
 
   // One effect, and everything it does is undone by its clean-up, so
   // StrictMode's mount, clean-up and second mount end with one game, one
@@ -158,6 +164,24 @@ export default function Client({ standalone = false }: { standalone?: boolean })
   const leave = () => gameRef.current?.abandon();
 
   const over = view.over;
+  const endOpen = screen === "over" && over !== null;
+
+  // The end panel opens with BACK TO PLAYHOUSE above the score. On a page
+  // that is short for the text (200% text, a zoomed window) the score fell
+  // below the fold of the scrolling part: open it scrolled just far enough
+  // to show the whole score, and never past its top, so BACK is still
+  // there above it (and the first Tab stop).
+  useEffect(() => {
+    const row = scoreRef.current;
+    if (!endOpen || !row) return;
+    let region: HTMLElement | null = row.parentElement;
+    while (region && getComputedStyle(region).overflowY !== "auto") region = region.parentElement;
+    if (!region) return;
+    // Offsets, not client rects: the panel may be mid-animation. The row's offsetParent is the column (relative), the region's first child.
+    const top = row.offsetTop;
+    const bottom = top + row.offsetHeight;
+    region.scrollTop = Math.max(0, Math.min(top, bottom + 8 - region.clientHeight));
+  }, [endOpen]);
 
   return (
     <>
@@ -191,7 +215,10 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         style={GAME_ACCENT}
         className={PANEL}
       >
-        <ScrollRegion>
+        <ScrollRegion labelledBy={waitingId}>
+          <span id={waitingId} hidden>
+            {PANEL_LABEL.waiting}
+          </span>
           <div className="flex flex-col gap-3 p-5">
             <Keycap tone="accent" size="lg" block data-autofocus onClick={() => gameRef.current?.resumeStored()}>
               {`${KEYS.resume} ${waiting ?? ""}`}
@@ -211,7 +238,10 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         style={GAME_ACCENT}
         className={PANEL}
       >
-        <ScrollRegion>
+        <ScrollRegion labelledBy={pauseId}>
+          <span id={pauseId} hidden>
+            {PANEL_LABEL.pause}
+          </span>
           <div className="flex flex-col gap-4 p-5">
             <Keycap tone="accent" size="lg" block data-autofocus onClick={resume}>
               {KEYS.resume}
@@ -262,7 +292,7 @@ export default function Client({ standalone = false }: { standalone?: boolean })
       </Dialog>
 
       <Dialog
-        open={screen === "over" && over !== null}
+        open={endOpen}
         // Escape and the scrim do nothing here.
         onClose={() => {}}
         label={PANEL_LABEL.end}
@@ -277,14 +307,17 @@ export default function Client({ standalone = false }: { standalone?: boolean })
                 panel opens, and inside the scrolling part that focus scrolled
                 the score out of view on a short page: here the panel opens on
                 its top, the score, and AGAIN is in view under it. */}
-            <ScrollRegion>
-              <div className="flex flex-col gap-3 px-5 pt-5">
+            <ScrollRegion labelledBy={endId}>
+              <span id={endId} hidden>
+                {PANEL_LABEL.end}
+              </span>
+              <div className="relative flex flex-col gap-3 px-5 pt-5">
                 {!standalone && (
                   <Keycap href="/" tone="quiet" size="sm" className="self-start" onClick={leave}>
                     {KEYS.back}
                   </Keycap>
                 )}
-                <div className="flex items-end justify-between gap-3">
+                <div ref={scoreRef} className="flex items-end justify-between gap-3">
                   <p data-end="score" className="font-display text-7xl leading-none text-ink">
                     {over.score}
                   </p>
@@ -335,7 +368,10 @@ export default function Client({ standalone = false }: { standalone?: boolean })
         style={GAME_ACCENT}
         className={PANEL}
       >
-        <ScrollRegion>
+        <ScrollRegion labelledBy={smallId}>
+          <span id={smallId} hidden>
+            {PANEL_LABEL.tooSmall}
+          </span>
           <div className="flex flex-col gap-4 p-5">
             <p data-small="line" className="text-[15px] text-ink">
               {view.coarse ? TOO_SMALL.phone : TOO_SMALL.laptop}
