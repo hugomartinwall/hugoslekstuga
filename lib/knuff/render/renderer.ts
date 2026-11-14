@@ -26,18 +26,16 @@ import { drawHugoSprite, type EyeState } from "@/lib/hugo/sprite";
 import type { KnuffFonts } from "../fonts";
 import type { PullView } from "../input/pointer";
 import type { AimLine } from "../sim/aim";
-import { KINDS } from "../content/kinds";
 import { ROOM_H, ROOM_W } from "../sim/state";
 import type { State, Thing, Tune } from "../sim/types";
 import { FLICK_TICKS, type Effects } from "./effects";
 import { drawBoss, drawBossTelegraph } from "./boss";
 import { drawOffer, drawPlates, drawSparkRing } from "./charms";
-import { drawBag, drawBattery, drawBatteryLine, drawBlastRings, drawEnvelope, drawGum, drawHeart, drawTelegraph, onFloor } from "./intruders";
+import { createBaker, type Bitmap, type Palette } from "./bake";
+import { drawBag, drawBatteryLine, drawBlastRings, drawBody, drawDazeMarks, drawGum, drawGumEdges, drawHeart, drawTelegraph, onFloor, rollMarks } from "./intruders";
 import { drawBar, drawDeckHint, drawMeter, drawPips, drawRoomHint, drawTooSmall } from "./hud";
 import {
-  DAZE_MARKS,
   DECK_HINT_MIN,
-  EYE_U,
   bodyOrder,
   carriedAt,
   hintFor,
@@ -111,8 +109,12 @@ export type Paint = {
   Y(u: number): number;
   /** A disc made of square cells. All in device px. */
   disc(cx: number, cy: number, radius: number, cell: number, color: string): void;
-  /** A broken stepped ring: squares set on a circle, every fourth left out. All in device px. */
-  ring(cx: number, cy: number, radius: number, color: string, w: number): void;
+  /**
+   * A broken stepped ring: squares set on a circle, with the share `gaps`
+   * of them left out, evenly (a quarter unless told: every fourth). All in
+   * device px.
+   */
+  ring(cx: number, cy: number, radius: number, color: string, w: number, gaps?: number): void;
   /** A whole stepped ring, `w` thick, made of cells `cell` across. All in device px. */
   band(cx: number, cy: number, radius: number, w: number, cell: number, color: string): void;
   /** One run of text, centred on (x, y) in device px (or ending at x, or starting there); the size is CSS px. */
@@ -127,6 +129,12 @@ export type Paint = {
   ): void;
   /** A sentence in the body face at 15 px, one character per 9 px cell, centred on (cx, y). */
   sentence(str: string, cx: number, y: number, color: string): void;
+  /**
+   * A bitmap of 1 u cells, baked in `palette` at the room's scale (once:
+   * render/bake.ts) and stamped with its top left at (x, y) in units, on a
+   * whole device pixel. `key` names the bitmap and palette together.
+   */
+  stamp(key: string, rows: Bitmap, palette: Palette, x: number, y: number): void;
 };
 
 export type Renderer = {
@@ -142,6 +150,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
   const ctx: CanvasRenderingContext2D = maybe;
 
   let layout = layoutFor(ROOM_W, ROOM_H + 76, 1, false, { top: 0, right: 0, bottom: 0, left: 0 });
+  const baker = createBaker();
   let dither: CanvasPattern | null = null;
   let ditherCell = 0;
 
@@ -190,11 +199,11 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
         ctx.fillRect(ox - cells * cell, oy + j * cell, cells * 2 * cell, cell);
       }
     },
-    ring(cx, cy, radius, color, w) {
+    ring(cx, cy, radius, color, w, gaps = 0.25) {
       const segs = Math.max(12, Math.round((radius * 2 * Math.PI) / (w * 1.6)));
       ctx.fillStyle = color;
       for (let i = 0; i < segs; i++) {
-        if (i % 4 === 3) continue;
+        if (Math.floor((i + 1) * gaps) > Math.floor(i * gaps)) continue;
         const a = (i / segs) * Math.PI * 2;
         ctx.fillRect(Math.round(cx + Math.cos(a) * radius - w / 2), Math.round(cy + Math.sin(a) * radius - w / 2), w, w);
       }
@@ -237,6 +246,10 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       ctx.fillStyle = color;
       const x0 = cx - (str.length * cellW) / 2 + cellW / 2;
       for (let i = 0; i < str.length; i++) ctx.fillText(str[i], Math.round(x0 + i * cellW), Math.round(y));
+    },
+    stamp(key, rows, palette, x, y) {
+      const img = baker.get(key, rows, palette, paint.S);
+      if (img) ctx.drawImage(img, Math.round(paint.X(x)), Math.round(paint.Y(y)));
     },
   };
 
@@ -397,7 +410,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     drawOffer(paint, state, "inserts");
     drawGum(paint, state, f.line !== null ? f.line.hitId : -1);
     drawOffer(paint, state, "tiles");
-    drawHeart(paint, state);
+    drawHeart(paint, state, tune.heartLife);
 
     // The hint on the floor, under everything that moves. Its hand is in
     // the way of a pull, so it stands back while one is held or he flies.
@@ -419,30 +432,7 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       paint.ring(X(w.x), Y(w.y), (r + (tune.hitWaveRadius - r) * k) * S, rgba(C.coral, 1 - 0.6 * k), Math.max(2, Math.round(S * 3)));
     }
     // What is announced: the broken outline of what will land there.
-    for (const d of state.things) {
-      if (state.tick >= d.landTick) continue;
-      const dr = KINDS[d.kind].radius;
-      if (d.kind === "gum" || d.kind === "battery" || d.kind === "envelope" || d.kind === "heart") {
-        drawTelegraph(paint, d);
-      } else if (d.kind === "bag") {
-        // The money bag's outline, for its longer telegraph.
-        paint.ring(X(d.x), Y(d.y), dr * S, C.mint, ringW);
-      } else if (d.kind === "token") {
-        paint.ring(X(d.x), Y(d.y), dr * S, C.acid, ringW);
-        // Which way it will roll: three squares, stepping off along its roll.
-        const v = Math.hypot(d.vx, d.vy);
-        if (v > 0) {
-          ctx.fillStyle = C.acid;
-          for (let i = 1; i <= 3; i++) {
-            const q = Math.max(2, Math.round(S * (3.4 - i * 0.6)));
-            const reach = dr + 1 + i * 5;
-            ctx.fillRect(Math.round(X(d.x + (d.vx / v) * reach) - q / 2), Math.round(Y(d.y + (d.vy / v) * reach) - q / 2), q, q);
-          }
-        }
-      } else {
-        paint.ring(X(d.x), Y(d.y), dr * S, C.ash, ringW);
-      }
-    }
+    for (const d of state.things) if (state.tick < d.landTick) drawTelegraph(paint, d);
     // The polisher's telegraph: its outline where it will land, and the way it will head.
     drawBossTelegraph(paint, state);
     // A battery's blast: its reach, for its last 60 ticks and from the moment it is knocked; and the blasts going off.
@@ -512,47 +502,26 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
 
     // The things in the room. Kind is told by outline; colour only confirms
     // it. The live ones first, then the dazed ones over them (a token rolls
-    // through anything): a dazed thing's marks are then on its own body.
+    // through anything): a dazed thing's marks are then on its own body. A
+    // money bag that came down over him is drawn over him instead (below).
+    let bagOnHim: Thing | null = null;
     for (const d of bodyOrder(state, inOrder)) {
-      const dx = d.px + (d.x - d.px) * alpha;
-      const dy = d.py + (d.y - d.py) * alpha;
-      const dr = KINDS[d.kind].radius;
-      const willHit = f.line !== null && f.line.hitId === d.id;
-      if (d.kind === "token") {
-        // A ring with a hole.
-        paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.acid, C.ink, 0.45) : C.acid);
-        paint.disc(X(dx), Y(dy), dr * S * 0.45, cellFx, floor);
-      } else if (d.kind === "battery") {
-        // A tall cell with its terminal, flashing.
-        drawBattery(paint, state, d, dx, dy, willHit, f.reduced);
-      } else if (d.kind === "envelope") {
-        // A wide rectangle with its flap.
-        drawEnvelope(paint, d, dx, dy, willHit);
-      } else if (d.kind === "bag") {
-        // A large sack with a knot, and its hits left.
-        drawBag(paint, state, d, dx, dy, tune.bagHits, willHit, cellFx);
-      } else {
-        // A small round body with two eyes. Dazed, it wears its marks in their place.
-        paint.disc(X(dx), Y(dy), dr * S, cellFx, willHit ? mix(C.ash, C.ink, 0.45) : C.ash);
-        if (state.tick >= d.dazedUntil) {
-          const eyeS = Math.max(2, Math.round(S * EYE_U));
-          ctx.fillStyle = C.page;
-          ctx.fillRect(Math.round(X(dx) - dr * S * 0.5), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
-          ctx.fillRect(Math.round(X(dx) + dr * S * 0.5 - eyeS), Math.round(Y(dy) - eyeS / 2), eyeS, eyeS);
-        }
+      if (d.onHim) {
+        bagOnHim = d;
+        continue;
       }
-    }
-    // Dazed: two 3 u phosphor squares, 3 u apart, inside its own body in
-    // place of its eyes, for exactly as long as it is harmless. In a pass
-    // of their own, after every body, so no neighbour is drawn over them.
-    const dazeQ = Math.max(2, Math.round(S * 3));
-    for (const d of inOrder) {
-      if (state.tick >= d.dazedUntil) continue;
       const dx = d.px + (d.x - d.px) * alpha;
       const dy = d.py + (d.y - d.py) * alpha;
-      // On paper white, phosphor would not show: an envelope's marks are room dark (step 6's art settles it).
-      ctx.fillStyle = d.kind === "envelope" ? C.page : C.ink;
-      for (const m of DAZE_MARKS) ctx.fillRect(Math.round(X(dx + m.x)), Math.round(Y(dy + m.y)), dazeQ, dazeQ);
+      drawBody(paint, state, d, dx, dy, f.line !== null && f.line.hitId === d.id, f.reduced, tune);
+    }
+    // Gum hidden under a bunch: its bitten outline again, over the bodies.
+    drawGumEdges(paint, state, inOrder);
+    // Dazed: two marks inside its own body in place of its eyes, for exactly
+    // as long as it is harmless. In a pass of their own, after every body,
+    // so no neighbour is drawn over them.
+    for (const d of inOrder) {
+      if (state.tick >= d.dazedUntil || d.onHim) continue;
+      drawDazeMarks(paint, d.px + (d.x - d.px) * alpha, d.py + (d.y - d.py) * alpha);
     }
     // A token the thump has just turned away (decision 31): three acid squares
     // stepping off along its new roll, as an announced token shows its way,
@@ -561,18 +530,8 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
     for (const fl of fx.flicks) {
       const d = state.things.find((t) => t.id === fl.id);
       if (!d || d.hp <= 0) continue;
-      const v = Math.hypot(d.vx, d.vy);
-      if (v <= 0) continue;
       const k = Math.min(1, Math.max(0, (tickNow - fl.tick) / FLICK_TICKS));
-      const dx = d.px + (d.x - d.px) * alpha;
-      const dy = d.py + (d.y - d.py) * alpha;
-      const dr = KINDS.token.radius;
-      ctx.fillStyle = rgba(C.acid, f.reduced ? 1 : 1 - 0.8 * k);
-      for (let i = 1; i <= 3; i++) {
-        const q = Math.max(2, Math.round(S * (3.4 - i * 0.6)));
-        const reach = dr + 1 + i * 5;
-        ctx.fillRect(Math.round(X(dx + (d.vx / v) * reach) - q / 2), Math.round(Y(dy + (d.vy / v) * reach) - q / 2), q, q);
-      }
+      rollMarks(paint, d.px + (d.x - d.px) * alpha, d.py + (d.y - d.py) * alpha, d.vx, d.vy, rgba(C.acid, f.reduced ? 1 : 1 - 0.8 * k));
     }
 
     // The polisher, over the intruders.
@@ -650,6 +609,18 @@ export function createRenderer(root: HTMLElement, canvas: HTMLCanvasElement, fon
       // not a white ring, which means hot.
       outline: outlined,
     });
+
+    // A money bag that came down over him (decision 29): he is under it, and
+    // his next launch passes through it. The sack is drawn over him, see-through,
+    // so the line that runs through it does not read as a mistake.
+    if (bagOnHim) {
+      const bx = bagOnHim.px + (bagOnHim.x - bagOnHim.px) * alpha;
+      const by = bagOnHim.py + (bagOnHim.y - bagOnHim.py) * alpha;
+      ctx.globalAlpha = 0.55;
+      drawBag(paint, state, bagOnHim, bx, by, tune.bagHits, f.line !== null && f.line.hitId === bagOnHim.id);
+      ctx.globalAlpha = 1;
+      if (state.tick < bagOnHim.dazedUntil) drawDazeMarks(paint, bx, by);
+    }
 
     // The hot ring: whole, phosphor, 2 u thick, 4 u outside his circle.
     // Where the room is shrunk his drawn body can be wider than his
