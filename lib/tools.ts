@@ -139,6 +139,15 @@ export const tools: Tool[] = [
       "An arena survivor. Move and dash while your weapons aim and fire on their own, then spend emeralds between waves and merge matching gear to rank up. Thirty waves with a countdown of enemies, a boss every third, ten characters and ten maps that each character unlocks in order — and Endless once a pair is cleared. Runs entirely in your tab.",
     color: "pink",
     emoji: "⬢",
+  },
+  {
+    slug: "knuff",
+    title: "Knuff",
+    tagline: "Pull back. Let go.",
+    description:
+      "A one-thumb arcade game. Pull him back, let go, and he flies across the arcade floor after closing: while he is fast he pops whatever he touches, and the moment he slows he is the one in trouble. Bank off the cushions, pick a charm on the hour, and keep the floor clear until morning — most nights end well before it. One score. Runs entirely in your tab.",
+    color: "pink",
+    emoji: "➶",
     isNew: true,
   },
 ];

@@ -145,7 +145,23 @@ export type SpriteDrawOptions = {
   bobY?: number;
   /** When set, celebration pixels orbit the head (alternate by phase). */
   sparklePhase?: number | null;
+  /**
+   * Draw his outline only: the body cells that have an empty neighbour,
+   * all in the body colour, plus the eyes. (The sprite's right and bottom
+   * edges are shade, which is dim on a dark floor.)
+   */
+  outline?: boolean;
 };
+
+/** Is the cell empty, or off the grid? */
+function emptyAt(r: number, c: number): boolean {
+  return r < 0 || c < 0 || r >= SPRITE_SIZE || c >= SPRITE_SIZE || SPRITE_ROWS[r][c] === ".";
+}
+
+/** A body cell with an empty cell above, below or beside it. */
+function onEdge(r: number, c: number): boolean {
+  return emptyAt(r - 1, c) || emptyAt(r + 1, c) || emptyAt(r, c - 1) || emptyAt(r, c + 1);
+}
 
 /**
  * Draw Hugo. Pure — respects and restores the ctx transform. Callers
@@ -166,6 +182,7 @@ export function drawHugoSprite(
     scaleY = 1,
     bobY = 0,
     sparklePhase = null,
+    outline = false,
   } = o;
   const colors = spriteColors(accent);
   const half = (SPRITE_SIZE / 2) * px;
@@ -181,6 +198,12 @@ export function drawHugoSprite(
     for (let c = 0; c < SPRITE_SIZE; c++) {
       const ch = row[c];
       if (ch === ".") continue;
+      if (outline && ch !== "w") {
+        if (!onEdge(r, c)) continue;
+        ctx.fillStyle = colors.body;
+        ctx.fillRect(c * px, r * px, px, px);
+        continue;
+      }
       ctx.fillStyle =
         ch === "b"
           ? colors.body

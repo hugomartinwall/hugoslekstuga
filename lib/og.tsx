@@ -11,11 +11,11 @@ import { findTool, type Tool } from "@/lib/tools";
  *
  * `renderToolOG("<slug>")` is the per-page card; each
  * `app/{tools,games}/<slug>/opengraph-image.tsx` is a thin wrapper around
- * it, so the card is drawn in this file and not in thirteen. The
+ * it, so the card is drawn in this file and not in fourteen. The
  * site-wide image (`app/opengraph-image.tsx`) lays out the same parts
  * its own way, so both set their words in one pixel face.
  *
- * One thing does have to change in the thirteen. An image's address
+ * One thing does have to change in the fourteen. An image's address
  * ends in a hash of its route file alone, which a change here does not
  * touch, and caches keyed on the address go on showing the old picture.
  * So each wrapper's first line carries the fingerprint of the picture

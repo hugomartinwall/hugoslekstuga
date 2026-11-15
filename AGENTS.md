@@ -47,6 +47,9 @@ broke at its corners. v2 fixed the shapes. **Everything framed is
 stepped; nothing is rounded, ringed in white, or dashed.** The rules
 live in `app/globals.css` under "The kit" (in `@layer components`, so a
 Tailwind utility on the same element still wins) and in `components/ui/`.
+The rule is about framed page elements. Inside Knuff's canvas the white
+ring is the game's one signal (he is fast: a weapon), and what is
+announced is drawn as a broken outline: that is play, not a frame.
 
 **How a frame works.** The element is clipped to the notch polygon and a
 `::after` overlay draws the hairline as a *ring that follows the steps*.
@@ -93,7 +96,9 @@ being told. Text on an accent fill is always room-dark (`text-cream`).
 
 **Round is allowed only where round is the function**: Breathe's
 breathing circle, Focus's timer ring, the Spin wheel and its slices,
-Sjökort's on-map markers. Not for buttons, badges, avatars or dots.
+Sjökort's on-map markers, and inside Knuff's canvas its rings (hot, the
+thump, a blast's reach) and its round intruders. Not for buttons,
+badges, avatars or dots.
 
 **Sizes.** Anything a finger presses is 44px (`min-h-11`); chips grow to
 44px by themselves on `pointer: coarse`. Text inside an `<input>` is 16px
@@ -124,8 +129,12 @@ press.
 
 **Page scroll.** A dialog locks the page with a class on `<html>`
 (`dialog-open`), counted across open dialogs. Do not save and restore
-`html.style.overflow` in new code: the game routes still do, and two
-owners of one inline value write each other's stale copy back.
+`html.style.overflow` in new code: the older game routes still do, and
+two owners of one inline value write each other's stale copy back. A
+game route locks the page the way Knuff's does: `game-open` on `<html>`
+(`html.game-open` in `app/globals.css`, beside `html.dialog-open`), put
+on when the route mounts and taken off when it unmounts, with nothing
+saved or restored. That is the pattern for a new game route.
 
 **Page shortcuts.** A shortcut on `window` hears every key, including
 the ones meant for whatever has focus. `lib/keyboard.ts` answers whose
@@ -216,8 +225,9 @@ same way as the rules: don't quietly reword without asking.
 
 ## The catalogue
 
-**9 tools + 4 games**: advice, breathe, focus, lorem, pixla, roll,
-sjokort, strip, sudoku + overrun + adventure + greyrot + survival-maxx. (8 tools survived the
+**9 tools + 5 games**: advice, breathe, focus, lorem, pixla, roll,
+sjokort, strip, sudoku + overrun + adventure + greyrot +
+survival-maxx + knuff. (8 tools survived the
 2026-07-02 curation cull; pixla joined 2026-07-03; overrun — the
 single-player RTS, ported from Hugo's separate CrazyGames project —
 joined 2026-08-05. Its engine lives in `lib/overrun/`; the upstream
@@ -239,6 +249,10 @@ to sync with.
 (`~/Documents/ChatGPT/Crazy games - Game 1`, which keeps evolving for
 CrazyGames on its own; the site copy is its own line — don't sync). See
 its own section below.
+**Knuff** — a one-thumb arcade game in 2D: you pull Hugo back on a band
+and let go — joined 2026-11-14. It was written for the site from a spec
+and a feel toy the owner tuned by hand, so there is no upstream. Its
+engine lives in `lib/knuff/`; see its own section below.
 The multiplayer games munch + noodle were shut down 2026-08 — not fun
 enough — taking the WebSocket server and the Fly.io app with them.)
 The retired tool slugs (case, cleantext, convert, diff, pdf, qr, read,
@@ -368,8 +382,8 @@ and the share images against the real painter (`mascot-copies`).
   too small for the room (cabinet cards, keycap pad)
 - `components/CabinetCanvas.tsx` — one arcade cabinet with its screen
   playing, as a standalone canvas. It paints one picture at mount and
-  then plays only while it is near the window, so the list's four draw
-  nothing while the room shows
+  then plays only while it is near the window, so the list's cabinets
+  draw nothing while the room shows
 - `components/Slider.tsx` — labelled range (pixel label, big value,
   accent-filled track)
 - `components/CustomMinutes.tsx` — "Custom — N min" chip (focus)
@@ -410,6 +424,13 @@ palette and `RESTING_PUPILS`, and place the boxes themselves.
 and fails when any of the three stops matching it, cell for cell: change
 the sprite and the copies have to follow.
 
+One more drawing of him is deliberate and is not a copy: Knuff's icon in
+`lib/pixel-icons.ts` is a simplified 12×12 Hugo flying, speed lines
+behind him (his body is 14×12 and does not fit an icon). It is not held
+to the painter. Do not put him on a stick or a band: a round head on a
+stick reads as a magnifying glass, and the search field's own sits right
+above it in the palette.
+
 **`lib/hugo-state.ts` is his brain**: mood (sleepy/calm/curious/
 excited/grumpy), energy, visit streaks, `firstSeen` — persisted at
 `hugoslekstuga:hugo:state:v1`, read via the `useHugoState` hook. The
@@ -442,6 +463,10 @@ moments (`hugoMoodEvent`, `hugoSawTool`); renderers read it.
 - `HugoStage` (Advice page) — big Hugo with poses: idle / thinking /
   delivering / declining / celebrating.
 - `HugoParkour` (homepage) — playable Hugo (see below).
+- Knuff (`/games/knuff`) — the game's Hugo, drawn by `drawHugoSprite`
+  in the visitor's colour. The sprite's `outline` option (the body
+  cells with an empty neighbour, and the eyes) is his look while
+  nothing can hurt him; the game's rings are its own drawing.
 
 Only one Hugo exists on screen at a time: page-level Hugos announce
 themselves via `hugo-stage` / `hugo-traveling` events and the corner
@@ -453,8 +478,8 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 
 | Event | Payload | Meaning |
 |---|---|---|
-| `hugo-happy` | — | Celebrate (eyes wide + sparkle puff). Fired by Sudoku win, natural Focus completion, parkour win. Keep the bar high — it should mean something each time. |
-| `hugo-stage` | `{ present: boolean }` | A page-level Hugo (HugoStage, HugoParkour) exists; BrandDot hides its corner sprite while `present`. |
+| `hugo-happy` | — | Celebrate (eyes wide + sparkle puff). Fired by Sudoku win, natural Focus completion, parkour win, a Knuff night that reaches morning (not a new best score alone). Keep the bar high — it should mean something each time. |
+| `hugo-stage` | `{ present: boolean }` | A page-level Hugo (HugoStage, HugoParkour, Knuff's route) exists; BrandDot hides its corner sprite while `present`. |
 | `dot-travel` | `{ fromX, fromY, toX, toY, color, navColor, duration }` | Make TravelingDot fly between two screen points. ToolMap uses it for the swarm→corner fetch-and-return. |
 | `hugo-traveling` | `{ traveling: boolean }` | Fired by TravelingDot mid-trip; BrandDot + ToolMap listen so there's one Hugo on screen. |
 | `dot-arrived` | — | TravelingDot landed on a tool page; ToolFrame times its entrance off it. |
@@ -881,6 +906,89 @@ controls, layout), a local-platform suite, and the architecture suite.
 The ten-campaign test carries its own four-minute budget; the config's
 30 s `testTimeout` is for the geometry sweeps.
 
+## Knuff — the one-thumb one
+
+`/games/knuff`. Pull him back, let go. While he is fast (a white ring)
+he pops what he touches; the moment he is not, he lands, and what
+touches him takes a heart. One night of eleven hours (19:00 to 05:00)
+and a boss at 06:00, the floor polisher; one score. Built for a phone
+held upright; a mouse and keys also work.
+
+**The engine** lives in `lib/knuff/`, in the shape of Adventure's:
+`game.ts` (the factory: `createKnuff(root, canvas, opts)` returns a
+handle with `destroy()`), `loop.ts`, `save.ts`, `sim/` (pure, 60 Hz),
+`content/` (the night's timetable, the kinds, the charms, the tune, the
+words), `bots/` (the scripted players and the balance table),
+`render/`, `audio/`, `input/`.
+
+Things that make it unlike the other games:
+
+- **Its motion was tuned by hand in a toy.** `content/tune.ts` has two
+  halves: `TOY`, copied from that toy, and `GAME`. Do not retype the
+  toy's numbers. `test/knuff/feel-lock.test.ts` runs the toy's own
+  simulation (copied untouched to `test/fixtures/knuff/toy-sim.ts`,
+  which eslint leaves out) beside the game's: five scripted launches
+  and the other flights beside them, the same position and speed to
+  the last bit for every tick he is hot, and every motion knob of the
+  copied half, changed either way, makes the two part. Where he stops
+  being hot they part on purpose: the toy slides on, the game lands.
+- **Slow motion is inside the simulation**, counted in ticks, so a bot
+  and a thumb play the same game: the loop only asks `wouldSlow` how
+  fast to feed ticks. Every rule time is in ticks.
+- **The aim line is the real step run on a copy of the State.** There
+  is no second motion loop to keep in step. If you add something that
+  bends his path, the line follows by itself.
+- **The whole page is the touch surface.** The canvas fills a root that
+  carries the browser protections (no panning, no selection, no
+  callout). The top bar and, on a phone, the thumb deck are drawn in
+  the canvas; a pull may begin anywhere on the root.
+- **Its panels are the kit's** (`Dialog`, `Keycap`, `Switch`,
+  `ChipGroup`), rendered by `Client.tsx` from one view object
+  (`KnuffView`, which `game.ts` reports when it changes, never per
+  frame). Only the pause key is hit-tested on the canvas. None is shown
+  over the search palette: each waits for it to close.
+- **Its page lock is a class** (`game-open` on `<html>`), not saved
+  and restored inline styles. New game routes should do the same.
+- **He is drawn by `lib/hugo/sprite.ts`**, in the visitor's colour.
+  The white ring is the game's; the sprite gained one option,
+  `outline`.
+- **The night is data, dealt at a pace.** `content/night.ts` is a
+  timetable, one row for each group of things that arrive together.
+  `pace` in `content/tune.ts` says how it is dealt: a row is called
+  early when the room is nearly clear, and extra bunches follow until
+  the hour's last call. `pace` and the numbers it gives (`PACE`:
+  `paceTokens`, `paceLastCall` and the rest) are the difficulty dial,
+  and the timetable's token rows after them. Tune those, not rules,
+  with `npx tsx scripts/knuff-balance.ts`, which runs the scripted
+  players through the real step and prints their table with pass or
+  FAIL beside each floor and ceiling (`--whole` is the whole night,
+  the table that gates; it exits 1 when a bound fails). Two rows are
+  accepted red on the shipped game by the lead's decision, and
+  `--whole` and `--boss` exit 1 when they fail: the Expert alive when
+  05:00 ends (ceiling 85 in 100; 82 to 95 on fresh samples) and the
+  boss check's median win (floor 1,200 ticks; 1,050 to 1,140). Any
+  other FAIL is a regression.
+- **It yields to the corner mascot's rule**: it announces itself with
+  `hugo-stage`, and fires `hugo-happy` once, at morning. It fires no
+  other site event and listens to none.
+
+Keys: `hugoslekstuga:knuff:{save,muted,motion,pull}`, and for the
+browser session only `hugoslekstuga:knuff:run` (a night that was paused
+or left, offered as RESUME until it is answered). All five go through
+`lib/knuff/save.ts`.
+
+**Tests**: `test/knuff/`. All pure, node environment; the shell's
+pieces (the pull, the keys, the loop, the layout) are driven with
+stand-ins for the browser, and `save` and `keyboard` make the whole
+game in one (`test/knuff/browser.ts`: a window, a document, a canvas
+that draws nothing, two storages and a frame clock turned by hand).
+`pixels` makes it with a canvas that keeps every rectangle it is asked
+for: every one lands on whole device pixels (him grown by Wide or
+squashed is stamped from a canvas of his own, nearest neighbour), and
+a token the thump turns shows its new way. `wiring` holds its place on
+the site: the registry entry, the icon and the cabinet's painter. The
+dev handle is `window.__knuff`, development only.
+
 ## Things NOT to do
 
 1. **Don't rename slugs.** URL stability beats copy precision. Title and
@@ -959,6 +1067,10 @@ tools that are supposed to be fetchless.
   separate music/sfx split, and `meta` (settings + lifetime totals) is
   read independently of `save` so a corrupt campaign can't take the
   settings down with it.
+  Knuff's keys: `hugoslekstuga:knuff:{save,muted,motion,pull}`, and in
+  `sessionStorage` `hugoslekstuga:knuff:run` (the night that was paused
+  or left). All five are read and written through `lib/knuff/save.ts`
+  and nowhere else.
 - The React 19 compiler memoises automatically — **drop manual `useCallback`
   in new code**. Older tools still use it; they pass lint but new code
   doesn't need to follow that pattern.
@@ -969,6 +1081,7 @@ tools that are supposed to be fetchless.
 npm run dev           # Next dev on :3000
 npm run lint
 npm run test          # vitest — Overrun's suites + Adventure's + Greyrot's
+                      # + Knuff's (test/knuff)
                       # + the site's own (test/site: head tags, share images)
 npm run build         # rm -rf .next first if Next caches stale routes —
                       # NOTE: that rm kills a running dev server; restart it
@@ -977,10 +1090,9 @@ npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)
 
 The flat suites in `test/*.ts` are copied **verbatim** from the upstream
 Overrun repo and are excluded from eslint for that reason — fix the
-engine, not the test. `tsc` still typechecks them. Adventure's suites in
-`test/adventure/` and `test/greyrot/` have no upstream: they are linted
-normally and may be
-edited freely.
+engine, not the test. `tsc` still typechecks them. The suites in
+`test/adventure/`, `test/greyrot/` and `test/knuff/` have no upstream:
+they are linted normally and may be edited freely.
 
 ## Commit style
 

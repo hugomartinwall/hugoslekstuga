@@ -154,7 +154,7 @@ export const PIXEL_ICONS = {
   ],
   // The games. On the homepage a game is a cabinet with its screen
   // playing; in a list (the search palette) each wears its own mark, so
-  // four games are not four identical tiles.
+  // five games are not five identical tiles.
   // A banner on its pole: take the node, plant the flag.
   overrun: [
     "..#.........",
@@ -213,6 +213,24 @@ export const PIXEL_ICONS = {
     ".##########.",
     "..##.##.##..",
     "..##.##.##..",
+    "............",
+  ],
+  // Him, flying: speed lines behind him. A simplified drawing of him, the
+  // one icon that shows him: his 14×12 body does not fit in 12×12. (He was
+  // drawn pulled back on a band once, and a round head on a stick read as a
+  // magnifying glass, right under the search field's own.)
+  knuff: [
+    "............",
+    "............",
+    ".....######.",
+    "....########",
+    "##..#.##.###",
+    "....#.##.###",
+    "###.########",
+    "....########",
+    "##...######.",
+    "............",
+    "............",
     "............",
   ],
   // An arcade cabinet: a game that has no mark of its own yet.
