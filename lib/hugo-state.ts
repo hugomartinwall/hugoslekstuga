@@ -134,8 +134,10 @@ function defaultMemory(now: number): HugoMemory {
   };
 }
 
-function defaultState(now: number): HugoState {
-  const mood = moodFromHour(new Date(now).getHours());
+function defaultState(
+  now: number,
+  mood: HugoMood = moodFromHour(new Date(now).getHours()),
+): HugoState {
   return {
     energy: 80,
     mood,
@@ -171,26 +173,129 @@ function set(patch: Partial<HugoState>) {
   schedulePersist();
 }
 
+/** How long a change may wait before it is written. */
+const PERSIST_EVERY_MS = 2000;
+
+/** Write what is worth keeping, now. */
+function persistNow() {
+  if (typeof window === "undefined") return;
+  // Never before the stored copy has been read: that would write the
+  // defaults over it.
+  if (!state.hydrated) return;
+  try {
+    // Don't persist transient state — `hydrated`, `idleAction`,
+    // `attention`, `moodSince` and `lastInteraction` are recomputed
+    // on load. Persist only what's meaningful across sessions.
+    const toPersist = {
+      memory: state.memory,
+      personality: state.personality,
+      // Energy on close so morning Hugo isn't always at 80.
+      energy: state.energy,
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
+  } catch {
+    // localStorage disabled, quota exceeded, etc — fail silent
+  }
+}
+
+/**
+ * A throttle, not a debounce. This used to push its timer back on every
+ * change, and the tick changes his energy four times a second, so while
+ * a tab was visible the timer never fired: in an ordinary visit (open a
+ * tool, use it, close the tab) nothing he remembered was ever saved.
+ * Now the first change starts the wait and later ones ride along; and
+ * `attachPersistOnLeave` writes once more on the way out.
+ */
 function schedulePersist() {
   if (typeof window === "undefined") return;
-  if (persistHandle) clearTimeout(persistHandle);
+  if (persistHandle) return;
   persistHandle = setTimeout(() => {
-    try {
-      // Don't persist transient state — `hydrated`, `idleAction`,
-      // `attention`, `moodSince` and `lastInteraction` are recomputed
-      // on load. Persist only what's meaningful across sessions.
-      const toPersist = {
-        memory: state.memory,
-        personality: state.personality,
-        // Energy on close so morning Hugo isn't always at 80.
-        energy: state.energy,
-      };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
-    } catch {
-      // localStorage disabled, quota exceeded, etc — fail silent
-    }
     persistHandle = null;
-  }, 600);
+    persistNow();
+  }, PERSIST_EVERY_MS);
+}
+
+let persistOnLeaveAttached = false;
+
+/** Leaving is the last chance to save: closing the tab stops every timer. */
+function attachPersistOnLeave() {
+  if (persistOnLeaveAttached) return;
+  if (typeof window === "undefined") return;
+  persistOnLeaveAttached = true;
+  window.addEventListener("pagehide", persistNow);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) persistNow();
+  });
+  window.addEventListener("storage", onOtherTabWrote);
+}
+
+/**
+ * Two tabs, one memory. Every tab writes the whole memory from its own
+ * copy every couple of seconds, so an older tab used to erase what a
+ * newer one had just recorded (open a second tab, do a somersault, close
+ * it: three seconds later the first tab had written the old counts back).
+ * When another tab writes, this one takes what that tab knows into its
+ * own copy before its next write: for every counter, the larger number.
+ */
+function onOtherTabWrote(e: StorageEvent) {
+  if (e.key !== STORAGE_KEY || !e.newValue || !state.hydrated) return;
+  let theirs: Partial<HugoMemory> | undefined;
+  try {
+    theirs = (JSON.parse(e.newValue) as { memory?: Partial<HugoMemory> })
+      .memory;
+  } catch {
+    return;
+  }
+  if (!theirs) return;
+  const mine = state.memory;
+  const most = (a: number, b: unknown) =>
+    typeof b === "number" && b > a ? b : a;
+
+  const toolCounts: Record<string, number> = { ...mine.toolCounts };
+  for (const [slug, n] of Object.entries(theirs.toolCounts ?? {})) {
+    toolCounts[slug] = most(toolCounts[slug] ?? 0, n);
+  }
+  let favoriteToolSlug = mine.favoriteToolSlug;
+  let best = favoriteToolSlug ? (toolCounts[favoriteToolSlug] ?? 0) : 0;
+  for (const [slug, n] of Object.entries(toolCounts)) {
+    if (n > best) {
+      best = n;
+      favoriteToolSlug = slug;
+    }
+  }
+  // The day and its streak travel together: whichever tab saw the later
+  // day has the streak that goes with it.
+  const theirDay =
+    typeof theirs.lastDateKey === "string" ? theirs.lastDateKey : "";
+  const later = theirDay > mine.lastDateKey;
+  const sameDay = theirDay === mine.lastDateKey;
+
+  const merged: HugoMemory = {
+    ...mine,
+    firstSeen:
+      typeof theirs.firstSeen === "number" && theirs.firstSeen > 0
+        ? Math.min(mine.firstSeen, theirs.firstSeen)
+        : mine.firstSeen,
+    lastSeen: most(mine.lastSeen, theirs.lastSeen),
+    visitCount: most(mine.visitCount, theirs.visitCount),
+    lastDateKey: later ? theirDay : mine.lastDateKey,
+    streakDays: later
+      ? most(1, theirs.streakDays)
+      : sameDay
+        ? most(mine.streakDays, theirs.streakDays)
+        : mine.streakDays,
+    toolCounts,
+    favoriteToolSlug,
+    naps: most(mine.naps, theirs.naps),
+    tantrums: most(mine.tantrums, theirs.tantrums),
+    flips: most(mine.flips, theirs.flips),
+  };
+  if (JSON.stringify(merged) === JSON.stringify(mine)) return;
+  // Not through set(): that would schedule a write, and two tabs would
+  // then answer each other's writes for ever. The next ordinary change
+  // (there is one every tick) carries it out.
+  state = { ...state, memory: merged };
+  emit();
 }
 
 /** One-shot load from localStorage. Called from the first BrandDot
@@ -635,6 +740,7 @@ function subscribe(listener: () => void): () => void {
   startMutationObserver();
   startIdleScheduler();
   attachToolHoverListener();
+  attachPersistOnLeave();
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
@@ -649,9 +755,29 @@ function getSnapshot(): HugoState {
   return state;
 }
 
+/**
+ * What the server renders, and what the browser's first render (the
+ * hydration) has to render too: one state, whatever the hour and the
+ * time zone.
+ *
+ * The live `state` starts from the visitor's clock (`moodFromHour`),
+ * and his mood is in the markup: BrandDot writes the breathing period
+ * and the halo from it. Handing the live state out here made the
+ * server's HTML and the browser's first render disagree whenever their
+ * hours fell in different mood bands, so React reported a hydration
+ * mismatch on every page at night and in the morning (and left the
+ * server's values in place until the next render). React swaps to
+ * `getSnapshot()` as soon as it has hydrated, so the hour's mood still
+ * arrives in the first frame.
+ */
+const SERVER_STATE: HugoState = (() => {
+  const s = defaultState(0, "calm");
+  // The one field `defaultMemory` takes from the local calendar.
+  return { ...s, memory: { ...s.memory, lastDateKey: "" } };
+})();
+
 function getServerSnapshot(): HugoState {
-  // Stable default so SSR markup matches the first client render.
-  return state;
+  return SERVER_STATE;
 }
 
 /**

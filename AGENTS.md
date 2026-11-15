@@ -39,6 +39,129 @@ the existing tokens**, so the old names survive with new meanings:
 - `.crt-on` = the homepage power-on animation; `.scanlines` = the
   whisper overlay. Both respect `prefers-reduced-motion`.
 
+## The kit — one set of shapes (v2, 2026-11)
+
+The July re-skin changed the colours and kept the old shapes, so round
+white-ringed pills sat next to stepped panels and every card's hairline
+broke at its corners. v2 fixed the shapes. **Everything framed is
+stepped; nothing is rounded, ringed in white, or dashed.** The rules
+live in `app/globals.css` under "The kit" (in `@layer components`, so a
+Tailwind utility on the same element still wins) and in `components/ui/`.
+
+**How a frame works.** The element is clipped to the notch polygon and a
+`::after` overlay draws the hairline as a *ring that follows the steps*.
+A plain `border` cannot do this: the clip that makes the corners also
+cuts the border away there. The same ring is the keyboard-focus
+indicator (an outline would be clipped too): `--ring-w` goes 1px → 2px
+and `--ring-c` goes hairline → cyan. Never add `border-*` or `outline`
+to a chunk; set `--ring-c` if a frame needs another colour.
+
+| Class | What it is | Component |
+|---|---|---|
+| `btn-chunk` | keycap: bevel, presses down; with `aria-pressed="true"` it stays down | `components/ui/Keycap` (`tone` accent/neutral/quiet/danger, `size` sm/md/lg/icon, `href` makes it a link) |
+| `chip-chunk` | a choice: flat, fills with the accent when on (`aria-pressed`, `aria-checked`, or a checked radio inside) | `components/ui/Chip` — `Chip` (toggle/action) and `ChipGroup` (one of several, real radios underneath; name it with `labelledBy` when a visible label sits beside it) |
+| `plate-chunk` | the bare small frame (stepped corners + hairline) for housings, tags and tiles: anything that is not a control | `components/ui/Tag` (a small label: `tone` neutral/accent/danger/solid; its spacing and surfaces are the kit rules `.tag-chunk` / `.tag-*`, so a utility in `className` always wins) |
+| `field-chunk` | a well around an `<input>`/`<textarea>` — the wrapper carries the frame, pseudo-elements do not exist on inputs | `components/ui/Field` — `TextField`, `TextArea` |
+| `card-chunk` | cabinet panel, the big 8px steps. Lifts on hover only when it is an `<a>`, `<button>` or `<label>` | `components/ui/Panel` (`tone` well/raised/page/soft/danger) |
+| `range-chunk` | a native range re-dressed; set `--fill` to the value's percentage | `components/Slider` (under a finger the strip around the input handles the touch: a sideways drag or a tap moves it, a scroll that starts on it changes nothing) |
+| `switch-chunk` | the track of an on/off switch, framed by the stepped ring like the other chunks | `components/ui/Switch` |
+| `label-pixel` | the one micro-label (Silkscreen, tracked, muted) | — |
+| `kbd-chunk` | a key legend (⌘K, esc) | — |
+| `scrim-chunk` | what sits behind a dialog: dark and flat, no blur | `components/ui/Dialog` (focus trap, Esc, scroll lock, portalled; plain keydowns stop at the dialog so page shortcuts and games do not hear what is typed in it; focus goes back to the opener without scrolling, unless `returnFocus` says this closing is a leaving; closed by a press, it swallows presses for a moment). `components/ui/ScrollRegion` is a dialog body that scrolls: a Tab stop while it overflows, so the keyboard can scroll it |
+| `page-col` | a centred column that lands on a whole pixel (`--col` sets its width) | — |
+
+Also: `components/ui/Dropzone` (drop / click / keyboard; `size` roomy
+or slim; it tells `onFiles` whether the files were dropped or picked,
+because the picker filters by `accept` and a drop does not), and
+`components/PixelIcon` + `lib/pixel-icons.ts` — 12×12 bitmap icons, one
+per tool and one per game, plus a few for the chrome (search, about,
+back, forward, up, close, plus, play, settings, locate, and the burst on
+the homepage's forbidden key). A new icon goes in
+that file, never in a page. They replace the Unicode symbols (◴ ⊚ ▦),
+which every OS drew with a different fallback font. The registry's
+`emoji` field stays for old call sites; new UI uses
+`<PixelIcon name={iconForSlug(...)} />`, or `components/ui/IconTile`
+for the icon on its stepped accent tile (two sizes only: 36px and 48px).
+On the homepage a game is a cabinet, so a game's icon is for lists (the
+search palette, the 404 page); a game without one gets the shared
+`game` cabinet.
+
+**Accent.** Controls read `--accent` / `--accent-soft`. `ToolFrame` sets
+both from the tool's registry colour (`accentVars()` in `lib/colors.ts`),
+so a chip or slider inside a tool page wears the tool's colour without
+being told. Text on an accent fill is always room-dark (`text-cream`).
+
+**Round is allowed only where round is the function**: Breathe's
+breathing circle, Focus's timer ring, the Spin wheel and its slices,
+Sjökort's on-map markers. Not for buttons, badges, avatars or dots.
+
+**Sizes.** Anything a finger presses is 44px (`min-h-11`); chips grow to
+44px by themselves on `pointer: coarse`. Text inside an `<input>` is 16px
+(the `field-chunk` default) — iPhones zoom the page on anything smaller.
+
+**Keys that swap in.** When one key takes another's place (Start becomes
+Pause or Stop), the second tap of a double tap lands on the newcomer.
+Put `press-guard` on what swaps in: it ignores the pointer for its first
+400ms. If it is ONE element changing role in place, swap between
+`press-guard` and `press-guard-alt` (a change of animation name restarts
+the guard). Do not give the two roles separate React keys: that replaces
+the element and throws keyboard focus away. The same goes for anything
+that lands under the finger: a panel that appears or leaves and moves
+the keys below it (Sudoku guards its keypad column), a list that opens
+where the key was (the search palette's rows), a row that slides up when
+the one above is removed (Advice's kept lines). The guard works by
+ignoring the pointer, so the tap falls through to whatever is behind:
+put it on a thing with a harmless background, never on a panel floating
+over a map.
+
+**Keys that close.** The opposite case: a key closes its panel and what
+lay underneath is now under the finger (Sjökort's chart under the
+planner's close key). The press guard is no use there, because the thing
+to protect is the thing behind. Call `swallowPresses()` from
+`lib/pointer.ts` in the handler that closes: an invisible sheet takes
+every press for 0.4 s. Dialog does this itself when it is closed by a
+press.
+
+**Page scroll.** A dialog locks the page with a class on `<html>`
+(`dialog-open`), counted across open dialogs. Do not save and restore
+`html.style.overflow` in new code: the game routes still do, and two
+owners of one inline value write each other's stale copy back.
+
+**Page shortcuts.** A shortcut on `window` hears every key, including
+the ones meant for whatever has focus. `lib/keyboard.ts` answers whose
+key it is. For a Space shortcut call `claimSpace(e)` and act when it
+says yes: it stands down for text fields and for a control the visitor
+*walked to with the keyboard* (Space presses that), and takes the key
+back from a button that only kept the focus from a mouse click (click
+"Worth keeping", press Space, the next line comes). It also ignores
+links: the footer's links stay focused across page changes. For any
+other key, and for paste listeners, `isTextEntry(e.target)` is the one
+test: it is true for text fields only, not for chips, sliders or the
+dropzone, which are inputs too. Dialog already keeps plain keydowns
+from reaching the page (pass `passKeys` for a dialog with nothing to
+type into), and its focus trap counts a radio group as one Tab stop.
+
+**Forced colours.** The frames, the lit state and the focus ring are
+drawn as backgrounds, which Windows High Contrast repaints. The kit has
+one `@media (forced-colors: active)` block that gives each back as a
+real outline in the system colours. A new chunk needs a line there.
+The focus band is drawn 2px outside a chunk, on the page. The homepage
+room is the exception: its floor is canvases, which this mode leaves
+dark, and Highlight on near-black cannot be seen in a light theme, so a
+key in the room (`[data-home="room"]`) draws the band inside itself.
+
+**Dev trap.** After editing `app/globals.css`, check the stylesheet the
+dev server actually serves (curl the css chunk and grep for the rule).
+Turbopack sometimes misses a write; a second write fixes it.
+
+**Gone, do not bring back**: `rounded-full` / `rounded-md` / `rounded-[12px]`
+on controls, `border-2 border-ink`, `border-dashed`, `shadow-chunk`,
+`bg-ink/50` scrims, `backdrop-blur`, and `rounded-[var(--radius-card)]` /
+`rounded-[var(--radius-button)]` (the two tokens were 0px, so the
+utilities were no-ops; the tokens are deleted now).
+
+A dev-only bench at `/lab/kit` shows every piece in every accent.
+
 **Fonts** (loaded in `app/layout.tsx`): Jersey 15 (`--font-display`,
 big display only — it ships weight 400 only, `globals.css` normalizes
 bold rendering), Chivo Mono (`--font-sans`, all body copy), Silkscreen
@@ -134,6 +257,9 @@ Don't reuse a retired slug for something new.
   old clustered homepage); the swarm doesn't need it.
 - `lib/colors.ts` — single source for the 8 accent colours (+ `INK_HEX`
   / `CREAM_HEX` literals for canvas code that can't read CSS variables)
+- `lib/site.ts` — the site's address, name and tagline, and
+  `toolMetadata()` / `pageMetadata()`: what a page says about itself in
+  its `<head>` (see "Tool page shape")
 - `lib/hugo/sprite.ts` — the canonical Hugo pixel sprite (see below)
 - `lib/hugo-state.ts` — Hugo's shared mood/memory store
 - `lib/advice-engine.ts` — the Advice draw logic (see below)
@@ -167,31 +293,98 @@ Every tool is three files:
 
 - `app/tools/<slug>/Client.tsx` — `"use client"`, the actual UI
 - `app/tools/<slug>/page.tsx` — server-component wrapper that exports
-  `metadata = { title, description }` from the registry and renders `<Client />`
+  `metadata = toolMetadata("<slug>")` (from `lib/site.ts`) and renders
+  `<Client />`
 - `app/tools/<slug>/opengraph-image.tsx` — one-line wrapper around
-  `renderToolOG("<slug>")` from `lib/og.tsx`
+  `renderToolOG("<slug>")` from `lib/og.tsx`, under a first line that
+  carries the card's fingerprint (see "The card's address" below)
 
-Same shape for the game at `app/games/overrun/`.
+Same shape for the games at `app/games/<slug>/`.
 The split is so each page ships its own `<title>` and `<meta description>`
 — client components can't export `metadata`.
 
+**What a page says about itself.** `toolMetadata` builds the page's
+whole share block from its registry entry: the canonical link and
+og:url are the page's own address (spelled as `app/sitemap.ts` spells
+it), and the title and description are the same text in `<title>`, the
+og: tags and the twitter: tags. It has to say all of it, because Next
+merges a page's metadata into its layout's one level deep: a page that
+sets `openGraph` replaces the layout's whole object. For the same reason
+the root layout says only what is true of every page. Never put a
+canonical link or an og:url there: it carried the homepage's until
+2026-11, and every tool, the 404 and the lab said they were the
+homepage. The homepage sets its own in `app/page.tsx`. A page outside
+the registry uses `pageMetadata({ title, description, path })`. Those
+are the only places an address is written: under `app/`, a canonical
+link or a share block by hand, anywhere but the layout, the homepage
+and `/about`, fails `test/site/page-head.test.ts`.
+
+The share image is not set by hand: Next adds the folder's
+opengraph-image file to the page's share block. A page that sets
+`openGraph` and has no image file of its own gets no picture at all, so
+`/about`, which shows the site's, hands the layout's image on
+(`app/about/page.tsx` is the pattern).
+
+**The card's address.** The `?…` on an og:image address is a hash of
+the wrapper file alone, not of `lib/og.tsx`, where the picture is drawn,
+and caches keyed on the address go on showing the old card. So each
+wrapper's first line carries the fingerprint of the picture it draws
+(`// Picture 1a2b3c4d: …`). When a card's picture changes (a change in
+`lib/og.tsx`, or a tool's title, tagline, colour or icon),
+`test/site/share-image-address.test.ts` fails and says the new
+fingerprint; writing it into the wrapper is what gives the card its new
+address. The site image (`app/opengraph-image.tsx`) is held the same
+way. Its fingerprint is still kept in that suite and not in its file,
+because its address had to stay when the cards got theirs; it moves
+into the file the next time its picture changes (the suite says how).
+
+**The words on a card** are set in a hand-drawn face (GLYPHS in
+`lib/og.tsx`: capitals, figures and a few marks). A character it does
+not have is drawn as a solid block, and a letter it has only without
+its accent is set without it, so draw the glyph: rows of `X` and `.`,
+all as wide, seven from the cap line to the baseline.
+
+`test/site/` holds all of this: what each page says about itself
+(`page-head`), that an image's file follows its picture
+(`share-image-address`), every word the images set and the glyphs they
+are set in (`share-image-words`), and the mascot's copies in the icons
+and the share images against the real painter (`mascot-copies`).
+
 ## Shared components (use, don't reinvent)
 
-- `components/ToolFrame.tsx` — page chrome (back link, header, panel card)
-- `components/HomeShell.tsx` — the homepage room (CRT power-on, scanlines,
-  hints, retired-slug quip); renders ToolMap + HugoParkour
-- `components/ToolMap.tsx` — the attract-mode swarm on / (see below)
-- `components/Slider.tsx` — labelled range input
-- `components/CustomMinutes.tsx` — "Custom — N min" pill (focus)
-- `components/Search.tsx` — ⌘K palette (mounted in the root layout)
+- `components/ToolFrame.tsx` — tool page chrome: one slim title row
+  (back key, icon tile, name, tagline) and the page's `--accent`
+- `components/ui/*` — the kit (see "The kit" above): Keycap, Chip /
+  ChipGroup, Panel, Tag, IconTile, TextField / TextArea, Switch, Dialog,
+  Dropzone
+- `components/PixelIcon.tsx` — the 12×12 icons
+- `components/Footer.tsx` / `ConditionalFooter.tsx` — the index footer
+  (see below)
+- `components/HomeShell.tsx` — the homepage: the room in a window at
+  least 48rem by 35rem, the list in anything smaller (CRT power-on,
+  scanlines, hints, the corner keys, retired-slug quip)
+- `components/ToolMap.tsx` — the room's swarm and arcade row (see below)
+- `components/HomeList.tsx` — the list homepage: phones, and any window
+  too small for the room (cabinet cards, keycap pad)
+- `components/CabinetCanvas.tsx` — one arcade cabinet with its screen
+  playing, as a standalone canvas. It paints one picture at mount and
+  then plays only while it is near the window, so the list's four draw
+  nothing while the room shows
+- `components/Slider.tsx` — labelled range (pixel label, big value,
+  accent-filled track)
+- `components/CustomMinutes.tsx` — "Custom — N min" chip (focus)
+- `components/Search.tsx` — ⌘K palette (mounted in the root layout).
+  Built on Dialog. It matches a query against title, tagline,
+  description, the address (`/roll`) and the kind (`game`, `tool`),
+  ignoring diacritics, so "sjokort" finds Sjökort. Rows select on mouse
+  *move*, not enter: a pointer resting on the list must not steal the
+  selection from the arrow keys.
 - `components/BrandDot.tsx` / `BrandCorner.tsx` — corner Hugo (see below)
 - `components/TravelingDot.tsx` — flight-layer Hugo (root layout)
 - `components/HugoRoom.tsx` — Hugo's room overlay (shift+click him)
 - `components/hugo/HugoStage.tsx` — Advice-page Hugo with poses
 - `components/hugo/HugoParkour.tsx` — the homepage platformer
 
-`ToolCard.tsx` and `DropZone.tsx` are orphaned since the cull — nothing
-imports them. Don't build on them without checking they still fit.
 
 ## Hugo — the character
 
@@ -209,9 +402,21 @@ map), `pixelDisc`, `readAccent`/`subscribeAccent` (his persisted colour,
 `hugoslekstuga:dot-color`), `spriteCanvasSize`. Never draw Hugo with
 CSS circles or a second sprite sheet — extend the one module.
 
+Two files cannot import it and carry a copy of him in coral:
+`app/apple-icon.tsx` (kept import-free, its comment says why) and
+`app/icon.svg`. The share images (`lib/og.tsx`) import his rows, his
+palette and `RESTING_PUPILS`, and place the boxes themselves.
+`test/site/mascot-copies.test.ts` has the real painter draw him at rest
+and fails when any of the three stops matching it, cell for cell: change
+the sprite and the copies have to follow.
+
 **`lib/hugo-state.ts` is his brain**: mood (sleepy/calm/curious/
 excited/grumpy), energy, visit streaks, `firstSeen` — persisted at
-`hugoslekstuga:hugo`, read via the `useHugoState` hook. Tools feed it
+`hugoslekstuga:hugo:state:v1`, read via the `useHugoState` hook. The
+write is a 2s throttle plus one on `pagehide` and when the tab is
+hidden. Keep it a throttle: his tick changes the state four times a
+second, and as a debounce the write never fired, so nothing he
+remembered survived an ordinary visit (fixed 2026-11). Tools feed it
 moments (`hugoMoodEvent`, `hugoSawTool`); renderers read it.
 
 **Where he renders:**
@@ -222,7 +427,15 @@ moments (`hugoMoodEvent`, `hugoSawTool`); renderers read it.
   drag-and-spring with sparkle puff, spam-click play-dead with
   whole-page tantrum, Konami-code somersault, shift+click opens
   HugoRoom, tab-hidden sleep, and on `/` a **long-press starts
-  Hugo's Parkour**. (The old long-press leash is deleted.)
+  Hugo's Parkour**. (The old long-press leash is deleted.) From the
+  keyboard, Enter or Space is a tap and Shift+Enter is a shift+click;
+  a click that did not come from a pointer (a screen reader's
+  "activate", voice control) is a tap too.
+  While a page-level Hugo has the stage, or a full-screen game is
+  drawn over him (any `/games/` route), he is out of the Tab order,
+  aria-hidden and deaf to keys. His memory is shared between open
+  tabs (a tab folds another tab's counters into its own before it
+  writes).
 - `TravelingDot` (root layout) — canvas Hugo who flies out of the
   corner when you click a swarm tool, fetches it, returns. He flips
   horizontally to face travel direction — never rotates.
@@ -246,10 +459,10 @@ All `window` CustomEvents, prefixed `hugoslekstuga:`:
 | `hugo-traveling` | `{ traveling: boolean }` | Fired by TravelingDot mid-trip; BrandDot + ToolMap listen so there's one Hugo on screen. |
 | `dot-arrived` | — | TravelingDot landed on a tool page; ToolFrame times its entrance off it. |
 | `dot-nudge-target` | `{ x, y } \| null` | ToolMap tells TravelingDot where the clicked orb's landing spot is. |
-| `tool-hover` | `{ x, y, slug, tagline } \| null` (rAF-rate) | ToolMap broadcasts the hovered orb; BrandDot's eyes track x/y, HomeShell whispers the tagline along the bottom edge. |
+| `tool-hover` | `{ x, y, slug, tagline } \| null` (rAF-rate) | ToolMap broadcasts the hovered orb or cabinet; BrandDot's eyes track x/y, HomeShell swaps the hint under the marquee for the tagline. |
 | `wordmark-layout` | `{ bottom } \| null` | PixelWordmark published a fresh layout; HomeShell parks the attract hint just under the marquee. |
-| `parkour-start` / `parkour-end` | — | A parkour run begins/ends. BrandDot dispatches start on long-press; ToolMap suppresses click-nav + idle fetch during a run; HomeShell swaps the bottom hint. |
-| `open-search` | — | Opens the ⌘K palette. |
+| `parkour-start` / `parkour-end` | — | A parkour run begins/ends. BrandDot dispatches start on long-press; ToolMap suppresses click-nav + idle fetch during a run; HomeShell swaps the hint for the controls (along the top) and quiets the corner keys. HugoParkour sends `parkour-end` (and `hugo-stage` `{ present: false }`) once per run, also when it is unmounted mid-run: the window left the room's size, or the visitor went Back. |
+| `open-search` | — | Opens the ⌘K palette. The homepage's Search key dispatches it. |
 | `storage-write` | (internal) | Fired by `use-local-storage-state` for same-tab sync. Not a Hugo event — don't dispatch it yourself. |
 
 ## Hugo's Parkour
@@ -292,8 +505,10 @@ level 2 on a **moped** ("the ride home"). Five modules:
 Hugo rides via `drawMopedHugo` in `lib/hugo/sprite.ts` (the one
 sprite module — pitch is whole-cell offsets, never rotation).
 
-Screen 0 still reads the drifting swarm orbs per-step from the DOM
-(`data-slug` / `data-r` on ToolMap's `<g>`s) and the wordmark letters
+Screen 0 still reads the room per-step from the DOM — the drifting
+orbs (`data-slug` / `data-r` on ToolMap's `<g>`s, circles) and the
+arcade row's cabinets (the same `<g>`s with `data-w` / `data-h`: their
+flat top is a one-way platform) — and the wordmark letters
 from `lib/wordmark-bridge.ts` — the level IS the homepage until you
 leave it (camera latched, 220px crossfade handover to canvas
 replicas at identical coords, reversible). Touching NEXT LEVEL plays
@@ -313,7 +528,11 @@ then cuts. Esc quits from anywhere, including mid-transition.
 
 **Desktop-only, deliberately.** The trigger is gated to
 `(hover: hover) and (pointer: fine)` — the game has no touch controls
-and Esc is the only exit. Any future affordance that hints at it
+and Esc is the only exit. It also only exists in the homepage's room
+layout: in a window smaller than the room (48rem by 35rem) HugoParkour
+is not mounted, so a long-press in a narrow or short desktop window
+starts nothing, and a run that is on when the window shrinks past that
+size ends. Any future affordance that hints at it
 (e.g. a "hold me" whisper) must share that gate so touch users are
 never teased with a game they can't play.
 
@@ -333,45 +552,125 @@ All engine persistence is one key: `hugoslekstuga:advice:memory`.
 HugoStage performs the draw (thinking → delivering → …). Treat the
 engine as the only draw path — don't sample `adviceEntries` directly.
 
-## The homepage — attract mode
+## The homepage — a room and a list
 
-`components/ToolMap.tsx` is a free-floating swarm styled as an arcade
-attract screen. Two layers:
+The homepage is built twice from the same parts, and the window's size
+picks which: the room needs 48rem by 35rem (768 by 560px at the usual
+text size, and never less than that in px, because the room's parts are
+drawn in px). One question, asked in two places that must agree:
+`ROOM_MEDIA` in `lib/home-layout.ts` (HomeShell reads it with
+matchMedia and mounts the swarm) and the stylesheet's `room:` / `list:`
+variants in `app/globals.css` (they show one wrapper and hide the
+other). The two numbers and the reason for 35rem live beside
+`ROOM_MIN_HEIGHT_REM`; the stylesheet carries a copy of the query, and
+`test/home/room-media.test.ts` fails when the copy drifts. Use `room:`
+and `list:` wherever the two layouts differ, never `md:`, which knows
+the width only (a phone held sideways is wide enough and far too short).
 
-- a **trail canvas** under the SVG: each orb leaves phosphor smears
-  (a `rgba(7,8,15,0.5)` decay wash per frame), drawn as radial glow +
-  `pixelDisc` cores — except the games, which render as magenta
-  arcade **cabinets** via `drawCabinet`.
-- the **SVG swarm** on top: transparent hit-circles, always-visible
-  names, hover bloom. Physics is centre pull + cursor pull + mutual
-  repel + drift wander. No clusters, no edges.
+**In a window at least 48rem by 35rem: the room** — one screen, no
+scrolling, styled as an arcade attract screen. `components/ToolMap.tsx`
+draws two kinds of thing that behave differently on purpose:
 
-Clicking an orb dispatches `dot-travel` (Hugo fetches the tool).
-HomeShell adds the once-per-session CRT power-on (`sessionStorage`
-`hugoslekstuga:crt-on`), `.scanlines`, and the square DO-NOT-PRESS
-keycap (the explode button).
+- **Tools are orbs.** A swarm above the floor: a pull toward the middle
+  of the free band, a mutual repel, a slow wander, drag-to-fling,
+  click-to-open. The repel is *derived* from the room's size
+  (`repelFor`), so the swarm fills the same share of the room on a
+  tablet and on a 1080p monitor. Orbs are clamped by their **label**
+  width, not their radius, and are kept out of the title, the hint
+  under it, the corner mascot and the top-right keys (`Zone`s). Each
+  wears its 12×12 pixel icon.
+- **Games are furniture.** They stand in a row along the floor at about
+  twice the size and stay put (`cabinet: true` nodes: no physics, no
+  drag; the forbidden button makes them hop). `drawArcadeCabinet` in
+  `lib/hugo/sprite.ts` draws the machine on a 38×42 grid, and each
+  screen plays a small scene from its own game — painters in
+  `lib/hugo/cabinet-screens.ts`, pure `(put, t)` functions on a 30×16
+  grid. **A new game needs a painter there**, or it shows the idle
+  screen. Where the row stands comes from `cabinetRow()` in
+  `lib/home-layout.ts`; the title and the hints read the same numbers.
+
+Every orb and every cabinet is a real SVG link (`<a href>`) around the
+`<g>` the parkour reads, so the room works with a keyboard, a screen
+reader and a middle click. Besides the soft `Zone`s there are hard
+keep-out boxes (`Keep`s: the title, the hint, the keys, the mascot): an
+orb put down or flung into one is walked out. The swarm takes one step
+a frame, as it always did; only that walk keeps wall-clock pace, so a
+slow machine still clears the title. Under reduced motion the swarm is
+shown at rest and its frame loop stops. During a parkour run the
+controls hint is found by `data-parkour-hint` and measured by layout
+offsets, and no orb rests across it.
+
+Two layers, as before: a **trail canvas** under the SVG (each orb
+leaves phosphor smears: a `rgba(7,8,15,0.5)` decay wash per frame) and
+the **SVG** on top with transparent hit targets, names and the NEW tag.
+Clicking an orb or a cabinet dispatches `dot-travel` (Hugo fetches it).
+
+Search and About are **keys in the top-right corner**, next to the
+square DO-NOT-PRESS keycap. They used to be two more orbs in the swarm,
+which made doors look like toys. HomeShell also adds the
+once-per-session CRT power-on (`sessionStorage` `hugoslekstuga:crt-on`)
+and `.scanlines`.
+
+**In anything smaller: the list** — `components/HomeList.tsx`, a short
+scrolling page: the title as a banner, games as cabinet cards
+(`components/CabinetCanvas.tsx`, the same machine with its screen
+playing), tools as a three-by-three pad of keycaps in their own
+colours, then the keys and the footer's small print. It is real links
+in the server-rendered HTML. **No swarm and no parkour are mounted on the
+list**: ToolMap, the room's PixelWordmark and HugoParkour only exist
+when the room is on screen. The list itself is in the page in both
+layouts (it is the server-rendered HTML), so nothing in it may work
+unseen: its banner stops its loop and its cabinets stop playing while
+the room shows. The two one-shot animations (the power-on's class, the
+forbidden key's flicker overlay) are taken off when they have played: a
+wrapper that is hidden and shown again would play them again.
 
 **The marquee** — `components/PixelWordmark.tsx` draws HUGOS LEKSTUGA
-centred in the swarm as quantized phosphor pixels (Jersey 15 sampled
-once to an offscreen canvas — `ctx.font` can't read CSS vars, so the
-concrete family is resolved off a `font-display` probe span, gated on
-`document.fonts`). Letters ignite left→right after power-on, shimmer
-at rest, flicker like a tired neon sign, shove aside near the cursor
-(snapped to the grid), and blip when clicked. The canvas is
+as quantized phosphor pixels (Jersey 15 sampled once to an offscreen
+canvas — `ctx.font` can't read CSS vars, so the concrete family is
+resolved off a `font-display` probe span, gated on `document.fonts`).
+In the room it is centred in the band above the arcade row
+(`bottomInset`); in the list it is a `banner` that centres in its own
+box and publishes nothing. Letters ignite left→right after power-on,
+shimmer at rest, flicker like a tired neon sign, shove aside near the
+cursor (snapped to the grid), and blip when clicked. The canvas is
 pointer-transparent; it listens on `window` and hit-tests itself.
 Base cell rects never animate — they're published through
 `lib/wordmark-bridge.ts` (viewport coords, setter + read-only
-getters): ToolMap's `step()` reads the block rect to drift orbs out
-of the title, HugoParkour reads the per-letter rects as flat one-way
-platforms (behind its `LETTER_PLATFORMS` const). The blinking "press
-any tool" hint sits under the marquee (positioned via the
-`wordmark-layout` event); the hovered orb's tagline whispers along
-the bottom edge. Reduced motion = one static, fully-lit draw.
+getters): ToolMap reads the block rect to keep orbs off the title,
+HugoParkour reads the per-letter rects as flat one-way platforms
+(behind its `LETTER_PLATFORMS` const). The blinking "press any tool"
+hint sits under the marquee (positioned via the `wordmark-layout`
+event); hovering a tool or a cabinet swaps the hint for that thing's
+tagline. Reduced motion = one static, fully-lit draw, and every
+cabinet screen holds one still frame.
 
-**Measurement rule:** ToolMap must measure its box with
-`offsetWidth`/`offsetHeight`, **never** `getBoundingClientRect` — the
-`.crt-on` scaleY animation squashes gBCR mid-power-on and poisons the
-whole layout.
+**Measurement rule:** ToolMap, HomeShell and PixelWordmark measure
+with `offsetWidth`/`offsetHeight`, **never** `getBoundingClientRect` —
+the `.crt-on` scaleY animation squashes gBCR mid-power-on and poisons
+the whole layout.
+
+## The footer — an index
+
+`components/Footer.tsx` is a compact index of the whole site: a Games
+row and a Tools row with a link to every registry entry (it reads
+`lib/tools.ts`, so a new entry shows up by itself), an About link, the
+line "No tracking, no accounts.", the year, and "potentially useful".
+That last phrase is brand voice (the About page's keycap echoes it):
+leave it exactly as it is.
+
+- It sits on the page column (`page-col`, 48rem), so its left edge is
+  the left edge of the tool or About page above it.
+- The link for the current page carries `aria-current="page"`. Links
+  are 44px tall under a finger and 28px under a mouse, and they do not
+  prefetch (with the whole index in view, every page would otherwise
+  pull every other route in the background).
+- `components/ConditionalFooter.tsx` decides where it shows. Never on a
+  full-screen route (sjökort and every game: the list comes from the
+  registry). On the homepage: nothing where the room shows (it is one
+  screen), and only the small print on the list, because the list is
+  itself the index. It is hidden with `room:hidden`, the same variant
+  HomeShell's two layouts use.
 
 ## Greyrot — the 3D one
 
@@ -638,8 +937,11 @@ Legitimate hits:
 - `scripts/bake-sjokort-graph.ts` — fetches OSM water + seamark-hazard data,
   but at **author time** only (build tool, never shipped). Not a runtime fetch.
 
-Honest "no analytics" copy in Footer + About also matches the grep —
-those are documentation, not network calls. When auditing, exclude the
+Honest "no analytics" copy also matches the grep (the site description
+in `app/layout.tsx` and the homepage's screen-reader intro in
+`components/HomeShell.tsx`): words, not network calls. The footer's
+line is "No tracking, no accounts." and does not match. When auditing,
+exclude the
 sjökort tool and its lib: append `--glob '!app/tools/sjokort/**'
 --glob '!lib/sjokort/**' --glob '!scripts/**'` to scope the grep to the
 tools that are supposed to be fetchless.
@@ -649,7 +951,7 @@ tools that are supposed to be fetchless.
 - Persist state with `useLocalStorageState(key, initial)`. `initial` must be
   referentially stable — define at module scope, not inline.
 - localStorage keys must be namespaced `hugoslekstuga:*`. Hugo's own
-  keys: `hugoslekstuga:hugo` (mood/memory), `hugoslekstuga:dot-color`
+  keys: `hugoslekstuga:hugo:state:v1` (mood/memory), `hugoslekstuga:dot-color`
   (his colour), `hugoslekstuga:advice:memory` (the Advice engine).
   Overrun's keys: `hugoslekstuga:overrun:{save,muted,music,sfx,motion}`.
   Adventure's keys: `hugoslekstuga:adventure:{save,muted,music,sfx,motion}`.
@@ -667,6 +969,7 @@ tools that are supposed to be fetchless.
 npm run dev           # Next dev on :3000
 npm run lint
 npm run test          # vitest — Overrun's suites + Adventure's + Greyrot's
+                      # + the site's own (test/site: head tags, share images)
 npm run build         # rm -rf .next first if Next caches stale routes —
                       # NOTE: that rm kills a running dev server; restart it
 npm run bake:sjokort  # rebake the sjökort routing graph (author-time only)
@@ -731,15 +1034,24 @@ Mechanical steps once it's earned a slot:
 1. Add an entry to `lib/tools.ts` (slug, title, tagline, description,
    color, emoji — colour by category, see the colour rules). For games,
    also add the slug to `GAME_SLUGS` in `lib/clusters.ts` so `pathFor()`
-   routes it to `/games/<slug>`.
+   routes it to `/games/<slug>`, and give its cabinet a screen: a
+   painter in `lib/hugo/cabinet-screens.ts`. Every entry, tool or game,
+   gets a 12×12 icon in `lib/pixel-icons.ts` under its slug. The footer
+   index and the search palette pick the new entry up from the registry.
 2. Create `app/tools/<slug>/Client.tsx` (`"use client"`) and the server
-   wrapper `page.tsx` exporting `metadata` from the registry entry.
+   wrapper `page.tsx` exporting `metadata = toolMetadata("<slug>")`.
 3. Create `app/tools/<slug>/opengraph-image.tsx` — a one-line wrapper
    around `renderToolOG("<slug>")` from `lib/og.tsx`. Copy any existing
-   tool's OG file as the template and update the slug + alt string.
-   Skipping this means the tool's share preview falls back to the
-   generic site-wide OG.
+   tool's OG file as the template and update the slug, the alt string
+   and the fingerprint in its first line (step 5 says which).
+   Skipping this leaves the tool's share preview with no picture at
+   all (its page sets its own share block, and nothing puts the site
+   image back).
 4. Use the shared components and helpers — don't reinvent.
+5. `npm run test`: `test/site/` fails if the page or the image route
+   names another tool's slug, if the title or tagline has a character
+   the share image cannot draw, and until the wrapper's first line
+   carries the new card's fingerprint (the failure prints it).
 
 That's it. The cluster system is retired and there's no `lib/links.ts`
 to update — the homepage swarm picks up the new tool automatically

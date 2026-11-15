@@ -4,6 +4,14 @@ import BrandCorner from "@/components/BrandCorner";
 import ConditionalFooter from "@/components/ConditionalFooter";
 import { SearchPalette, SearchProvider } from "@/components/Search";
 import TravelingDot from "@/components/TravelingDot";
+import {
+  SITE_OPEN_GRAPH,
+  SITE_TAGLINE,
+  SITE_TITLE,
+  SITE_TWITTER,
+  SITE_URL,
+  TITLE_TEMPLATE,
+} from "@/lib/site";
 import "./globals.css";
 
 /* Nattöppet type: Jersey 15 does the shouting (big display only),
@@ -27,26 +35,24 @@ const pixel = Silkscreen({
   weight: ["400", "700"],
 });
 
-/** Tagline reused across all description fields and the JSON-LD —
- *  the same sentence the /about hero leads with, so the brand voice
- *  matches whether you arrive via search, share preview, or the
- *  about page itself. */
-const TAGLINE =
-  "Hugo spends the off-hours on experiments that occasionally turn into something worth sharing.";
-
+/**
+ * What is true of every page; the words live in lib/site.ts. The
+ * homepage's own address (the canonical link and og:url) is set in
+ * app/page.tsx and not here: a page inherits whatever its layout says,
+ * and with those two here every tool, the 404 and the lab said they were
+ * the homepage. A page that describes itself builds its own block with
+ * `pageMetadata` / `toolMetadata`.
+ */
 export const metadata: Metadata = {
   // Brand visual is the unspaced wordmark "hugoslekstuga"; the
   // searchable name is the spaced form "Hugos Lekstuga". Both
   // appear in titles/descriptions so Google matches either query.
   title: {
-    default: "Hugos Lekstuga (Hugos Playhouse)",
-    template: "%s — Hugos Lekstuga",
+    default: SITE_TITLE,
+    template: TITLE_TEMPLATE,
   },
-  description: TAGLINE,
-  metadataBase: new URL("https://hugoslekstuga.com"),
-  alternates: {
-    canonical: "https://hugoslekstuga.com",
-  },
+  description: SITE_TAGLINE,
+  metadataBase: new URL(SITE_URL),
   keywords: [
     "Hugos Lekstuga",
     "hugoslekstuga",
@@ -61,19 +67,8 @@ export const metadata: Metadata = {
   authors: [{ name: "Hugo", url: "https://oogywawa.se" }],
   creator: "Hugo",
   publisher: "Hugo",
-  openGraph: {
-    title: "Hugos Lekstuga (Hugos Playhouse)",
-    description: TAGLINE,
-    url: "https://hugoslekstuga.com",
-    siteName: "Hugos Lekstuga",
-    locale: "en_US",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Hugos Lekstuga",
-    description: TAGLINE,
-  },
+  openGraph: SITE_OPEN_GRAPH,
+  twitter: SITE_TWITTER,
 };
 
 /**

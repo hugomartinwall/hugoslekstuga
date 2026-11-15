@@ -1,0 +1,168 @@
+/* The chart's third-party parts, dressed for the kit.
+ *
+ * MapLibre ships its own stylesheet (white, rounded). It is unlayered, so
+ * it outranks the kit, which lives in @layer components, on every property
+ * both of them set. Everything here is scoped to .sjokort-chart, the class
+ * MapShell puts on the map container.
+ *
+ * The attribution says what the library says and sits where it puts it;
+ * only its dress is the kit's (a plate and a small key, near the end of
+ * this file), and the room its corner has is set at the end.
+ */
+
+/* The zoom keys stand in a column under the settings key (top-right), so
+   nothing docked at the bottom of a phone screen can land on them. */
+.sjokort-chart .maplibregl-ctrl-top-right {
+  top: 4.25rem; /* the settings key (1rem + 2.75rem), then a 0.5rem gap */
+  right: 0.75rem;
+}
+
+.sjokort-chart .maplibregl-ctrl-top-right .maplibregl-ctrl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  float: none;
+  margin: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* MapShell gives the two buttons the kit's keycap classes. On the
+   properties below the library has an opinion as well (29px, transparent,
+   a blue glow on focus, no shadow after a click, never an outline);
+   revert-layer drops every unlayered value, the library's and this
+   rule's, and lets the kit's through, in every state. The kit asks for
+   an outline in forced colours only, where it is the key's frame and its
+   focus mark; everywhere else it asks for none, as the library did. */
+.sjokort-chart .maplibregl-ctrl-group .btn-chunk.btn-chunk {
+  display: revert-layer;
+  width: revert-layer;
+  height: revert-layer;
+  border-top: revert-layer;
+  border-radius: revert-layer;
+  background-color: revert-layer;
+  box-shadow: revert-layer;
+  outline: revert-layer;
+  outline-offset: revert-layer;
+}
+
+/* The glyphs: the kit's pixel plus and minus (a 10x2 bar, a 2x10 upright)
+   in the key's own text colour, in place of the library's dark SVGs. */
+.sjokort-chart .maplibregl-ctrl .btn-chunk .maplibregl-ctrl-icon {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 10px 2px;
+}
+
+.sjokort-chart .maplibregl-ctrl .btn-chunk.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon {
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-size:
+    10px 2px,
+    2px 10px;
+}
+
+/* At either end of the zoom range the kit dims the whole key. The library
+   dims the glyph too, and the two would multiply. */
+.sjokort-chart .maplibregl-ctrl .btn-chunk:disabled .maplibregl-ctrl-icon {
+  opacity: 1;
+}
+
+/* Forced colours repaint every background and drop every gradient, which
+   is what the two glyphs are made of: the keys were blank. Keep the
+   gradients and draw them in the colour this mode gives a button's text,
+   as it does to the icons of the other keys. */
+@media (forced-colors: active) {
+  .sjokort-chart .maplibregl-ctrl .btn-chunk .maplibregl-ctrl-icon {
+    forced-color-adjust: none;
+    color: ButtonText;
+  }
+
+  .sjokort-chart .maplibregl-ctrl .btn-chunk:disabled .maplibregl-ctrl-icon {
+    color: GrayText;
+  }
+}
+
+/* The attribution, as a kit plate: MapShell gives the library's box the
+   kit's `plate-chunk` (stepped corners, a hairline ring that follows the
+   steps) and its fold toggle `btn-chunk`, and the kit's forced-colours
+   lines for both apply as they are. The library's own sheet is unlayered
+   and outranks the kit wherever both set a property: its white rounded
+   pill, black words and round grey toggle are undone here. The words are
+   the site's (Chivo Mono, phosphor on room dark). The face is wider than
+   the library's, so they are 10.5px: the line still fits one row on a
+   390px phone, as the library's 12px did, with a few px to spare. */
+.sjokort-chart .maplibregl-ctrl.maplibregl-ctrl-attrib.plate-chunk {
+  border-radius: 0;
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  font: 0.65625rem / 1.25rem var(--font-sans);
+}
+
+.sjokort-chart .maplibregl-ctrl-attrib.plate-chunk a {
+  color: inherit;
+}
+
+/* The toggle: a 24px kit key in the plate's corner (the library's size and
+   place), wearing the kit's pixel "i" (the About key's glyph, 12 by 12)
+   in its own text colour in place of the library's round SVG. It sits
+   flush in the plate, whose clip would cut a key that lifts or sinks, so
+   it presses by its bevel alone. revert-layer hands the box-shadow (the
+   bevel, and the dark band inside the cyan focus ring) and the outline
+   (the frame in forced colours) back to the kit, as for the zoom keys. */
+.sjokort-chart .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button.btn-chunk {
+  border-radius: 0;
+  background-color: var(--color-panel);
+  color: var(--color-ink);
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-size:
+    4px 3px,
+    1px 1px,
+    4px 6px,
+    6px 2px;
+  background-position:
+    10px 6px,
+    9px 10px,
+    10px 10px,
+    9px 16px;
+  background-repeat: no-repeat;
+  box-shadow: revert-layer;
+  outline: revert-layer;
+  transform: none;
+}
+
+/* Forced colours drop gradients, which is what the glyph is made of: keep
+   them, in the system's button colours, as the zoom keys' glyphs are. The
+   glyph is the key's own background here, so the whole key opts out of
+   the repaint, and the bevel the mode would have dropped goes too. */
+@media (forced-colors: active) {
+  .sjokort-chart .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button.btn-chunk {
+    forced-color-adjust: none;
+    background-color: ButtonFace;
+    color: ButtonText;
+    box-shadow: none;
+  }
+}
+
+/* The attribution opens unfolded, and on a narrow phone it reached under
+   the locate key (bottom-left, ending at 3.5rem) until the first drag
+   folded it. Its corner now starts beside that key, so the pill wraps
+   there instead. The plate keeps the library's own 10px margin, which
+   leaves 0.5rem between the two, and where it fits on one line (from
+   about 390px wide) it does not move. */
+.sjokort-chart .maplibregl-ctrl-bottom-right {
+  left: calc(4rem - 10px);
+}
+
+/* Keyboard focus on the chart itself (arrow keys pan it, + and - zoom).
+   The site's focus line sits 3px outside an element; the chart fills the
+   screen, so that lands off the edge. Draw it just inside instead. */
+.sjokort-chart .maplibregl-canvas:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: -2px;
+}

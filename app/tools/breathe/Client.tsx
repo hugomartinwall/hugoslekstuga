@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ToolFrame from "@/components/ToolFrame";
+import { ChipGroup } from "@/components/ui/Chip";
+import Keycap from "@/components/ui/Keycap";
+import Panel from "@/components/ui/Panel";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { hugoMoodEvent } from "@/lib/hugo-state";
-import { CREAM_HEX, INK_HEX } from "@/lib/colors";
 
 type PhaseName = "in" | "hold-in" | "out" | "hold-out";
 
@@ -88,6 +90,16 @@ const DEFAULT_SETTINGS: Settings = {
 
 const MINUTE_PRESETS = [1, 3, 5, 10];
 const CYCLE_PRESETS = [3, 5, 8, 12];
+
+// The two on/off settings are stored as booleans; the chips name each side.
+const SOUND_OPTIONS = [
+  { value: "silent", label: "Silent" },
+  { value: "tone", label: "Tone" },
+] as const;
+const DIM_OPTIONS = [
+  { value: "off", label: "Off" },
+  { value: "dim", label: "Dim" },
+] as const;
 
 // Phase tone parameters. Sine sweep 220 → 330 Hz on inhale, mirror on
 // exhale, silent on holds. Volume gentle and roughly the same as the
@@ -315,8 +327,6 @@ export default function BreathePage() {
     ? 1
     : computeScale(phase.name, phaseProgress);
   const circleScale = reduceMotion ? 1 : 0.5 + scale * 0.5;
-  const textOnDark = reduceMotion || circleScale > 0.7;
-  const textColor = textOnDark ? CREAM_HEX : INK_HEX;
 
   const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -337,128 +347,159 @@ export default function BreathePage() {
           running && settings.dim ? "relative z-40" : ""
         }`}
       >
-        {!running && (
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                Pick a pattern
-              </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {PATTERNS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setPatternId(p.id)}
-                    className={`card-chunk flex flex-col items-start gap-1 rounded-[var(--radius-card)] p-4 text-left transition-colors ${
-                      safePatternId === p.id
-                        ? "bg-blue-soft"
-                        : "bg-cream hover:bg-blue-soft"
-                    }`}
-                  >
-                    <span className="font-display text-lg font-extrabold tracking-tight">
-                      {p.name}
-                    </span>
-                    <span className="text-xs text-ink-soft">{p.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* The stage comes first and is capped by the viewport's height, so
+            the circle and the key under it share the first screen on a phone
+            and on a desktop. The key hangs off the stage (never off the
+            status line, whose length changes) so Start and Stop are the same
+            spot. */}
+        <div className="flex flex-col items-center gap-4">
+          {/* A phone in portrait gets the full column (its cap only bites on
+              a very short screen); wider screens stop at 44vh so the pattern
+              picker still shows under the key. The stage is also a size
+              container: the label is set in cqw (7% of the stage, inside a
+              disc that is 39% of it at half scale) so it fits the disc at
+              its smallest at any stage size, which is what lets it stay
+              room-dark on the accent. Change the 78% and the 7cqw together.
 
-            <SettingsPanel settings={settings} onChange={updateSetting} />
-          </div>
-        )}
-
-        <div className="card-chunk relative aspect-square w-full overflow-hidden rounded-[var(--radius-card)] bg-blue-soft">
-          {!reduceMotion && (
+              The floor is in rem, and from `sm` it is a generous one (24rem):
+              the label is sized from the stage, so a stage that only follows
+              the viewport would keep the label the same size at 200% browser
+              zoom, which must enlarge text. A landscape phone keeps the small
+              floor so Start stays on its one short screen. Where round()
+              exists the width is snapped to an even whole pixel: the stage
+              is centred, and on a fraction its hairline smears at 1x. */}
+          <Panel
+            tone="soft"
+            className="@container aspect-square w-[min(100%,max(56vh,13rem))] overflow-hidden sm:w-[min(100%,max(44vh,24rem))] pointer-coarse:sm:w-[min(100%,max(44vh,13rem))] supports-[width:round(down,1px,2px)]:w-[min(100%,round(down,max(56vh,13rem),2px))] supports-[width:round(down,1px,2px)]:sm:w-[min(100%,round(down,max(44vh,24rem),2px))] supports-[width:round(down,1px,2px)]:pointer-coarse:sm:w-[min(100%,round(down,max(44vh,13rem),2px))]"
+          >
+            {!reduceMotion && (
+              <div
+                className="absolute left-1/2 top-1/2 aspect-square rounded-full bg-(--accent) opacity-15"
+                style={{
+                  width: "94%",
+                  transform: `translate(-50%, -50%) scale(${circleScale})`,
+                  transition: "transform 200ms linear",
+                }}
+                aria-hidden
+              />
+            )}
             <div
-              className="absolute left-1/2 top-1/2 aspect-square rounded-full bg-blue/15"
+              className="absolute left-1/2 top-1/2 aspect-square rounded-full bg-(--accent)"
               style={{
-                width: "92%",
+                width: "78%",
                 transform: `translate(-50%, -50%) scale(${circleScale})`,
-                transition: "transform 200ms linear",
+                transition: reduceMotion
+                  ? "none"
+                  : "transform 200ms linear",
               }}
               aria-hidden
             />
-          )}
-          <div
-            className="absolute left-1/2 top-1/2 aspect-square rounded-full border-2 border-ink bg-blue"
-            style={{
-              width: "70%",
-              transform: `translate(-50%, -50%) scale(${circleScale})`,
-              transition: reduceMotion
-                ? "none"
-                : "transform 200ms linear",
-            }}
-            aria-hidden
-          />
-          <div
-            className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center"
-            style={{ transition: "color 240ms linear", color: textColor }}
-          >
-            <p className="font-display text-3xl font-extrabold leading-none tracking-tight sm:text-5xl">
-              {phase.label}
-            </p>
-            {running && (
-              <p className="mt-1 font-mono text-sm tabular-nums sm:text-base">
-                {Math.max(0, phase.seconds - elapsed).toFixed(1)}s
+            <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center text-cream">
+              <p className="font-display text-[length:7cqw] leading-none">
+                {phase.label}
               </p>
-            )}
-          </div>
-        </div>
+              {running && (
+                <p className="mt-1 text-[length:max(0.75rem,4cqw)] leading-[1.4] tabular-nums">
+                  {Math.max(0, phase.seconds - elapsed).toFixed(1)}s
+                </p>
+              )}
+            </div>
+          </Panel>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-ink-soft">
+          {/* Stop is a plain dark key, not the coral danger one: nothing is
+              lost by stopping, and while you breathe (above all with the
+              page dimmed) the circle should be the only bright thing. */}
+          {/* One button that changes role in place, so keyboard focus stays
+              on it and Enter or Space toggles start and stop. It ignores
+              the pointer for a moment after each change of role (the two
+              guard classes: swapping them restarts the guard), so the
+              second tap of a double tap does not undo the first. */}
+          <Keycap
+            tone={running ? "neutral" : "accent"}
+            size="lg"
+            onClick={running ? stop : start}
+            className={`min-w-40 ${running ? "press-guard-alt" : "press-guard"}`}
+          >
+            {running ? "Stop" : done ? "Again" : "Start"}
+          </Keycap>
+
+          {/* Two lines are held open on a phone, where every description
+              wraps, so choosing a pattern never moves the picker below.
+              The parts are flex items so "· ending after 5 min" drops to
+              the second line whole; as plain inline text there is no break
+              before it and the line split inside the pattern's name
+              ("4-4-4-" / "4"). */}
+          <div className="flex min-h-10 flex-wrap content-start justify-center gap-x-2 text-center text-sm text-balance text-ink-soft sm:min-h-0">
             {running ? (
               <>
-                <span className="font-bold text-ink">{cycles}</span>{" "}
-                cycle{cycles === 1 ? "" : "s"} · {pattern.name}
+                <span>
+                  <span className="font-bold text-ink">{cycles}</span>{" "}
+                  cycle{cycles === 1 ? "" : "s"} ·{" "}
+                  <span className="whitespace-nowrap">{pattern.name}</span>
+                </span>
                 {settings.endMode === "minutes" && (
-                  <span className="ml-2 text-ink-muted">
+                  <span className="text-ink-muted">
                     · ending after {settings.endMinutes} min
                   </span>
                 )}
                 {settings.endMode === "cycles" && (
-                  <span className="ml-2 text-ink-muted">
+                  <span className="text-ink-muted">
                     · {settings.endCycles - cycles} to go
                   </span>
                 )}
               </>
             ) : done ? (
-              <>
+              <span>
                 <span className="font-bold text-ink">Nice.</span>{" "}
-                {cycles} cycle{cycles === 1 ? "" : "s"} of {pattern.name}.
-              </>
+                {cycles} cycle{cycles === 1 ? "" : "s"} of{" "}
+                <span className="whitespace-nowrap">{pattern.name}</span>.
+              </span>
             ) : (
-              <>{pattern.description}</>
-            )}
-          </div>
-          <div className="flex gap-3">
-            {running ? (
-              <button
-                type="button"
-                onClick={stop}
-                className="btn-chunk rounded-[var(--radius-button)] bg-cream px-6 py-3 font-display text-base font-extrabold"
-              >
-                Stop
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={start}
-                className="btn-chunk rounded-[var(--radius-button)] bg-blue px-7 py-3 font-display text-base font-extrabold text-cream"
-              >
-                {done ? "Again" : "Start"}
-              </button>
+              <span>{pattern.description}</span>
             )}
           </div>
         </div>
 
         {!running && (
-          <p className="text-xs text-ink-muted">
-            Long, slow exhales activate the parasympathetic nervous system —
-            that&rsquo;s the body&rsquo;s &ldquo;rest and digest&rdquo; mode.
-            Even a minute helps.
-          </p>
+          <>
+            <div className="flex flex-col gap-3">
+              <p className="label-pixel">Pick a pattern</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {PATTERNS.map((p) => {
+                  const selected = safePatternId === p.id;
+                  // This page's accent IS the focus cyan, so the kit's 2px
+                  // focus ring is the selected ring exactly. A focused card
+                  // gets a 4px ring here so it reads as focus, not as chosen.
+                  return (
+                    <Panel
+                      key={p.id}
+                      as="button"
+                      type="button"
+                      tone={selected ? "soft" : "page"}
+                      aria-pressed={selected}
+                      onClick={() => setPatternId(p.id)}
+                      className="flex flex-col items-start gap-1.5 p-4 text-left focus-visible:[--ring-w:4px]"
+                    >
+                      <span className="font-display text-2xl leading-none">
+                        {p.name}
+                      </span>
+                      <span className="text-xs text-ink-soft">
+                        {p.description}
+                      </span>
+                    </Panel>
+                  );
+                })}
+              </div>
+            </div>
+
+            <SettingsPanel settings={settings} onChange={updateSetting} />
+
+            <p className="text-xs text-ink-muted">
+              Long, slow exhales activate the parasympathetic nervous system —
+              that&rsquo;s the body&rsquo;s &ldquo;rest and digest&rdquo; mode.
+              Even a minute helps.
+            </p>
+          </>
         )}
       </div>
     </ToolFrame>
@@ -473,32 +514,18 @@ function SettingsPanel({
   onChange: <K extends keyof Settings>(k: K, v: Settings[K]) => void;
 }) {
   return (
-    <div className="flex flex-col gap-5 rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-4 sm:p-5">
+    <Panel className="flex flex-col gap-5 p-4 sm:p-5">
       {/* Audio */}
       <div className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        <p id="breathe-sound-label" className="label-pixel">
           Sound
         </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onChange("audio", false)}
-            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-              !settings.audio ? "bg-blue text-cream" : "bg-cream hover:bg-blue-soft"
-            }`}
-          >
-            Silent
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange("audio", true)}
-            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-              settings.audio ? "bg-blue text-cream" : "bg-cream hover:bg-blue-soft"
-            }`}
-          >
-            Tone
-          </button>
-        </div>
+        <ChipGroup
+          labelledBy="breathe-sound-label"
+          value={settings.audio ? "tone" : "silent"}
+          onChange={(v) => onChange("audio", v === "tone")}
+          options={SOUND_OPTIONS}
+        />
         <p className="text-xs text-ink-muted">
           {settings.audio
             ? "A soft sine rises on inhale and falls on exhale. Silent on holds. Lets you close your eyes."
@@ -508,116 +535,67 @@ function SettingsPanel({
 
       {/* End mode */}
       <div className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        <p id="breathe-end-label" className="label-pixel">
           End after
         </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onChange("endMode", "free")}
-            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-              settings.endMode === "free"
-                ? "bg-blue text-cream"
-                : "bg-cream hover:bg-blue-soft"
-            }`}
-          >
-            Open-ended
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange("endMode", "minutes")}
-            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-              settings.endMode === "minutes"
-                ? "bg-blue text-cream"
-                : "bg-cream hover:bg-blue-soft"
-            }`}
-          >
-            {settings.endMinutes} min
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange("endMode", "cycles")}
-            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-              settings.endMode === "cycles"
-                ? "bg-blue text-cream"
-                : "bg-cream hover:bg-blue-soft"
-            }`}
-          >
-            {settings.endCycles} cycles
-          </button>
-        </div>
+        <ChipGroup<EndMode>
+          labelledBy="breathe-end-label"
+          value={settings.endMode}
+          onChange={(v) => onChange("endMode", v)}
+          options={[
+            { value: "free", label: "Open-ended" },
+            { value: "minutes", label: `${settings.endMinutes} min` },
+            { value: "cycles", label: `${settings.endCycles} cycles` },
+          ]}
+        />
         {settings.endMode === "minutes" && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-muted">minutes:</span>
-            {MINUTE_PRESETS.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => onChange("endMinutes", m)}
-                className={`rounded-full border-2 border-ink px-2.5 py-0.5 text-xs font-bold transition-colors ${
-                  settings.endMinutes === m
-                    ? "bg-blue text-cream"
-                    : "bg-cream hover:bg-blue-soft"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
+            <span id="breathe-minutes-label" className="text-xs text-ink-muted">
+              minutes:
+            </span>
+            <ChipGroup
+              labelledBy="breathe-minutes-label"
+              value={settings.endMinutes}
+              onChange={(m) => onChange("endMinutes", m)}
+              options={MINUTE_PRESETS.map((m) => ({ value: m, label: m }))}
+              chipClassName="min-w-11"
+            />
           </div>
         )}
         {settings.endMode === "cycles" && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-muted">cycles:</span>
-            {CYCLE_PRESETS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => onChange("endCycles", c)}
-                className={`rounded-full border-2 border-ink px-2.5 py-0.5 text-xs font-bold transition-colors ${
-                  settings.endCycles === c
-                    ? "bg-blue text-cream"
-                    : "bg-cream hover:bg-blue-soft"
-                }`}
-              >
-                {c}
-              </button>
-            ))}
+            <span id="breathe-cycles-label" className="text-xs text-ink-muted">
+              cycles:
+            </span>
+            <ChipGroup
+              labelledBy="breathe-cycles-label"
+              value={settings.endCycles}
+              onChange={(c) => onChange("endCycles", c)}
+              options={CYCLE_PRESETS.map((c) => ({ value: c, label: c }))}
+              chipClassName="min-w-11"
+            />
           </div>
         )}
       </div>
 
       {/* Dim */}
       <div className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        <p id="breathe-dim-label" className="label-pixel">
           Dim the rest of the page
         </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onChange("dim", false)}
-            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-              !settings.dim ? "bg-blue text-cream" : "bg-cream hover:bg-blue-soft"
-            }`}
-          >
-            Off
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange("dim", true)}
-            className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold transition-colors ${
-              settings.dim ? "bg-blue text-cream" : "bg-cream hover:bg-blue-soft"
-            }`}
-          >
-            Dim
-          </button>
-        </div>
+        <ChipGroup
+          labelledBy="breathe-dim-label"
+          value={settings.dim ? "dim" : "off"}
+          onChange={(v) => onChange("dim", v === "dim")}
+          options={DIM_OPTIONS}
+        />
         <p className="text-xs text-ink-muted">
           {settings.dim
             ? "The page fades dark while you breathe; only the circle stays lit."
             : "Page stays as-is. Only the circle holds the focus."}
         </p>
       </div>
-    </div>
+    </Panel>
   );
 }
 

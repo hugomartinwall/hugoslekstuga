@@ -11,6 +11,12 @@ import {
   type DragEvent,
 } from "react";
 import ToolFrame from "@/components/ToolFrame";
+import PixelIcon from "@/components/PixelIcon";
+import { Chip } from "@/components/ui/Chip";
+import { TextArea, TextField } from "@/components/ui/Field";
+import Keycap from "@/components/ui/Keycap";
+import Panel from "@/components/ui/Panel";
+import { claimSpace } from "@/lib/keyboard";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { fileToWheelThumbnail } from "@/lib/roll/image";
@@ -18,6 +24,16 @@ import { COLOR_HEX, CREAM_HEX, INK_HEX, preferredTextHex } from "@/lib/colors";
 
 const STORAGE_KEY = "hugoslekstuga:roll:options";
 const RECENT_KEY = "hugoslekstuga:roll:recent";
+
+/**
+ * The page's three text buttons ("try a sample", "paste a list", "clear").
+ * They read as quiet links, but the box a finger lands on is 44px tall and
+ * 14px wider than the words on each side (the negative margin keeps the
+ * words where they were). The focus outline is pulled in by 10px so it
+ * hugs the words instead of boxing the whole target.
+ */
+const TEXT_BUTTON =
+  "-mx-3.5 inline-flex min-h-11 cursor-pointer items-center px-3.5 text-xs font-semibold underline-offset-2 -outline-offset-[10px] hover:underline";
 
 const SLICE_COLORS = (
   ["tomato", "yellow", "blue", "pink", "green", "purple", "orange", "teal"] as const
@@ -262,20 +278,13 @@ export default function RollPage() {
     }, 4100);
   }, [canSpin, spinning, validEntries, rotation, burstConfetti, setRecent]);
 
-  // Spacebar to spin (when not focused on an input/textarea/contentEditable).
+  // Spacebar to spin, unless the key belongs to what has focus: text in a
+  // field, or a button the keyboard is on and Space is about to press
+  // ("+ Add option", a remove key). A button that only kept the focus
+  // from a mouse click does not count.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "Space") return;
-      const t = e.target as HTMLElement | null;
-      if (
-        t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable)
-      ) {
-        return;
-      }
-      e.preventDefault();
+      if (!claimSpace(e)) return;
       spin();
     };
     window.addEventListener("keydown", onKey);
@@ -363,28 +372,50 @@ export default function RollPage() {
 
   /* ---------- Render ---------- */
 
+  // Once any row carries a picture, every row's image cell is as wide as
+  // a thumbnail plus its "Clear image" key, so the text fields stay in
+  // one column.
+  const anyImage = entries.some((e) => e.image !== null);
+
+  // The winner panel's room. It opens when Spin is pressed and stays open
+  // while a result shows, so whatever sits below (the recent list; on a
+  // phone the whole editor) is pushed down once, at the press, instead of
+  // jumping up and down on every spin. It is as tall as the panel will be:
+  // 82px for a name, 214px as soon as any option carries a picture: a
+  // name that wins on such a wheel has empty room under it, which is
+  // better than everything below jumping 132px each time a picture wins.
+  const shownWinner =
+    winner !== null && !spinning ? validEntries[winner] : undefined;
+  const winnerRoomOpen = spinning || shownWinner !== undefined;
+  const winnerRoom =
+    validEntries.some((e) => e.image !== null)
+      ? "min-h-53.5"
+      : "min-h-20.5";
+
   return (
     <ToolFrame tool={tool}>
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-[1fr_1fr] md:gap-10">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              Options
-            </p>
+      {/* Two columns from md up: the editor on the left, the wheel on the
+          right. On a phone the wheel and Spin come first (order-*), so the
+          main action is on the first screen; the editor follows. */}
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2 md:gap-10">
+        <div className="order-2 flex min-w-0 flex-col md:order-1">
+          <div className="flex min-h-11 items-center justify-between gap-3">
+            <p className="label-pixel">Options</p>
             <button
               type="button"
               onClick={loadSample}
-              className="text-xs font-semibold text-orange underline-offset-2 hover:underline"
+              className={`${TEXT_BUTTON} text-(--accent)`}
             >
               try a sample
             </button>
           </div>
 
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col">
             {entries.map((entry) => (
               <EntryRow
                 key={entry.id}
                 entry={entry}
+                reserveClear={anyImage}
                 onLabelChange={(label) => setLabel(entry.id, label)}
                 onSetImage={(image) => setImage(entry.id, image)}
                 onClearImage={() => setImage(entry.id, null)}
@@ -394,47 +425,40 @@ export default function RollPage() {
             ))}
           </ul>
 
-          <button
-            type="button"
-            onClick={addEntry}
-            className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink"
-          >
-            + Add option
-          </button>
-
-          {/* Bulk-paste disclosure — recovers the old textarea's
-              "paste 10 lines from a doc" superpower. */}
-          <div className="flex flex-col gap-2 text-xs">
+          {/* Add one, or add many: the bulk-paste disclosure recovers the
+              old textarea's "paste 10 lines from a doc" superpower. */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4">
+            <Keycap onClick={addEntry}>+ Add option</Keycap>
             <button
               type="button"
               onClick={() => setBulkPasteOpen((o) => !o)}
-              className="self-start text-xs font-semibold text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+              className={`${TEXT_BUTTON} text-ink-muted hover:text-ink`}
               aria-expanded={bulkPasteOpen}
             >
               {bulkPasteOpen ? "hide bulk paste" : "paste a list"}
             </button>
-            {bulkPasteOpen && (
-              <div className="flex flex-col gap-2">
-                <textarea
-                  value={bulkPasteText}
-                  onChange={(e) => setBulkPasteText(e.target.value)}
-                  rows={5}
-                  placeholder="Paste one option per line and click Add all."
-                  className="card-chunk min-h-[8rem] rounded-[var(--radius-card)] bg-cream-deep px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={applyBulkPaste}
-                  disabled={bulkPasteText.trim() === ""}
-                  className="btn-chunk self-start rounded-[var(--radius-button)] bg-cream-deep px-4 py-2 text-sm font-display font-extrabold text-ink disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Add all
-                </button>
-              </div>
-            )}
           </div>
+          {bulkPasteOpen && (
+            <div className="mt-2 flex flex-col items-start gap-2">
+              <TextArea
+                label="Paste one option per line and click Add all."
+                hideLabel
+                className="w-full"
+                value={bulkPasteText}
+                onChange={(e) => setBulkPasteText(e.target.value)}
+                rows={5}
+                placeholder="Paste one option per line and click Add all."
+              />
+              <Keycap
+                onClick={applyBulkPaste}
+                disabled={bulkPasteText.trim() === ""}
+              >
+                Add all
+              </Keycap>
+            </div>
+          )}
 
-          <p className="text-xs text-ink-muted">
+          <p className="mt-3 text-xs text-ink-muted">
             {validEntries.length === 0
               ? "Add at least two options to spin."
               : validEntries.length === 1
@@ -443,7 +467,7 @@ export default function RollPage() {
           </p>
         </div>
 
-        <div className="flex flex-col items-center gap-5">
+        <div className="order-1 flex min-w-0 flex-col items-center gap-5 md:order-2">
           <div className="relative aspect-square w-full max-w-sm">
             <svg
               viewBox="0 0 400 400"
@@ -451,26 +475,39 @@ export default function RollPage() {
               role="img"
               aria-label="Decision wheel"
             >
+              {/* Rim — one thin line. The 6px ring it replaces was the
+                  old skin's ink outline. */}
               <circle
                 cx="200"
                 cy="200"
                 r="186"
                 fill="none"
-                stroke={INK_HEX}
-                strokeWidth="6"
+                className="stroke-ink-muted"
+                strokeWidth="2"
               />
               <g
                 ref={wheelRef}
                 style={{
                   transformOrigin: "200px 200px",
-                  transform: `rotate(${rotation}deg)`,
+                  // One option cannot be spun, so its wheel is drawn
+                  // at rest: its name (the only thing on the disc) would
+                  // otherwise sit wherever the last spin stopped, upside
+                  // down as often as not. The stored angle is untouched.
+                  transform: `rotate(${
+                    validEntries.length === 1 ? 0 : rotation
+                  }deg)`,
                   transition: spinning
                     ? "transform 4s cubic-bezier(0.18, 0.65, 0.18, 1)"
                     : "none",
                 }}
               >
                 {validEntries.length === 0 && (
-                  <circle cx="200" cy="200" r="180" fill={CREAM_HEX} />
+                  <circle
+                    cx="200"
+                    cy="200"
+                    r="180"
+                    className="fill-cream-deep"
+                  />
                 )}
                 {validEntries.map((entry, i) => (
                   <Slice
@@ -500,53 +537,60 @@ export default function RollPage() {
                 cy="200"
                 r="22"
                 fill={CREAM_HEX}
-                stroke={INK_HEX}
-                strokeWidth="4"
+                className="stroke-ink-muted"
+                strokeWidth="2"
               />
-              {/* Confetti — drawn over everything except the cap. The
+              {/* Confetti — square pixels, drawn over everything. The
                   ref holds an animation buffer that mutates each RAF tick;
                   re-renders are gated by tickParticles. Reading the ref in
                   render is intentional and matches the project's particle
                   pattern (see eslint.config.mjs comment on react-hooks/refs). */}
               {/* eslint-disable react-hooks/refs */}
-              <g pointerEvents="none">
-                {particlesRef.current.map((p, i) => (
-                  <circle
-                    key={i}
-                    cx={p.x}
-                    cy={p.y}
-                    r={p.size * Math.max(0, p.life)}
-                    fill={p.color}
-                    stroke={INK_HEX}
-                    strokeWidth={1}
-                    opacity={Math.max(0, p.life)}
-                  />
-                ))}
+              <g pointerEvents="none" shapeRendering="crispEdges">
+                {particlesRef.current.map((p, i) => {
+                  const side = p.size * 1.75 * Math.max(0, p.life);
+                  return (
+                    <rect
+                      key={i}
+                      x={p.x - side / 2}
+                      y={p.y - side / 2}
+                      width={side}
+                      height={side}
+                      fill={p.color}
+                      stroke={CREAM_HEX}
+                      strokeWidth={1}
+                      opacity={Math.max(0, p.life)}
+                    />
+                  );
+                })}
               </g>
               {/* eslint-enable react-hooks/refs */}
             </svg>
           </div>
 
           <div className="flex flex-col items-center gap-2">
-            <button
-              type="button"
+            <Keycap
+              tone="accent"
+              size="lg"
               onClick={spin}
               disabled={!canSpin || spinning}
-              className="btn-chunk rounded-[var(--radius-button)] bg-orange px-7 py-3 font-display text-lg font-extrabold text-cream disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-w-40"
             >
               {spinning ? "Spinning…" : "Spin!"}
-            </button>
-            <span className="hidden items-center gap-1 text-xs text-ink-muted sm:inline-flex">
+            </Keycap>
+            <span className="hidden items-center gap-1.5 text-xs text-ink-muted sm:inline-flex pointer-coarse:hidden">
               or press
-              <kbd className="rounded border border-ink-muted bg-cream-deep px-1.5 py-0.5 font-mono text-[11px] uppercase">
-                Space
-              </kbd>
+              <kbd className="kbd-chunk">Space</kbd>
             </span>
           </div>
 
-          <div className="flex min-h-[3rem] flex-col items-center gap-3 text-center">
-            {winner !== null && !spinning && validEntries[winner] && (
-              <WinnerCard entry={validEntries[winner]} />
+          {/* Winner, empty-state line, recent list. With none of them the
+              block is gone, so on a phone the editor sits right under Spin. */}
+          <div className="flex w-full flex-col items-center gap-3 text-center empty:hidden">
+            {winnerRoomOpen && (
+              <div className={`flex w-full flex-col items-center ${winnerRoom}`}>
+                {shownWinner && <WinnerCard entry={shownWinner} />}
+              </div>
             )}
             {validEntries.length === 0 && (
               <p className="text-sm text-ink-muted">
@@ -554,15 +598,15 @@ export default function RollPage() {
               </p>
             )}
             {recent.length > 1 && (
-              <div className="flex flex-col items-center gap-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                  Recent
-                </p>
-                <ol className="flex flex-wrap justify-center gap-1.5">
+              <div className="flex max-w-full flex-col items-center gap-1.5">
+                <p className="label-pixel">Recent</p>
+                <ol className="flex max-w-full flex-wrap justify-center gap-1.5">
                   {recent.slice(1).map((w, i) => (
+                    // A record, not a control: the bare stepped frame,
+                    // with none of what makes a chip pressable.
                     <li
                       key={`${w}-${i}`}
-                      className="rounded-full border border-line bg-cream-deep px-2 py-0.5 text-xs font-semibold"
+                      className="plate-chunk inline-flex max-w-full items-center bg-cream-deep px-2.5 py-1.5 text-xs font-bold wrap-anywhere select-text"
                     >
                       {w}
                     </li>
@@ -571,7 +615,7 @@ export default function RollPage() {
                 <button
                   type="button"
                   onClick={() => setRecent(EMPTY_RECENT)}
-                  className="text-[11px] font-semibold text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+                  className={`${TEXT_BUTTON} -mt-1.5 text-ink-muted hover:text-ink`}
                 >
                   clear
                 </button>
@@ -588,10 +632,18 @@ export default function RollPage() {
  * EntryRow — one row in the editor list. Holds the image cell, label
  * input, and delete button. Handles file picker, drag-and-drop, paste-
  * splitting, and image errors.
+ *
+ * Every control in the row is a 44px-tall stepped shape from the kit:
+ * the image slot and its clear key are flat chips (they belong to the
+ * row), the label sits in a field well, and the one raised keycap removes
+ * the row. With `reserveClear` an empty slot stretches over the cell the
+ * clear key would take, so a list that mixes rows with and without
+ * pictures still lines up in columns.
  * -----------------------------------------------------------------------*/
 
 function EntryRow({
   entry,
+  reserveClear,
   onLabelChange,
   onSetImage,
   onClearImage,
@@ -599,6 +651,7 @@ function EntryRow({
   onPasteSplit,
 }: {
   entry: Entry;
+  reserveClear: boolean;
   onLabelChange: (label: string) => void;
   onSetImage: (image: string) => void;
   onClearImage: () => void;
@@ -639,7 +692,14 @@ function EntryRow({
       setDragOver(true);
     }
   };
-  const handleDragLeave = () => setDragOver(false);
+  // Leaving for one of the row's own controls is not leaving: without
+  // this the lit frame blinks as a dragged file crosses from the picture
+  // slot to the field. (The kit's Dropzone has the same test.)
+  const handleDragLeave = (e: DragEvent<HTMLLIElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setDragOver(false);
+    }
+  };
   const handleDrop = (e: DragEvent<HTMLLIElement>) => {
     e.preventDefault();
     setDragOver(false);
@@ -657,27 +717,29 @@ function EntryRow({
   const hasImage = entry.image !== null;
 
   return (
+    // While a file hangs over the row it becomes a lit panel, the same
+    // way the kit's Dropzone answers a drag. The 6px of padding keeps the
+    // row's controls clear of that frame; the negative margin puts them
+    // back on the column's edges.
     <li
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`flex flex-col gap-1 rounded-[var(--radius-card)] p-1 transition-colors ${
-        dragOver ? "bg-blue-soft" : ""
+      className={`-mx-1.5 flex flex-col gap-1 p-1.5 ${
+        dragOver ? "card-chunk is-on bg-(--accent-soft)" : ""
       }`}
     >
       <div className="flex items-center gap-2">
-        {/* Image cell — 44px tap target, doubles as drop hint */}
-        <div className="relative h-11 w-11 shrink-0">
-          <button
-            type="button"
+        {/* Image cell — the slot (44px, doubles as the drop hint), then
+            the key that empties it. */}
+        <div className="flex shrink-0 items-center gap-1">
+          <Chip
             onClick={() => fileRef.current?.click()}
             disabled={busy}
             aria-label={hasImage ? "Change image" : "Add image"}
-            className={`relative h-11 w-11 overflow-hidden rounded-full border-2 ${
-              hasImage
-                ? "border-ink bg-cream"
-                : "border-dashed border-ink-muted bg-cream-deep"
-            } transition-colors hover:border-ink disabled:opacity-50`}
+            className={`h-11 p-1 text-ink-muted ${
+              !hasImage && reserveClear ? "w-23" : "w-11"
+            }`}
           >
             {hasImage ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -687,23 +749,17 @@ function EntryRow({
                 className="h-full w-full object-cover"
               />
             ) : (
-              <span
-                aria-hidden
-                className="flex h-full w-full items-center justify-center text-lg font-bold leading-none text-ink-muted"
-              >
-                +
-              </span>
+              <PixelIcon name="plus" size={12} />
             )}
-          </button>
+          </Chip>
           {hasImage && (
-            <button
-              type="button"
+            <Chip
               onClick={onClearImage}
               aria-label="Clear image"
-              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-ink bg-cream-deep text-[10px] font-bold leading-none text-ink hover:bg-tomato-soft"
+              className="h-11 w-11 p-0 text-ink-muted"
             >
-              ×
-            </button>
+              <PixelIcon name="close" size={12} />
+            </Chip>
           )}
           <input
             ref={fileRef}
@@ -714,27 +770,29 @@ function EntryRow({
           />
         </div>
 
-        <input
-          type="text"
+        <TextField
+          label="An option"
+          hideLabel
+          className="min-w-0 flex-1"
           value={entry.label}
           onChange={(e) => onLabelChange(e.target.value)}
           onPaste={handlePaste}
           placeholder="An option"
-          className="card-chunk min-w-0 flex-1 rounded-[var(--radius-card)] bg-cream-deep px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-muted focus:outline-none"
         />
 
-        <button
-          type="button"
+        {/* Remove is a neutral key with a coral mark, not a solid coral
+            key: there is one per row, and a column of red would outshout
+            Spin. */}
+        <Keycap
+          size="icon"
           onClick={onDelete}
           aria-label="Remove option"
-          className="shrink-0 rounded-full border-2 border-ink bg-cream-deep px-2 py-1 text-xs font-bold hover:bg-tomato-soft"
+          className="shrink-0"
         >
-          ✕
-        </button>
+          <PixelIcon name="close" size={12} className="text-tomato" />
+        </Keycap>
       </div>
-      {imageError && (
-        <p className="ml-13 text-[11px] text-tomato">{imageError}</p>
-      )}
+      {imageError && <p className="text-xs text-tomato">{imageError}</p>}
     </li>
   );
 }
@@ -748,33 +806,39 @@ function EntryRow({
 function WinnerCard({ entry }: { entry: Entry }) {
   const label = entry.label.trim() || "(no label)";
   return (
-    <div className="fade-rise flex flex-col items-center gap-2 rounded-[var(--radius-card)] border-2 border-ink bg-orange-soft px-4 py-3">
+    // A fixed 288px (or the column, if that is narrower) rather than the
+    // width of the name: the panel then sits on whole pixels when centred,
+    // so its 1px ring stays crisp, and it does not resize from spin to spin.
+    <Panel
+      tone="soft"
+      className="fade-rise flex w-full max-w-72 flex-col items-center gap-3 px-6 py-4"
+    >
       {entry.image && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={entry.image}
-          alt=""
-          className="h-30 w-30 rounded-full border-2 border-ink object-cover"
-          style={{ width: 120, height: 120 }}
-        />
+        // A framed picture: the panel's stepped ring sits over the image.
+        <Panel tone="page" className="h-30 w-30 shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={entry.image}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        </Panel>
       )}
-      <div className="flex flex-col items-center">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          And the winner is
-        </p>
-        <p className="font-display text-2xl font-extrabold tracking-tight">
+      <div className="flex max-w-full flex-col items-center gap-1">
+        <p className="label-pixel">And the winner is</p>
+        <p className="font-display text-3xl leading-none wrap-anywhere">
           {label}
         </p>
       </div>
-    </div>
+    </Panel>
   );
 }
 
 /* -------------------------------------------------------------------------
  * Slice — one pie segment on the wheel. When the entry carries an image
  * the image fills the wedge (clipped to the slice's path) instead of a
- * solid colour; the chunky ink border stays on top so the slice still
- * reads as a "slice". Text overlays the image with a thick ink stroke
+ * solid colour; a room-dark seam stays on top so the slice still
+ * reads as a "slice". Text overlays the image with a thick halo
  * (paintOrder: stroke) so it stays legible against any photo.
  *
  * Image rotation matches the text's flip rule (rotate by midAngle, with
@@ -817,7 +881,8 @@ function Slice({
   const TINT_OPACITY = 0.22;
 
   // Single-entry wheel: full circle (no wedge arcs). Image fills it
-  // edge-to-edge, text overlays at centre.
+  // edge-to-edge; the text sits above the hub, at the radius every other
+  // label uses (dead centre it was hidden under the cap).
   if (total === 1) {
     const clipId = `roll-slice-${total}-${index}`;
     return (
@@ -857,9 +922,9 @@ function Slice({
         {label.trim().length > 0 && (
           <text
             x={cx}
-            y={cy + 6}
+            y={cy - labelR + 6}
             fontFamily="var(--font-display)"
-            fontWeight="800"
+            fontWeight="400"
             fontSize="22"
             fill={hasImage ? CREAM_HEX : color.text}
             stroke={hasImage ? INK_HEX : undefined}
@@ -912,7 +977,7 @@ function Slice({
   return (
     <g>
       {!hasImage && (
-        <path d={path} fill={color.fill} stroke={INK_HEX} strokeWidth="2" />
+        <path d={path} fill={color.fill} stroke={CREAM_HEX} strokeWidth="2" />
       )}
       {hasImage && (
         <>
@@ -939,9 +1004,9 @@ function Slice({
           </g>
           {/* Slice-colour tint over the image so the wheel still
               reads as a coloured spinner. Sits between image and
-              outline so the ink border stays crisp on top. */}
+              outline so the dark seam stays crisp on top. */}
           <path d={path} fill={color.fill} opacity={TINT_OPACITY} />
-          <path d={path} fill="none" stroke={INK_HEX} strokeWidth="2" />
+          <path d={path} fill="none" stroke={CREAM_HEX} strokeWidth="2" />
         </>
       )}
       {label.trim().length > 0 && (
@@ -949,7 +1014,7 @@ function Slice({
           x={labelPos.x}
           y={labelPos.y}
           fontFamily="var(--font-display)"
-          fontWeight="800"
+          fontWeight="400"
           fontSize={fontSize}
           fill={hasImage ? CREAM_HEX : color.text}
           stroke={hasImage ? INK_HEX : undefined}

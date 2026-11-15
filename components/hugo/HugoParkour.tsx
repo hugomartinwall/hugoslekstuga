@@ -8,6 +8,8 @@ import {
   withAlpha,
 } from "@/lib/hugo/sprite";
 import { COLOR_HEX } from "@/lib/colors";
+import PixelIcon from "@/components/PixelIcon";
+import Panel from "@/components/ui/Panel";
 import {
   createPlayer,
   stepMoped,
@@ -93,7 +95,17 @@ const TRANS_RM_END = 60;
 const DEATH_STEPS = 36;
 const DEATH_RM_STEPS = 8;
 
-type Platform = { x: number; y: number; r: number; slug: string };
+/** Something in the live homepage Hugo can stand on. An orb is a circle
+ *  of radius `r`; a cabinet also carries its box (`w` × `h`), and its
+ *  flat top is the platform. */
+type Platform = {
+  x: number;
+  y: number;
+  r: number;
+  slug: string;
+  w?: number;
+  h?: number;
+};
 
 function readPlatforms(): Platform[] {
   const out: Platform[] = [];
@@ -106,11 +118,14 @@ function readPlatforms(): Platform[] {
     const t = g.getAttribute("transform") || "";
     const m = t.match(/translate\(([-\d.]+)[,\s]+([-\d.]+)\)/);
     if (!m) continue;
+    const bw = Number(g.getAttribute("data-w"));
+    const bh = Number(g.getAttribute("data-h"));
     out.push({
       x: ox + Number(m[1]),
       y: oy + Number(m[2]),
       r: Number(g.getAttribute("data-r") || 26),
       slug: g.getAttribute("data-slug") || "",
+      ...(bw > 0 && bh > 0 ? { w: bw, h: bh } : null),
     });
   }
   return out;
@@ -126,7 +141,18 @@ function collectSurfaces(
 ): Surface[] {
   const out: Surface[] = [];
   for (const p of orbs) {
-    out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
+    if (p.w && p.h) {
+      // A cabinet in the arcade row: a flat top, as wide as the machine.
+      out.push({
+        kind: "rect",
+        id: p.slug,
+        x: p.x - p.w / 2,
+        y: p.y - p.h / 2,
+        w: p.w,
+      });
+    } else {
+      out.push({ kind: "orb", id: p.slug, x: p.x, y: p.y, r: p.r });
+    }
   }
   if (LETTER_PLATFORMS && level.homeScreen) {
     for (const l of getWordmarkLetters()) {
@@ -144,6 +170,23 @@ function collectSurfaces(
   return out;
 }
 
+/**
+ * Tells the rest of the page that a run is over: the corner mascot comes
+ * back (hugo-stage), the room's keys and the swarm wake up (parkour-end).
+ * `running` is true from the start of a run, so this happens once per
+ * run, whichever way the run ends.
+ */
+function announceEnd(running: { current: boolean }) {
+  if (!running.current) return;
+  running.current = false;
+  window.dispatchEvent(new CustomEvent("hugoslekstuga:parkour-end"));
+  window.dispatchEvent(
+    new CustomEvent("hugoslekstuga:hugo-stage", {
+      detail: { present: false },
+    }),
+  );
+}
+
 export default function HugoParkour() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [active, setActive] = useState(false);
@@ -154,6 +197,8 @@ export default function HugoParkour() {
   /** Which level the run is in. A ref — the loop reads it, and only
    *  the win panel needs React state. */
   const levelIdRef = useRef<1 | 2>(1);
+  /** True from the start of a run until its end has been announced. */
+  const runningRef = useRef(false);
 
   useEffect(() => {
     const onStart = () => {
@@ -161,6 +206,7 @@ export default function HugoParkour() {
       setWon(false);
       levelIdRef.current = 1;
       runSeedRef.current += 1;
+      runningRef.current = true;
       setActive(true);
       window.dispatchEvent(
         new CustomEvent("hugoslekstuga:hugo-stage", {
@@ -177,12 +223,7 @@ export default function HugoParkour() {
     setActive(false);
     setWon(false);
     wonRef.current = false;
-    window.dispatchEvent(new CustomEvent("hugoslekstuga:parkour-end"));
-    window.dispatchEvent(
-      new CustomEvent("hugoslekstuga:hugo-stage", {
-        detail: { present: false },
-      }),
-    );
+    announceEnd(runningRef);
   };
 
   // The run itself — input, the loop, drawing. Restarts per run seed.
@@ -452,7 +493,7 @@ export default function HugoParkour() {
       // Screen-space cover over the homepage DOM (see FADE_ZONE).
       drawBackdrop(ctx, backdropAlpha, w, h, floorY, dither, backdropCache);
 
-      // World → screen: everything below draws in world coordinates.
+      // World to screen: everything below draws in world coordinates.
       // Rounded so pixel art never lands on half pixels.
       ctx.save();
       ctx.translate(-Math.round(camX), 0);
@@ -465,7 +506,7 @@ export default function HugoParkour() {
       const drawY = Math.round(ry);
 
       // Screen 0's terrain replicas — same coords as the collision,
-      // so the DOM→canvas handover has no seam.
+      // so the handover from the DOM to the canvas has no seam.
       if (level.homeScreen) {
         drawHomeReplicas(ctx, backdropAlpha, lastOrbs, getWordmarkLetters());
       }
@@ -630,6 +671,17 @@ export default function HugoParkour() {
 
   }, [active]);
 
+  // A run also ends when the game is taken off the page under it: the
+  // window is resized out of the room's size (HomeShell unmounts the game
+  // together with the room), or the visitor leaves with the browser's
+  // Back. Only quit() used to announce the end, so a run that ended this
+  // way was never announced: the corner mascot stayed hidden and out of
+  // the Tab order, and back in the room the keys stayed inert under the
+  // controls hint, until a reload. Declared after the run's effect, so
+  // the loop and the key listeners are already gone when the page hears
+  // that it is over.
+  useEffect(() => () => announceEnd(runningRef), []);
+
   if (!active) return null;
 
   return (
@@ -645,7 +697,10 @@ export default function HugoParkour() {
           className="absolute inset-0 flex items-center justify-center"
           style={{ pointerEvents: "auto", background: "rgba(7, 8, 15, 0.72)" }}
         >
-          <div className="notch flex max-w-sm flex-col items-center gap-4 border border-line bg-cream-deep px-8 py-8 text-center">
+          {/* The kit's panel: its hairline is a ring that follows the
+              stepped corners. The old frame here was a clip plus a
+              border, and the clip cut the border away at every corner. */}
+          <Panel className="flex max-w-sm flex-col items-center gap-4 px-8 py-8 text-center">
             <p className="text-glow font-display text-4xl text-green">
               YOU&apos;RE INVITED.
             </p>
@@ -656,9 +711,10 @@ export default function HugoParkour() {
               href="https://getlegacies.com/beta"
               target="_blank"
               rel="noopener"
-              className="btn-chunk bg-green px-6 py-3 font-pixel text-[11px] uppercase tracking-[0.14em] text-cream"
+              className="btn-chunk inline-flex items-center gap-2 bg-green px-6 py-3 font-pixel text-[11px] uppercase tracking-[0.14em] text-cream"
             >
-              enter Legacies beta →
+              enter Legacies beta
+              <PixelIcon name="forward" size={12} />
             </a>
             <div className="flex items-center gap-3">
               <button
@@ -681,7 +737,7 @@ export default function HugoParkour() {
                 esc leaves
               </button>
             </div>
-          </div>
+          </Panel>
         </div>
       )}
     </div>

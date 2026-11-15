@@ -8,7 +8,13 @@
 
 import { isGameSlug } from "@/lib/clusters";
 import { COLOR_HEX, CREAM_HEX } from "@/lib/colors";
-import { drawCabinet, pixelDisc, withAlpha } from "@/lib/hugo/sprite";
+import {
+  ARCADE_CABINET_GLASS,
+  drawArcadeCabinet,
+  drawCabinet,
+  pixelDisc,
+  withAlpha,
+} from "@/lib/hugo/sprite";
 import { moverPos, type Level } from "./level";
 
 /** Label ink for canvas captions — matches the map labels. */
@@ -243,7 +249,15 @@ export function drawBackdrop(
   ctx.restore();
 }
 
-export type OrbSnapshot = { slug: string; x: number; y: number; r: number };
+export type OrbSnapshot = {
+  slug: string;
+  x: number;
+  y: number;
+  r: number;
+  /** Present for the arcade row's cabinets: their box. */
+  w?: number;
+  h?: number;
+};
 export type LetterSnapshot = { x: number; y: number; w: number; h: number };
 
 /** Canvas stand-ins for the homepage terrain while the backdrop hides
@@ -259,7 +273,17 @@ export function drawHomeReplicas(
   ctx.save();
   ctx.globalAlpha = alpha;
   for (const o of orbs) {
-    if (isGameSlug(o.slug)) {
+    if (o.w && o.h) {
+      // The same machine the live row shows, at the same size, with its
+      // screen off — so the handover is a dimming, not a swap.
+      drawArcadeCabinet(
+        ctx,
+        o.x,
+        o.y,
+        o.w / ARCADE_CABINET_GLASS.gridW,
+        withAlpha(COLOR_HEX.pink, 0.55),
+      );
+    } else if (isGameSlug(o.slug)) {
       drawCabinet(ctx, o.x, o.y, (o.r * 2) / 21, withAlpha(COLOR_HEX.pink, 0.55));
     } else {
       pixelDisc(ctx, o.x, o.y, o.r, withAlpha(INKISH, 0.28));

@@ -1,7 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import Slider from "@/components/Slider";
 import ToolFrame from "@/components/ToolFrame";
+import { Chip, ChipGroup } from "@/components/ui/Chip";
+import Keycap from "@/components/ui/Keycap";
+import Panel from "@/components/ui/Panel";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 
@@ -299,6 +309,21 @@ function toPlainText(out: Output): string {
   return blocks.join("\n\n");
 }
 
+const subscribeToNothing = () => () => {};
+
+/**
+ * False while the server's HTML is being hydrated, true from the next
+ * render on, and true at once on a visit that arrives from another
+ * page. Values saved on the device arrive on that same render.
+ */
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
+}
+
 export default function LoremPage() {
   const tool = findTool("lorem")!;
   const [flavourId, setFlavourId] = useLocalStorageState<FlavourId>(FLAVOUR_KEY, "pirate");
@@ -320,6 +345,9 @@ export default function LoremPage() {
   const [count, setCount] = useState(modeConfig(mode).default);
   const [output, setOutput] = useState<Output | null>(null);
   const [copied, setCopied] = useState(false);
+  const flavourLabelId = useId();
+  const lengthLabelId = useId();
+  const hydrated = useHydrated();
 
   const cfg = modeConfig(mode);
 
@@ -340,13 +368,24 @@ export default function LoremPage() {
     [safeFlavourId, mode, count, includeHeading],
   );
 
-  // Initial generation on mount, after hydration. Math.random in a lazy
-  // useState initialiser would cause SSR/client mismatch; running it from
-  // an effect keeps the server HTML deterministic.
+  // The first text, made once the saved settings are in. Math.random in
+  // a lazy useState initialiser would cause SSR/client mismatch; running
+  // it from an effect keeps the server HTML deterministic.
+  //
+  // On a full page load the first render has to match the server's
+  // HTML, so it runs on the defaults, and the saved flavour, length and
+  // heading arrive one render later. The first text used to be made
+  // from that first render: "Words" selected over three pirate
+  // paragraphs, the slider reading 3. It waits for the second render
+  // now, and the count starts at the saved length's own default, as it
+  // always has on a visit that arrives from another page.
   /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!output) generateOutput();
-  }, []);
+    if (!hydrated || output) return;
+    const def = modeConfig(mode).default;
+    setCount(def);
+    generateOutput({ count: def });
+  }, [hydrated]);
   /* eslint-enable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 
   const handleFlavour = (id: FlavourId) => {
@@ -376,102 +415,104 @@ export default function LoremPage() {
     } catch {}
   }, [output]);
 
+  // About the odd sizes below (min-w-13, -26, -27, -33 and the 10px gap):
+  // a chip or key sized by its label is a fraction of a pixel wide (the
+  // mono face is 8.4px a letter at this size), and everything after it in
+  // the row then sits off the pixel grid, which smears its 1px ring on a
+  // 1x screen. The minimums round each one up to whole pixels, and the
+  // 10px gap lets three flavour cards divide the column evenly.
   return (
     <ToolFrame tool={tool}>
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4 sm:gap-5">
         <div className="flex flex-col gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          <p id={flavourLabelId} className="label-pixel">
             Pick a flavour
           </p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {FLAVOURS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => handleFlavour(f.id)}
-                className={`card-chunk flex flex-col items-start gap-0.5 rounded-[var(--radius-card)] p-3 text-left transition-colors ${
-                  safeFlavourId === f.id
-                    ? "bg-yellow-soft"
-                    : "bg-cream hover:bg-yellow-soft"
-                }`}
-              >
-                <span className="font-display text-base font-extrabold tracking-tight">
-                  {f.label}
-                </span>
-                <span className="text-[11px] text-ink-soft">{f.description}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border-2 border-dashed border-ink-muted bg-cream-deep p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-              Length
-            </span>
-            {MODE_OPTIONS.map((opt) => {
-              const active = mode === opt.value;
+          <div
+            role="group"
+            aria-labelledby={flavourLabelId}
+            className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5"
+          >
+            {FLAVOURS.map((f) => {
+              const selected = safeFlavourId === f.id;
               return (
-                <button
-                  key={opt.value}
+                <Panel
+                  key={f.id}
+                  as="button"
                   type="button"
-                  onClick={() => handleMode(opt.value)}
-                  className={`rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
-                    active ? "bg-ink text-cream" : "bg-cream hover:bg-yellow-soft"
-                  }`}
+                  tone={selected ? "soft" : "page"}
+                  aria-pressed={selected}
+                  onClick={() => handleFlavour(f.id)}
+                  className="flex flex-col items-start gap-1.5 p-3 text-left sm:p-4"
                 >
-                  {opt.label}
-                </button>
+                  <span className="font-display text-xl leading-none">
+                    {f.label}
+                  </span>
+                  <span className="text-xs text-pretty text-ink-soft">
+                    {f.description}
+                  </span>
+                </Panel>
               );
             })}
-            <button
-              type="button"
-              onClick={handleToggleHeading}
-              className={`ml-auto rounded-full border-2 border-ink px-3 py-1 text-xs font-bold transition-colors ${
-                includeHeading
-                  ? "bg-ink text-cream"
-                  : "bg-cream hover:bg-yellow-soft"
-              }`}
-            >
-              {includeHeading ? "✓ Heading" : "+ Heading"}
-            </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <span className="font-semibold">{cfg.unitLabel}</span>
-            <input
-              type="range"
-              min={cfg.min}
-              max={cfg.max}
-              step={cfg.step}
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value))}
-              className="accent-yellow"
-            />
-            <span className="w-10 font-mono text-sm font-bold tabular-nums">
-              {count}
-            </span>
-          </label>
-          <button
-            type="button"
-            onClick={() => generateOutput()}
-            className="btn-chunk rounded-[var(--radius-button)] bg-yellow px-5 py-2 font-display text-base font-extrabold text-cream"
+        {/* Everything in this panel regenerates the text the moment it is
+            pressed. Below `md` one row cannot hold all five chips, so the
+            label and the Heading toggle share the top line and the four
+            lengths sit under them (two by two on a phone). */}
+        <Panel className="flex flex-wrap items-center gap-2 p-3 sm:p-4">
+          <span id={lengthLabelId} className="label-pixel md:min-w-13">
+            Length
+          </span>
+          <ChipGroup
+            labelledBy={lengthLabelId}
+            options={MODE_OPTIONS}
+            value={mode}
+            onChange={handleMode}
+            className="order-last w-full max-sm:grid max-sm:grid-cols-2 md:order-none md:w-auto"
+            chipClassName="sm:min-w-26"
+          />
+          {/* The tick is a wider glyph than the plus: the minimum width
+              keeps the chip the same size in both states. */}
+          <Chip
+            pressed={includeHeading}
+            onClick={handleToggleHeading}
+            className="ml-auto min-w-28"
           >
-            Generate ↻
-          </button>
-          <button
-            type="button"
-            onClick={copy}
-            disabled={!output}
-            className="btn-chunk rounded-[var(--radius-button)] bg-cream px-5 py-2 font-display text-base font-extrabold disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {copied ? "Copied!" : "Copy all"}
-          </button>
+            {includeHeading ? "✓ Heading" : "+ Heading"}
+          </Chip>
+        </Panel>
+
+        {/* The slider is the one control that waits for Generate, so it
+            sits with that key and not in the panel above. */}
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+          <Slider
+            label={cfg.unitLabel}
+            min={cfg.min}
+            max={cfg.max}
+            step={cfg.step}
+            value={count}
+            onChange={setCount}
+            className="w-full sm:w-auto sm:flex-1"
+          />
+          <div className="flex w-full gap-2 sm:w-auto">
+            <Keycap
+              tone="accent"
+              onClick={() => generateOutput()}
+              className="max-sm:flex-1 sm:min-w-33"
+            >
+              Generate ↻
+            </Keycap>
+            {/* Wide enough for the longer of its two labels, so the row
+                does not twitch when it says "Copied!". */}
+            <Keycap onClick={copy} disabled={!output} className="min-w-27">
+              {copied ? "Copied!" : "Copy all"}
+            </Keycap>
+          </div>
         </div>
 
-        <article className="card-chunk flex flex-col gap-4 rounded-[var(--radius-card)] bg-cream-deep p-5 sm:p-6">
+        <Panel as="article" className="flex flex-col gap-4 p-5 sm:p-6">
           {!output ? (
             <p className="text-sm text-ink-muted">
               Hit generate to fill the page.
@@ -479,7 +520,7 @@ export default function LoremPage() {
           ) : (
             <>
               {output.heading && (
-                <h2 className="fade-rise font-display text-xl font-extrabold tracking-tight text-ink">
+                <h2 className="fade-rise font-display text-2xl leading-tight text-ink">
                   {output.heading}
                 </h2>
               )}
@@ -516,7 +557,7 @@ export default function LoremPage() {
               )}
             </>
           )}
-        </article>
+        </Panel>
       </div>
     </ToolFrame>
   );

@@ -1,6 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0b0c14"/>
-  <circle cx="32" cy="32" r="22" fill="#ff6e5e" stroke="#e8f2e9" stroke-width="2.5"/>
-  <circle cx="25.5" cy="32" r="4" fill="#0b0c14"/>
-  <circle cx="38.5" cy="32" r="4" fill="#0b0c14"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- Hugo: the canonical 16x16 sprite (SPRITE_ROWS in lib/hugo/sprite.ts) in
+       his default coral, one unit per cell, on a room-dark tile with stepped
+       corners. He stands one cell higher than in the sprite's grid, so he is
+       in the middle of the tile. app/apple-icon.tsx is the same drawing:
+       change one, change both. -->
+  <path fill="#0b0c14" d="M2 0h12v1h1v1h1v12h-1v1h-1v1H2v-1H1v-1H0V2h1V1h1z"/>
+  <g fill="#ff6e5e"><!-- body -->
+    <rect x="6" y="2" width="4" height="1"/>
+    <rect x="4" y="3" width="8" height="1"/>
+    <rect x="3" y="4" width="10" height="1"/>
+    <rect x="2" y="5" width="12" height="1"/>
+    <rect x="1" y="6" width="14" height="5"/>
+    <rect x="2" y="11" width="12" height="2"/>
+    <rect x="3" y="13" width="10" height="1"/>
+  </g>
+  <g fill="#803b38"><!-- shade: the right side, the underside, the mouth -->
+    <rect x="13" y="7" width="2" height="3"/>
+    <rect x="12" y="10" width="3" height="1"/>
+    <rect x="12" y="11" width="2" height="1"/>
+    <rect x="13" y="12" width="1" height="1"/>
+    <rect x="2" y="12" width="1" height="1"/>
+    <rect x="3" y="13" width="10" height="1"/>
+    <rect x="7" y="9" width="2" height="1"/>
+  </g>
+  <g fill="#f2b7aa"><!-- highlight -->
+    <rect x="5" y="3" width="2" height="1"/>
+    <rect x="4" y="4" width="1" height="1"/>
+    <rect x="3" y="5" width="1" height="1"/>
+  </g>
+  <g fill="#e8f2e9"><!-- eye whites -->
+    <rect x="5" y="5" width="2" height="3"/>
+    <rect x="9" y="5" width="2" height="3"/>
+  </g>
+  <g fill="#0b0c14"><!-- pupils -->
+    <rect x="5" y="5" width="1" height="2"/>
+    <rect x="9" y="5" width="1" height="2"/>
+  </g>
 </svg>

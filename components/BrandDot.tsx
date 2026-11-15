@@ -15,6 +15,7 @@ import {
   useHugoState,
 } from "@/lib/hugo-state";
 import { COLOR_HEX } from "@/lib/colors";
+import { isPressable } from "@/lib/keyboard";
 import {
   COLOR_ORDER,
   drawHugoSprite,
@@ -1030,6 +1031,66 @@ export default function BrandDot({
     dragRef.current = null;
   };
 
+  // Out of reach: a page-level mascot has the stage, he is out fetching a
+  // tool, or a full-screen game is drawn over him. (The games cover the
+  // corner, so he cannot be seen there, but he used to stay a Tab stop:
+  // one Tab in Adventure put the focus on him unseen, and then Space,
+  // the game's attack key, changed his colour, five quick presses set off
+  // his tantrum and shook the game screen, and Shift+Enter opened his
+  // room over the game.)
+  const covered = pathname.startsWith("/games/");
+  const away = traveling || stagePresent || covered;
+
+  // When he goes out of reach he must not keep the focus: a hidden button
+  // that owns the keyboard swallows Space and Enter on the page (and it is
+  // an aria-hidden element holding focus).
+  useEffect(() => {
+    if (!away) return;
+    const node = btnRef.current;
+    if (node && document.activeElement === node) node.blur();
+  }, [away]);
+
+  // He is a button and the first Tab stop on every page, but everything
+  // above is a pointer handler, so from the keyboard he did nothing at
+  // all. Enter or Space is a tap (the colour cycles); with Shift it is a
+  // shift-click (his room).
+  //
+  // The tap itself is taken from the button's own click (onClick below),
+  // not from the key: a screen reader's "activate", switch access and
+  // voice control send a click and no key, and browsers disagree about
+  // whether a cancelled Space still clicks on its way up. The key
+  // handler only decides what must NOT become a tap.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    // Out of reach, playing dead, or a key held down (one press is one
+    // tap): nothing happens.
+    if (away || playingDead || e.repeat) {
+      e.preventDefault();
+      return;
+    }
+    // After a mouse click he keeps the focus, with no ring showing. Space
+    // then belongs to the page (its shortcut, or nothing), as it does for
+    // every other clicked button: on Roll one Space used to change his
+    // colour AND spin the wheel. The page's shortcut cancels the key and
+    // takes the focus off him, so no click follows.
+    if (e.key === " " && !isPressable(e.currentTarget)) return;
+    // With Shift it is his room. Opened here and cancelled, so that the
+    // click that would follow cannot also count as a tap.
+    if (e.shiftKey) {
+      e.preventDefault();
+      setRoomOpen(true);
+    }
+  };
+  const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // A click that came from a pointer has already been handled on
+    // pointer-up (a tap, a drag, a long press). detail is 0 for a click
+    // made by the keyboard or by assistive technology.
+    if (e.detail !== 0) return;
+    if (away || playingDead) return;
+    if (e.shiftKey) setRoomOpen(true);
+    else cycle();
+  };
+
   const onPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
     const ds = dragRef.current;
     if (!ds || e.pointerId !== ds.pointerId) return;
@@ -1163,7 +1224,15 @@ export default function BrandDot({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onKeyDown={onKeyDown}
+      onClick={onClick}
       aria-label="Change accent colour"
+      // While a page-level mascot has the stage, he is out fetching a
+      // tool, or a game covers him, the corner one cannot be seen. Out of
+      // sight must also mean out of the Tab order and not announced: he
+      // used to be a first Tab stop that showed no focus at all.
+      tabIndex={away ? -1 : undefined}
+      aria-hidden={away ? true : undefined}
       data-brand-dot
       data-name="hugo"
       style={{
@@ -1181,6 +1250,8 @@ export default function BrandDot({
         // the wordmark. Em-based so it scales with font size.
         marginLeft: "0.16em",
         opacity: traveling || stagePresent ? 0 : 1,
+        // "auto", not unset: BrandCorner's box is pointer-transparent.
+        pointerEvents: traveling || stagePresent ? "none" : "auto",
         transform,
         transition: `${transformTransition}, opacity 60ms linear`,
         // Idle breathing pauses during any active animation (drag,
@@ -1207,6 +1278,16 @@ export default function BrandDot({
         WebkitUserSelect: "none",
       }}
     >
+      {/* A finger needs 44px and he is drawn smaller than that. This
+          grows what can be pressed to 44px around him without moving or
+          resizing him: everything else on the site measures his box. */}
+      <span
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: "min(0px, calc((0.7em - 2.75rem) / 2))",
+        }}
+      />
       {/* Hugo's pixel body. The mood halo rides the sprite's alpha via
           drop-shadow, so it hugs the silhouette instead of a box. */}
       <canvas
@@ -1222,7 +1303,7 @@ export default function BrandDot({
           pointerEvents: "none",
         }}
       />
-      {/* The "annoyed huff" puff — three overlapping ink circles
+      {/* The "annoyed huff" puff — three overlapping ink squares
           rising out of Hugo's head when he plays dead. Only mounted
           while `playingDead` is true; the CSS animation runs once and
           ends invisible (opacity 0). Keyed on playingDead so each new
@@ -1242,7 +1323,8 @@ export default function BrandDot({
             animation: "hugo-huff 1500ms ease-out forwards",
           }}
         >
-          {/* Three overlapping puffs forming a cartoon exhale silhouette */}
+          {/* Three overlapping puffs forming a cartoon exhale silhouette.
+              Square, like everything else he is drawn from. */}
           <span
             style={{
               position: "absolute",
@@ -1250,7 +1332,6 @@ export default function BrandDot({
               bottom: 0,
               width: "0.28em",
               height: "0.28em",
-              borderRadius: "9999px",
               background: "var(--color-ink)",
             }}
           />
@@ -1261,7 +1342,6 @@ export default function BrandDot({
               bottom: "0.12em",
               width: "0.36em",
               height: "0.36em",
-              borderRadius: "9999px",
               background: "var(--color-ink)",
             }}
           />
@@ -1272,40 +1352,40 @@ export default function BrandDot({
               bottom: 0,
               width: "0.28em",
               height: "0.28em",
-              borderRadius: "9999px",
               background: "var(--color-ink)",
             }}
           />
         </span>
       )}
-      {/* Hugo's ⌘K whisper — a tiny pill drifts up over his head the
-          way the sleep "z" does, but with the keyboard shortcut for
-          the search palette inside. Fires from the central idle
+      {/* Hugo's ⌘K whisper — a tiny key legend drifts up over his head
+          the way the sleep "z" does, with the keyboard shortcut for
+          the search palette on it. Fires from the central idle
           scheduler when the user is on a non-homepage route. Uses
           the same hugo-z-drift keyframe so the motion vocabulary
-          stays unified. */}
+          stays unified.
+
+          It wears the kit's `kbd-chunk` (the same key legend the
+          search palette shows), and it is a hint for a keyboard, so it
+          only shows behind the gate the parkour trigger uses: hover +
+          a fine pointer. `translate` (not `transform`, which the drift
+          animates) centres it over him whichever legend it carries. */}
       {idleAction === "cmd-k-hint" && (
         <span
           aria-hidden
+          className="kbd-chunk hidden [@media(hover:hover)_and_(pointer:fine)]:inline-flex"
           style={{
             position: "absolute",
-            bottom: "100%",
+            // Under him, not over him: he sits 24px from the top of the
+            // screen and the drift rises 26px, so from above his head
+            // the hint was on screen for about a fifth of its life. From
+            // here it rises to rest just under his feet.
+            top: "calc(100% + 28px)",
             left: "50%",
-            marginLeft: "-1.2em",
-            fontSize: "0.32em",
-            lineHeight: 1,
-            fontWeight: 800,
-            fontFamily: "var(--font-display)",
-            color: "var(--color-cream)",
-            background: "var(--color-ink)",
-            border: "2px solid var(--color-ink)",
-            borderRadius: "9999px",
-            padding: "0.3em 0.7em",
+            translate: "-50% 0",
             whiteSpace: "nowrap",
             pointerEvents: "none",
             animation: "hugo-z-drift 1800ms ease-out forwards",
             opacity: 0,
-            letterSpacing: "0.04em",
           }}
         >
           {typeof navigator !== "undefined" &&
@@ -1342,9 +1422,9 @@ export default function BrandDot({
       )}
       {/* The "happy puff" — coloured sparkles that fan out above
           Hugo's head when a drag completes. Five small accent-coloured
-          dots fly outward along an upward arc, scale up at the apex,
-          then fade as they continue. Keyed on sparkSeq so each
-          completed drag re-mounts and re-plays the animation. */}
+          square pixels fly outward along an upward arc, scale up at
+          the apex, then fade as they continue. Keyed on sparkSeq so
+          each completed drag re-mounts and re-plays the animation. */}
       {happy && (
         <span
           key={`spark-${sparkSeq}`}
@@ -1379,7 +1459,6 @@ export default function BrandDot({
                     height: "0.2em",
                     marginLeft: "-0.1em",
                     marginTop: "-0.1em",
-                    borderRadius: "9999px",
                     background: sparkColor,
                     animation: "hugo-happy-spark 1200ms ease-out forwards",
                     "--dx": `${dx}em`,
@@ -1398,7 +1477,12 @@ export default function BrandDot({
     {/* Hugo's room — shift+click the dot opens it. Rendered via a
         portal so it sits at the body level above the rest of the
         UI. Closes on Esc or click-outside (handled inside). */}
-    {roomOpen && <HugoRoom onClose={() => setRoomOpen(false)} />}
+    {roomOpen && (
+      <HugoRoom
+        color={COLOR_ORDER[safeIdx]}
+        onClose={() => setRoomOpen(false)}
+      />
+    )}
     </>
   );
 }

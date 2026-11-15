@@ -4,11 +4,22 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Tool } from "@/lib/tools";
-import { bgClass, bgSoftClass } from "@/lib/colors";
+import { accentVars } from "@/lib/colors";
+import { isGameSlug } from "@/lib/clusters";
+import { iconForSlug } from "@/lib/pixel-icons";
+import PixelIcon from "@/components/PixelIcon";
+import IconTile from "@/components/ui/IconTile";
+import { keycapClass } from "@/components/ui/Keycap";
 
 /**
- * Tool page chrome. Wraps every tool with the back link, header
- * card, and brand corner dot.
+ * Tool page chrome: one slim title row (back key, the tool's icon tile,
+ * its name, its tagline) and then the tool. The row sits on Hugo's own
+ * line in the corner, so the tool starts near the top of the screen
+ * instead of under a header card.
+ *
+ * It also sets the page's accent (--accent / --accent-soft) from the
+ * tool's registry colour, so every kit control inside wears it without
+ * being told.
  *
  * The entrance animation is **origin-pinned**: when Hugo (the
  * traveling dot in the root layout) lands at the nav after fetching
@@ -24,9 +35,13 @@ import { bgClass, bgSoftClass } from "@/lib/colors";
  */
 export default function ToolFrame({
   tool,
+  hugoOnStage = false,
   children,
 }: {
   tool: Tool;
+  /** The page puts its own Hugo on the stage (Advice), so the corner one
+   *  yields and the row has no slot to keep for him. */
+  hugoOnStage?: boolean;
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -84,42 +99,44 @@ export default function ToolFrame({
   return (
     <div
       ref={rootRef}
-      className={`mx-auto w-full max-w-3xl px-5 pt-16 pb-10 sm:px-8 sm:pt-20 sm:pb-14 ${
+      style={accentVars(tool.color)}
+      className={`page-col px-5 pt-4 pb-10 sm:px-8 sm:pb-14 ${
         ready ? "card-arrive" : "opacity-0"
       }`}
     >
-      <Link
-        href="/"
-        className="group mb-8 inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
-      >
-        <span
-          aria-hidden
-          className="inline-block transition-transform duration-200 group-hover:-translate-x-1"
+      {/* Below `lg` the column reaches the corner where Hugo lives, so the
+          row starts to his right. Where the page has its own Hugo the
+          corner is empty and the row starts at the margin, over the
+          tagline, as the column does from `lg` up. */}
+      <header className="mb-7 sm:mb-9">
+        <div
+          className={`flex min-h-11 items-center gap-3 ${
+            hugoOnStage ? "" : "pl-14 lg:pl-0"
+          }`}
         >
-          ←
-        </span>
-        Back to playhouse
-      </Link>
-
-      <header
-        className={`card-chunk relative mb-10 flex flex-col gap-4 rounded-[var(--radius-card)] ${bgSoftClass(tool.color)} p-6 sm:p-8`}
-      >
-        <div className="flex items-center gap-4">
-          <div
-            className={`flex h-14 w-14 items-center justify-center rounded-full border-2 border-ink ${bgClass(tool.color)} text-2xl text-cream`}
-            aria-hidden
+          <Link
+            href="/"
+            aria-label="Back to playhouse"
+            className={keycapClass({
+              tone: "quiet",
+              size: "icon",
+              className: "shrink-0 sm:w-auto sm:px-3",
+            })}
           >
-            {tool.emoji}
-          </div>
-          <div className="flex flex-col">
-            <h1 className="font-display text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-4xl">
-              {tool.title}
-            </h1>
-            <p className="text-base font-medium text-ink-soft">
-              {tool.tagline}
-            </p>
-          </div>
+            <PixelIcon name="back" size={12} />
+            <span className="label-pixel hidden text-ink-soft sm:inline">
+              playhouse
+            </span>
+          </Link>
+          <IconTile name={iconForSlug(tool.slug, isGameSlug(tool.slug))} />
+          <h1 className="font-display text-3xl leading-none text-ink sm:text-4xl">
+            {tool.title}
+          </h1>
+          <p className="ml-1 hidden min-w-0 truncate text-sm text-ink-muted md:block">
+            {tool.tagline}
+          </p>
         </div>
+        <p className="mt-2 text-sm text-ink-muted md:hidden">{tool.tagline}</p>
       </header>
 
       <main>{children}</main>

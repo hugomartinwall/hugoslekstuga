@@ -1,12 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import PixelIcon from "@/components/PixelIcon";
 import ToolFrame from "@/components/ToolFrame";
 import { findTool } from "@/lib/tools";
 import { useLocalStorageState } from "@/lib/use-local-storage-state";
 import { localISODate } from "@/lib/dates";
 import { hugoMoodEvent } from "@/lib/hugo-state";
 import CustomMinutes from "@/components/CustomMinutes";
+import Keycap from "@/components/ui/Keycap";
+import { Chip, ChipGroup } from "@/components/ui/Chip";
+import { TextField } from "@/components/ui/Field";
+import Panel from "@/components/ui/Panel";
 
 type Phase = "setup" | "running" | "paused" | "done";
 
@@ -427,6 +432,17 @@ export default function FocusPage() {
   );
 }
 
+// The two choice rows on the Setup screen, as chip options. Durations
+// carry their value in seconds, the unit `durationSec` is stored in.
+const DURATION_OPTIONS = PRESETS_MIN.map((m) => ({
+  value: m * 60,
+  label: `${m} min`,
+}));
+const AMBIENT_OPTIONS = [
+  { value: "silent", label: "Silent" },
+  { value: "noise", label: "Brown noise" },
+] as const;
+
 function Setup({
   intention,
   setIntention,
@@ -455,93 +471,62 @@ function Setup({
   return (
     <div className="flex flex-col gap-7">
       {roundedMinutes > 0 && (
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        <p className="label-pixel">
           {roundedMinutes === 1
             ? "1 minute focused today"
             : `${roundedMinutes} minutes focused today`}
         </p>
       )}
-      <div className="flex flex-col gap-2">
-        <label
-          htmlFor="intention"
-          className="text-xs font-semibold uppercase tracking-wide text-ink-muted"
-        >
-          What are you focusing on?
-        </label>
-        <input
-          id="intention"
-          type="text"
-          value={intention}
-          onChange={(e) => setIntention(e.target.value)}
-          placeholder="Write the email, sketch the page, read chapter three…"
-          className="card-chunk rounded-[var(--radius-card)] bg-cream-deep px-4 py-3 font-display text-lg font-medium text-ink placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:text-ink-muted focus:outline-none"
+      {/* The example is longer than a phone is wide, so it ends in an
+          ellipsis there instead of being cut mid-letter. */}
+      <TextField
+        id="intention"
+        label="What are you focusing on?"
+        value={intention}
+        onChange={(e) => setIntention(e.target.value)}
+        placeholder="Write the email, sketch the page, read chapter three…"
+        inputClassName="text-ellipsis placeholder:text-ellipsis"
+      />
+
+      <div className="flex flex-col gap-1.5">
+        <p id="focus-duration-label" className="label-pixel">
+          For how long?
+        </p>
+        <ChipGroup
+          labelledBy="focus-duration-label"
+          options={DURATION_OPTIONS}
+          value={durationSec}
+          onChange={setDurationSec}
+          trailing={
+            <CustomMinutes
+              currentSec={durationSec}
+              presets={PRESETS_MIN}
+              onChange={(min) => setDurationSec(min * 60)}
+            />
+          }
         />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          For how long?
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {PRESETS_MIN.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setDurationSec(m * 60)}
-              className={`rounded-full border-2 border-ink px-4 py-2 text-sm font-bold transition-colors ${
-                durationSec === m * 60
-                  ? "bg-green text-cream"
-                  : "bg-cream hover:bg-green-soft"
-              }`}
-            >
-              {m} min
-            </button>
-          ))}
-          <CustomMinutes
-            currentSec={durationSec}
-            presets={PRESETS_MIN}
-            onChange={(min) => setDurationSec(min * 60)}
-            color="green"
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+      <div className="flex flex-col gap-1.5">
+        <p id="focus-ambient-label" className="label-pixel">
           Ambient sound
         </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAmbient(false)}
-            className={`rounded-full border-2 border-ink px-4 py-2 text-sm font-bold transition-colors ${
-              !ambient ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
-            }`}
-          >
-            Silent
-          </button>
-          <button
-            type="button"
-            onClick={() => setAmbient(true)}
-            className={`rounded-full border-2 border-ink px-4 py-2 text-sm font-bold transition-colors ${
-              ambient ? "bg-green text-cream" : "bg-cream hover:bg-green-soft"
-            }`}
-          >
-            Brown noise
-          </button>
-          {/* Preview sits beside the toggle pair, intentionally lighter
-              weight — it isn't a selection, just a 2-second taste so you
-              know what you're committing to. Always present so you can
-              hear it before deciding either way. */}
-          <button
-            type="button"
-            onClick={onPreviewAmbient}
-            aria-label="Preview brown noise"
-            className="rounded-full border-2 border-ink bg-cream px-3 py-2 text-xs font-semibold transition-colors hover:bg-green-soft"
-          >
-            ▸ hear it
-          </button>
-        </div>
+        <ChipGroup
+          labelledBy="focus-ambient-label"
+          options={AMBIENT_OPTIONS}
+          value={ambient ? "noise" : "silent"}
+          onChange={(v) => setAmbient(v === "noise")}
+          trailing={
+            // Preview sits beside the pair as a plain action chip — it
+            // isn't a selection, just a 2-second taste so you know what
+            // you're committing to. Always present so you can hear it
+            // before deciding either way.
+            <Chip onClick={onPreviewAmbient} aria-label="Preview brown noise">
+              <PixelIcon name="play" size={12} />
+              hear it
+            </Chip>
+          }
+        />
         <p className="text-xs text-ink-muted">
           {ambient
             ? "Soft brown noise during the session. Like ocean far away — non-distracting, pleasant for long sittings."
@@ -549,14 +534,17 @@ function Setup({
         </p>
       </div>
 
-      <button
-        type="button"
+      {/* The one primary action: the full width of a phone, a plain key
+          at the left edge from `sm` up. */}
+      <Keycap
+        tone="accent"
+        size="lg"
         onClick={onStart}
         disabled={durationSec < 60}
-        className="btn-chunk self-start rounded-[var(--radius-button)] bg-green px-7 py-3 font-display text-lg font-extrabold text-cream disabled:cursor-not-allowed disabled:opacity-50"
+        className="press-guard sm:self-start"
       >
         Start focus
-      </button>
+      </Keycap>
 
       <p className="text-xs text-ink-muted">
         While focusing, your screen stays awake and you&rsquo;ll get a chime
@@ -566,11 +554,16 @@ function Setup({
   );
 }
 
-// Geometry for the circular progress ring. viewBox is 0..100, stroke
-// sits centered at radius 46 so a ~3-unit stroke clears the chunky ink
-// border at the outer edge. Computed once, not on every render.
-const RING_RADIUS = 46;
+// Geometry for the circular progress ring. viewBox is 0..100 and the
+// disc fills it, so the stroke is centred half its own width in from the
+// rim: the ring IS the disc's edge. Computed once, not on every render.
+const RING_STROKE = 3;
+const RING_RADIUS = 50 - RING_STROKE / 2;
 const RING_CIRC = 2 * Math.PI * RING_RADIUS;
+
+// The disc's width, shared with the key block under it so the two line
+// up as one column on a phone.
+const DISC_WIDTH = "w-[min(80vw,20rem)]";
 
 // Stop guard threshold. Past this much elapsed time, the Stop button
 // becomes two-tap to avoid losing a real session to a stray click. Under
@@ -644,79 +637,89 @@ function Running({
     onReset();
   };
   return (
-    <div className="flex flex-col items-center gap-8 py-4 text-center">
-      <p className="max-w-md text-sm font-semibold uppercase tracking-wide text-ink-muted">
-        {intention.trim() ? "Focusing on" : "Focusing"}
-      </p>
-      {intention.trim() && (
-        <p className="max-w-2xl font-display text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">
-          {intention}
+    <div className="flex flex-col items-center gap-6 text-center sm:gap-8 sm:py-4">
+      <div className="flex w-full flex-col items-center gap-2">
+        <p className="label-pixel">
+          {intention.trim() ? "Focusing on" : "Focusing"}
         </p>
-      )}
-
-      <div className="flex flex-col items-center gap-3">
-        <div
-          className={`card-chunk relative rounded-full bg-cream-deep transition-opacity ${
-            paused ? "opacity-60" : ""
-          } ${breathing ? "focus-breathe" : ""}`}
-          style={{ width: "min(80vw, 320px)", aspectRatio: "1" }}
-        >
-          <svg
-            viewBox="0 0 100 100"
-            className="absolute inset-0 h-full w-full -rotate-90"
-            aria-hidden
-          >
-            <circle
-              cx="50"
-              cy="50"
-              r={RING_RADIUS}
-              fill="none"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeDasharray={RING_CIRC}
-              strokeDashoffset={RING_CIRC * (1 - clamped)}
-              style={{ stroke: "var(--color-green)" }}
-              className="transition-[stroke-dashoffset] duration-200 ease-linear"
-            />
-          </svg>
-          <p className="text-glow absolute inset-0 flex items-center justify-center font-display text-6xl font-extrabold leading-none tracking-tight tabular-nums sm:text-7xl">
-            {formatClock(remainingSec)}
+        {intention.trim() && (
+          <p className="max-w-2xl font-display text-2xl leading-tight wrap-anywhere sm:text-3xl">
+            {intention}
           </p>
-        </div>
+        )}
+      </div>
+
+      {/* Round because round is the function: a plain disc, no stepped
+          frame (a notch cannot wrap a circle). The ring runs on its rim. */}
+      <div
+        className={`relative aspect-square rounded-full bg-cream-deep transition-opacity ${DISC_WIDTH} ${
+          paused ? "opacity-60" : ""
+        } ${breathing ? "focus-breathe" : ""}`}
+      >
+        <svg
+          viewBox="0 0 100 100"
+          className="absolute inset-0 h-full w-full -rotate-90"
+          aria-hidden
+        >
+          {/* The track: where the ring will travel. */}
+          <circle
+            cx="50"
+            cy="50"
+            r={RING_RADIUS}
+            fill="none"
+            strokeWidth={RING_STROKE}
+            className="stroke-line"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r={RING_RADIUS}
+            fill="none"
+            strokeWidth={RING_STROKE}
+            strokeDasharray={RING_CIRC}
+            strokeDashoffset={RING_CIRC * (1 - clamped)}
+            className="stroke-(--accent) transition-[stroke-dashoffset] duration-200 ease-linear"
+          />
+        </svg>
+        <p className="text-glow absolute inset-0 flex items-center justify-center font-display text-6xl leading-none tabular-nums sm:text-7xl">
+          {formatClock(remainingSec)}
+        </p>
+        {/* On the disc, under the digits: pausing adds a word to the
+            readout and never moves the keys from under a finger. Full
+            phosphor, because the paused disc is dimmed as a whole. */}
         {paused && (
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          <p className="label-pixel absolute inset-x-0 top-[68%] text-ink">
             paused
           </p>
         )}
       </div>
 
-      <div className="flex flex-wrap justify-center gap-3">
+      {/* One key per row on a phone, the disc's width; side by side from
+          `sm` up. Each cell is wide enough for "Tap again to stop", so
+          arming Stop changes its colour and words but never its place.
+          These keys appear where Start just was, so they ignore the
+          pointer for a moment (press-guard): the second tap of a double
+          tap on Start must not pause or stop what the first one began. */}
+      <div
+        className={`press-guard grid grid-cols-1 gap-3 sm:w-[30rem] sm:grid-cols-2 ${DISC_WIDTH}`}
+      >
         {paused ? (
-          <button
-            type="button"
-            onClick={onResume}
-            className="btn-chunk rounded-[var(--radius-button)] bg-green px-7 py-4 font-display text-base font-extrabold text-cream sm:px-6 sm:py-3"
-          >
+          <Keycap tone="accent" size="lg" block onClick={onResume}>
             Resume
-          </button>
+          </Keycap>
         ) : (
-          <button
-            type="button"
-            onClick={onPause}
-            className="btn-chunk rounded-[var(--radius-button)] bg-cream px-7 py-4 font-display text-base font-extrabold sm:px-6 sm:py-3"
-          >
+          <Keycap size="lg" block onClick={onPause}>
             Pause
-          </button>
+          </Keycap>
         )}
-        <button
-          type="button"
+        <Keycap
+          tone={stopArmed ? "danger" : "neutral"}
+          size="lg"
+          block
           onClick={handleStopClick}
-          className={`btn-chunk rounded-[var(--radius-button)] px-7 py-4 font-display text-base font-extrabold transition-colors sm:px-6 sm:py-3 ${
-            stopArmed ? "bg-pink text-cream" : "bg-cream"
-          }`}
         >
           {stopArmed ? "Tap again to stop" : "Stop"}
-        </button>
+        </Keycap>
       </div>
     </div>
   );
@@ -738,38 +741,32 @@ function Done({
       ? "First session today."
       : `${todayCount} sessions today.`;
   return (
-    <div className="card-chunk flex flex-col gap-5 rounded-[var(--radius-card)] bg-green-soft p-8 text-center">
-      <p className="font-display text-5xl font-extrabold tracking-tight sm:text-6xl">
+    <Panel
+      tone="soft"
+      className="flex flex-col gap-5 px-5 py-8 text-center sm:px-8"
+    >
+      <p className="font-display text-5xl leading-none sm:text-6xl">
         Time&rsquo;s up.
       </p>
       {intention.trim() && (
-        <p className="text-base text-ink-soft">
+        <p className="text-base text-ink-soft wrap-anywhere">
           Nice work on{" "}
           <span className="font-bold text-ink">{intention}</span>.
         </p>
       )}
       {todayCount > 0 && (
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          {countLine}
-        </p>
+        <p className="label-pixel text-ink-soft">{countLine}</p>
       )}
-      <div className="flex flex-wrap justify-center gap-3">
-        <button
-          type="button"
-          onClick={() => onExtend(5)}
-          className="btn-chunk rounded-[var(--radius-button)] bg-cream px-6 py-3 font-display text-base font-extrabold"
-        >
+      {/* Stacked, full width on a phone; a centred pair from `sm` up. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+        <Keycap size="lg" onClick={() => onExtend(5)}>
           +5 min
-        </button>
-        <button
-          type="button"
-          onClick={onReset}
-          className="btn-chunk rounded-[var(--radius-button)] bg-green px-7 py-3 font-display text-base font-extrabold text-cream"
-        >
+        </Keycap>
+        <Keycap tone="accent" size="lg" onClick={onReset}>
           Another round
-        </button>
+        </Keycap>
       </div>
-    </div>
+    </Panel>
   );
 }
 

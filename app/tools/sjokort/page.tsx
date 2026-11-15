@@ -1,13 +1,7 @@
-import type { Metadata } from "next";
-import { findTool } from "@/lib/tools";
+import { toolMetadata } from "@/lib/site";
 import Client from "./Client";
 
-const tool = findTool("sjokort")!;
-
-export const metadata: Metadata = {
-  title: tool.title,
-  description: tool.description,
-};
+export const metadata = toolMetadata("sjokort");
 
 export default function Page() {
   return <Client />;
